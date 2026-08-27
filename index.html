@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#243447">
+  <title>Gestion collège</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#17202a;background:#f5f6f7;--accent:#243447}
+    *{box-sizing:border-box} body{margin:0}.wrap{max-width:620px;margin:auto;padding:16px}
+    .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+    h1{font-size:24px;margin:0}.muted{font-size:13px;color:#68727d}.card{background:#fff;border:1px solid #e1e5e9;border-radius:12px;padding:14px;margin-bottom:12px}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:10px}label{display:block;font-size:12px;color:#68727d;margin-bottom:5px}
+    input,select,textarea{width:100%;min-height:44px;border:1px solid #cbd2d9;border-radius:9px;background:#fff;padding:8px;font-size:16px}
+    .modes{display:flex;gap:8px;margin-bottom:12px}.mode{flex:1;min-height:44px;border:1px solid #cbd2d9;border-radius:9px;background:#fff;font-weight:650}
+    .mode.active{background:var(--accent);border-color:var(--accent);color:#fff}.line{display:grid;grid-template-columns:minmax(0,1fr) 105px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #edf0f2}
+    .line:last-child{border-bottom:0}.name{font-weight:650}.unit{font-size:12px;color:#68727d}.qty{text-align:center;font-size:19px}.actions{display:flex;gap:9px}
+    .btn{width:100%;min-height:48px;border:0;border-radius:10px;font-size:16px;font-weight:700}.primary{background:var(--accent);color:#fff}.secondary{background:#e9edf1;color:#17202a}
+    .status{min-height:22px;margin-top:10px;font-size:14px}.ok{color:#14733e}.err{color:#a12622}.hidden{display:none}.loading{color:#68727d;padding:14px 0}
+    @media(max-width:430px){.wrap{padding:12px}.meta{grid-template-columns:1fr}.line{grid-template-columns:minmax(0,1fr) 88px}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top"><div><h1 id="title">Gestion collège</h1><div id="category" class="muted"></div></div></div>
+  <section class="card"><div class="meta"><div><label for="date">Date</label><input id="date" type="date"></div><div><label for="service">Service</label><select id="service"></select></div></div></section>
+  <div id="modes" class="modes"></div>
+  <section class="card"><div id="products" class="loading">Chargement des produits…</div></section>
+  <section class="card"><label for="note">Remarque facultative</label><textarea id="note" maxlength="500"></textarea></section>
+  <div class="actions"><button id="clear" class="btn secondary" type="button">Effacer</button><button id="save" class="btn primary" type="button">Enregistrer</button></div>
+  <div id="status" class="status" aria-live="polite"></div>
+</main>
+<script>
+(() => {
+  'use strict';
+  const PROJECT='https://zreegtzfpwrjgdhhunxx.supabase.co';
+  const q=new URLSearchParams(location.search);
+  const id=(q.get('id')||'').trim();
+  const API=PROJECT+'/functions/v1/app-api?id='+encodeURIComponent(id);
+  const $=x=>document.getElementById(x);
+  const title=$('title'),category=$('category'),date=$('date'),service=$('service'),modes=$('modes'),products=$('products'),note=$('note'),save=$('save'),clear=$('clear'),status=$('status');
+  let cfg=null,mode='';
+
+  const d=new Date();
+  date.value=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+  const msg=(t,ok=false)=>{status.textContent=t||'';status.className='status '+(t?(ok?'ok':'err'):'')};
+  const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16)});
+
+  function allowedModes(){
+    const m=cfg.category.app_mode;
+    return m==='sortie'?['sortie']:m==='inventaire'?['inventaire']:['sortie','inventaire'];
+  }
+  function setMode(m){
+    mode=m;
+    modes.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+    renderProducts();
+    msg('');
+  }
+  function renderProducts(){
+    products.className='';
+    products.replaceChildren();
+    if(!cfg.products.length){
+      const empty=document.createElement('div'); empty.className='err'; empty.textContent='Aucun produit actif dans cette application.'; products.appendChild(empty); return;
+    }
+    cfg.products.forEach(p=>{
+      const row=document.createElement('div'); row.className='line'; row.dataset.id=p.id;
+      const info=document.createElement('div');
+      const n=document.createElement('div'); n.className='name'; n.textContent=p.name;
+      const u=document.createElement('div'); u.className='unit'; u.textContent=p.unit||'pièce';
+      info.append(n,u);
+      const v=document.createElement('input'); v.className='qty'; v.type='number'; v.inputMode='decimal'; v.min='0'; v.step='1'; v.placeholder=mode==='inventaire'?'Compter':'0'; v.value=mode==='sortie'?'0':'';
+      row.append(info,v); products.appendChild(row);
+    });
+  }
+  function render(){
+    title.textContent=cfg.application.name;
+    document.title=cfg.application.name+' – Gestion collège';
+    category.textContent=cfg.category.name;
+    document.documentElement.style.setProperty('--accent',cfg.application.color||cfg.category.color||'#243447');
+    service.replaceChildren();
+    (cfg.application.services&&cfg.application.services.length?cfg.application.services:['Midi']).forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;service.appendChild(o)});
+    modes.replaceChildren();
+    const a=allowedModes();
+    a.forEach(m=>{const b=document.createElement('button');b.type='button';b.className='mode';b.dataset.mode=m;b.textContent=m==='sortie'?'Sorties':'Inventaire';b.addEventListener('click',()=>setMode(m));modes.appendChild(b)});
+    modes.classList.toggle('hidden',a.length===1);
+    setMode(a[0]);
+  }
+  async function load(){
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)){
+      products.textContent=''; msg('Lien application invalide.'); save.disabled=true; return;
+    }
+    try{
+      const r=await fetch(API,{cache:'no-store'});
+      const j=await r.json();
+      if(!r.ok) throw new Error(j.error||'Erreur de chargement');
+      cfg=j; render();
+    }catch(e){products.textContent='';msg(e.message||'Impossible de charger l’application.');save.disabled=true;}
+  }
+  function reset(){
+    products.querySelectorAll('.qty').forEach(i=>i.value=mode==='sortie'?'0':''); note.value=''; msg('');
+  }
+  clear.addEventListener('click',reset);
+  save.addEventListener('click',async()=>{
+    if(!cfg) return;
+    const items=[]; let bad=false;
+    products.querySelectorAll('.line').forEach(row=>{
+      const input=row.querySelector('.qty'); const raw=input.value.trim();
+      if(mode==='inventaire'&&raw===''){bad=true;return;}
+      const quantity=Number(raw||0);
+      if(!Number.isFinite(quantity)||quantity<0){bad=true;return;}
+      if(mode==='inventaire'||quantity>0)items.push({product_id:row.dataset.id,quantity});
+    });
+    if(bad){msg(mode==='inventaire'?'Comptez tous les produits avant d’enregistrer.':'Quantité invalide.');return;}
+    if(mode==='sortie'&&!items.length){msg('Indiquez au moins une sortie.');return;}
+    save.disabled=true; msg('Enregistrement…',true);
+    try{
+      const r=await fetch(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_event_id:uuid(),event_type:mode,event_date:date.value,service:service.value,note:note.value,items})});
+      const j=await r.json();
+      if(!r.ok) throw new Error(j.error||'Erreur d’enregistrement');
+      reset(); msg(mode==='sortie'?'Sortie enregistrée.':'Inventaire enregistré.',true);
+    }catch(e){msg(e.message||'Erreur lors de l’enregistrement.');}
+    finally{save.disabled=false;}
+  });
+  load();
+})();
+</script>
+</body>
+</html>
