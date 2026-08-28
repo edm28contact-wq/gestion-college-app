@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Statistiques - Gestion collège</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+<a href="../">← Administration</a>
+<h1>Entrées / sorties en valeur</h1>
+</header>
+<section class="filters">
+<label>Période
+<select id="mode">
+<option value="month">Mois</option>
+<option value="year">Année</option>
+</select>
+</label>
+<label>Date <input id="period" type="month"></label>
+<button id="refresh">Actualiser</button>
+</section>
+<div id="status"></div>
+<main id="content">Chargement…</main>
+<script src="stats.js"></script>
+</body>
+</html>
