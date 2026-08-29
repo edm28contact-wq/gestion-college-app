@@ -1,7 +1,10 @@
 const ADMIN_RULES_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-accounting-rules';
+const ADMIN_CONTROL_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-control';
 let adminAccountingRules=[];
 async function adminRulesApi(action='list',method='GET',body){const r=await fetch(ADMIN_RULES_API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
+async function adminControlApi(action='overview',method='GET',body){const u=new URL(ADMIN_CONTROL_API);u.searchParams.set('action',action);const r=await fetch(u,{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
 if(!pages.some(x=>x[0]==='accountingRules'))pages.splice(Math.max(0,pages.length-1),0,['accountingRules','Règles fournisseurs']);
+if(!pages.some(x=>x[0]==='accountingControl'))pages.splice(Math.max(0,pages.length-1),0,['accountingControl','Sécurité comptable']);
 if(!pages.some(x=>x[0]==='windowsAgent'))pages.splice(Math.max(0,pages.length-1),0,['windowsAgent','Agent Windows factures']);
 const _adminBaseRender=render;
 render=function(){
@@ -12,11 +15,21 @@ render=function(){
     $('content').innerHTML='<div class="card"><h3>Import automatique Windows</h3><p class="muted">Installe un agent sur le PC Comptabilité pour surveiller un dossier de factures même lorsque le navigateur est fermé.</p></div><br><iframe src="windows-agent/" style="width:100%;min-height:780px;border:0;border-radius:12px;background:#f4f6f8" title="Agent Windows factures"></iframe>';
     return;
   }
+  if(page==='accountingControl'){
+    if(!db)return;
+    document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
+    $('pageTitle').textContent='Sécurité comptable';
+    renderAdminAccountingControl();return;
+  }
   if(page!=='accountingRules')return _adminBaseRender();if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent='Règles fournisseurs';renderAdminAccountingRules()
 };
 const _adminBaseInitNav=initNav;
 initNav=function(){_adminBaseInitNav()};
 if(token&&$('nav'))initNav();
+async function renderAdminAccountingControl(){
+  $('content').innerHTML='<div class="card"><h3>Sécurité comptable</h3><div class="muted">Chargement…</div></div>';
+  try{const d=await adminControlApi('overview'),closures=d.closures||[],batches=d.batches||[],an=d.anomalies||[];$('content').innerHTML=`<div class="grid"><div class="card"><div class="muted">Anomalies détectées</div><div class="kpi ${an.length?'alert':''}">${an.length}</div></div><div class="card"><div class="muted">Périodes clôturées</div><div class="kpi">${closures.filter(x=>x.active).length}</div></div><div class="card"><div class="muted">Lots OD générés</div><div class="kpi">${batches.filter(x=>x.status==='generated').length}</div></div><div class="card"><div class="muted">Lots importés</div><div class="kpi">${batches.filter(x=>x.status==='imported').length}</div></div></div><br><div class="card"><h3>Périodes comptables</h3><p class="muted">Une période clôturée bloque les modifications comptables. La réouverture est réservée à l’administrateur et nécessite un motif enregistré dans l’audit.</p></div><br><div class="table-wrap"><table><thead><tr><th>Période</th><th>État</th><th>Clôturée par</th><th>Date</th><th>Dernière réouverture</th><th></th></tr></thead><tbody>${closures.length?closures.map(c=>`<tr><td><b>${esc(String(c.period_month).slice(0,7))}</b></td><td>${c.active?'<span class="pill">Clôturée</span>':'Ouverte'}</td><td>${esc(c.closed_by||'')}</td><td>${c.closed_at?new Date(c.closed_at).toLocaleString('fr-FR'):'—'}</td><td>${c.reopened_at?new Date(c.reopened_at).toLocaleString('fr-FR')+' · '+esc(c.reopen_reason||''):'—'}</td><td>${c.active?`<button class="btn danger" onclick="adminReopenAccountingPeriod('${String(c.period_month).slice(0,7)}')">Rouvrir</button>`:''}</td></tr>`).join(''):'<tr><td colspan="6" class="muted">Aucune période clôturée.</td></tr>'}</tbody></table></div>`}catch(e){$('content').innerHTML=`<div class="card"><h3>Sécurité comptable</h3><div class="err">${esc(e.message)}</div></div>`}}
+async function adminReopenAccountingPeriod(month){const reason=prompt(`Réouverture de la période ${month}.\n\nMotif obligatoire :`,'Correction comptable exceptionnelle');if(reason===null)return;if(reason.trim().length<3)return alert('Motif obligatoire.');if(!confirm(`Rouvrir ${month} ?\n\nLes écritures de cette période pourront de nouveau être modifiées. Cette action sera enregistrée dans le journal d’audit.`))return;try{await adminControlApi('reopen-period','POST',{month,reason:reason.trim()});await renderAdminAccountingControl()}catch(e){alert(e.message)}}
 async function renderAdminAccountingRules(){
   $('content').innerHTML='<div class="card"><h3>Règles fournisseurs</h3><div class="muted">Chargement…</div></div>';
   try{const j=await adminRulesApi('list');adminAccountingRules=j.rules||[];const rules=[...adminAccountingRules].sort((a,b)=>String(a.supplier_name||'').localeCompare(String(b.supplier_name||''),'fr'));const withCharges=rules.filter(r=>(r.charge_accounts||[]).length).length;$('content').innerHTML=`<div class="card"><div class="actions" style="justify-content:space-between"><div><h3>Règles fournisseurs</h3><div class="muted">${rules.length} fournisseurs · ${withCharges} avec au moins un compte de charge.</div></div><div class="actions"><input id="adminRuleSearch" style="max-width:300px" placeholder="Rechercher"><button class="btn primary" onclick="adminEditSupplier()">+ Nouveau fournisseur</button></div></div></div><br><div class="table-wrap"><table><thead><tr><th>Fournisseur</th><th>Compte fournisseur</th><th>Comptes de charges</th><th>TVA</th><th>Journal</th><th></th></tr></thead><tbody id="adminRulesBody">${rules.map(adminRuleRow).join('')}</tbody></table></div>`;$('adminRuleSearch').oninput=e=>adminFilterRules(e.target.value)}catch(e){$('content').innerHTML=`<div class="card"><h3>Règles fournisseurs</h3><div class="err">${esc(e.message)}</div></div>`}}
