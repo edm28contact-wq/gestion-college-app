@@ -2,8 +2,18 @@ const ADMIN_RULES_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/adm
 let adminAccountingRules=[];
 async function adminRulesApi(action='list',method='GET',body){const r=await fetch(ADMIN_RULES_API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
 if(!pages.some(x=>x[0]==='accountingRules'))pages.splice(Math.max(0,pages.length-1),0,['accountingRules','Règles fournisseurs']);
+if(!pages.some(x=>x[0]==='windowsAgent'))pages.splice(Math.max(0,pages.length-1),0,['windowsAgent','Agent Windows factures']);
 const _adminBaseRender=render;
-render=function(){if(page!=='accountingRules')return _adminBaseRender();if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent='Règles fournisseurs';renderAdminAccountingRules()};
+render=function(){
+  if(page==='windowsAgent'){
+    if(!db)return;
+    document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
+    $('pageTitle').textContent='Agent Windows factures';
+    $('content').innerHTML='<div class="card"><h3>Import automatique Windows</h3><p class="muted">Installe un agent sur le PC Comptabilité pour surveiller un dossier de factures même lorsque le navigateur est fermé.</p></div><br><iframe src="windows-agent/" style="width:100%;min-height:780px;border:0;border-radius:12px;background:#f4f6f8" title="Agent Windows factures"></iframe>';
+    return;
+  }
+  if(page!=='accountingRules')return _adminBaseRender();if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent='Règles fournisseurs';renderAdminAccountingRules()
+};
 const _adminBaseInitNav=initNav;
 initNav=function(){_adminBaseInitNav()};
 if(token&&$('nav'))initNav();
