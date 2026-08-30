@@ -39,6 +39,16 @@
     return r.toString();
   }
 
+  function isAllowedPassThroughWrite(raw){
+    let u;try{u=new URL(String(raw),location.href)}catch{return false}
+    if(u.origin!=='https://zreegtzfpwrjgdhhunxx.supabase.co'||!u.pathname.includes('/functions/v1/'))return false;
+    const slug=u.pathname.split('/').pop()||'',action=u.searchParams.get('action')||'';
+    if(slug==='admin-api'&&['login','change-password'].includes(action))return true;
+    if(slug==='accounting-api'&&['login','change-password','setup-account'].includes(action))return true;
+    if(slug==='secretariat-account-api')return true;
+    return false;
+  }
+
   window.fetch=async function(input,init={}){
     const originalUrl=typeof input==='string'?input:(input?.url||'');
     if(String(originalUrl).includes('/system-mode'))return originalFetch(input,init);
@@ -47,7 +57,7 @@
       const routed=routeSandbox(originalUrl);
       if(routed){const next=typeof input==='string'?routed:new Request(routed,input);return originalFetch(next,init)}
       const method=String(init?.method||((input&&input.method)||'GET')).toUpperCase(),s=String(originalUrl||'');
-      const allowedTestWrite=['/sandbox-generator','/sandbox-accounting-journey','/accounting-ai'].some(x=>s.includes(x));
+      const allowedTestWrite=['/sandbox-generator','/sandbox-accounting-journey','/accounting-ai'].some(x=>s.includes(x))||isAllowedPassThroughWrite(originalUrl);
       if(!['GET','HEAD','OPTIONS'].includes(method)&&s.includes('zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/')&&!allowedTestWrite){
         return new Response(JSON.stringify({error:'BAC À SABLE ACTIF : cette opération n’a pas encore de route de test et la production a été bloquée par sécurité.',test_mode:true}),{status:409,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})
       }
