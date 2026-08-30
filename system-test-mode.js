@@ -20,7 +20,7 @@
     let u;try{u=new URL(String(raw),location.href)}catch{return null}
     if(u.origin!=='https://zreegtzfpwrjgdhhunxx.supabase.co'||!u.pathname.includes('/functions/v1/'))return null;
     const slug=u.pathname.split('/').pop()||'',action=u.searchParams.get('action')||'';
-    if(['system-mode','sandbox-router','sandbox-api','sandbox-generator','secretariat-account-api'].includes(slug))return null;
+    if(['system-mode','sandbox-router','sandbox-api','sandbox-generator','sandbox-accounting-journey','accounting-ai','secretariat-account-api'].includes(slug))return null;
     if(slug==='admin-api'&&['login','change-password'].includes(action))return null;
     if(slug==='accounting-api'&&['login','change-password','setup-account'].includes(action))return null;
     let target='';
@@ -47,7 +47,8 @@
       const routed=routeSandbox(originalUrl);
       if(routed){const next=typeof input==='string'?routed:new Request(routed,input);return originalFetch(next,init)}
       const method=String(init?.method||((input&&input.method)||'GET')).toUpperCase(),s=String(originalUrl||'');
-      if(!['GET','HEAD','OPTIONS'].includes(method)&&s.includes('zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/')&&!s.includes('/sandbox-generator')){
+      const allowedTestWrite=['/sandbox-generator','/sandbox-accounting-journey','/accounting-ai'].some(x=>s.includes(x));
+      if(!['GET','HEAD','OPTIONS'].includes(method)&&s.includes('zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/')&&!allowedTestWrite){
         return new Response(JSON.stringify({error:'BAC À SABLE ACTIF : cette opération n’a pas encore de route de test et la production a été bloquée par sécurité.',test_mode:true}),{status:409,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})
       }
     }
@@ -78,7 +79,7 @@
   function loadAdminSandbox(){
     if(!/\/admin\/?(?:index\.html)?$/.test(location.pathname))return;
     if(!document.querySelector('script[data-sandbox-admin]')){const s=document.createElement('script');s.src='./sandbox-admin.js?v=3';s.defer=true;s.dataset.sandboxAdmin='1';document.head.appendChild(s)}
-    if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=1';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
+    if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
   }
   const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox()};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
