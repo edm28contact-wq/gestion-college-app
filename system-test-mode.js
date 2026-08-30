@@ -30,7 +30,11 @@
   async function refreshMode(){
     try{const r=await originalFetch(MODE_API+'?action=status',{cache:'no-store'}),j=await r.json();state.active=!!j.test_mode;state.reason='';state.started_at=j.started_at||null;state.loaded=true;banner();window.dispatchEvent(new CustomEvent('gestion-college-test-mode',{detail:{...state}}))}catch(e){console.warn('Mode test indisponible',e)}
   }
-  window.refreshGestionCollegeTestMode=refreshMode;
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',refreshMode);else refreshMode();
+  function loadAdminSandbox(){
+    if(!/\/admin\/?(?:index\.html)?$/.test(location.pathname))return;
+    if(document.querySelector('script[data-sandbox-admin]'))return;
+    const s=document.createElement('script');s.src='./sandbox-admin.js?v=1';s.defer=true;s.dataset.sandboxAdmin='1';document.head.appendChild(s);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{refreshMode();loadAdminSandbox()});else{refreshMode();loadAdminSandbox()}
   setInterval(refreshMode,30000);
 })();
