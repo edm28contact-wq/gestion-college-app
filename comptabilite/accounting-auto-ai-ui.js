@@ -36,19 +36,19 @@ async function accountingAiApi(action,method='POST',body,{attempts=3}={}){
 
 async function ensureAccountingAiReady(){
   try{
-    const h=await accountingAiApi('health','GET',undefined,{attempts:2});
+    const h=await accountingAiApi('health','GET',undefined,{attempts:1});
     if(!h?.ok)throw new Error('Le test de connexion IA a échoué.');
     return h;
   }catch(e){
     const msg=e?.message||String(e);
-    throw new Error(`Analyse IA indisponible : ${msg}. Aucun nouveau PDF ne sera importé tant que l’IA n’est pas opérationnelle.`);
+    throw new Error(`Gemini indisponible : ${msg}`);
   }
 }
 
 const loadBeforeAutoAi=load;
 load=async function(){
   await loadBeforeAutoAi();
-  if($('who'))$('who').textContent=(db.current_user.display_name||'Comptabilité')+' · validation automatique si fiable, sinon contrôle humain';
+  if($('who'))$('who').textContent=(db.current_user.display_name||'Comptabilité')+' · import toujours possible · validation automatique seulement si fiable';
 };
 
 const baseAccountingProg=prog;
@@ -69,8 +69,6 @@ async function processSingleAccountingFile(file,{openReview=false,refreshAfter=f
   const t=await textPdf(file),f=new FormData();
   f.append('file',file);
   f.append('raw_text',t||'');
-  // Les valeurs comptables ne sont plus devinées par le navigateur.
-  // Le PDF original est la source d'autorité et accounting-ai remplit les champs après upload.
   f.append('supplier','');
   f.append('invoice_number','');
   f.append('invoice_date','');
@@ -82,16 +80,16 @@ async function processSingleAccountingFile(file,{openReview=false,refreshAfter=f
   const r=await api('upload','POST',f,true),j=await r.json().catch(()=>({error:'Réponse d’import invalide'}));
   if(!r.ok||!j?.item?.id)throw new Error(j?.error||'Impossible d’enregistrer la facture');
   const id=j.item.id;
-  prog(91,'Double lecture IA du PDF…');
+  prog(91,'Analyse Gemini du PDF…');
   let ai=null,aiError='';
-  try{ai=await accountingAiApi('reanalyze','POST',{id},{attempts:3})}catch(e){aiError=e?.message||String(e);console.warn('Analyse IA automatique impossible',e)}
+  try{ai=await accountingAiApi('reanalyze','POST',{id},{attempts:2})}catch(e){aiError=e?.message||String(e);console.warn('Analyse Gemini automatique impossible',e)}
   if(refreshAfter){
     await refresh();
     page='dashboard';
     render();
   }
   if(openReview&&!ai?.auto_validated){
-    if(aiError)alert(`La facture a été enregistrée mais l’analyse IA a échoué : ${aiError}`);
+    if(aiError)alert(`Le PDF a bien été importé. Gemini n’a pas pu terminer l’analyse : ${aiError}. La facture reste à contrôler et peut être réanalysée plus tard.`);
     review(id);
   }
   return {id,autoValidated:!!ai?.auto_validated,aiError,warnings:ai?.auto_validation?.warnings||[]};
@@ -100,7 +98,6 @@ async function processSingleAccountingFile(file,{openReview=false,refreshAfter=f
 processFile=async function(file){
   try{
     accountingBatchProgress=null;
-    await ensureAccountingAiReady();
     await processSingleAccountingFile(file,{openReview:true,refreshAfter:true});
   }catch(e){
     const m=$('imsg');
@@ -116,14 +113,6 @@ async function processAccountingFiles(fileList){
   const pdfs=files.filter(f=>f.type==='application/pdf' || String(f.name||'').toLowerCase().endsWith('.pdf'));
   if(!pdfs.length){alert('Aucun PDF sélectionné.');return}
   if(pdfs.length!==files.length)alert('Seuls les fichiers PDF seront traités.');
-  try{
-    baseAccountingProg(1,'Vérification de la connexion IA…');
-    await ensureAccountingAiReady();
-  }catch(e){
-    baseAccountingProg(0,'');
-    alert(e.message||String(e));
-    return;
-  }
   let ok=0,validated=0,toReview=0,failed=0;
   const errors=[];
   accountingBatchProgress={index:0,total:pdfs.length};
@@ -134,11 +123,10 @@ async function processAccountingFiles(fileList){
       const res=await processSingleAccountingFile(file,{openReview:false,refreshAfter:false});
       ok++;
       if(res.autoValidated)validated++;else toReview++;
-      if(res.aiError)errors.push(`${file.name} : ${res.aiError}`);
+      if(res.aiError)errors.push(`${file.name} : Gemini : ${res.aiError}`);
     }catch(e){
       failed++;
       errors.push(`${file.name} : ${e?.message||String(e)}`);
-      if(String(e?.message||'').includes('OPENAI_API_KEY')||String(e?.message||'').includes('IA non configurée'))break;
     }
     baseAccountingProg(Math.round(((i+1)/pdfs.length)*100),`Traitement ${i+1}/${pdfs.length}`);
   }
@@ -147,30 +135,44 @@ async function processAccountingFiles(fileList){
   page='dashboard';
   render();
   const detail=errors.length?`\n\n${errors.slice(0,8).join('\n')}${errors.length>8?`\n… +${errors.length-8} autre(s)`:''}`:'';
-  alert(`Import terminé : ${ok} facture(s) enregistrée(s), ${validated} validée(s) automatiquement, ${toReview} à contrôler, ${failed} échec(s).${detail}`);
+  alert(`Import terminé : ${ok} PDF enregistré(s), ${validated} validé(s) automatiquement, ${toReview} à contrôler, ${failed} échec(s) d’import.${detail}`);
+}
+
+async function testGeminiAccounting(){
+  try{
+    const btn=$('testGemini');
+    if(btn)btn.disabled=true;
+    baseAccountingProg(5,'Test de Gemini…');
+    const h=await ensureAccountingAiReady();
+    alert(`Gemini fonctionne. Modèle : ${h.primary_model||'configuré'} · version IA ${h.version||''}`);
+  }catch(e){
+    alert(e?.message||String(e));
+  }finally{
+    const btn=$('testGemini');
+    if(btn)btn.disabled=false;
+    baseAccountingProg(0,'');
+  }
 }
 
 async function reanalyzePendingAccountingInvoices(){
   try{
     const btn=$('reanalyzePending');
     if(btn)btn.disabled=true;
-    baseAccountingProg(1,'Vérification de la connexion IA…');
-    await ensureAccountingAiReady();
     await refresh();
     const pending=(db.invoices||[]).filter(x=>x.created_by==='comptabilite'&&['a_controler','erreur'].includes(x.status)&&x.storage_path);
     if(!pending.length){alert('Aucune facture importée en attente de réanalyse IA.');return}
     let done=0,validated=0,failed=0;
     const errors=[];
     for(let i=0;i<pending.length;i++){
-      baseAccountingProg(Math.max(1,Math.round((i/pending.length)*100)),`Réanalyse IA ${i+1}/${pending.length} · ${pending[i].file_name||'facture'}`);
+      baseAccountingProg(Math.max(1,Math.round((i/pending.length)*100)),`Réanalyse Gemini ${i+1}/${pending.length} · ${pending[i].file_name||'facture'}`);
       try{
-        const r=await accountingAiApi('reanalyze','POST',{id:pending[i].id},{attempts:3});
+        const r=await accountingAiApi('reanalyze','POST',{id:pending[i].id},{attempts:2});
         done++;
         if(r?.auto_validated)validated++;
       }catch(e){
         failed++;
         errors.push(`${pending[i].file_name||pending[i].id} : ${e?.message||String(e)}`);
-        if(String(e?.message||'').includes('OPENAI_API_KEY')||String(e?.message||'').includes('IA non configurée'))break;
+        if(i===0)break;
       }
     }
     await refresh();
@@ -188,7 +190,7 @@ async function reanalyzePendingAccountingInvoices(){
 }
 
 importPage=function(){
-  $('content').innerHTML=`<div class="card"><h2>Importer des factures PDF</h2><p class="muted">Tu peux déposer jusqu’à <b>${ACCOUNTING_MAX_FILES} factures PDF à la fois</b>. Avant tout import, l’application vérifie que l’IA répond réellement. Les champs fournisseur, numéro, date et montants sont ensuite lus depuis le PDF original par l’IA, pas par le navigateur.</p><div class="actions" style="margin-bottom:12px"><button id="reanalyzePending" class="btn secondary" onclick="reanalyzePendingAccountingInvoices()">Ré-analyser les factures déjà importées</button></div><div id="drop" class="drop"><b>Déposer jusqu’à ${ACCOUNTING_MAX_FILES} PDF ici</b><br><span class="muted">Sélection multiple autorisée · 20 Mo maximum par fichier</span><input id="file" class="hide" type="file" accept="application/pdf" multiple></div><br><progress id="prog" class="hide" max="100" value="0" style="width:100%"></progress><div id="imsg" class="status"></div></div>`;
+  $('content').innerHTML=`<div class="card"><h2>Importer des factures PDF</h2><p class="muted">Tu peux déposer jusqu’à <b>${ACCOUNTING_MAX_FILES} factures PDF à la fois</b>. L’import du PDF fonctionne même si Gemini est temporairement indisponible. Gemini essaie ensuite de lire le document ; en cas d’échec, la facture reste simplement <b>À contrôler</b> et pourra être réanalysée.</p><div class="actions" style="margin-bottom:12px"><button id="testGemini" class="btn secondary" onclick="testGeminiAccounting()">Tester Gemini</button><button id="reanalyzePending" class="btn secondary" onclick="reanalyzePendingAccountingInvoices()">Ré-analyser les factures déjà importées</button></div><div id="drop" class="drop"><b>Déposer jusqu’à ${ACCOUNTING_MAX_FILES} PDF ici</b><br><span class="muted">Sélection multiple autorisée · 20 Mo maximum par fichier</span><input id="file" class="hide" type="file" accept="application/pdf" multiple></div><br><progress id="prog" class="hide" max="100" value="0" style="width:100%"></progress><div id="imsg" class="status"></div></div>`;
   const d=$('drop'),f=$('file');
   d.onclick=()=>f.click();
   f.onchange=()=>processAccountingFiles(f.files);
