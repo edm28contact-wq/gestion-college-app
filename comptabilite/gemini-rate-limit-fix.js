@@ -1,17 +1,18 @@
 function geminiRetryDelayMs(response,errorText,attempt){
   const retryAfter=Number(response?.headers?.get?.('retry-after')||0);
-  if(Number.isFinite(retryAfter)&&retryAfter>0)return Math.min(65000,Math.ceil(retryAfter*1000)+1200);
+  if(Number.isFinite(retryAfter)&&retryAfter>0)return Math.min(65000,Math.ceil(retryAfter*1000)+1500);
   const match=String(errorText||'').match(/retry\s+in\s+([0-9.]+)s/i);
   if(match){
     const seconds=Number(match[1]);
-    if(Number.isFinite(seconds)&&seconds>0)return Math.min(65000,Math.ceil(seconds*1000)+1200);
+    if(Number.isFinite(seconds)&&seconds>0)return Math.min(65000,Math.ceil(seconds*1000)+1500);
   }
-  return Math.min(15000,1500*Math.pow(2,Math.max(0,attempt-1)));
+  return Math.min(20000,1500*Math.pow(2,Math.max(0,attempt-1)));
 }
 
 accountingAiApi=async function(action,method='POST',body,{attempts=3}={}){
   let lastError=null;
-  const maxAttempts=Math.max(1,Number(attempts)||1);
+  const requestedAttempts=Math.max(1,Number(attempts)||1);
+  const maxAttempts=action==='reanalyze'?Math.max(6,requestedAttempts):requestedAttempts;
   for(let attempt=1;attempt<=maxAttempts;attempt++){
     let response=null;
     try{
@@ -32,7 +33,7 @@ accountingAiApi=async function(action,method='POST',body,{attempts=3}={}){
       lastError=e;
       const delay=response.status===429?geminiRetryDelayMs(response,e.message,attempt):geminiRetryDelayMs(response,'',attempt);
       if(typeof baseAccountingProg==='function'&&response.status===429){
-        baseAccountingProg(92,`Quota Gemini temporaire · nouvel essai dans ${Math.max(1,Math.ceil(delay/1000))} s…`);
+        baseAccountingProg(92,`Quota Gemini temporaire · essai ${attempt+1}/${maxAttempts} dans ${Math.max(1,Math.ceil(delay/1000))} s…`);
       }
       await sleepAccounting(delay);
       continue;
@@ -42,7 +43,7 @@ accountingAiApi=async function(action,method='POST',body,{attempts=3}={}){
       if((status&&!ACCOUNTING_AI_RETRYABLE.has(status))||attempt===maxAttempts)throw e;
       const delay=status===429?geminiRetryDelayMs(response,e?.message||'',attempt):geminiRetryDelayMs(response,'',attempt);
       if(typeof baseAccountingProg==='function'&&status===429){
-        baseAccountingProg(92,`Quota Gemini temporaire · nouvel essai dans ${Math.max(1,Math.ceil(delay/1000))} s…`);
+        baseAccountingProg(92,`Quota Gemini temporaire · essai ${attempt+1}/${maxAttempts} dans ${Math.max(1,Math.ceil(delay/1000))} s…`);
       }
       await sleepAccounting(delay);
     }
