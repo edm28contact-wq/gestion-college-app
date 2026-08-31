@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Accès & liens - Gestion collège</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#15202b;background:#f4f6f8;--p:#243447;--ok:#176b3a;--bad:#a32929}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1180px;margin:auto;padding:20px}.top,.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.top{justify-content:space-between;margin-bottom:18px}.card{background:#fff;border:1px solid #dde3e8;border-radius:12px;padding:14px;margin-bottom:14px}.muted{color:#6e7983;font-size:13px}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#15202b}.table{overflow:auto;background:#fff;border:1px solid #dde3e8;border-radius:12px}table{border-collapse:collapse;width:100%;min-width:900px}th,td{padding:10px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}th{background:#f7f9fa}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef2f5;font-size:12px;font-weight:700}.ok{color:var(--ok)}.err{color:var(--bad)}.link{word-break:break-all}.secret{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#f3f5f7;padding:4px 7px;border-radius:6px}.status{min-height:22px;margin:10px 0}.section{margin-top:24px}@media(max-width:650px){.wrap{padding:12px}.top{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div><h1>Accès & liens</h1><div class="muted">Administration · Gestion collège</div></div>
+    <div class="actions"><a class="btn secondary" href="./">Retour administration</a><button class="btn primary" onclick="load()">Actualiser</button></div>
+  </div>
+  <div class="card"><b>Sécurité des mots de passe</b><div class="muted" style="margin-top:6px">Les mots de passe des comptes protégés sont hachés et ne peuvent pas être relus en clair. Cette page n’affiche donc jamais un hash ni un secret. Les sites publics actuels fonctionnent uniquement avec leur lien individuel et n’ont pas de mot de passe.</div></div>
+  <div id="status" class="status"></div>
+  <section class="section"><h2>Sites et applications publiques</h2><div id="sites" class="table"></div></section>
+  <section class="section"><h2>Espaces protégés</h2><div id="protected" class="table"></div></section>
+</main>
+<script>
+const ROOT='https://edm28contact-wq.github.io/gestion-college-app/';
+const SITE_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/site-admin-api';
+const token=localStorage.getItem('college_admin_token')||'';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function siteUrl(a){return ROOT+'?id='+encodeURIComponent(a.public_id)}
+async function copy(v){try{await navigator.clipboard.writeText(v);alert('Lien copié.')}catch{prompt('Copiez le lien :',v)}}
+function renderProtected(){
+  const rows=[
+    {name:'Administration',url:ROOT+'admin/',username:'admin'},
+    {name:'Comptabilité fournisseurs',url:ROOT+'comptabilite/',username:'comptabilite'},
+    {name:'Secrétariat commandes',url:ROOT+'secretariat/',username:'secretariat'}
+  ];
+  $('protected').innerHTML=`<table><thead><tr><th>Application</th><th>Lien</th><th>Identifiant</th><th>Mot de passe</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td><a class="link" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.url)}</a></td><td><span class="secret">${esc(x.username)}</span></td><td><span class="pill">Protégé · non affichable</span></td><td><div class="actions"><a class="btn primary" href="${esc(x.url)}" target="_blank" rel="noopener">Ouvrir</a><button class="btn secondary" onclick="copy('${esc(x.url)}')">Copier</button></div></td></tr>`).join('')}</tbody></table>`;
+}
+async function load(){
+  renderProtected();
+  const status=$('status');
+  if(!token){status.className='status err';status.textContent='Session administrateur absente. Connectez-vous d’abord à l’administration.';$('sites').innerHTML='<div class="card">Accès administrateur requis.</div>';return}
+  status.className='status';status.textContent='Chargement…';
+  try{
+    const r=await fetch(SITE_API+'?action=list',{headers:{authorization:'Bearer '+token},cache:'no-store'});
+    const j=await r.json().catch(()=>({error:'Réponse invalide'}));
+    if(r.status===401){location.href='./';return}
+    if(!r.ok)throw new Error(j.error||'Erreur serveur');
+    const apps=(j.applications||[]).filter(a=>a.active!==false);
+    $('sites').innerHTML=`<table><thead><tr><th>Site / app</th><th>Code</th><th>Lien direct</th><th>Accès</th><th>Mot de passe</th><th></th></tr></thead><tbody>${apps.length?apps.map(a=>{const u=siteUrl(a);return `<tr><td><b>${esc(a.name||a.code||'Site')}</b></td><td>${esc(a.code||'')}</td><td><a class="link" href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></td><td><span class="pill">Lien public individuel</span></td><td><span class="pill">Aucun mot de passe</span></td><td><div class="actions"><a class="btn primary" href="${esc(u)}" target="_blank" rel="noopener">Ouvrir</a><button class="btn secondary" data-url="${esc(u)}">Copier</button></div></td></tr>`}).join(''):'<tr><td colspan="6" class="muted">Aucun site actif.</td></tr>'}</tbody></table>`;
+    document.querySelectorAll('#sites button[data-url]').forEach(b=>b.onclick=()=>copy(b.dataset.url));
+    status.className='status ok';status.textContent=apps.length+' site(s) public(s) chargé(s).';
+  }catch(e){status.className='status err';status.textContent=e.message||String(e);$('sites').innerHTML='<div class="card">Impossible de charger les sites.</div>'}
+}
+load();
+</script>
+</body>
+</html>
