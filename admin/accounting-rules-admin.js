@@ -9,8 +9,16 @@ async function adminSystemModeApi(action='admin-status',method='GET',body){const
 if(!pages.some(x=>x[0]==='accountingRules'))pages.splice(Math.max(0,pages.length-1),0,['accountingRules','Règles fournisseurs']);
 if(!pages.some(x=>x[0]==='accountingControl'))pages.splice(Math.max(0,pages.length-1),0,['accountingControl','Sécurité comptable']);
 if(!pages.some(x=>x[0]==='windowsAgent'))pages.splice(Math.max(0,pages.length-1),0,['windowsAgent','Agent Windows factures']);
+if(!pages.some(x=>x[0]==='accessLinks'))pages.splice(Math.max(0,pages.length-1),0,['accessLinks','Accès & liens']);
 const _adminBaseRender=render;
 render=function(){
+  if(page==='accessLinks'){
+    if(!db)return;
+    document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
+    $('pageTitle').textContent='Accès & liens';
+    $('content').innerHTML='<iframe src="acces.html" style="width:100%;min-height:900px;border:0;border-radius:12px;background:#f4f6f8" title="Accès et liens"></iframe>';
+    return;
+  }
   if(page==='windowsAgent'){
     if(!db)return;
     document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
