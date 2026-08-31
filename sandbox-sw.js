@@ -9,6 +9,9 @@ function targetFor(u){
   if(['system-mode','sandbox-router','sandbox-api','secretariat-account-api'].includes(slug))return null;
   if(slug==='admin-api'&&['login','change-password'].includes(action))return null;
   if(slug==='accounting-api'&&['login','change-password','setup-account'].includes(action))return null;
+  // L'analyse de facture est en lecture seule : on utilise le vrai détecteur,
+  // mais l'enregistrement reste routé vers les tables bac à sable.
+  if(slug==='invoice-api'&&action==='suggest')return null;
   if(slug==='app-api')return 'app';
   if(slug==='admin-api')return 'admin';
   if(slug==='site-admin-api')return 'site-admin';
