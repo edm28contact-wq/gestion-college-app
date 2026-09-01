@@ -13,21 +13,51 @@
     page.querySelectorAll('.line[data-id]').forEach(row=>{
       const data=byProduct.get(String(row.dataset.id||''));
       if(!data)return;
+      const input=row.querySelector('.outQty');
+      if(!input)return;
       found=true;
-      const info=row.querySelector('.unit');
-      if(!info)return;
-      let el=row.querySelector('.garage-transfer-needed');
+
+      row.style.gridTemplateColumns='minmax(0,1fr) minmax(156px,180px)';
+      row.style.columnGap='8px';
+
+      let slot=row.querySelector('.out-transfer-slot');
+      if(!slot){
+        slot=document.createElement('div');
+        slot.className='out-transfer-slot';
+        slot.style.display='grid';
+        slot.style.gridTemplateColumns='1fr 1fr';
+        slot.style.gap='6px';
+        slot.style.alignItems='stretch';
+        row.appendChild(slot);
+        slot.appendChild(input);
+      }
+
+      let el=slot.querySelector('.garage-transfer-needed');
       if(!el){
         el=document.createElement('div');
         el.className='garage-transfer-needed';
-        el.style.marginTop='4px';
-        el.style.fontSize='13px';
-        el.style.fontWeight='800';
-        info.insertAdjacentElement('afterend',el);
+        el.style.minHeight='44px';
+        el.style.border='1px solid #e2a39e';
+        el.style.borderRadius='9px';
+        el.style.background='#fff7f6';
+        el.style.padding='4px 3px';
+        el.style.display='flex';
+        el.style.flexDirection='column';
+        el.style.alignItems='center';
+        el.style.justifyContent='center';
+        el.style.textAlign='center';
+        el.style.fontSize='10px';
+        el.style.lineHeight='1.05';
+        el.innerHTML='<span>À transférer</span><strong class="garage-transfer-number" style="font-size:18px;line-height:1.1"></strong>';
+        slot.appendChild(el);
       }
+
       const n=Math.max(0,Number(data.transfer_needed||0));
+      const number=el.querySelector('.garage-transfer-number');
       el.style.color=n>0?'#b42318':'#68727d';
-      el.textContent='À transférer du garage : '+n.toLocaleString('fr-FR');
+      el.style.borderColor=n>0?'#e2a39e':'#d8dde2';
+      el.style.background=n>0?'#fff7f6':'#f7f8f9';
+      if(number)number.textContent=n.toLocaleString('fr-FR');
     });
     return found;
   }
