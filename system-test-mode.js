@@ -94,41 +94,7 @@
     if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
     if(!document.querySelector('script[data-multi-app-admin]')){const m=document.createElement('script');m.src='./multi-app-admin.js?v=1';m.defer=true;m.dataset.multiAppAdmin='1';document.head.appendChild(m)}
   }
-
-  const transferState={loading:false,byProduct:new Map()};
-  function isPublicAppPage(){return /\/gestion-college-app\/?(?:index\.html)?$/.test(location.pathname)&&!!new URLSearchParams(location.search).get('id')}
-  function drawTransferNeeds(){
-    if(!isPublicAppPage())return;
-    document.querySelectorAll('#page-outgoing .line[data-id]').forEach(row=>{
-      const id=String(row.dataset.id||''),data=transferState.byProduct.get(id),info=row.querySelector('.unit');
-      if(!info||!data)return;
-      let el=row.querySelector('.garage-transfer-needed');
-      if(!el){el=document.createElement('div');el.className='garage-transfer-needed';el.style.cssText='margin-top:4px;font-size:13px;font-weight:800';info.insertAdjacentElement('afterend',el)}
-      const n=Number(data.transfer_needed||0);
-      el.style.color=n>0?'#b42318':'#68727d';
-      el.textContent='À transférer du garage : '+n.toLocaleString('fr-FR');
-    });
-  }
-  async function refreshTransferNeeds(){
-    if(!isPublicAppPage()||transferState.loading)return;
-    const publicId=(new URLSearchParams(location.search).get('id')||'').trim();if(!publicId)return;
-    transferState.loading=true;
-    try{
-      const r=await originalFetch(ROOT+'public-stock-transfer?id='+encodeURIComponent(publicId),{cache:'no-store'}),j=await r.json();
-      if(!r.ok)return;
-      transferState.byProduct=new Map((j.products||[]).map(x=>[String(x.product_id),x]));
-      drawTransferNeeds();
-    }catch(e){console.warn('Stock à transférer indisponible',e)}finally{transferState.loading=false}
-  }
-  function loadPublicTransferNeeds(){
-    if(!isPublicAppPage())return;
-    const observer=new MutationObserver(()=>drawTransferNeeds());
-    observer.observe(document.body,{childList:true,subtree:true});
-    setTimeout(refreshTransferNeeds,350);
-    setInterval(refreshTransferNeeds,20000);
-  }
-
-  const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox();loadPublicTransferNeeds()};
+  const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox()};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
   setInterval(refreshMode,30000);
 })();
