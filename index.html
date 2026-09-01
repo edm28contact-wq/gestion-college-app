@@ -37,4 +37,6 @@ window.loadPurchases=async function(){if(!opts().purchase_history||!$('history')
 async function load(){try{const r=await fetch(BASE,{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Erreur de chargement');cfg=j;render()}catch(e){$('tabs').innerHTML='';$('pages').innerHTML='<div class="card err">'+esc(e.message||'Impossible de charger ce site.')+'</div>'}}
 load();
 })();
-</script></body></html>
+</script>
+<script src="./public-transfer-display.js?v=1"></script>
+</body></html>
