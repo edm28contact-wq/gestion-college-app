@@ -17,7 +17,20 @@
       if(!input)return;
       found=true;
 
-      row.style.gridTemplateColumns='minmax(0,1fr) minmax(156px,180px)';
+      const available=Math.max(0,Number(data.current_stock||0));
+      input.max=String(available);
+      input.dataset.availableStock=String(available);
+      input.title='Stock disponible : '+available.toLocaleString('fr-FR');
+      input.addEventListener('input',()=>{
+        const max=Number(input.dataset.availableStock||0),v=Number(input.value||0);
+        if(Number.isFinite(v)&&v>max){
+          input.value=String(max);
+          input.setCustomValidity('Impossible de sortir plus que le stock disponible ('+max.toLocaleString('fr-FR')+').');
+          input.reportValidity();
+        }else input.setCustomValidity('');
+      },{once:false});
+
+      row.style.gridTemplateColumns='minmax(0,1fr) minmax(210px,230px)';
       row.style.columnGap='8px';
 
       let slot=row.querySelector('.out-transfer-slot');
@@ -31,6 +44,18 @@
         row.appendChild(slot);
         slot.appendChild(input);
       }
+
+      let stockEl=slot.querySelector('.garage-stock-available');
+      if(!stockEl){
+        stockEl=document.createElement('div');
+        stockEl.className='garage-stock-available';
+        stockEl.style.gridColumn='1 / -1';
+        stockEl.style.fontSize='11px';
+        stockEl.style.color='#68727d';
+        stockEl.style.textAlign='center';
+        slot.prepend(stockEl);
+      }
+      stockEl.textContent='Stock disponible : '+available.toLocaleString('fr-FR');
 
       let el=slot.querySelector('.garage-transfer-needed');
       if(!el){
