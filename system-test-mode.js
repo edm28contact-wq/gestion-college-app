@@ -23,8 +23,6 @@
     if(['system-mode','sandbox-router','sandbox-api','sandbox-generator','sandbox-accounting-journey','accounting-ai','secretariat-account-api'].includes(slug))return null;
     if(slug==='admin-api'&&['login','change-password'].includes(action))return null;
     if(slug==='accounting-api'&&['login','change-password','setup-account'].includes(action))return null;
-    // L'analyse d'une facture ne modifie aucune donnée : elle utilise le vrai détecteur.
-    // L'enregistrement de la facture reste, lui, routé vers le bac à sable.
     if(slug==='invoice-api'&&action==='suggest')return null;
     let target='';
     if(slug==='app-api')target='app';
@@ -62,7 +60,6 @@
       const method=String(init?.method||((input&&input.method)||'GET')).toUpperCase(),s=String(originalUrl||'');
       const allowedTestWrite=['/sandbox-generator','/sandbox-accounting-journey','/accounting-ai'].some(x=>s.includes(x))||isAllowedPassThroughWrite(originalUrl);
       if(!['GET','HEAD','OPTIONS'].includes(method)&&s.includes('zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/')&&!allowedTestWrite){
-        // invoice-api?action=suggest est un POST sans écriture : on le laisse passer.
         let allowReadPost=false;try{const u=new URL(s);allowReadPost=u.pathname.endsWith('/invoice-api')&&u.searchParams.get('action')==='suggest'}catch{}
         if(!allowReadPost)return new Response(JSON.stringify({error:'BAC À SABLE ACTIF : cette opération n’a pas encore de route de test et la production a été bloquée par sécurité.',test_mode:true}),{status:409,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})
       }
@@ -95,6 +92,7 @@
     if(!/\/admin\/?(?:index\.html)?$/.test(location.pathname))return;
     if(!document.querySelector('script[data-sandbox-admin]')){const s=document.createElement('script');s.src='./sandbox-admin.js?v=3';s.defer=true;s.dataset.sandboxAdmin='1';document.head.appendChild(s)}
     if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
+    if(!document.querySelector('script[data-multi-app-admin]')){const m=document.createElement('script');m.src='./multi-app-admin.js?v=1';m.defer=true;m.dataset.multiAppAdmin='1';document.head.appendChild(m)}
   }
   const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox()};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
