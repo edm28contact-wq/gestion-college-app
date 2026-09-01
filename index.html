@@ -7,12 +7,12 @@
 </style>
 </head>
 <body><main class="wrap"><div class="top"><h1 id="title">Gestion collège</h1><div id="category" class="muted"></div></div><div id="tabs" class="tabs"></div><div id="pages"></div></main>
-<script src="./system-test-mode.js?v=1"></script>
+<script src="./system-test-mode.js?v=3"></script>
 <script>
 (()=>{'use strict';
 const PROJECT='https://zreegtzfpwrjgdhhunxx.supabase.co',id=(new URLSearchParams(location.search).get('id')||'').trim(),BASE=PROJECT+'/functions/v1/app-api?id='+encodeURIComponent(id),$=x=>document.getElementById(x);let cfg=null,activePage='',inventoryLocked=false;
 const DRAFT_KEY='gestion-college-inventory-draft:'+id;
-const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-'),uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16)}),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-'),uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16)}),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const opts=()=>cfg?.application?.site_options||{};
 function msg(id,t,ok=false){const e=$(id);if(!e)return;e.textContent=t||'';e.className='status '+(t?(ok?'ok':'err'):'')}
 function productInfo(p){const bits=[p.unit||'pièce'];if(opts().unit_price&&p.unit_price!==undefined)bits.push(Number(p.unit_price).toFixed(2)+' € / unité');if(opts().current_stock&&p.current_stock!==undefined)bits.push('stock actuel : '+Number(p.current_stock).toLocaleString('fr-FR'));return bits.join(' · ')}
