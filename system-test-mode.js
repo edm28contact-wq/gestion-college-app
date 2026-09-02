@@ -111,13 +111,14 @@
         const countUnit=String(p.conditionnement||p.unit||'pièce').trim();
         let box=row.querySelector('.conditioning-info');
         if(!box){box=document.createElement('div');box.className='conditioning-info';box.style.cssText='font-size:13px;font-weight:800;color:#26323c;margin-top:4px;line-height:1.35';const info=row.querySelector('.unit');if(info)info.insertAdjacentElement('afterend',box);else row.querySelector('div')?.appendChild(box)}
-        box.textContent='À compter en : '+countUnit;
+        const wanted='À compter en : '+countUnit;
+        if(box.textContent!==wanted)box.textContent=wanted;
         const input=row.querySelector('.invQty');
-        if(input){input.placeholder=countUnit;input.title='Saisir le nombre de '+countUnit;input.setAttribute('aria-label',name+' — quantité en '+countUnit)}
+        if(input){if(input.placeholder!==countUnit)input.placeholder=countUnit;const title='Saisir le nombre de '+countUnit;if(input.title!==title)input.title=title;const aria=name+' — quantité en '+countUnit;if(input.getAttribute('aria-label')!==aria)input.setAttribute('aria-label',aria)}
       });
     };
     apply();
-    const observer=new MutationObserver(apply);observer.observe(document.getElementById('pages')||document.body,{childList:true,subtree:true});
+    const observer=new MutationObserver(()=>apply());observer.observe(document.getElementById('pages')||document.body,{childList:true,subtree:true});
   }
 
   const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox();loadMaintenanceInventoryConditioning()};
