@@ -13,9 +13,14 @@ dashboard=function(){
   const invoices=db?.invoices||[];
   rows.forEach((tr,index)=>{
     const i=invoices[index];
-    if(!hasMissingChargeAccount(i))return;
+    if(!i)return;
     const stateCell=tr.querySelector('td');
-    if(stateCell)stateCell.innerHTML='<span class="badge warn">Compte de charge absent</span>';
+    if(!stateCell)return;
+    if(['validee','exportee'].includes(String(i.status||''))){
+      stateCell.innerHTML=badge(i.status);
+      return;
+    }
+    if(hasMissingChargeAccount(i))stateCell.innerHTML='<span class="badge warn">Compte de charge absent</span>';
   });
 };
 
@@ -29,6 +34,6 @@ review=async function(id){
   const box=document.createElement('div');
   box.className='status err';
   box.style.marginBottom='10px';
-  box.innerHTML='<b>État : Compte de charge absent.</b> Renseigne la ventilation des charges avant de valider l’écriture.';
+  box.innerHTML='<b>État : Compte de charge absent.</b> Renseigne le numéro de compte et sa ventilation avant de valider l’écriture. Dès validation réussie, cet état disparaît.';
   reviewPane.insertBefore(box,reviewPane.firstChild);
 };
