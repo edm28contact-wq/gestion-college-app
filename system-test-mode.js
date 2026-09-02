@@ -101,7 +101,7 @@
     if(!document.getElementById('maintenanceInventorySizing')){
       const style=document.createElement('style');
       style.id='maintenanceInventorySizing';
-      style.textContent='#page-inventory .line{grid-template-columns:minmax(0,1fr) 220px!important;gap:14px!important}#page-inventory .invQty{min-height:58px!important;font-size:18px!important;padding:10px 12px!important;text-align:left!important}@media(max-width:650px){#page-inventory .line{grid-template-columns:1fr!important;gap:9px!important;align-items:stretch!important;padding:14px 0!important}#page-inventory .invQty{width:100%!important;min-height:58px!important;font-size:18px!important;padding:11px 13px!important;text-align:left!important}}';
+      style.textContent='#page-inventory .line{grid-template-columns:1fr!important;gap:12px!important;align-items:stretch!important;padding:18px 0!important}#page-inventory .line>div{width:100%!important}#page-inventory .invQty{display:block!important;width:100%!important;max-width:none!important;min-height:78px!important;font-size:22px!important;padding:16px 18px!important;text-align:left!important}#page-inventory .conditioning-info{font-size:16px!important;line-height:1.5!important;margin-top:7px!important}';
       document.head.appendChild(style);
     }
     let products=[];
