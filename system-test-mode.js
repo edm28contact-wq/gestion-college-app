@@ -94,7 +94,34 @@
     if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
     if(!document.querySelector('script[data-multi-app-admin]')){const m=document.createElement('script');m.src='./multi-app-admin.js?v=1';m.defer=true;m.dataset.multiAppAdmin='1';document.head.appendChild(m)}
   }
-  const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox()};
+
+  async function loadMaintenanceInventoryConditioning(){
+    const appId=(new URLSearchParams(location.search).get('id')||'').trim();
+    if(appId!=='b881d941-f656-4217-8a0e-20ef7d876f21')return;
+    let products=[];
+    try{
+      const r=await originalFetch(ROOT+'app-api?id='+encodeURIComponent(appId),{cache:'no-store'}),j=await r.json();
+      products=Array.isArray(j.products)?j.products:[];
+    }catch(e){console.warn('Conditionnements inventaire indisponibles',e);return}
+    const byName=new Map(products.map(p=>[String(p.name||'').trim(),p]));
+    const apply=()=>{
+      document.querySelectorAll('.line').forEach(row=>{
+        if(row.querySelector('.conditioning-info'))return;
+        const name=row.querySelector('.name')?.textContent?.trim()||'';
+        const p=byName.get(name);if(!p)return;
+        const box=document.createElement('div');box.className='conditioning-info';
+        box.style.cssText='font-size:13px;font-weight:700;color:#39444d;margin-top:4px;line-height:1.35';
+        const conditionnement=String(p.conditionnement||p.unit||'pièce').trim();
+        const colisage=String(p.colisage||'').trim();
+        box.textContent='Conditionnement : '+conditionnement+(colisage?' · Colisage : '+colisage:'');
+        const info=row.querySelector('.unit');if(info)info.insertAdjacentElement('afterend',box);else row.querySelector('div')?.appendChild(box);
+      });
+    };
+    apply();
+    const observer=new MutationObserver(apply);observer.observe(document.getElementById('pages')||document.body,{childList:true,subtree:true});
+  }
+
+  const boot=()=>{registerSandboxWorker();refreshMode();loadAdminSandbox();loadMaintenanceInventoryConditioning()};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
   setInterval(refreshMode,30000);
 })();
