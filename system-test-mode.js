@@ -98,6 +98,12 @@
   async function loadMaintenanceInventoryConditioning(){
     const appId=(new URLSearchParams(location.search).get('id')||'').trim();
     if(appId!=='b881d941-f656-4217-8a0e-20ef7d876f21')return;
+    if(!document.getElementById('maintenanceInventorySizing')){
+      const style=document.createElement('style');
+      style.id='maintenanceInventorySizing';
+      style.textContent='#page-inventory .line{grid-template-columns:minmax(0,1fr) 220px!important;gap:14px!important}#page-inventory .invQty{min-height:58px!important;font-size:18px!important;padding:10px 12px!important;text-align:left!important}@media(max-width:650px){#page-inventory .line{grid-template-columns:1fr!important;gap:9px!important;align-items:stretch!important;padding:14px 0!important}#page-inventory .invQty{width:100%!important;min-height:58px!important;font-size:18px!important;padding:11px 13px!important;text-align:left!important}}';
+      document.head.appendChild(style);
+    }
     let products=[];
     try{
       const r=await originalFetch(ROOT+'app-api?id='+encodeURIComponent(appId),{cache:'no-store'}),j=await r.json();
@@ -110,7 +116,7 @@
         const p=byName.get(name);if(!p)return;
         const countUnit=String(p.conditionnement||p.unit||'pièce').trim();
         let box=row.querySelector('.conditioning-info');
-        if(!box){box=document.createElement('div');box.className='conditioning-info';box.style.cssText='font-size:13px;font-weight:800;color:#26323c;margin-top:4px;line-height:1.35';const info=row.querySelector('.unit');if(info)info.insertAdjacentElement('afterend',box);else row.querySelector('div')?.appendChild(box)}
+        if(!box){box=document.createElement('div');box.className='conditioning-info';box.style.cssText='font-size:14px;font-weight:800;color:#26323c;margin-top:5px;line-height:1.4';const info=row.querySelector('.unit');if(info)info.insertAdjacentElement('afterend',box);else row.querySelector('div')?.appendChild(box)}
         const wanted='À compter en : '+countUnit;
         if(box.textContent!==wanted)box.textContent=wanted;
         const input=row.querySelector('.invQty');
