@@ -102,19 +102,18 @@
     try{
       const r=await originalFetch(ROOT+'app-api?id='+encodeURIComponent(appId),{cache:'no-store'}),j=await r.json();
       products=Array.isArray(j.products)?j.products:[];
-    }catch(e){console.warn('Conditionnements inventaire indisponibles',e);return}
+    }catch(e){console.warn('Unités inventaire indisponibles',e);return}
     const byName=new Map(products.map(p=>[String(p.name||'').trim(),p]));
     const apply=()=>{
       document.querySelectorAll('.line').forEach(row=>{
-        if(row.querySelector('.conditioning-info'))return;
         const name=row.querySelector('.name')?.textContent?.trim()||'';
         const p=byName.get(name);if(!p)return;
-        const box=document.createElement('div');box.className='conditioning-info';
-        box.style.cssText='font-size:13px;font-weight:700;color:#39444d;margin-top:4px;line-height:1.35';
-        const conditionnement=String(p.conditionnement||p.unit||'pièce').trim();
-        const colisage=String(p.colisage||'').trim();
-        box.textContent='Conditionnement : '+conditionnement+(colisage?' · Colisage : '+colisage:'');
-        const info=row.querySelector('.unit');if(info)info.insertAdjacentElement('afterend',box);else row.querySelector('div')?.appendChild(box);
+        const countUnit=String(p.conditionnement||p.unit||'pièce').trim();
+        let box=row.querySelector('.conditioning-info');
+        if(!box){box=document.createElement('div');box.className='conditioning-info';box.style.cssText='font-size:13px;font-weight:800;color:#26323c;margin-top:4px;line-height:1.35';const info=row.querySelector('.unit');if(info)info.insertAdjacentElement('afterend',box);else row.querySelector('div')?.appendChild(box)}
+        box.textContent='À compter en : '+countUnit;
+        const input=row.querySelector('.invQty');
+        if(input){input.placeholder=countUnit;input.title='Saisir le nombre de '+countUnit;input.setAttribute('aria-label',name+' — quantité en '+countUnit)}
       });
     };
     apply();
