@@ -20,7 +20,7 @@
     let u;try{u=new URL(String(raw),location.href)}catch{return null}
     if(u.origin!=='https://zreegtzfpwrjgdhhunxx.supabase.co'||!u.pathname.includes('/functions/v1/'))return null;
     const slug=u.pathname.split('/').pop()||'',action=u.searchParams.get('action')||'';
-    if(['system-mode','sandbox-router','sandbox-api','sandbox-generator','sandbox-accounting-journey','accounting-ai','secretariat-account-api'].includes(slug))return null;
+    if(['system-mode','sandbox-router','sandbox-api','sandbox-generator','sandbox-accounting-journey','accounting-ai','secretariat-account-api','admin-central-auth','admin-dashboard-api','admin-control-center','admin-trash-api'].includes(slug))return null;
     if(slug==='admin-api'&&['login','change-password'].includes(action))return null;
     if(slug==='accounting-api'&&['login','change-password','setup-account'].includes(action))return null;
     if(slug==='invoice-api'&&action==='suggest')return null;
@@ -44,6 +44,7 @@
     let u;try{u=new URL(String(raw),location.href)}catch{return false}
     if(u.origin!=='https://zreegtzfpwrjgdhhunxx.supabase.co'||!u.pathname.includes('/functions/v1/'))return false;
     const slug=u.pathname.split('/').pop()||'',action=u.searchParams.get('action')||'';
+    if(['admin-central-auth','admin-dashboard-api','admin-control-center','admin-trash-api'].includes(slug))return true;
     if(slug==='admin-api'&&['login','change-password'].includes(action))return true;
     if(slug==='accounting-api'&&['login','change-password','setup-account'].includes(action))return true;
     if(slug==='secretariat-account-api')return true;
@@ -90,6 +91,7 @@
 
   function loadAdminSandbox(){
     if(!/\/admin\/?(?:index\.html)?$/.test(location.pathname))return;
+    if(!document.querySelector('script[data-secure-admin-isolation]')){const a=document.createElement('script');a.src='./secure-admin-isolation.js?v=1';a.defer=true;a.dataset.secureAdminIsolation='1';document.head.appendChild(a)}
     if(!document.querySelector('script[data-sandbox-admin]')){const s=document.createElement('script');s.src='./sandbox-admin.js?v=3';s.defer=true;s.dataset.sandboxAdmin='1';document.head.appendChild(s)}
     if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
     if(!document.querySelector('script[data-multi-app-admin]')){const m=document.createElement('script');m.src='./multi-app-admin.js?v=1';m.defer=true;m.dataset.multiAppAdmin='1';document.head.appendChild(m)}
