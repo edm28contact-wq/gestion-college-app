@@ -91,6 +91,12 @@
 
   function loadAdminSandbox(){
     if(!/\/admin\/?(?:index\.html)?$/.test(location.pathname))return;
+    if(!document.getElementById('adminMenuSolidBackground')){
+      const style=document.createElement('style');
+      style.id='adminMenuSolidBackground';
+      style.textContent='.side,.side .nav{background:#1f2b38!important;background-color:#1f2b38!important;opacity:1!important;backdrop-filter:none!important}.side .nav button{background:#1f2b38!important;color:#dce5ed!important}.side .nav button.active,.side .nav button:hover{background:#314254!important;color:#fff!important}@media(max-width:900px){.side,.side .nav{background:#1f2b38!important;background-color:#1f2b38!important}}';
+      document.head.appendChild(style);
+    }
     if(!document.querySelector('script[data-secure-admin-isolation]')){const a=document.createElement('script');a.src='./secure-admin-isolation.js?v=1';a.defer=true;a.dataset.secureAdminIsolation='1';document.head.appendChild(a)}
     if(!document.querySelector('script[data-sandbox-admin]')){const s=document.createElement('script');s.src='./sandbox-admin.js?v=3';s.defer=true;s.dataset.sandboxAdmin='1';document.head.appendChild(s)}
     if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
