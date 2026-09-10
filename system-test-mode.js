@@ -99,6 +99,7 @@
     }
     if(!document.querySelector('script[data-admin-ui-enhancements]')){const u=document.createElement('script');u.src='./admin-ui-enhancements.js?v=2';u.defer=true;u.dataset.adminUiEnhancements='1';document.head.appendChild(u)}
     if(!document.querySelector('script[data-secure-admin-isolation]')){const a=document.createElement('script');a.src='./secure-admin-isolation.js?v=1';a.defer=true;a.dataset.secureAdminIsolation='1';document.head.appendChild(a)}
+    if(!document.querySelector('script[data-admin-account-editor]')){const e=document.createElement('script');e.src='./admin-account-editor.js?v=1';e.defer=true;e.dataset.adminAccountEditor='1';document.head.appendChild(e)}
     if(!document.querySelector('script[data-sandbox-admin]')){const s=document.createElement('script');s.src='./sandbox-admin.js?v=3';s.defer=true;s.dataset.sandboxAdmin='1';document.head.appendChild(s)}
     if(!document.querySelector('script[data-sandbox-generator]')){const g=document.createElement('script');g.src='./sandbox-generator-ui.js?v=2';g.defer=true;g.dataset.sandboxGenerator='1';document.head.appendChild(g)}
     if(!document.querySelector('script[data-multi-app-admin]')){const m=document.createElement('script');m.src='./multi-app-admin.js?v=1';m.defer=true;m.dataset.multiAppAdmin='1';document.head.appendChild(m)}
