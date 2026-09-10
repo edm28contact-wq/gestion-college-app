@@ -24,7 +24,10 @@
     const url=new URL(base);url.searchParams.set('action',action);
     const response=await fetch(url,{method,headers:{'content-type':'application/json',authorization:'Bearer '+currentToken()},body:body?JSON.stringify(body):undefined,cache:'no-store'});
     const result=await response.json().catch(()=>({error:'Réponse invalide'}));
-    if(response.status===401){if(typeof logout==='function')logout();throw new Error('Session expirée')}
+    if(response.status===401&&result.error==='Session invalide'){
+      if(typeof logout==='function')logout();
+      throw new Error('Session expirée');
+    }
     if(!response.ok)throw new Error(result.error||'Erreur serveur');
     return result;
   }
