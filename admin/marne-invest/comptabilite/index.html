@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comptabilité Marne Invest</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#17202a;background:#f4f6f8;--p:#334155;--line:#d7dee5;--muted:#6b7785}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1100px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:22px}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;text-decoration:none;display:inline-block;cursor:pointer}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#17202a}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.kpi{font-size:25px;font-weight:800;margin-top:4px}.muted{color:var(--muted);font-size:13px}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2f5;font-size:12px;font-weight:700}.status{min-height:22px;margin:8px 0}.err{color:#a32929}@media(max-width:760px){.wrap{padding:14px}.top{flex-direction:column}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div><span class="pill">Marne Invest</span><h1 style="margin:7px 0 5px">Comptabilité Marne Invest</h1><div class="muted">Espace comptable dédié à la société Marne Invest</div></div>
+    <div class="actions"><a class="btn secondary" href="../">Retour Admin Marne Invest</a><a class="btn secondary" href="../../holding/">Retour Holding</a></div>
+  </div>
+  <div id="status" class="status">Vérification de la session…</div>
+  <section id="content" hidden>
+    <div class="grid">
+      <div class="card"><div class="muted">Loyers / recettes</div><div class="kpi">—</div><div class="muted">Suivi comptable à connecter</div></div>
+      <div class="card"><div class="muted">Charges / dépenses</div><div class="kpi">—</div><div class="muted">Suivi comptable à connecter</div></div>
+      <div class="card"><div class="muted">Pièces à contrôler</div><div class="kpi">—</div><div class="muted">Factures et justificatifs</div></div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Périmètre comptable Marne Invest</h2>
+      <div class="muted">Ce module est désormais séparé de la comptabilité du Collège. Il est destiné aux recettes locatives, charges, factures, dépenses, rapprochements, exports et suivi comptable propres à Marne Invest.</div>
+    </div>
+  </section>
+</main>
+<script>
+const token=localStorage.getItem('marne_invest_admin_token')||'';
+const status=document.getElementById('status');
+if(!token){status.className='status err';status.textContent='Session Marne Invest absente. Connectez-vous d’abord à l’administration Marne Invest.'}
+else{status.textContent='Espace Comptabilité Marne Invest actif';document.getElementById('content').hidden=false}
+</script>
+</body>
+</html>
