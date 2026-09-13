@@ -60,19 +60,17 @@
   <div class="footer-note"><b>Règle d’architecture</b><div class="muted" style="margin-top:5px">Holding → Société → Administration de société → Sites / applications de la société. Les droits devront ensuite être limités côté serveur selon cette hiérarchie.</div></div>
 </main>
 <script>
-const CONTEXT_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-dashboard-api?action=context';
+const HOLDING_CHECK_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-control-center?action=accounts';
 const token=localStorage.getItem('college_admin_token')||'';
 async function verifyHolding(){
   const status=document.getElementById('status');
   if(!token){location.replace('../');return}
   try{
-    const response=await fetch(CONTEXT_API,{headers:{authorization:'Bearer '+token},cache:'no-store'});
+    const response=await fetch(HOLDING_CHECK_API,{headers:{authorization:'Bearer '+token},cache:'no-store'});
     const data=await response.json().catch(()=>({error:'Réponse invalide'}));
     if(response.status===401){localStorage.removeItem('college_admin_token');location.replace('../');return}
-    if(!response.ok)throw new Error(data.error||'Erreur serveur');
-    const user=data.current_user||{};
-    if(user.username!=='admin'||user.is_super_admin!==true)throw new Error('Accès réservé à l’administration Holding.');
-    status.textContent='Connecté : '+String(user.display_name||user.username);
+    if(!response.ok)throw new Error(data.error||'Accès Holding refusé');
+    status.textContent='Administration Holding active';
     document.getElementById('holdingContent').hidden=false;
   }catch(error){status.className='status err';status.textContent=error.message||String(error)}
 }
