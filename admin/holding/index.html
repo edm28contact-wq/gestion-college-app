@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Administration Holding</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#17202a;background:#f4f6f8;--p:#1f2b38;--line:#cbd5df;--muted:#6b7785}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1180px;margin:auto;padding:24px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#17202a}.muted{color:var(--muted);font-size:13px}.status{min-height:22px;margin:10px 0}.err{color:#a32929}.org{display:grid;gap:26px}.holding{background:#fff;border:2px solid #9aa8b5;border-radius:16px;padding:18px;text-align:center;max-width:520px;margin:auto}.holding h1{margin:0 0 5px;font-size:26px}.connector{width:2px;height:30px;background:var(--line);margin:-8px auto -2px}.companies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}.company{position:relative;background:#fff;border:1px solid #d7dee5;border-radius:14px;padding:16px}.company:before{content:'';position:absolute;top:-20px;left:50%;width:2px;height:20px;background:var(--line)}.company h2{margin:0 0 5px}.company-admin{padding:12px;border:1px solid #bcc8d2;border-radius:10px;background:#f8fafb;margin:14px 0}.sites{display:grid;gap:9px}.site{border:1px solid #dde3e8;border-radius:10px;padding:11px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px}.site b{display:block}.site .btn{white-space:nowrap;padding:8px 11px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2f5;font-size:12px;font-weight:700}.footer-note{margin-top:24px;background:#fff;border:1px solid #dde3e8;border-radius:12px;padding:14px}@media(max-width:760px){.wrap{padding:14px}.top{flex-direction:column}.companies{grid-template-columns:1fr}.company:before{display:none}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div>
+      <h1 style="margin:0 0 5px">Administration Holding</h1>
+      <div class="muted">Vue centrale des sociétés et de leurs sites associés</div>
+    </div>
+    <div class="actions"><button class="btn secondary" onclick="logoutHolding()">Déconnexion</button></div>
+  </div>
+  <div id="status" class="status">Vérification des droits…</div>
+  <section id="holdingContent" class="org" hidden>
+    <div class="holding">
+      <span class="badge">Niveau 1</span>
+      <h1>Holding</h1>
+      <div class="muted">Administration globale · super administrateur</div>
+    </div>
+    <div class="connector"></div>
+    <div class="companies">
+      <article class="company">
+        <span class="badge">Société</span>
+        <h2>Collège</h2>
+        <div class="muted">Administration et applications du collège</div>
+        <div class="company-admin">
+          <b>Administration Collège</b>
+          <div class="muted" style="margin:5px 0 9px">Niveau 2 · administration propre à la société</div>
+          <a class="btn primary" href="../">Ouvrir Admin Collège</a>
+        </div>
+        <div class="sites">
+          <div class="site"><div><b>Gestion Collège</b><span class="muted">Stocks, achats, applications et pilotage</span></div><a class="btn secondary" href="../">Ouvrir</a></div>
+          <div class="site"><div><b>Secrétariat Collège</b><span class="muted">Commandes et lecture des factures</span></div><a class="btn secondary" href="../../secretariat/">Ouvrir</a></div>
+          <div class="site"><div><b>Comptabilité Collège</b><span class="muted">Factures fournisseurs et comptabilité</span></div><a class="btn secondary" href="../../comptabilite/">Ouvrir</a></div>
+          <div class="site"><div><b>Sites publics Collège</b><span class="muted">Applications, liens et QR codes associés</span></div><a class="btn secondary" href="../acces.html">Voir</a></div>
+        </div>
+      </article>
+      <article class="company">
+        <span class="badge">Société</span>
+        <h2>Marne Invest</h2>
+        <div class="muted">Administration de la société immobilière</div>
+        <div class="company-admin">
+          <b>Administration Marne Invest</b>
+          <div class="muted" style="margin:5px 0 9px">Niveau 2 · administration propre à la société</div>
+          <a class="btn primary" href="../marne-invest/">Ouvrir Admin Marne Invest</a>
+        </div>
+        <div class="sites">
+          <div class="site"><div><b>Gestion locative</b><span class="muted">Locataires, logements, IRL et suivi</span></div><a class="btn secondary" href="../marne-invest/">Ouvrir</a></div>
+        </div>
+      </article>
+    </div>
+  </section>
+  <div class="footer-note"><b>Règle d’architecture</b><div class="muted" style="margin-top:5px">Holding → Société → Administration de société → Sites / applications de la société. Les droits devront ensuite être limités côté serveur selon cette hiérarchie.</div></div>
+</main>
+<script>
+const CONTEXT_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-dashboard-api?action=context';
+const token=localStorage.getItem('college_admin_token')||'';
+async function verifyHolding(){
+  const status=document.getElementById('status');
+  if(!token){location.replace('../');return}
+  try{
+    const response=await fetch(CONTEXT_API,{headers:{authorization:'Bearer '+token},cache:'no-store'});
+    const data=await response.json().catch(()=>({error:'Réponse invalide'}));
+    if(response.status===401){localStorage.removeItem('college_admin_token');location.replace('../');return}
+    if(!response.ok)throw new Error(data.error||'Erreur serveur');
+    const user=data.current_user||{};
+    if(user.username!=='admin'||user.is_super_admin!==true)throw new Error('Accès réservé à l’administration Holding.');
+    status.textContent='Connecté : '+String(user.display_name||user.username);
+    document.getElementById('holdingContent').hidden=false;
+  }catch(error){status.className='status err';status.textContent=error.message||String(error)}
+}
+function logoutHolding(){localStorage.removeItem('college_admin_token');location.replace('../')}
+verifyHolding();
+</script>
+</body>
+</html>
