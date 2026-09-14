@@ -7,11 +7,11 @@
 </style>
 </head>
 <body>
-<section id="login" class="login"><div class="box"><h1>Marne Invest</h1><p class="muted">Administration — gestion locative IRL</p><label>Utilisateur</label><input id="user" value="marne-invest" autocomplete="username"><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div id="loginStatus" class="status"></div></div></section>
+<section id="login" class="login"><div class="box"><h1>Marne Invest</h1><p class="muted">Administration — gestion locative IRL</p><label>Utilisateur</label><input id="user" value="holding-admin" autocomplete="username"><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div id="loginStatus" class="status"></div></div></section>
 <section id="app" class="shell hide"><aside class="side"><div class="brand">Marne Invest</div><div class="brand-sub">Gestion locative</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="pageTitle">Tableau de bord</h1><div id="serverTime" class="muted"></div></div><div class="actions"><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><div id="content"></div></main></section><div id="modal"></div>
 <script>
 (()=>{'use strict';
-const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
+const API='https://ojjbnwpkfvzjfukgqddz.supabase.co/functions/v1/rental-admin-api';
 let token=localStorage.getItem('marne_invest_admin_token')||'',db=null,page='dashboard',selectedRow=null;
 const pages=[['dashboard','Tableau de bord'],['tenants','Suivi locataires'],['properties','Dossiers logement'],['config','Configuration'],['guide','Guide / commandes']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
