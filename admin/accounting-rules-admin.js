@@ -1,61 +1,80 @@
-const ADMIN_RULES_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-accounting-rules';
-const ADMIN_CONTROL_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-control';
-const SYSTEM_MODE_API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/system-mode';
-let adminAccountingRules=[];
-let adminSystemMode={test_mode:false,test_mode_started_at:null,test_mode_started_by:null,test_mode_reason:null};
-async function adminRulesApi(action='list',method='GET',body){const r=await fetch(ADMIN_RULES_API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
-async function adminControlApi(action='overview',method='GET',body){const u=new URL(ADMIN_CONTROL_API);u.searchParams.set('action',action);const r=await fetch(u,{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
-async function adminSystemModeApi(action='admin-status',method='GET',body){const u=new URL(SYSTEM_MODE_API);u.searchParams.set('action',action);const r=await fetch(u,{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
-if(!pages.some(x=>x[0]==='accountingRules'))pages.splice(Math.max(0,pages.length-1),0,['accountingRules','Règles fournisseurs']);
-if(!pages.some(x=>x[0]==='accountingControl'))pages.splice(Math.max(0,pages.length-1),0,['accountingControl','Sécurité comptable']);
-if(!pages.some(x=>x[0]==='windowsAgent'))pages.splice(Math.max(0,pages.length-1),0,['windowsAgent','Agent Windows factures']);
-if(!pages.some(x=>x[0]==='accessLinks'))pages.splice(Math.max(0,pages.length-1),0,['accessLinks','Accès & liens']);
-const _adminBaseRender=render;
-render=function(){
-  if(page==='accessLinks'){
-    if(!db)return;
-    document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
-    $('pageTitle').textContent='Accès & liens';
-    $('content').innerHTML='<iframe src="acces.html" style="width:100%;min-height:900px;border:0;border-radius:12px;background:#f4f6f8" title="Accès et liens"></iframe>';
-    return;
+// Compatibilite Gestion Holding -> backend EDM actif.
+// La cle ci-dessous est la cle anonyme publique Supabase, jamais une cle service_role.
+const GH_SUPABASE_URL='https://ojjbnwpkfvzjfukgqddz.supabase.co';
+const GH_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYXNlIiwicmVmIjoib2pqYm53cGtmdnpqZnVrZ3FkZHoiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc4MzE3MjQ0OSwiZXhwIjoyMDk4NzQ4NDQ5fQ.oHKf-cT3VpyoxKrOdqj1qgHZ5TzekKsVW7XhVLNeldA';
+const GH_ADMIN_API=GH_SUPABASE_URL+'/functions/v1/admin-api';
+
+function ghHeaders(includeSession=true){
+  const h={
+    'content-type':'application/json',
+    'apikey':GH_ANON_KEY,
+    'authorization':'Bearer '+GH_ANON_KEY
+  };
+  if(includeSession&&token)h['x-admin-session']=token;
+  return h;
+}
+
+api=async function(action,method='GET',body){
+  const r=await window.fetch(GH_ADMIN_API+'?action='+encodeURIComponent(action),{
+    method,
+    headers:ghHeaders(action!=='login'),
+    body:body?JSON.stringify(body):undefined,
+    cache:'no-store'
+  });
+  const j=await r.json().catch(()=>({error:'Reponse invalide'}));
+  if(r.status===401&&action!=='login'){
+    logout();
+    throw new Error('Session expiree');
   }
-  if(page==='windowsAgent'){
-    if(!db)return;
-    document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
-    $('pageTitle').textContent='Agent Windows factures';
-    $('content').innerHTML='<div class="card"><h3>Import automatique Windows</h3><p class="muted">Installe un agent sur le PC Comptabilité pour surveiller un dossier de factures même lorsque le navigateur est fermé.</p></div><br><iframe src="windows-agent/" style="width:100%;min-height:780px;border:0;border-radius:12px;background:#f4f6f8" title="Agent Windows factures"></iframe>';
-    return;
-  }
-  if(page==='accountingControl'){
-    if(!db)return;
-    document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));
-    $('pageTitle').textContent='Sécurité comptable';
-    renderAdminAccountingControl();return;
-  }
-  if(page!=='accountingRules')return _adminBaseRender();if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent='Règles fournisseurs';renderAdminAccountingRules()
+  if(!r.ok)throw new Error(j.error||'Erreur serveur');
+  return j;
 };
-const _adminBaseInitNav=initNav;
-initNav=function(){_adminBaseInitNav()};
-if(token&&$('nav'))initNav();
-async function renderAdminAccountingControl(){
-  $('content').innerHTML='<div class="card"><h3>Sécurité comptable</h3><div class="muted">Chargement…</div></div>';
-  try{const d=await adminControlApi('overview'),closures=d.closures||[],batches=d.batches||[],an=d.anomalies||[];$('content').innerHTML=`<div class="grid"><div class="card"><div class="muted">Anomalies détectées</div><div class="kpi ${an.length?'alert':''}">${an.length}</div></div><div class="card"><div class="muted">Périodes clôturées</div><div class="kpi">${closures.filter(x=>x.active).length}</div></div><div class="card"><div class="muted">Lots OD générés</div><div class="kpi">${batches.filter(x=>x.status==='generated').length}</div></div><div class="card"><div class="muted">Lots importés</div><div class="kpi">${batches.filter(x=>x.status==='imported').length}</div></div></div><br><div class="card"><h3>Périodes comptables</h3><p class="muted">Une période clôturée bloque les modifications comptables. La réouverture est réservée à l’administrateur et nécessite un motif enregistré dans l’audit.</p></div><br><div class="table-wrap"><table><thead><tr><th>Période</th><th>État</th><th>Clôturée par</th><th>Date</th><th>Dernière réouverture</th><th></th></tr></thead><tbody>${closures.length?closures.map(c=>`<tr><td><b>${esc(String(c.period_month).slice(0,7))}</b></td><td>${c.active?'<span class="pill">Clôturée</span>':'Ouverte'}</td><td>${esc(c.closed_by||'')}</td><td>${c.closed_at?new Date(c.closed_at).toLocaleString('fr-FR'):'—'}</td><td>${c.reopened_at?new Date(c.reopened_at).toLocaleString('fr-FR')+' · '+esc(c.reopen_reason||''):'—'}</td><td>${c.active?`<button class="btn danger" onclick="adminReopenAccountingPeriod('${String(c.period_month).slice(0,7)}')">Rouvrir</button>`:''}</td></tr>`).join(''):'<tr><td colspan="6" class="muted">Aucune période clôturée.</td></tr>'}</tbody></table></div>`}catch(e){$('content').innerHTML=`<div class="card"><h3>Sécurité comptable</h3><div class="err">${esc(e.message)}</div></div>`}}
-async function adminReopenAccountingPeriod(month){const reason=prompt(`Réouverture de la période ${month}.\n\nMotif obligatoire :`,'Correction comptable exceptionnelle');if(reason===null)return;if(reason.trim().length<3)return alert('Motif obligatoire.');if(!confirm(`Rouvrir ${month} ?\n\nLes écritures de cette période pourront de nouveau être modifiées. Cette action sera enregistrée dans le journal d’audit.`))return;try{await adminControlApi('reopen-period','POST',{month,reason:reason.trim()});await renderAdminAccountingControl()}catch(e){alert(e.message)}}
-async function renderAdminAccountingRules(){
-  $('content').innerHTML='<div class="card"><h3>Règles fournisseurs</h3><div class="muted">Chargement…</div></div>';
-  try{const j=await adminRulesApi('list');adminAccountingRules=j.rules||[];const rules=[...adminAccountingRules].sort((a,b)=>String(a.supplier_name||'').localeCompare(String(b.supplier_name||''),'fr'));const withCharges=rules.filter(r=>(r.charge_accounts||[]).length).length;$('content').innerHTML=`<div class="card"><div class="actions" style="justify-content:space-between"><div><h3>Règles fournisseurs</h3><div class="muted">${rules.length} fournisseurs · ${withCharges} avec au moins un compte de charge.</div></div><div class="actions"><input id="adminRuleSearch" style="max-width:300px" placeholder="Rechercher"><button class="btn primary" onclick="adminEditSupplier()">+ Nouveau fournisseur</button></div></div></div><br><div class="table-wrap"><table><thead><tr><th>Fournisseur</th><th>Compte fournisseur</th><th>Comptes de charges</th><th>TVA</th><th>Journal</th><th></th></tr></thead><tbody id="adminRulesBody">${rules.map(adminRuleRow).join('')}</tbody></table></div>`;$('adminRuleSearch').oninput=e=>adminFilterRules(e.target.value)}catch(e){$('content').innerHTML=`<div class="card"><h3>Règles fournisseurs</h3><div class="err">${esc(e.message)}</div></div>`}}
-function adminRuleRow(r){const charges=r.charge_accounts||[],search=[r.supplier_name,r.supplier_account,r.vat_account,r.journal,...charges.flatMap(c=>[c.expense_account,c.expense_label])].join(' ').toLowerCase();return `<tr data-search="${esc(search)}"><td><b>${esc(r.supplier_name||'')}</b></td><td>${esc(r.supplier_account||'')}</td><td>${charges.length?charges.map(c=>`<div><b>${esc(c.expense_account)}</b> · ${esc(c.expense_label||'')}${c.is_default?' <span class="pill">Défaut</span>':''}</div>`).join(''):'<span class="muted">Aucun compte</span>'}</td><td>${esc(r.vat_account||'44566000')}</td><td>${esc(r.journal||'AC')}</td><td><button class="btn secondary" onclick="adminEditSupplier('${r.id}')">Modifier</button></td></tr>`}
-function adminFilterRules(v){const q=String(v||'').toLowerCase().trim();document.querySelectorAll('#adminRulesBody tr').forEach(tr=>tr.style.display=!q||String(tr.dataset.search||'').includes(q)?'':'none')}
-function adminChargeRow(c={}){const rid=crypto.randomUUID();return `<div data-admin-charge="${rid}" style="display:grid;grid-template-columns:1fr 1.4fr auto auto;gap:8px;align-items:center;margin:8px 0"><input class="ar-account" placeholder="Compte de charge" value="${esc(c.expense_account||'')}"><input class="ar-label" placeholder="Libellé" value="${esc(c.expense_label||'')}"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input class="ar-default" type="radio" name="adminDefaultCharge" ${c.is_default?'checked':''} style="width:auto"> Défaut</label><button class="btn danger" type="button" onclick="document.querySelector('[data-admin-charge=\'${rid}\']')?.remove()">Supprimer</button></div>`}
-function adminAddCharge(){const box=$('adminChargeRows');box.insertAdjacentHTML('beforeend',adminChargeRow())}
-function adminEditSupplier(id=''){const r=id?adminAccountingRules.find(x=>x.id===id):null;const charges=r?.charge_accounts||[];$('modal').innerHTML=`<div class="modal"><div class="box"><h2>${r?'Modifier le fournisseur':'Nouveau fournisseur'}</h2><div class="fields"><div class="full"><label>Nom du fournisseur</label><input id="arName" value="${esc(r?.supplier_name||'')}"></div><div><label>Compte fournisseur</label><input id="arSupplier" value="${esc(r?.supplier_account||'401')}"></div><div><label>Compte TVA</label><input id="arVat" value="${esc(r?.vat_account||'44566000')}"></div><div><label>Journal</label><input id="arJournal" value="${esc(r?.journal||'AC')}"></div></div><div class="section-title">Comptes de charges autorisés</div><div class="muted">Ajoutez plusieurs comptes si nécessaire. Un seul peut être marqué par défaut.</div><div id="adminChargeRows">${charges.map(adminChargeRow).join('')}</div><button class="btn secondary" type="button" onclick="adminAddCharge()">+ Ajouter un compte de charge</button><div class="actions" style="margin-top:16px"><button class="btn primary" onclick="adminSaveSupplier('${id}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="adminRuleStatus" class="status"></div></div></div>`}
-function adminCollectCharges(){return [...document.querySelectorAll('[data-admin-charge]')].map(r=>({expense_account:r.querySelector('.ar-account').value.trim(),expense_label:r.querySelector('.ar-label').value.trim(),is_default:r.querySelector('.ar-default').checked})).filter(x=>x.expense_account)}
-async function adminSaveSupplier(id=''){const msg=$('adminRuleStatus');try{msg.textContent='Enregistrement…';msg.className='status';await adminRulesApi('save','POST',{id,supplier_name:$('arName').value.trim(),supplier_account:$('arSupplier').value.trim(),vat_account:$('arVat').value.trim(),journal:$('arJournal').value.trim(),charge_accounts:adminCollectCharges()});closeModal();await renderAdminAccountingRules()}catch(e){msg.className='status err';msg.textContent=e.message}}
-const _adminBaseSettings=renderSettings;
-renderSettings=function(){_adminBaseSettings();const content=$('content');if(!content)return;content.insertAdjacentHTML('afterbegin',`<div id="testModeAdminCard" class="card" style="max-width:760px;margin-bottom:14px"><h3>Mode test global</h3><p class="muted">Permet de parcourir et tester le système sans modifier les données réelles. Les écritures sont bloquées à la fois dans l’interface et directement dans la base de données.</p><div id="testModeAdminStatus" class="status">Chargement…</div></div>`);loadAdminSystemMode()};
-async function loadAdminSystemMode(){const box=$('testModeAdminStatus');if(!box)return;try{adminSystemMode=await adminSystemModeApi('admin-status');drawAdminSystemMode()}catch(e){box.className='status err';box.textContent=e.message}}
-function drawAdminSystemMode(){const box=$('testModeAdminStatus');if(!box)return;const on=!!adminSystemMode.test_mode;box.className='status';box.innerHTML=`<div style="padding:12px;border:1px solid ${on?'#d18b8b':'#b8d7c2'};border-radius:10px;background:${on?'#fff2f2':'#f2fbf5'}"><div style="font-weight:800;font-size:16px;color:${on?'#8a1c1c':'#176b3a'}">${on?'MODE TEST ACTIF':'Mode production actif'}</div>${on?`<div class="muted" style="margin-top:5px">Activé par ${esc(adminSystemMode.test_mode_started_by||'administrateur')} le ${adminSystemMode.test_mode_started_at?new Date(adminSystemMode.test_mode_started_at).toLocaleString('fr-FR'):'—'}.</div><div style="margin-top:5px"><b>Motif :</b> ${esc(adminSystemMode.test_mode_reason||'—')}</div>`:'<div class="muted" style="margin-top:5px">Les opérations autorisées modifient actuellement les données réelles.</div>'}<div class="actions" style="margin-top:12px">${on?'<button class="btn primary" onclick="setAdminSystemMode(false)">Repasser en production</button>':'<button class="btn danger" onclick="setAdminSystemMode(true)">Activer le mode test</button>'}</div></div>`}
-async function setAdminSystemMode(enabled){let reason='';if(enabled){reason=prompt('Motif du mode test (obligatoire) :','Tests avant mise en production')||'';if(reason.trim().length<3)return alert('Motif obligatoire.');if(!confirm('ACTIVER LE MODE TEST GLOBAL ?\n\nToutes les écritures métier réelles seront bloquées : stocks, achats, factures, comptabilité, règles, OD et clôtures. Les lectures et connexions resteront disponibles.'))return}else if(!confirm('REPASSER EN MODE PRODUCTION ?\n\nLes opérations métier pourront de nouveau modifier les données réelles.'))return;try{const j=await adminSystemModeApi('set','POST',{enabled,reason:reason.trim()});adminSystemMode={...adminSystemMode,test_mode:!!j.test_mode,test_mode_started_at:j.started_at||null,test_mode_started_by:enabled?'admin':null,test_mode_reason:j.reason||null};if(window.refreshGestionCollegeTestMode)await window.refreshGestionCollegeTestMode();await loadAdminSystemMode()}catch(e){alert(e.message)}}
-if(!document.querySelector('script[data-global-test-mode]')){const s=document.createElement('script');s.src='../system-test-mode.js?v=2';s.dataset.globalTestMode='1';document.head.appendChild(s)}
-for(const [src,key] of [['./multi-app-admin.js?v=1','multiAppAdmin'],['./subcategories-admin.js?v=1','subcategoriesAdmin']]){if(!document.querySelector(`script[data-${key}]`)){const s=document.createElement('script');s.src=src;s.defer=true;s.dataset[key]='1';document.head.appendChild(s)}}
-if(!document.querySelector('script[data-control-center]')){const s=document.createElement('script');s.src='./control-center.js?v=1';s.defer=true;s.dataset.controlCenter='1';document.head.appendChild(s)}
+
+siteApi=async function(action='list',method='GET',body){
+  if(action==='list'){
+    const j=await api('data');
+    return {applications:j.applications||[],application_products:j.application_products||[]};
+  }
+  if(action==='save'){
+    const payload={...(body||{})};
+    if(typeof payload.services==='string')payload.services=payload.services.split(',').map(v=>v.trim()).filter(Boolean);
+    return api('save-application','POST',payload);
+  }
+  if(action==='delete'){
+    const id=String(body?.id||'');
+    const a=db?.applications?.find(x=>x.id===id);
+    if(!a)throw new Error('Site introuvable');
+    return api('save-application','POST',{
+      id:a.id,
+      code:a.code,
+      name:a.name,
+      category_id:a.category_id,
+      active:false,
+      color:a.color,
+      services:a.services||[],
+      description:a.description||'',
+      site_options:a.site_options||{},
+      product_ids:[]
+    });
+  }
+  throw new Error('Action site inconnue');
+};
+
+const ghBaseInitNav=initNav;
+initNav=function(){
+  ghBaseInitNav();
+  const nav=document.getElementById('nav');
+  if(nav&&!nav.querySelector('[data-gh-holding]')){
+    const b=document.createElement('button');
+    b.type='button';
+    b.dataset.ghHolding='1';
+    b.textContent='Retour Holding';
+    b.onclick=()=>{window.location.href='holding/';};
+    nav.appendChild(b);
+  }
+};
+
+if(token){
+  initNav();
+  setTimeout(()=>refresh().catch(()=>{}),0);
+}
