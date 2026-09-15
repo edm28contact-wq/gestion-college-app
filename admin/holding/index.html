@@ -1,159 +1,23 @@
 <!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Administration centrale</title>
-<style>
-:root{font-family:Inter,system-ui,Arial,sans-serif;color:#17202a;background:#f4f6f8;--p:#1f2b38;--line:#cbd5df;--muted:#6b7785;--ok:#176b3a;--bad:#a32929;--warn:#8a5b00}*{box-sizing:border-box}body{margin:0}.hide{display:none!important}.login{min-height:100vh;display:grid;place-items:center;padding:20px}.login .box{width:min(420px,100%);background:#fff;border:1px solid #d7dee5;border-radius:16px;padding:24px;box-shadow:0 12px 34px #00000012}.wrap{max-width:1180px;margin:auto;padding:24px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}.actions,.toolbar{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#17202a}.danger{background:#fdeaea;color:var(--bad)}.muted{color:var(--muted);font-size:13px}.status{min-height:22px;margin:10px 0;padding:10px 12px;border-radius:9px;background:#fff;border:1px solid #dde3e8}.status.ok{color:var(--ok)}.status.warn{color:var(--warn);background:#fff8e1;border-color:#ead58e}.status.err{color:var(--bad);background:#fff1f1;border-color:#efc2c2}.org{display:grid;gap:26px}.holding{background:#fff;border:2px solid #9aa8b5;border-radius:16px;padding:18px;text-align:center;max-width:520px;margin:auto}.holding h1{margin:0 0 5px;font-size:26px}.connector{width:2px;height:30px;background:var(--line);margin:-8px auto -2px}.companies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}.company{position:relative;background:#fff;border:1px solid #d7dee5;border-radius:14px;padding:16px}.company:before{content:'';position:absolute;top:-20px;left:50%;width:2px;height:20px;background:var(--line)}.company h2{margin:0 0 5px}.company-admin{padding:12px;border:1px solid #bcc8d2;border-radius:10px;background:#f8fafb;margin:14px 0}.sites{display:grid;gap:9px}.site{border:1px solid #dde3e8;border-radius:10px;padding:11px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px}.site b{display:block}.site .btn{white-space:nowrap;padding:8px 11px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2f5;font-size:12px;font-weight:700}.card{background:#fff;border:1px solid #d7dee5;border-radius:14px;padding:16px}.accounts{margin-top:24px}.account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.account{border:1px solid #dde3e8;border-radius:12px;padding:14px;background:#fff}.account-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.account h3{margin:0 0 5px}.account .meta{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2f5;font-size:12px}.pill.ok{background:#e8f5ed;color:#176b3a}.pill.off{background:#fdeaea;color:#8a2525}.footer-note{margin-top:24px;background:#fff;border:1px solid #dde3e8;border-radius:12px;padding:14px}.modal{position:fixed;inset:0;background:#0007;display:grid;place-items:center;padding:18px;z-index:50}.modal .box{width:min(720px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:14px;padding:18px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.full{grid-column:1/-1}label{display:block;font-size:12px;color:#64707c;margin-bottom:5px}input,select{width:100%;padding:10px;border:1px solid #c7d0d9;border-radius:9px;background:#fff;font:inherit}.check{display:flex;align-items:center;gap:8px;border:1px solid #dde3e8;border-radius:9px;padding:9px;background:#f9fafb}.check input{width:auto}.perm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.login input{margin-bottom:12px}@media(max-width:760px){.wrap{padding:14px}.top{flex-direction:column}.companies,.account-grid{grid-template-columns:1fr}.company:before{display:none}.site{align-items:flex-start;flex-direction:column}.site .btn{width:100%;text-align:center}.fields,.perm-grid{grid-template-columns:1fr}.full{grid-column:auto}}
-</style>
-</head>
-<body>
-<section id="login" class="login">
-  <div class="box">
-    <h1>Administration centrale</h1>
-    <p class="muted">Accès réservé au compte global d’administration</p>
-    <label>Identifiant</label>
-    <input id="loginUser" value="holding-admin" autocomplete="username">
-    <label>Mot de passe</label>
-    <input id="loginPass" type="password" autocomplete="current-password">
-    <button class="btn primary" style="width:100%" onclick="loginHolding()">Se connecter</button>
-    <div id="loginStatus" class="status hide"></div>
-  </div>
-</section>
-
-<main id="app" class="wrap hide">
-  <div class="top">
-    <div>
-      <h1 style="margin:0 0 5px">Administration centrale</h1>
-      <div class="muted">Gestion centrale des sociétés, des applications et des comptes</div>
-    </div>
-    <div class="actions"><a class="btn secondary" href="../">Administration Collège</a><button class="btn secondary" onclick="refreshAccounts()">Actualiser</button><button class="btn secondary" onclick="logoutHolding()">Déconnexion</button></div>
-  </div>
-
-  <div id="status" class="status ok">Portail d’administration centrale actif.</div>
-
-  <section class="org">
-    <div class="holding">
-      <span class="badge">Niveau 1</span>
-      <h1>Administration centrale</h1>
-      <div class="muted">Le compte technique <b>holding-admin</b> conserve tous les accès. Les autres comptes sont limités aux modules autorisés ci-dessous.</div>
-    </div>
-    <div class="connector"></div>
-    <div class="companies">
-      <article class="company">
-        <span class="badge">Société</span>
-        <h2>Collège</h2>
-        <div class="muted">Administration et applications du collège</div>
-        <div class="company-admin"><b>Administration Collège</b><div class="muted" style="margin:5px 0 9px">Stocks, achats, catégories, applications et pilotage</div><a class="btn primary" href="../">Ouvrir l’administration Collège</a></div>
-        <div class="sites">
-          <div class="site"><div><b>Accès et liens Collège</b><span class="muted">Sites publics et espaces protégés</span></div><a class="btn secondary" href="../acces.html">Ouvrir</a></div>
-          <div class="site"><div><b>Secrétariat Collège</b><span class="muted">Commandes et lecture des factures</span></div><a class="btn secondary" href="../../secretariat/">Ouvrir</a></div>
-          <div class="site"><div><b>Comptabilité Collège</b><span class="muted">Factures fournisseurs et comptabilité</span></div><a class="btn secondary" href="../../comptabilite/">Ouvrir</a></div>
-        </div>
-      </article>
-      <article class="company">
-        <span class="badge">Société</span>
-        <h2>Marne Invest</h2>
-        <div class="muted">Administration de la société immobilière</div>
-        <div class="company-admin"><b>Administration Marne Invest</b><div class="muted" style="margin:5px 0 9px">Gestion locative, logements, locataires et IRL</div><a class="btn primary" href="../marne-invest/">Ouvrir l’administration Marne Invest</a></div>
-        <div class="sites">
-          <div class="site"><div><b>Gestion locative</b><span class="muted">Locataires, logements, IRL et suivi</span></div><a class="btn secondary" href="../marne-invest/">Ouvrir</a></div>
-          <div class="site"><div><b>Comptabilité Marne Invest</b><span class="muted">Recettes, charges, factures et exports</span></div><a class="btn secondary" href="../marne-invest/comptabilite/">Ouvrir</a></div>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <section class="card accounts">
-    <div class="top" style="margin-bottom:12px">
-      <div><h2 style="margin:0 0 5px">Comptes et autorisations</h2><div class="muted">Mot de passe minimum : 10 caractères. Les mots de passe ne sont jamais affichés après enregistrement.</div></div>
-      <div class="actions"><button class="btn primary" onclick="openPreset('admin-college')">Créer le compte Administration Collège</button><button class="btn primary" onclick="openPreset('secretariat')">Créer le compte Secrétariat</button><button class="btn primary" onclick="openPreset('comptabilite')">Créer le compte Comptabilité</button><button class="btn primary" onclick="openPreset('marne-admin')">Créer le compte Administration Marne Invest</button></div>
-    </div>
-    <div id="accounts" class="account-grid"></div>
-  </section>
-
-  <div class="footer-note"><b>Règle d’accès</b><div class="muted" style="margin-top:5px">Administration centrale → utilisateur → droits autorisés. Toute désactivation ou modification sensible invalide les anciennes sessions du compte.</div></div>
-</main>
-<div id="modal"></div>
-
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Administration centrale</title>
+<style>:root{font-family:system-ui,Arial;color:#17202a;background:#f4f6f8;--p:#1f2b38;--ok:#176b3a;--bad:#a32929;--muted:#6b7785}*{box-sizing:border-box}body{margin:0}.hide{display:none!important}.login{min-height:100vh;display:grid;place-items:center;padding:20px}.box,.card{background:#fff;border:1px solid #d7dee5;border-radius:14px;padding:18px}.login .box{width:min(440px,100%)}.wrap{max-width:1180px;margin:auto;padding:22px}.top,.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;color:inherit}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1}.danger{background:#fdeaea;color:var(--bad)}.muted{color:var(--muted);font-size:13px}.status{min-height:22px;margin-top:10px}.ok{color:var(--ok)}.err{color:var(--bad)}input,select{width:100%;padding:10px;border:1px solid #c7d0d9;border-radius:9px;font:inherit}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.account{border:1px solid #dde3e8;border-radius:12px;padding:14px}.pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2f5;font-size:12px}.pill.ok{background:#e8f5ed;color:#176b3a}.pill.off{background:#fdeaea;color:#8a2525}.modal{position:fixed;inset:0;background:#0007;display:grid;place-items:center;padding:18px}.modal .box{width:min(700px,100%);max-height:92vh;overflow:auto}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.full{grid-column:1/-1}.perm{display:grid;grid-template-columns:1fr 1fr;gap:7px}.perm label{border:1px solid #dde3e8;border-radius:9px;padding:8px}.perm input{width:auto}.companies{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.company{background:#fff;border:1px solid #d7dee5;border-radius:14px;padding:16px}@media(max-width:760px){.grid,.companies,.fields,.perm{grid-template-columns:1fr}.wrap{padding:12px}}</style></head><body>
+<section id="login" class="login"><div class="box"><h1>Administration centrale</h1><p class="muted">Accès réservé au compte global d’administration.</p><label>Identifiant</label><input id="loginUser" value="holding-admin" autocomplete="username"><br><br><label>Mot de passe</label><input id="loginPass" type="password" autocomplete="current-password"><br><br><button class="btn primary" style="width:100%" onclick="loginHolding()">Se connecter</button><div id="loginStatus" class="status"></div></div></section>
+<section id="passwordChange" class="login hide"><div class="box"><h1>Sécurisation du compte Holding</h1><p class="muted">Le mot de passe actuel doit être remplacé avant tout accès aux opérations sensibles. Minimum : 10 caractères.</p><label>Nouveau mot de passe</label><input id="new1" type="password" autocomplete="new-password"><br><br><label>Confirmer</label><input id="new2" type="password" autocomplete="new-password"><br><br><button class="btn primary" style="width:100%" onclick="changeHoldingPassword()">Enregistrer</button><div id="passwordStatus" class="status"></div></div></section>
+<main id="app" class="wrap hide"><div class="top"><div><h1>Administration centrale</h1><div class="muted">Gestion des accès et des modules Société Collège.</div></div><div class="actions"><a class="btn secondary" href="../">Administration Collège</a><a class="btn secondary" href="../../secretariat/">Secrétariat</a><a class="btn secondary" href="../../comptabilite/">Comptabilité</a><button class="btn secondary" onclick="refreshAccounts()">Actualiser</button><button class="btn secondary" onclick="logoutHolding()">Déconnexion</button></div></div><div id="status" class="status ok"></div><section class="companies"><div class="company"><h2>Société Collège</h2><p class="muted">Stocks, applications, secrétariat et comptabilité.</p><div class="actions"><a class="btn primary" href="../">Administration Collège</a><a class="btn secondary" href="../acces.html">Accès et liens</a></div></div><div class="company"><h2>Marne Invest</h2><p class="muted">Module conservé séparément. Aucune modification n’est effectuée ici pendant la finalisation du Collège.</p></div></section><br><section class="card"><div class="top"><div><h2>Comptes et autorisations</h2><div class="muted">Les opérations sensibles invalident les anciennes sessions.</div></div><div class="actions"><button class="btn primary" onclick="openPreset('admin-college')">Compte Administration Collège</button><button class="btn primary" onclick="openPreset('secretariat')">Compte Secrétariat</button><button class="btn primary" onclick="openPreset('comptabilite')">Compte Comptabilité</button></div></div><br><div id="accounts" class="grid"></div></section></main><div id="modal"></div>
 <script>
-const SUPABASE='https://ojjbnwpkfvzjfukgqddz.supabase.co';
-const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYXNlIiwicmVmIjoib2pqYm53cGtmdnpqZnVrZ3FkZHoiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc4MzE3MjQ0OSwiZXhwIjoyMDk4NzQ4NDQ5fQ.oHKf-cT3VpyoxKrOdqj1qgHZ5TzekKsVW7XhVLNeldA';
-const ADMIN_API=SUPABASE+'/functions/v1/admin-api';
-const HOLDING_API=SUPABASE+'/functions/v1/holding-admin-api';
-let token=localStorage.getItem('holding_admin_token')||'',accounts=[];
-const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const presets={
-  'admin-college':{username:'admin-college',display_name:'Administration Collège',role:'admin',permissions:{college_admin:true}},
-  'secretariat':{username:'secretariat',display_name:'Secrétariat Collège',role:'secretariat',permissions:{secretariat:true}},
-  'comptabilite':{username:'comptabilite',display_name:'Comptabilité Collège',role:'comptabilite',permissions:{accounting:true}},
-  'marne-admin':{username:'marne-admin',display_name:'Administration Marne Invest',role:'marne_admin',permissions:{marne:true,marne_invest:true,marne_accounting:true}}
-};
-const permLabels={college_admin:'Administration Collège',secretariat:'Secrétariat Collège',accounting:'Comptabilité Collège',marne:'Administration Marne Invest',marne_invest:'Gestion locative Marne Invest',marne_accounting:'Comptabilité Marne Invest'};
-const roleLabels={holding_admin:'Administration centrale',admin:'Administration Collège',secretariat:'Secrétariat',comptabilite:'Comptabilité Collège',marne_admin:'Administration Marne Invest',user:'Utilisateur personnalisé'};
-
-async function loginHolding(){
-  const status=$('loginStatus');status.className='status';status.textContent='Connexion…';
-  try{
-    const username=$('loginUser').value.trim().toLowerCase();
-    if(username!=='holding-admin')throw new Error('Utilisez le compte d’administration centrale.');
-    const r=await fetch(ADMIN_API+'?action=login',{method:'POST',headers:{'content-type':'application/json','apikey':ANON,'authorization':'Bearer '+ANON},body:JSON.stringify({username,password:$('loginPass').value}),cache:'no-store'});
-    const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(!r.ok)throw new Error(j.error||'Connexion refusée');
-    token=j.token;localStorage.setItem('holding_admin_token',token);$('loginPass').value='';await enterApp();
-  }catch(e){status.className='status err';status.textContent=e.message||'Erreur de connexion'}
-}
-
-async function holdingApi(action,method='GET',body){
-  const r=await fetch(HOLDING_API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json','x-admin-session':token},body:body?JSON.stringify(body):undefined,cache:'no-store'});
-  const j=await r.json().catch(()=>({error:'Réponse invalide'}));
-  if(r.status===401){logoutHolding();throw new Error('Session d’administration centrale expirée')}
-  if(!r.ok)throw new Error(j.error||'Erreur serveur');return j;
-}
-
-async function enterApp(){
-  try{await refreshAccounts();$('login').classList.add('hide');$('app').classList.remove('hide')}catch(e){localStorage.removeItem('holding_admin_token');token='';throw e}
-}
-function logoutHolding(){token='';accounts=[];localStorage.removeItem('holding_admin_token');$('app').classList.add('hide');$('login').classList.remove('hide')}
-
-async function refreshAccounts(){
-  const j=await holdingApi('accounts');accounts=j.accounts||[];renderAccounts();$('status').className='status ok';$('status').textContent='Administration centrale connectée · comptes chargés : '+accounts.length;
-}
-function renderAccounts(){
-  const wanted=['holding-admin','admin-college','secretariat','comptabilite','marne-admin'];
-  const map=new Map(accounts.map(a=>[a.username,a]));
-  $('accounts').innerHTML=wanted.map(username=>{
-    const a=map.get(username),preset=presets[username];
-    if(!a){return `<div class="account"><div class="account-head"><div><h3>${esc(preset?.display_name||username)}</h3><div class="muted">${esc(username)}</div></div><span class="pill off">Non créé</span></div><div class="meta">${Object.keys(preset?.permissions||{}).map(p=>`<span class="pill">${esc(permLabels[p]||p)}</span>`).join('')}</div><button class="btn primary" onclick="openPreset('${esc(username)}')">Créer ce compte</button></div>`}
-    const perms=Object.keys(a.permissions||{}).filter(k=>a.permissions[k]===true).map(k=>`<span class="pill">${esc(permLabels[k]||k)}</span>`).join('');
-    const protectedAccount=username==='holding-admin';
-    return `<div class="account"><div class="account-head"><div><h3>${esc(a.display_name||username)}</h3><div class="muted">${esc(username)} · ${esc(roleLabels[a.role]||a.role||'')}</div></div><span class="pill ${a.active?'ok':'off'}">${a.active?'Actif':'Désactivé'}</span></div><div class="meta">${protectedAccount?'<span class="pill">Tous les accès</span>':(perms||'<span class="pill">Aucun droit</span>')}</div><div class="muted">${a.must_change_password?'Changement de mot de passe demandé au prochain accès':'Mot de passe configuré'}${a.last_login_at?' · Dernière connexion : '+new Date(a.last_login_at).toLocaleString('fr-FR'):''}</div><div class="actions" style="margin-top:12px">${protectedAccount?'':`<button class="btn secondary" onclick="editAccount('${esc(username)}')">Modifier</button><button class="btn secondary" onclick="resetPassword('${esc(username)}')">Réinitialiser le mot de passe</button><button class="btn ${a.active?'danger':'primary'}" onclick="setActive('${esc(username)}',${a.active?'false':'true'})">${a.active?'Désactiver':'Activer'}</button>`}</div></div>`
-  }).join('');
-}
-
-function openPreset(username){const a=accounts.find(x=>x.username===username),p=presets[username]||{username,display_name:username,role:'user',permissions:{}};openEditor(a||p,!!a)}
-function editAccount(username){const a=accounts.find(x=>x.username===username);if(a)openEditor(a,true)}
-function openEditor(a,existing){
-  const permissions=a.permissions||{};
-  $('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2 style="margin:0 0 5px">${existing?'Modifier le compte':'Créer le compte'}</h2><div class="muted">${esc(a.username)}</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="fields"><div><label>Identifiant</label><input id="fUser" value="${esc(a.username)}" ${existing?'disabled':''}></div><div><label>Nom affiché</label><input id="fName" value="${esc(a.display_name||'')}"></div><div><label>Rôle</label><select id="fRole"><option value="admin" ${a.role==='admin'?'selected':''}>Administration Collège</option><option value="secretariat" ${a.role==='secretariat'?'selected':''}>Secrétariat</option><option value="comptabilite" ${a.role==='comptabilite'?'selected':''}>Comptabilité Collège</option><option value="marne_admin" ${a.role==='marne_admin'?'selected':''}>Administration Marne Invest</option><option value="user" ${a.role==='user'?'selected':''}>Utilisateur personnalisé</option></select></div><div><label>${existing?'Nouveau mot de passe (facultatif)':'Mot de passe provisoire'}</label><input id="fPass" type="password" autocomplete="new-password" placeholder="10 caractères minimum"></div><div class="full"><label>Autorisations</label><div class="perm-grid">${Object.entries(permLabels).map(([key,label])=>`<label class="check"><input class="perm" type="checkbox" value="${key}" ${permissions[key]===true?'checked':''}> ${esc(label)}</label>`).join('')}</div></div><div class="full"><label class="check"><input id="fActive" type="checkbox" ${a.active!==false?'checked':''}> Compte actif</label></div><div class="full"><label class="check"><input id="fMust" type="checkbox" ${a.must_change_password!==false?'checked':''}> Demander un changement de mot de passe au prochain accès</label></div></div><div class="actions" style="margin-top:16px"><button class="btn primary" onclick="saveAccount(${existing?'true':'false'})">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status hide"></div></div></div>`;
-}
-async function saveAccount(existing){
-  const status=$('modalStatus');
-  try{
-    const password=$('fPass').value;if(!existing&&password.length<10)throw new Error('Le mot de passe provisoire doit contenir au moins 10 caractères.');if(password&&password.length<10)throw new Error('Le nouveau mot de passe doit contenir au moins 10 caractères.');
-    const permissions={};document.querySelectorAll('.perm:checked').forEach(el=>permissions[el.value]=true);
-    status.className='status';status.textContent='Enregistrement…';
-    await holdingApi('save-account','POST',{username:$('fUser').value,display_name:$('fName').value,role:$('fRole').value,password,active:$('fActive').checked,must_change_password:$('fMust').checked,permissions});
-    closeModal();await refreshAccounts();
-  }catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
-}
-function resetPassword(username){
-  $('modal').innerHTML=`<div class="modal"><div class="box" style="max-width:520px"><h2>Réinitialiser le mot de passe</h2><div class="muted">Compte : ${esc(username)}</div><br><label>Nouveau mot de passe</label><input id="rpPass" type="password" autocomplete="new-password" placeholder="10 caractères minimum"><br><label class="check"><input id="rpMust" type="checkbox" checked> Demander un changement au prochain accès</label><div class="actions" style="margin-top:16px"><button class="btn primary" onclick="saveReset('${esc(username)}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status hide"></div></div></div>`;
-}
-async function saveReset(username){const status=$('modalStatus');try{const password=$('rpPass').value;if(password.length<10)throw new Error('Le mot de passe doit contenir au moins 10 caractères.');status.className='status';status.textContent='Enregistrement…';await holdingApi('reset-password','POST',{username,password,must_change_password:$('rpMust').checked});closeModal();await refreshAccounts()}catch(e){status.className='status err';status.textContent=e.message||'Erreur'}}
-async function setActive(username,active){if(!confirm((active?'Activer ':'Désactiver ')+username+' ?'))return;try{await holdingApi('set-active','POST',{username,active});await refreshAccounts()}catch(e){alert(e.message||'Erreur')}}
+const BASE='https://ojjbnwpkfvzjfukgqddz.supabase.co/functions/v1',ADMIN=BASE+'/admin-api',HOLDING=BASE+'/holding-admin-api';let token=localStorage.getItem('holding_admin_token')||'',accounts=[];const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const presets={'admin-college':{username:'admin-college',display_name:'Administration Collège',role:'admin',permissions:{college_admin:true}},secretariat:{username:'secretariat',display_name:'Secrétariat Collège',role:'secretariat',permissions:{secretariat:true}},comptabilite:{username:'comptabilite',display_name:'Comptabilité Collège',role:'comptabilite',permissions:{accounting:true}}};const labels={college_admin:'Administration Collège',secretariat:'Secrétariat',accounting:'Comptabilité'};
+async function req(url,action,method='GET',body){const u=new URL(url);u.searchParams.set('action',action);const r=await fetch(u,{method,headers:{'content-type':'application/json',...(token?{'x-admin-session':token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse du service invalide.'}));if(!r.ok)throw Object.assign(new Error(j.error||'Erreur serveur'),{status:r.status,data:j});return j}
+async function loginHolding(){const s=$('loginStatus');try{s.className='status';s.textContent='Connexion…';if($('loginUser').value.trim().toLowerCase()!=='holding-admin')throw new Error('Utilisez le compte holding-admin.');const j=await req(ADMIN,'login','POST',{username:'holding-admin',password:$('loginPass').value});token=j.token;localStorage.setItem('holding_admin_token',token);$('loginPass').value='';$('login').classList.add('hide');if(j.must_change_password){$('passwordChange').classList.remove('hide');return}await enter()}catch(e){s.className='status err';s.textContent=e.message}}
+async function changeHoldingPassword(){const a=$('new1').value,b=$('new2').value,s=$('passwordStatus');if(a.length<10){s.className='status err';s.textContent='Le mot de passe doit contenir au moins 10 caractères.';return}if(a!==b){s.className='status err';s.textContent='Les deux mots de passe ne correspondent pas.';return}try{s.textContent='Enregistrement…';await req(ADMIN,'change-password','POST',{password:a});localStorage.removeItem('holding_admin_token');token='';s.className='status ok';s.textContent='Mot de passe sécurisé. Reconnexion requise.';setTimeout(()=>location.reload(),800)}catch(e){s.className='status err';s.textContent=e.message}}
+async function enter(){await refreshAccounts();$('login').classList.add('hide');$('passwordChange').classList.add('hide');$('app').classList.remove('hide')}
+function logoutHolding(){token='';accounts=[];localStorage.removeItem('holding_admin_token');location.reload()}
+async function refreshAccounts(){try{const j=await req(HOLDING,'accounts');accounts=j.accounts||[];renderAccounts();$('status').className='status ok';$('status').textContent='Administration centrale active · '+accounts.length+' compte(s).'}catch(e){if(e.data?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}if(e.status===401){logoutHolding();return}throw e}}
+function renderAccounts(){const names=['holding-admin','admin-college','secretariat','comptabilite'];$('accounts').innerHTML=names.map(u=>{const a=accounts.find(x=>x.username===u),p=presets[u];if(!a)return `<div class="account"><b>${esc(p?.display_name||u)}</b><div class="muted">${esc(u)}</div><br>${u==='holding-admin'?'<span class="pill off">Compte requis</span>':`<button class="btn primary" onclick="openPreset('${u}')">Créer</button>`}</div>`;const perms=Object.keys(a.permissions||{}).filter(k=>a.permissions[k]).map(k=>`<span class="pill">${esc(labels[k]||k)}</span>`).join(' ');return `<div class="account"><div class="top"><div><b>${esc(a.display_name||u)}</b><div class="muted">${esc(u)} · ${esc(a.role||'')}</div></div><span class="pill ${a.active?'ok':'off'}">${a.active?'Actif':'Désactivé'}</span></div><div style="margin:10px 0">${u==='holding-admin'?'<span class="pill">Tous les accès</span>':(perms||'<span class="pill">Aucun droit</span>')}</div><div class="muted">${a.must_change_password?'Changement de mot de passe requis':'Mot de passe configuré'}</div>${u==='holding-admin'?'':`<div class="actions" style="margin-top:10px"><button class="btn secondary" onclick="editAccount('${u}')">Modifier</button><button class="btn secondary" onclick="resetPassword('${u}')">Mot de passe</button><button class="btn ${a.active?'danger':'primary'}" onclick="setActive('${u}',${!a.active})">${a.active?'Désactiver':'Activer'}</button></div>`}</div>`}).join('')}
+function openPreset(u){const a=accounts.find(x=>x.username===u)||presets[u];editor(a,!!accounts.find(x=>x.username===u))}function editAccount(u){const a=accounts.find(x=>x.username===u);if(a)editor(a,true)}
+function editor(a,existing){$('modal').innerHTML=`<div class="modal"><div class="box"><h2>${existing?'Modifier':'Créer'} le compte</h2><div class="fields"><div><label>Identifiant</label><input id="fu" value="${esc(a.username)}" ${existing?'disabled':''}></div><div><label>Nom affiché</label><input id="fn" value="${esc(a.display_name||'')}"></div><div><label>Rôle</label><select id="fr"><option value="admin">Administration Collège</option><option value="secretariat">Secrétariat</option><option value="comptabilite">Comptabilité</option><option value="user">Utilisateur</option></select></div><div><label>${existing?'Nouveau mot de passe facultatif':'Mot de passe provisoire'}</label><input id="fp" type="password"></div><div class="full"><label>Autorisations</label><div class="perm">${Object.entries(labels).map(([k,n])=>`<label><input class="permcb" type="checkbox" value="${k}" ${a.permissions?.[k]?'checked':''}> ${n}</label>`).join('')}</div></div><div class="full"><label><input id="fa" style="width:auto" type="checkbox" ${a.active!==false?'checked':''}> Compte actif</label></div><div class="full"><label><input id="fm" style="width:auto" type="checkbox" ${a.must_change_password!==false?'checked':''}> Changement de mot de passe au prochain accès</label></div></div><br><div class="actions"><button class="btn primary" onclick="saveAccount(${existing})">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="ms" class="status"></div></div></div>`;$('fr').value=a.role||'user'}
+async function saveAccount(existing){const s=$('ms');try{const password=$('fp').value;if(!existing&&password.length<10)throw new Error('Le mot de passe provisoire doit contenir au moins 10 caractères.');if(password&&password.length<10)throw new Error('Le mot de passe doit contenir au moins 10 caractères.');const permissions={};document.querySelectorAll('.permcb:checked').forEach(x=>permissions[x.value]=true);await req(HOLDING,'save-account','POST',{username:$('fu').value,display_name:$('fn').value,role:$('fr').value,password,active:$('fa').checked,must_change_password:$('fm').checked,permissions});closeModal();await refreshAccounts()}catch(e){s.className='status err';s.textContent=e.message}}
+function resetPassword(u){$('modal').innerHTML=`<div class="modal"><div class="box"><h2>Réinitialiser le mot de passe</h2><p class="muted">Compte : ${esc(u)}</p><input id="rp" type="password" placeholder="10 caractères minimum"><br><br><label><input id="rpm" style="width:auto" type="checkbox" checked> Changement obligatoire au prochain accès</label><br><br><div class="actions"><button class="btn primary" onclick="doReset('${u}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="ms" class="status"></div></div></div>`}async function doReset(u){try{const p=$('rp').value;if(p.length<10)throw new Error('10 caractères minimum.');await req(HOLDING,'reset-password','POST',{username:u,password:p,must_change_password:$('rpm').checked});closeModal();await refreshAccounts()}catch(e){$('ms').className='status err';$('ms').textContent=e.message}}async function setActive(u,active){if(!confirm((active?'Activer ':'Désactiver ')+u+' ?'))return;try{await req(HOLDING,'set-active','POST',{username:u,active});await refreshAccounts()}catch(e){$('status').className='status err';$('status').textContent=e.message}}
 function closeModal(){$('modal').innerHTML=''}
-if(token)enterApp().catch(e=>{const s=$('loginStatus');s.className='status err';s.textContent=e.message||'Session expirée'});
-</script>
-</body>
-</html>
+if(token)enter().catch(()=>logoutHolding());
+</script></body></html>
