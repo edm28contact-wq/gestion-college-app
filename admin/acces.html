@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Accès et liens - Gestion collège</title>
 <script src="../messages-erreur-fr.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <style>
-:root{font-family:Inter,system-ui,Arial,sans-serif;color:#15202b;background:#f4f6f8;--p:#243447;--ok:#176b3a;--bad:#a32929}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1180px;margin:auto;padding:20px}.top,.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.top{justify-content:space-between;margin-bottom:18px}.card{background:#fff;border:1px solid #dde3e8;border-radius:12px;padding:14px;margin-bottom:14px}.muted{color:#6e7983;font-size:13px}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#15202b}.table{overflow:auto;background:#fff;border:1px solid #dde3e8;border-radius:12px}table{border-collapse:collapse;width:100%;min-width:900px}th,td{padding:10px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}th{background:#f7f9fa}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef2f5;font-size:12px;font-weight:700}.ok{color:var(--ok)}.err{color:var(--bad)}.link{word-break:break-all}.secret{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#f3f5f7;padding:4px 7px;border-radius:6px}.status{min-height:22px;margin:10px 0}.section{margin-top:24px}@media(max-width:650px){.wrap{padding:12px}.top{align-items:flex-start;flex-direction:column}}
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#15202b;background:#f4f6f8;--p:#243447;--ok:#176b3a;--bad:#a32929}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1180px;margin:auto;padding:20px}.top,.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.top{justify-content:space-between;margin-bottom:18px}.card{background:#fff;border:1px solid #dde3e8;border-radius:12px;padding:14px;margin-bottom:14px}.muted{color:#6e7983;font-size:13px}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#15202b}.success{background:#e8f5ed;color:#176b3a}.table{overflow:auto;background:#fff;border:1px solid #dde3e8;border-radius:12px}table{border-collapse:collapse;width:100%;min-width:980px}th,td{padding:10px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}th{background:#f7f9fa}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef2f5;font-size:12px;font-weight:700}.pill.ok{background:#e6f4eb;color:#176b3a}.pill.off{background:#f3f3f3;color:#68727b}.ok{color:var(--ok)}.err{color:var(--bad)}.link{word-break:break-all}.secret{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#f3f5f7;padding:4px 7px;border-radius:6px}.status{min-height:22px;margin:10px 0}.section{margin-top:24px}.modal{position:fixed;inset:0;background:#0008;z-index:50;display:grid;place-items:center;padding:18px}.modalbox{width:min(640px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:14px;padding:20px}.qr-preview{text-align:center;padding:10px 0 16px}.qr-preview img{width:min(360px,85vw);height:auto;image-rendering:pixelated;border:12px solid #fff;box-shadow:0 0 0 1px #dfe4e8;border-radius:8px}.qr-url{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;word-break:break-all;background:#f6f8fa;padding:10px;border-radius:8px;margin:12px 0}.pdf-note{background:#f7f9fa;border:1px solid #e1e6ea;border-radius:9px;padding:10px;margin:12px 0;font-size:13px}.qr-actions{display:flex;gap:8px;flex-wrap:wrap}.qr-actions .btn{flex:1;text-align:center;min-width:150px}@media(max-width:650px){.wrap{padding:12px}.top{align-items:flex-start;flex-direction:column}.qr-actions{flex-direction:column}.qr-actions .btn{width:100%}}
 </style>
 </head>
 <body>
@@ -16,17 +18,21 @@
     <div class="actions"><a class="btn secondary" href="../college/admin/">Retour administration</a><button class="btn primary" onclick="load()">Actualiser</button></div>
   </div>
   <div class="card"><b>Sécurité des mots de passe</b><div class="muted" style="margin-top:6px">Les comptes protégés sont gérés par l’administration centrale. Les mots de passe sont hachés et ne sont jamais affichés. Les applications publiques utilisent uniquement leur lien individuel.</div></div>
+  <div class="card"><b>QR codes des applications</b><div class="muted" style="margin-top:6px">Chaque application active dispose maintenant d’un QR code unique. Le bouton « QR / PDF » génère une affiche A4 prête à imprimer. Le QR code ouvre directement l’application concernée.</div></div>
   <div id="status" class="status"></div>
   <section class="section"><h2>Sites et applications publiques</h2><div id="sites" class="table"></div></section>
   <section class="section"><h2>Espaces protégés</h2><div id="protected" class="table"></div></section>
 </main>
+<div id="modal"></div>
 <script>
 const ROOT='https://edm28contact-wq.github.io/gestion-college-app/';
 const SITE_API='https://ojjbnwpkfvzjfukgqddz.supabase.co/functions/v1/site-admin-api';
 const token=localStorage.getItem('college_admin_token')||'';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let publicApps=[];
 function siteUrl(a){return ROOT+'college/?id='+encodeURIComponent(a.public_id)}
+function safeFileName(s){return String(s||'application').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'').toLowerCase()||'application'}
 async function copy(v){try{await navigator.clipboard.writeText(v);alert('Lien copié.')}catch{prompt('Copiez le lien :',v)}}
 function renderProtected(){
   const rows=[
@@ -36,6 +42,43 @@ function renderProtected(){
   ];
   $('protected').innerHTML=`<table><thead><tr><th>Application</th><th>Lien</th><th>Identifiant</th><th>Mot de passe</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td><a class="link" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.url)}</a></td><td><span class="secret">${esc(x.username)}</span></td><td><span class="pill">Protégé · non affichable</span></td><td><div class="actions"><a class="btn primary" href="${esc(x.url)}" target="_blank" rel="noopener">Ouvrir</a><button class="btn secondary" onclick="copy('${esc(x.url)}')">Copier</button></div></td></tr>`).join('')}</tbody></table>`;
 }
+function appById(id){return publicApps.find(a=>String(a.id)===String(id))}
+async function qrDataUrl(a,size=900){
+  if(!window.QRCode?.toDataURL)throw new Error('Le générateur de QR code n’est pas disponible.');
+  return await QRCode.toDataURL(siteUrl(a),{errorCorrectionLevel:'H',margin:2,width:size,color:{dark:'#000000',light:'#ffffff'}});
+}
+window.openQr=async id=>{
+  const a=appById(id);if(!a)return;
+  const m=$('modal');
+  m.innerHTML='<div class="modal"><div class="modalbox"><h2>Préparation du QR code…</h2><div class="muted">Génération en cours.</div></div></div>';
+  try{
+    const data=await qrDataUrl(a,700),u=siteUrl(a);
+    m.innerHTML=`<div class="modal"><div class="modalbox"><div class="top"><div><h2 style="margin:0">${esc(a.name||a.code||'Application')}</h2><div class="muted">QR code individuel · ${esc(a.code||'')}</div></div><button class="btn secondary" onclick="closeQr()">Fermer</button></div><div class="qr-preview"><img src="${data}" alt="QR code ${esc(a.name||'application')}"></div><div class="qr-url">${esc(u)}</div><div class="pdf-note">Le PDF est au format A4 avec un QR code haute définition. Une fois imprimé, le QR restera lié à cette application tant que son identifiant public n’est pas remplacé.</div><div class="qr-actions"><button class="btn primary" onclick="printQrPdf('${esc(a.id)}')">Ouvrir / imprimer le PDF</button><button class="btn success" onclick="downloadQrPdf('${esc(a.id)}')">Télécharger le PDF</button><button class="btn secondary" onclick="copy('${esc(u)}')">Copier le lien</button></div><div id="qrStatus" class="status"></div></div></div>`;
+  }catch(e){m.innerHTML=`<div class="modal"><div class="modalbox"><h2>QR code indisponible</h2><div class="status err">${esc(e.message||'Erreur de génération.')}</div><button class="btn secondary" onclick="closeQr()">Fermer</button></div></div>`}
+};
+window.closeQr=()=>{$('modal').innerHTML=''};
+async function buildPdf(a){
+  if(!window.jspdf?.jsPDF)throw new Error('Le générateur PDF n’est pas disponible.');
+  const data=await qrDataUrl(a,1200),{jsPDF}=window.jspdf,doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'}),u=siteUrl(a);
+  const accent=/^#[0-9a-f]{6}$/i.test(String(a.color||''))?String(a.color):'#243447';
+  const rgb=[parseInt(accent.slice(1,3),16),parseInt(accent.slice(3,5),16),parseInt(accent.slice(5,7),16)];
+  doc.setFillColor(...rgb);doc.rect(0,0,210,26,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('SOCIETE COLLEGE',105,11,{align:'center'});doc.setFontSize(10);doc.setFont('helvetica','normal');doc.text('Acces direct a une application de gestion',105,18,{align:'center'});
+  doc.setTextColor(25,35,45);doc.setFont('helvetica','bold');doc.setFontSize(20);const titleLines=doc.splitTextToSize(String(a.name||a.code||'Application'),170);doc.text(titleLines,105,40,{align:'center'});
+  const titleHeight=titleLines.length*7,qrY=Math.max(54,43+titleHeight);doc.addImage(data,'PNG',55,qrY,100,100);
+  let y=qrY+112;doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('Scannez ce QR code pour ouvrir l\'application',105,y,{align:'center'});y+=8;doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text('Aucun mot de passe n\'est demande pour cette application publique.',105,y,{align:'center'});y+=9;
+  doc.setDrawColor(220,225,230);doc.line(25,y,185,y);y+=8;doc.setFontSize(9);doc.setTextColor(90,100,110);doc.text('Code application : '+String(a.code||''),25,y);y+=6;const urlLines=doc.splitTextToSize(u,160);doc.text(urlLines,25,y);doc.setTextColor(25,35,45);
+  doc.setFontSize(8);doc.text('Document genere depuis l\'Administration College.',105,287,{align:'center'});
+  return doc;
+}
+window.downloadQrPdf=async id=>{
+  const a=appById(id);if(!a)return;const s=$('qrStatus');if(s){s.className='status';s.textContent='Création du PDF…'}
+  try{const doc=await buildPdf(a);doc.save('qr-'+safeFileName(a.name||a.code)+'.pdf');if(s){s.className='status ok';s.textContent='PDF créé.'}}catch(e){if(s){s.className='status err';s.textContent=e.message||'Impossible de créer le PDF.'}}
+};
+window.printQrPdf=async id=>{
+  const a=appById(id);if(!a)return;const popup=window.open('about:blank','_blank'),s=$('qrStatus');if(s){s.className='status';s.textContent='Préparation du PDF…'}
+  try{const doc=await buildPdf(a),url=doc.output('bloburl');if(popup)popup.location.href=url;else throw new Error('Le navigateur a bloqué l’ouverture du PDF. Utilisez « Télécharger le PDF ».');if(s){s.className='status ok';s.textContent='PDF ouvert. Utilisez la commande Imprimer du lecteur PDF.'}}catch(e){if(popup)popup.close();if(s){s.className='status err';s.textContent=e.message||'Impossible d’ouvrir le PDF.'}}
+};
 async function load(){
   renderProtected();
   const status=$('status');
@@ -46,10 +89,10 @@ async function load(){
     const j=await r.json().catch(()=>({error:'Réponse invalide'}));
     if(r.status===401){location.href='../college/admin/';return}
     if(!r.ok)throw new Error(j.error||'Erreur serveur');
-    const apps=(j.applications||[]).filter(a=>a.active!==false);
-    $('sites').innerHTML=`<table><thead><tr><th>Site / application</th><th>Code</th><th>Lien direct</th><th>Accès</th><th>Mot de passe</th><th></th></tr></thead><tbody>${apps.length?apps.map(a=>{const u=siteUrl(a);return `<tr><td><b>${esc(a.name||a.code||'Site')}</b></td><td>${esc(a.code||'')}</td><td><a class="link" href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></td><td><span class="pill">Lien public individuel</span></td><td><span class="pill">Aucun mot de passe</span></td><td><div class="actions"><a class="btn primary" href="${esc(u)}" target="_blank" rel="noopener">Ouvrir</a><button class="btn secondary" data-url="${esc(u)}">Copier</button></div></td></tr>`}).join(''):'<tr><td colspan="6" class="muted">Aucun site actif.</td></tr>'}</tbody></table>`;
+    publicApps=(j.applications||[]).filter(a=>a.active!==false);
+    $('sites').innerHTML=`<table><thead><tr><th>Site / application</th><th>Code</th><th>Lien direct</th><th>Accès</th><th>QR / PDF</th><th></th></tr></thead><tbody>${publicApps.length?publicApps.map(a=>{const u=siteUrl(a);return `<tr><td><b>${esc(a.name||a.code||'Site')}</b></td><td>${esc(a.code||'')}</td><td><a class="link" href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></td><td><span class="pill ok">Lien public actif</span></td><td><button class="btn success" onclick="openQr('${esc(a.id)}')">QR / PDF</button></td><td><div class="actions"><a class="btn primary" href="${esc(u)}" target="_blank" rel="noopener">Ouvrir</a><button class="btn secondary" data-url="${esc(u)}">Copier</button></div></td></tr>`}).join(''):'<tr><td colspan="6" class="muted">Aucun site actif.</td></tr>'}</tbody></table>`;
     document.querySelectorAll('#sites button[data-url]').forEach(b=>b.onclick=()=>copy(b.dataset.url));
-    status.className='status ok';status.textContent=apps.length+' site(s) public(s) chargé(s).';
+    status.className='status ok';status.textContent=publicApps.length+' application(s) active(s) chargée(s) · QR codes et PDF disponibles.';
   }catch(e){status.className='status err';status.textContent=window.erreurFrancaise?window.erreurFrancaise(e.message||String(e)):e.message;$('sites').innerHTML='<div class="card">Impossible de charger les sites.</div>'}
 }
 load();
