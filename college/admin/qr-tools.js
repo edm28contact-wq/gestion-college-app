@@ -1,11 +1,23 @@
 (()=>{
 'use strict';
+const PROD_ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
+try{
+  if(typeof token!=='undefined'&&!token){token=localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'';if(token)localStorage.setItem('college_admin_token',token)}
+  const user=document.getElementById('user');if(user&&String(user.value).trim().toLowerCase()==='holding-admin')user.value='admin';
+  if(typeof call==='function'){
+    const compatCall=async(base,action,method='GET',body,params={})=>{
+      const old=new URL(base),u=new URL(PROD_ROOT+old.pathname.replace(/^.*\/functions\/v1/,''));
+      u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));
+      const r=await fetch(u,{method,headers:{'content-type':'application/json',...(token?{'x-admin-session':token,'authorization':'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse du service invalide.'}));
+      if(r.status===401&&action!=='login'){logout(false);throw new Error('Session expirée. Reconnectez-vous.')}if(!r.ok)throw new Error(frError(j.error));return j;
+    };
+    window.call=compatCall;
+  }
+}catch(e){console.error('compat production',e)}
 function ensureQuickAccessLinks(){
   const actions=document.querySelector('#app .main > .top > .actions');
   if(!actions||actions.querySelector('[data-quick-access="links"]'))return;
-  const access=document.createElement('a');access.className='btn secondary';access.href='../../admin/acces.html';access.textContent='Accès & liens';access.dataset.quickAccess='links';
-  const site=document.createElement('a');site.className='btn secondary';site.href='../';site.textContent='Site Collège';site.dataset.quickAccess='site';
-  actions.prepend(access);actions.prepend(site);
+  const access=document.createElement('a');access.className='btn secondary';access.href='../../admin/acces.html';access.textContent='Accès & liens';access.dataset.quickAccess='links';actions.prepend(access);
 }
 ensureQuickAccessLinks();
 function readyBadge(a){return a.qr_ready&&a.qr_png_url&&a.qr_pdf_url?'<span class="pill ok">QR / PDF prêts</span>':'<span class="pill off">Préparation requise</span>'}
@@ -17,4 +29,5 @@ function app(id){return db?.applications?.find(a=>String(a.id)===String(id))}
 function assetModal(a){const publicUrl='https://edm28contact-wq.github.io/gestion-college-app/college/?id='+encodeURIComponent(a.public_id);return `<div class="modal"><div class="box" style="width:min(720px,100%);text-align:center"><div class="top" style="text-align:left"><div><h2 style="margin:0">${esc(a.name||a.code||'Application')}</h2><div class="muted">Fichiers déjà générés et stockés</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div>${a.qr_png_url?`<div style="padding:18px 0"><img src="${esc(a.qr_png_url)}" alt="QR code ${esc(a.name||'application')}" style="width:min(360px,85vw);height:auto;border:12px solid #fff;box-shadow:0 0 0 1px #dfe4e8;border-radius:8px"></div>`:'<div class="card warn" style="margin-top:16px">Le QR code n’est pas encore prêt.</div>'}<div style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;word-break:break-all;background:#f6f8fa;padding:10px;border-radius:8px;text-align:left">${esc(publicUrl)}</div><div class="actions" style="justify-content:center;margin-top:14px">${a.qr_pdf_url?`<a class="btn primary" target="_blank" rel="noopener" href="${esc(a.qr_pdf_url)}">Ouvrir / imprimer le PDF</a><a class="btn success" download="qr-${esc(a.code||'application')}.pdf" href="${esc(a.qr_pdf_url)}">Télécharger le PDF</a>`:''}<button class="btn secondary" onclick="regenerateAppAssets('${a.id}')">Régénérer</button></div><div id="qrAdminStatus" class="status"></div></div></div>`}
 window.openAppQr=id=>{const a=app(id);if(!a)return;$('modal').innerHTML=assetModal(a)};
 window.regenerateAppAssets=async id=>{const s=$('qrAdminStatus');try{if(s){s.className='status';s.textContent='Régénération du QR code et du PDF…'}const r=await call(SITE,'regenerate-assets','POST',{id});const a=app(id);if(a){a.qr_ready=!!r.qr_ready;a.qr_png_url=r.qr_png_url||a.qr_png_url;a.qr_pdf_url=r.qr_pdf_url||a.qr_pdf_url;a.qr_generated_at=r.qr_generated_at||a.qr_generated_at}$('modal').innerHTML=assetModal(a);const s2=$('qrAdminStatus');if(s2){s2.className='status ok';s2.textContent='QR code et PDF régénérés.'}}catch(e){if(s){s.className='status err';s.textContent=frError(e.message)}}};
+if(typeof token!=='undefined'&&token&&document.getElementById('app')?.classList.contains('hide'))enterApp().catch(()=>logout(false));
 })();
