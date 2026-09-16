@@ -1,5 +1,13 @@
 (()=>{
 'use strict';
+function ensureQuickAccessLinks(){
+  const actions=document.querySelector('#app .main > .top > .actions');
+  if(!actions||actions.querySelector('[data-quick-access="links"]'))return;
+  const access=document.createElement('a');access.className='btn secondary';access.href='../../admin/acces.html';access.textContent='Accès & liens';access.dataset.quickAccess='links';
+  const site=document.createElement('a');site.className='btn secondary';site.href='../';site.textContent='Site Collège';site.dataset.quickAccess='site';
+  actions.prepend(access);actions.prepend(site);
+}
+ensureQuickAccessLinks();
 function readyBadge(a){return a.qr_ready&&a.qr_png_url&&a.qr_pdf_url?'<span class="pill ok">QR / PDF prêts</span>':'<span class="pill off">Préparation requise</span>'}
 window.apps=function(){
   const list=[...db.applications].sort((a,b)=>(a.active===b.active?String(a.name).localeCompare(String(b.name),'fr'):a.active?-1:1));
