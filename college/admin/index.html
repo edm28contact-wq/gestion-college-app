@@ -67,5 +67,6 @@ window.closeModal=()=>{$('modal').innerHTML=''};
 function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
 if(token)enterApp().catch(()=>logout());
 </script>
+<script src="./qr-tools.js"></script>
 </body>
 </html>
