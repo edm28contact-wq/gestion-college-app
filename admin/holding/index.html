@@ -19,9 +19,9 @@
 </main>
 <script>
 const BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1',ADMIN=BASE+'/admin-api',HOLDING=BASE+'/holding-admin-api';
-const UNIVERSAL_TOKEN_KEYS=['holding_admin_token','college_admin_token','college_secretariat_token','edm_admin_token'];
-function saveUniversalToken(value){if(!value)return;UNIVERSAL_TOKEN_KEYS.forEach(k=>localStorage.setItem(k,value))}
-function clearUniversalTokens(){UNIVERSAL_TOKEN_KEYS.forEach(k=>localStorage.removeItem(k));localStorage.removeItem('college_accounting_token')}
+const UNIVERSAL_TOKEN_KEYS=['holding_admin_token','college_secretariat_token','edm_admin_token'];
+function saveUniversalToken(value){if(!value)return;UNIVERSAL_TOKEN_KEYS.forEach(k=>localStorage.setItem(k,value));localStorage.removeItem('college_admin_token')}
+function clearUniversalTokens(){UNIVERSAL_TOKEN_KEYS.forEach(k=>localStorage.removeItem(k));localStorage.removeItem('college_admin_token');localStorage.removeItem('college_accounting_token')}
 let token=localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'';const $=id=>document.getElementById(id);
 async function req(url,action,method='GET',body){const u=new URL(url);u.searchParams.set('action',action);const r=await fetch(u,{method,headers:{'content-type':'application/json',...(token?{'x-admin-session':token,'authorization':'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse du service invalide.'}));if(!r.ok)throw Object.assign(new Error(j.error||'Erreur serveur'),{status:r.status,data:j});return j}
 async function loginHolding(){const s=$('loginStatus');try{s.className='status';s.textContent='Connexion…';if($('loginUser').value.trim().toLowerCase()!=='admin')throw new Error('Utilisez le compte admin.');const j=await req(ADMIN,'login','POST',{username:'admin',password:$('loginPass').value});if(j.role!=='admin')throw new Error('Accès Holding non autorisé.');token=j.token;saveUniversalToken(token);$('loginPass').value='';await enter()}catch(e){s.className='status err';s.textContent=e.message}}
