@@ -1,15 +1,21 @@
-// Couche de compatibilite College -> backend EDM actif.
+// Couche de compatibilite College -> backend de production actif.
 // Aucune cle privee n'est exposee ici.
 (()=>{
-  const OLD='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-api';
-  const ACTIVE='https://ojjbnwpkfvzjfukgqddz.supabase.co/functions/v1/accounting-api';
+  const LEGACY='https://ojjbnwpkfvzjfukgqddz.supabase.co/functions/v1/accounting-api';
+  const PROD='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-api';
+  const LOGIN='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-login-bridge';
   const baseFetch=window.fetch.bind(window);
+
+  const user=document.getElementById('user');
+  if(user&&String(user.value).trim().toLowerCase()==='holding-admin')user.value='admin';
 
   window.fetch=(input,init)=>{
     try{
       const raw=typeof input==='string'?input:input?.url;
-      if(raw&&raw.startsWith(OLD)){
-        const next=ACTIVE+raw.slice(OLD.length);
+      if(raw&&(raw.startsWith(LEGACY)||raw.startsWith(PROD))){
+        const current=new URL(raw);
+        const target=current.searchParams.get('action')==='login'?LOGIN:PROD;
+        const next=target+current.search;
         if(typeof input==='string')return baseFetch(next,init);
         return baseFetch(new Request(next,input),init);
       }
