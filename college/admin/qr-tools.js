@@ -5,6 +5,7 @@ const PUBLIC_ROOT='https://edm28contact-wq.github.io/gestion-college-app/college
 try{
   if(typeof token!=='undefined'&&!token){token=localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'';if(token)localStorage.setItem('college_admin_token',token)}
   const user=document.getElementById('user');if(user&&String(user.value).trim().toLowerCase()==='holding-admin')user.value='admin';
+  const loginBox=document.getElementById('login');if(loginBox&&!loginBox.dataset.enterLogin){loginBox.dataset.enterLogin='1';loginBox.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.ctrlKey&&!e.altKey&&!e.metaKey){e.preventDefault();if(typeof login==='function')login()}})}
   if(typeof call==='function'){
     const compatCall=async(base,action,method='GET',body,params={})=>{
       const old=new URL(base),u=new URL(PROD_ROOT+old.pathname.replace(/^.*\/functions\/v1/,''));
