@@ -15,23 +15,31 @@ function urlOf(input){try{return typeof input==='string'?input:input instanceof 
 function tokenValue(){try{if(typeof token!=='undefined'&&token)return token}catch{}return localStorage.getItem('college_accounting_token')||localStorage.getItem('college_secretariat_token')||localStorage.getItem('edm_admin_token')||''}
 function message(t){try{if(typeof window.prog==='function')window.prog(86,t)}catch{}const e=document.getElementById('status')||document.getElementById('imsg');if(e&&/Gemini/i.test(t)){e.textContent=t;e.className='status'}}
 async function bodyJson(resp){try{return await resp.clone().json()}catch{return {}}}
-function geminiProblem(resp,j){const t=String(j?.error||j?.message||'').toLowerCase();return retryStatuses.has(resp.status)||(resp.status>=500&&(t.includes('gemini')||t.includes('délai')||t.includes('delai')||t.includes('timeout')||t.includes('indisponible')))}
-function accountingGood(j){return !!(j?.ok&&j?.degraded!==true&&Array.isArray(j?.models)&&j.models.length>=2&&j?.first&&j?.second)}
+function geminiProblem(resp,j){const t=String(j?.error||j?.message||'').toLowerCase();return retryStatuses.has(resp.status)||(resp.status>=500&&(t.includes('gemini')||t.includes('délai')||t.includes('delai')||t.includes('timeout')||t.includes('indisponible')||j?.retryable===true))}
+function accountingGood(j){return !!(j?.ok&&j?.degraded!==true&&Number(j?.successful_reads)>=2&&Number(j?.required_reads)>=2&&Array.isArray(j?.models)&&j.models.length>=2&&j?.first&&j?.second)}
 function readerGood(action,j){if(action==='first')return !!(j?.ok&&j?.stage==='first'&&j?.analysis&&j?.model);if(action==='verify')return !!(j?.ok&&j?.stage==='verified'&&j?.ai?.double_read===true&&j?.ai?.first_model&&j?.ai?.verify_model);return true}
-function accountingId(init){try{const b=typeof init?.body==='string'?JSON.parse(init.body):null;return String(b?.id||'')}catch{return ''}}
+function bodyId(init){try{const b=typeof init?.body==='string'?JSON.parse(init.body):null;return String(b?.id||'')}catch{return ''}}
+async function ensureAccountingDoubleRead(id){const key=String(id||'');if(!key||state.accountingIds.has(key))return true;const tk=tokenValue();message('Deux lectures Gemini indépendantes obligatoires avant analyse comptable…');const r=await window.fetch(VERIFIER,{method:'POST',headers:{'content-type':'application/json',...(tk?{authorization:'Bearer '+tk}:{})},body:JSON.stringify({id:key}),cache:'no-store'}),j=await bodyJson(r);if(r.ok&&accountingGood(j)){state.accountingIds.add(key);return true}return false}
 
 window.fetch=async function(input,init){
-  const url=urlOf(input),isVerifier=url.includes('/accounting-pdf-verifier'),isReader=url.includes('/accounting-secretariat-reader');
-  if(!isVerifier&&!isReader)return nativeFetch(input,init);
+  const url=urlOf(input),isVerifier=url.includes('/accounting-pdf-verifier'),isReader=url.includes('/accounting-secretariat-reader'),isAccountingAi=url.includes('/accounting-ai');
   let action='';try{action=new URL(url,location.href).searchParams.get('action')||''}catch{}
+
+  if(isAccountingAi&&action==='reanalyze'){
+    const id=bodyId(init);
+    if(id&&!state.accountingIds.has(id))await ensureAccountingDoubleRead(id);
+    return nativeFetch(input,init)
+  }
+  if(!isVerifier&&!isReader)return nativeFetch(input,init);
   if(isReader&&action==='first'){state.secretariatFirst=false;state.secretariatVerified=false}
+
   let attempt=0;
   for(;;){
     attempt++;
     try{
       const resp=await nativeFetch(input,init),j=await bodyJson(resp);
       if(isVerifier){
-        if(resp.ok&&accountingGood(j)){const id=accountingId(init);if(id)state.accountingIds.add(id);message('Deux lectures Gemini indépendantes terminées.');return resp}
+        if(resp.ok&&accountingGood(j)){const id=bodyId(init);if(id)state.accountingIds.add(id);message('Deux lectures Gemini indépendantes terminées.');return resp}
         if(!resp.ok&&!geminiProblem(resp,j))return resp;
       }else{
         if(resp.ok&&readerGood(action,j)){if(action==='first')state.secretariatFirst=true;if(action==='verify')state.secretariatVerified=true;return resp}
@@ -51,16 +59,7 @@ function installGuards(){
   if(p.includes('/comptabilite/')){
     const f=window.validateInvoice;
     if(typeof f==='function'&&!f.__geminiMandatoryWrapped){
-      const w=async function(id,...args){
-        const key=String(id||'');
-        if(key&&!state.accountingIds.has(key)){
-          message('Deux lectures Gemini indépendantes sont obligatoires avant validation…');
-          const tk=tokenValue(),r=await window.fetch(VERIFIER,{method:'POST',headers:{'content-type':'application/json',...(tk?{authorization:'Bearer '+tk}:{})},body:JSON.stringify({id:key}),cache:'no-store'}),j=await bodyJson(r);
-          if(!r.ok||!accountingGood(j)){errorBox(j?.error||'Validation impossible : deux lectures Gemini sont obligatoires.');return}
-          state.accountingIds.add(key)
-        }
-        return f.call(this,id,...args)
-      };
+      const w=async function(id,...args){const key=String(id||'');if(key&&!state.accountingIds.has(key)){const ok=await ensureAccountingDoubleRead(key);if(!ok){errorBox('Validation impossible : deux lectures Gemini sont obligatoires.');return}}return f.call(this,id,...args)};
       w.__geminiMandatoryWrapped=true;
       window.validateInvoice=w
     }
