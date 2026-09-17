@@ -3,6 +3,7 @@
 (()=>{
   const LEGACY='https://ojjbnwpkfvzjfukgqddz.supabase.co/functions/v1/accounting-api';
   const PROD='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-api';
+  const ACCESS='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-access-api';
   const LOGIN='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-login-bridge';
   const baseFetch=window.fetch.bind(window);
 
@@ -14,7 +15,7 @@
       const raw=typeof input==='string'?input:input?.url;
       if(raw&&(raw.startsWith(LEGACY)||raw.startsWith(PROD))){
         const current=new URL(raw);
-        const target=current.searchParams.get('action')==='login'?LOGIN:PROD;
+        const target=current.searchParams.get('action')==='login'?LOGIN:ACCESS;
         const next=target+current.search;
         if(typeof input==='string')return baseFetch(next,init);
         return baseFetch(new Request(next,input),init);
