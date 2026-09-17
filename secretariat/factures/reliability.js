@@ -1,6 +1,8 @@
 // Couche de fiabilite facture : aucun doute n'est valide silencieusement.
 (()=>{
 'use strict';
+// Charge le moteur OCR haute definition partage. Il attend automatiquement PDF.js/Tesseract.
+if(!document.querySelector('script[data-pdf-ocr-hq]')){const s=document.createElement('script');s.src='../../pdf-ocr-hq.js?v=2';s.dataset.pdfOcrHq='1';document.head.appendChild(s)}
 const state={verified:false,strict:false,manualChanged:false,warnings:[],unmatched:[],items:[]};
 const byId=id=>document.getElementById(id);
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
