@@ -9,6 +9,20 @@ const VERIFIER='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting
 const retryStatuses=new Set([429,502,503,504,546]);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const state={secretariatFirst:false,secretariatVerified:false,accounting:new Map(),active:true};
+const SAFE_MODEL_INTERVAL_MS=15000;
+const modelForRead=n=>n===1?'gemini-3.7-flash':n===2?'gemini-3.5-flash-lite':'gemini-3.1-flash-lite';
+async function paceModel(model){
+  const storageKey='gestion_college_gemini_next_'+model;
+  const reserve=async()=>{
+    for(;;){
+      const now=Date.now(),next=Number(localStorage.getItem(storageKey)||0);
+      if(now>=next){localStorage.setItem(storageKey,String(now+SAFE_MODEL_INTERVAL_MS));return}
+      await sleep(Math.min(16000,Math.max(250,next-now+100)))
+    }
+  };
+  if(navigator?.locks?.request)return navigator.locks.request('gestion-college-gemini-'+model,reserve);
+  return reserve()
+}
 
 function urlOf(input){try{return typeof input==='string'?input:input instanceof URL?input.href:String(input?.url||'')}catch{return ''}}
 function tokenValue(){try{if(typeof token!=='undefined'&&token)return token}catch{}return localStorage.getItem('college_accounting_token')||localStorage.getItem('college_secretariat_token')||localStorage.getItem('edm_admin_token')||''}
@@ -32,6 +46,7 @@ async function readAccounting(id,readNo){
     attempt++;
     try{
       message(readNo===3?`Lecture Gemini 3/3 de départage · tentative ${attempt}…`:`Lecture Gemini ${readNo}/2 obligatoire · tentative ${attempt}…`);
+      await paceModel(modelForRead(readNo));
       const {r,j}=await verifierCall('read',{id,read_no:readNo});
       if(r.ok&&j?.ok&&j?.analysis&&j?.model)return j;
       if(permanent(j,r.status)){message(j?.error||'Gemini non configuré.',true);throw new Error(j?.error||'Gemini non configuré.')}
@@ -80,6 +95,7 @@ window.fetch=async function(input,init){
   for(;;){
     attempt++;
     try{
+      if(action==='first')await paceModel('gemini-3.7-flash');else if(action==='verify')await paceModel('gemini-3.5-flash-lite');
       const resp=await nativeFetch(input,init),j=await bodyJson(resp);
       if(resp.ok&&readerGood(action,j)){
         if(action==='first')state.secretariatFirst=true;
