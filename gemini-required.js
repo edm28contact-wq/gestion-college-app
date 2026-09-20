@@ -10,7 +10,7 @@ const retryStatuses=new Set([429,502,503,504,546]);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const state={secretariatFirst:false,secretariatVerified:false,accounting:new Map(),active:true};
 const SAFE_MODEL_INTERVAL_MS=15000;
-const modelForRead=n=>n===1?'gemini-3.7-flash':n===2?'gemini-3.5-flash-lite':'gemini-3.1-flash-lite';
+const modelForRead=n=>n===1?'gemini-3.5-flash-lite':n===2?'gemini-3.1-flash-lite':'gemini-3.7-flash';
 async function paceModel(model){
   const storageKey='gestion_college_gemini_next_'+model;
   const reserve=async()=>{
@@ -95,7 +95,7 @@ window.fetch=async function(input,init){
   for(;;){
     attempt++;
     try{
-      if(action==='first')await paceModel('gemini-3.7-flash');else if(action==='verify')await paceModel('gemini-3.5-flash-lite');
+      if(action==='first')await paceModel('gemini-3.5-flash-lite');else if(action==='verify')await paceModel('gemini-3.1-flash-lite');
       const resp=await nativeFetch(input,init),j=await bodyJson(resp);
       if(resp.ok&&readerGood(action,j)){
         if(action==='first')state.secretariatFirst=true;
