@@ -19,7 +19,7 @@ function retryDelay(j,attempt){const server=Math.max(0,Number(j?.retry_after_sec
 function permanent(j,status){const t=String(j?.error||'').toLowerCase();return j?.configuration_required===true||t.includes('configuration_required')||t.includes('non configur')||t.includes('clé gemini refus')||status===401||status===403||(status===400&&j?.retryable!==true)}
 function temporary(j,status){return j?.retryable===true||retryStatuses.has(status)||status>=500}
 function readerGood(action,j){if(action==='first')return !!(j?.ok&&j?.stage==='first'&&j?.analysis&&j?.model);if(action==='verify')return !!(j?.ok&&j?.stage==='verified'&&j?.ai?.double_read===true&&j?.ai?.first_model&&j?.ai?.verify_model);return true}
-function accountingGood(j){return !!(j?.ok&&j?.successful_reads>=2&&j?.required_reads>=2&&j?.consensus&&Array.isArray(j?.models)&&j.models.length>=2)}
+function accountingGood(j){return !!(j?.ok&&j?.verified===true&&j?.successful_reads>=2&&j?.required_reads>=2&&j?.consensus&&Array.isArray(j?.models)&&j.models.length>=2)}
 
 async function verifierCall(action,body){
   const tk=tokenValue();
