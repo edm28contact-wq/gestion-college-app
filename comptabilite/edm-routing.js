@@ -39,13 +39,6 @@
         if(box)box.innerHTML=`Total charges : <b>${total.toFixed(2)} €</b> · TTC : <b>${ttc.toFixed(2)} €</b> · Écart : <b class="${Math.abs(diff)<=.02?'ok':'err'}">${diff.toFixed(2)} €</b>`;
       };
 
-      if(typeof window.settingsPage==='function'){
-        window.settingsPage=()=>{
-          const content=document.getElementById('content');
-          if(content)content.innerHTML='<div class="card"><h2>Paramètres</h2><p>La TVA est traitée comme non récupérable dans cette configuration. La somme des lignes de charges doit donc être égale au montant TTC avant validation.</p><p class="muted">La validation humaine reste obligatoire avant export Charlemagne.</p></div>';
-        };
-      }
-
       if(typeof window.importPage==='function'){
         const originalImport=window.importPage;
         window.importPage=()=>{
