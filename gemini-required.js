@@ -1,4 +1,4 @@
-// Deux lectures Gemini obligatoires avant toute validation.
+// Deux lectures Gemini obligatoires, avec troisième lecture automatique de départage si nécessaire.
 // Les erreurs temporaires sont retentées; les erreurs de configuration bloquent clairement le traitement.
 (()=>{
 'use strict';
@@ -31,15 +31,15 @@ async function readAccounting(id,readNo){
   for(;;){
     attempt++;
     try{
-      message(`Lecture Gemini ${readNo}/2 obligatoire · tentative ${attempt}…`);
+      message(readNo===3?`Lecture Gemini 3/3 de départage · tentative ${attempt}…`:`Lecture Gemini ${readNo}/2 obligatoire · tentative ${attempt}…`);
       const {r,j}=await verifierCall('read',{id,read_no:readNo});
       if(r.ok&&j?.ok&&j?.analysis&&j?.model)return j;
       if(permanent(j,r.status)){message(j?.error||'Gemini non configuré.',true);throw new Error(j?.error||'Gemini non configuré.')}
       if(!temporary(j,r.status))throw new Error(j?.error||`Lecture Gemini ${readNo} impossible`);
-      const d=retryDelay(j,attempt);message(`Gemini temporairement indisponible. Nouvelle tentative de la lecture ${readNo}/2 dans ${Math.round(d/1000)} s.`);await sleep(d)
+      const d=retryDelay(j,attempt);message(`Gemini temporairement indisponible. Nouvelle tentative de la lecture ${readNo===3?'3/3':readNo+'/2'} dans ${Math.round(d/1000)} s.`);await sleep(d)
     }catch(e){
       if(/non configur|clé gemini refus|configuration_required/i.test(String(e?.message||e)))throw e;
-      const d=retryDelay({},attempt);message(`Connexion Gemini indisponible. Nouvelle tentative de la lecture ${readNo}/2 dans ${Math.round(d/1000)} s.`);await sleep(d)
+      const d=retryDelay({},attempt);message(`Connexion Gemini indisponible. Nouvelle tentative de la lecture ${readNo===3?'3/3':readNo+'/2'} dans ${Math.round(d/1000)} s.`);await sleep(d)
     }
   }
 }
@@ -49,9 +49,17 @@ async function ensureAccountingDoubleRead(id){
   const first=await readAccounting(key,1);
   const second=await readAccounting(key,2);
   message('Comparaison des deux lectures Gemini…');
-  const {r,j}=await verifierCall('compare',{id:key,first:first.analysis,second:second.analysis,first_model:first.model,second_model:second.model});
+  let compared=await verifierCall('compare',{id:key,first:first.analysis,second:second.analysis,first_model:first.model,second_model:second.model});
+  if(!compared.r.ok)throw new Error(compared.j?.error||'Comparaison Gemini impossible');
+  if(compared.j?.requires_third_read===true){
+    message('Écart détecté : troisième lecture Gemini indépendante de départage…');
+    const third=await readAccounting(key,3);
+    compared=await verifierCall('compare',{id:key,first:first.analysis,second:second.analysis,third:third.analysis,first_model:first.model,second_model:second.model,third_model:third.model});
+  }
+  const {r,j}=compared;
   if(!r.ok||!accountingGood(j))throw new Error(j?.error||'Comparaison Gemini impossible');
-  state.accounting.set(key,j);message('Deux lectures Gemini indépendantes terminées.');
+  state.accounting.set(key,j);
+  message(j?.tie_break_used?'Trois lectures Gemini terminées · vote 2 sur 3 appliqué.':'Deux lectures Gemini indépendantes concordantes.');
   return j
 }
 
