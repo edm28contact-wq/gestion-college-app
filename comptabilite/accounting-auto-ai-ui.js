@@ -1,4 +1,5 @@
 const ACCOUNTING_AI_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-ai';
+const GEMINI_CONFIG_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-gemini-config';
 const ACCOUNTING_MAX_FILES=400;
 const ACCOUNTING_MAX_FILE_BYTES=20*1024*1024;
 const ACCOUNTING_AI_RETRYABLE=new Set([429,502,503,504]);
@@ -20,7 +21,8 @@ async function accountingAiApi(action,method='POST',body,{attempts=3}={}){
   throw lastError||new Error('Gemini indisponible');
 }
 
-async function ensureAccountingAiReady(){const h=await accountingAiApi('health','GET',undefined,{attempts:1});if(!h?.ok)throw new Error('Le test Gemini a échoué.');return h}
+async function geminiConfigApi(method='GET',body){const r=await fetch(GEMINI_CONFIG_BASE,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse Gemini invalide'}));if(!r.ok)throw new Error(j.error||'Test Gemini impossible');return j}
+async function ensureAccountingAiReady(){const h=await geminiConfigApi('POST',{action:'test'});if(!h?.active)throw new Error(h?.reason||'Gemini est INACTIVE.');return h}
 
 const loadBeforeAutoAi=load;
 load=async function(){await loadBeforeAutoAi();if($('who'))$('who').textContent=(db.current_user.display_name||'Comptabilité')+' · Gemini double lecture · validation automatique seulement si fiable'};
@@ -51,17 +53,17 @@ async function processAccountingFiles(fileList){
   accountingBatchProgress=null;await refresh();page='dashboard';render();const detail=errors.length?`\n\n${errors.slice(0,8).join('\n')}${errors.length>8?`\n… +${errors.length-8} autre(s)`:''}`:'';alert(`Import terminé : ${ok} PDF enregistré(s), ${validated} validé(s) automatiquement, ${toReview} à contrôler, ${failed} échec(s).${detail}`);
 }
 
-async function testGeminiAccounting(){try{const btn=$('testGemini');if(btn)btn.disabled=true;baseAccountingProg(5,'Test Gemini…');const h=await ensureAccountingAiReady();alert(`Gemini fonctionne. Modèle : ${h.primary_model||'configuré'} · version ${h.version||''}`)}catch(e){alert(e?.message||String(e))}finally{const btn=$('testGemini');if(btn)btn.disabled=false;baseAccountingProg(0,'')}}
+async function testGeminiAccounting(){const btn=$('testGemini'),msg=$('geminiKeyMsg')||$('imsg');try{if(btn)btn.disabled=true;if(msg){msg.className='status';msg.textContent='Test réel Gemini en cours… attente de la réponse Google.'}const h=await geminiConfigApi('POST',{action:'test'}),details=(h.models||[]).map(x=>`${x.model}: ${x.ok?'OK':'ÉCHEC'}`).join(' · ');if(h.active){if(msg){msg.className='status ok';msg.textContent=`ACTIVE · 2/2 réponses Gemini reçues. ${details}`}alert(`Gemini ACTIVE · 2/2 modèles ont répondu.\n${details}`)}else{if(msg){msg.className='status err';msg.textContent=`INACTIVE · ${h.reason||'La clé ne permet pas les deux appels Gemini.'} ${details}`}alert(`Gemini INACTIVE\n${h.reason||''}\n${details}`)}}catch(e){if(msg){msg.className='status err';msg.textContent='INACTIVE · '+(e?.message||String(e))}alert('Gemini INACTIVE · '+(e?.message||String(e)))}finally{if(btn)btn.disabled=false}}
 
 async function saveGeminiAccountingKey(){
-  const input=$('geminiKey'),msg=$('geminiKeyMsg'),btn=$('saveGeminiKey');const apiKey=String(input?.value||'').trim();
-  if(apiKey.length<20){if(msg){msg.className='status err';msg.textContent='Entre la clé Gemini complète.'}return}
-  try{if(btn)btn.disabled=true;if(msg){msg.className='status';msg.textContent='Test de la clé puis enregistrement chiffré…'}const r=await accountingAiApi('gemini-config','POST',{api_key:apiKey},{attempts:1});input.value='';if(msg){msg.className='status ok';msg.textContent=`Clé Gemini enregistrée et testée. Modèle : ${r.model||'Gemini'}.`};setTimeout(()=>settingsPage(),1000)}catch(e){if(msg){msg.className='status err';msg.textContent=e?.message||String(e)}}finally{if(btn)btn.disabled=false}
+  const input=$('geminiKey'),msg=$('geminiKeyMsg'),btn=$('saveGeminiKey'),apiKey=String(input?.value||'').trim();
+  if(apiKey.length<20){if(msg){msg.className='status err';msg.textContent='INACTIVE · entre la clé Gemini complète.'}return}
+  try{if(btn)btn.disabled=true;if(msg){msg.className='status';msg.textContent='Test réel de la clé : attente des 2 réponses Gemini…'}const r=await geminiConfigApi('POST',{action:'save_test',api_key:apiKey}),details=(r.models||[]).map(x=>`${x.model}: ${x.ok?'OK':'ÉCHEC'}`).join(' · ');if(r.active&&r.saved){input.value='';if(msg){msg.className='status ok';msg.textContent=`ACTIVE · clé testée et enregistrée dans Supabase Vault · ${details}`}}else{if(msg){msg.className='status err';msg.textContent=`INACTIVE · clé non enregistrée. ${r.reason||''} ${details}`}}}catch(e){if(msg){msg.className='status err';msg.textContent='INACTIVE · '+(e?.message||String(e))}}finally{if(btn)btn.disabled=false}
 }
 
 async function loadGeminiConfig(){
   const box=$('geminiConfigState');if(!box)return;
-  try{const c=await accountingAiApi('gemini-config','GET',undefined,{attempts:1});box.className='status '+(c.configured?'ok':'err');box.textContent=c.configured?`Gemini configuré · clé stockée : ${c.key_source==='vault'?'Supabase Vault':'secret serveur'} · modèle : ${c.model}`:'Gemini n’est pas encore configuré.'}catch(e){box.className='status err';box.textContent=e?.message||String(e)}
+  try{const c=await geminiConfigApi('GET');if(c.last_test?.active){box.className='status ok';box.textContent='ACTIVE · dernière vérification Gemini réussie.'}else if(c.configured){box.className='status';box.textContent='Clé enregistrée · test Gemini nécessaire.'}else{box.className='status err';box.textContent='INACTIVE · aucune clé Gemini active enregistrée.'}}catch(e){box.className='status err';box.textContent='INACTIVE · '+(e?.message||String(e))}
 }
 
 async function reanalyzePendingAccountingInvoices(){
