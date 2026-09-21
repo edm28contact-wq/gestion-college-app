@@ -1,29 +1,34 @@
 (()=>{'use strict';
 const AGENT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-stock-agent';
-let agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,canValidate:false,items:[]};
+let agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,canValidate:false,items:[]};window.__secretariatDocumentType='invoice';
 const byId=id=>document.getElementById(id);
 const esc2=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function auth2(){return {'content-type':'application/json','authorization':'Bearer '+token,'x-admin-session':token}}
 async function agentReq(action,body){const r=await fetch(AGENT+'?action='+action,{method:'POST',headers:auth2(),body:JSON.stringify(body),cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse Agent Secrétaire invalide'}));if(!r.ok)throw new Error(j.error||'Erreur Agent Secrétaire');return j}
 function numv(el){const v=el?.value;return v===''||v===null||v===undefined?null:Number(v)}
 function ensureAgentBox(){let box=byId('stockAgentBox');if(box)return box;const warnings=byId('warnings');if(!warnings)return null;box=document.createElement('div');box.id='stockAgentBox';box.style.cssText='margin-top:12px;padding:12px;border:1px solid #d7dee5;border-radius:10px;background:#f8fafb';warnings.insertAdjacentElement('afterend',box);return box}
+function rowNodes(){const advanced=[...document.querySelectorAll('.invoice-line-v5')];return advanced.length?advanced:[...document.querySelectorAll('#lines .line')]}
+function rowMeta(r){if(r.classList.contains('invoice-line-v5'))return {};try{return JSON.parse(decodeURIComponent(r.dataset.meta||'%7B%7D'))}catch{return {}}}
+function ensurePriceFields(r,item={}){
+  if(r.classList.contains('invoice-line-v5')||r.querySelector('.agent-price-fields'))return;
+  const m={...rowMeta(r),...item},box=document.createElement('div');box.className='agent-price-fields';box.style.cssText='grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:8px;padding-top:4px';
+  box.innerHTML=`<div><label class="muted">Qté facture</label><input class="aiq" type="number" min="0.001" step="0.001" value="${esc2(m.invoice_quantity??m.quantity??'')}"></div><div><label class="muted">PU HT €</label><input class="apuht" type="number" min="0" step="0.0001" value="${esc2(m.unit_price_ht??'')}"></div><div><label class="muted">PU TTC €</label><input class="aputtc" type="number" min="0" step="0.0001" value="${esc2(m.unit_price_ttc??'')}"></div><div><label class="muted">Total TTC €</label><input class="attc" type="number" min="0" step="0.01" value="${esc2(m.line_total_ttc??'')}"></div>`;
+  r.appendChild(box)
+}
 function collectUiItems(){
-  return [...document.querySelectorAll('.invoice-line-v5')].map((r,i)=>({
-    line_no:i+1,
-    product_id:r.querySelector('.lp')?.value||'',
-    detected_reference:r.dataset.reference||'',
-    detected_label:r.querySelector('.detected')?.textContent||'',
-    invoice_quantity:numv(r.querySelector('.liq')),
-    quantity:numv(r.querySelector('.lsq')),
-    invoice_unit:r.dataset.unit||'',
-    unit_price_ht:numv(r.querySelector('.lpuht')),
-    unit_price_ttc:numv(r.querySelector('.lputtc')),
-    line_total_ht:numv(r.querySelector('.lht')),
-    line_total_ttc:numv(r.querySelector('.lttc')),
-    vat_rate:numv(r.querySelector('.lvat')),
-    reader_confidence:Number(r.dataset.confidence||0),
-    double_read_agreement:r.dataset.agreement==='true'
-  }))
+  return rowNodes().map((r,i)=>{const m=rowMeta(r),advanced=r.classList.contains('invoice-line-v5'),qty=advanced?numv(r.querySelector('.liq')):numv(r.querySelector('.aiq'))??Number(m.invoice_quantity??r.querySelector('.lq')?.value||0),stockQty=advanced?numv(r.querySelector('.lsq')):numv(r.querySelector('.lq'));return {
+    line_no:i+1,product_id:r.querySelector('.lp')?.value||m.product_id||'',
+    detected_reference:advanced?(r.dataset.reference||''):String(m.detected_reference||''),
+    detected_label:advanced?(r.querySelector('.detected')?.textContent||''):String(m.detected_label||m.product_name||r.querySelector('.lp')?.selectedOptions?.[0]?.textContent||''),
+    invoice_quantity:qty,quantity:stockQty,invoice_unit:advanced?(r.dataset.unit||''):String(m.invoice_unit||''),
+    unit_price_ht:advanced?numv(r.querySelector('.lpuht')):numv(r.querySelector('.apuht'))??m.unit_price_ht??null,
+    unit_price_ttc:advanced?numv(r.querySelector('.lputtc')):numv(r.querySelector('.aputtc'))??m.unit_price_ttc??null,
+    line_total_ht:advanced?numv(r.querySelector('.lht')):m.line_total_ht??null,
+    line_total_ttc:advanced?numv(r.querySelector('.lttc')):numv(r.querySelector('.attc'))??m.line_total_ttc??null,
+    vat_rate:advanced?numv(r.querySelector('.lvat')):m.vat_rate??null,
+    reader_confidence:advanced?Number(r.dataset.confidence||0):Number(m.reader_confidence||0),
+    double_read_agreement:advanced?r.dataset.agreement==='true':!!m.double_read_agreement
+  }})
 }
 function renderAgent(result){
   agentState={reviewId:result.review_id,documentType:result.document_type,movementSign:result.movement_sign,prepared:true,canValidate:!!result.can_validate,items:result.items||[]};
@@ -34,15 +39,20 @@ function renderAgent(result){
   <div style="margin-top:8px">${rows.map(x=>`<div style="padding:7px 0;border-bottom:1px solid #e6ebef"><b>${esc2(x.detected_label||x.detected_reference||'Produit')}</b> → ${x.product_exists?`<span class="ok">${esc2(x.product_name||x.product_code)}</span>`:'<span class="err">Produit absent de la base</span>'}<div class="muted">Qté facture ${x.invoice_quantity??'—'} · Qté stock ${x.stock_quantity??'—'} · PU HT ${x.unit_price_ht??'—'} € · PU TTC ${x.unit_price_ttc??'—'} €${x.calculated_unit_price?' · prix unitaire calculé':''} · ${esc2(x.agent_reason||'')}</div></div>`).join('')}</div>`;
 }
 function syncAgentRows(items){
-  const rows=[...document.querySelectorAll('.invoice-line-v5')];
-  items.forEach((x,i)=>{const r=rows[i];if(!r)return;
+  const rows=rowNodes();
+  items.forEach((x,i)=>{const r=rows[i];if(!r)return;ensurePriceFields(r,x);
     if(x.product_id&&r.querySelector('.lp'))r.querySelector('.lp').value=x.product_id;
     if(r.querySelector('.liq')&&x.invoice_quantity!=null)r.querySelector('.liq').value=x.invoice_quantity;
     if(r.querySelector('.lsq')&&x.stock_quantity!=null)r.querySelector('.lsq').value=x.stock_quantity;
-    if(r.querySelector('.lpuht')&&x.unit_price_ht!=null)r.querySelector('.lpuht').value=Number(x.unit_price_ht).toFixed(2);
-    if(r.querySelector('.lputtc')&&x.unit_price_ttc!=null)r.querySelector('.lputtc').value=Number(x.unit_price_ttc).toFixed(2);
-    r.dataset.confidence=String(x.reader_confidence??r.dataset.confidence??0);
-    r.classList.toggle('good',x.agent_status==='ok');r.classList.toggle('warnline',x.agent_status!=='ok');
+    if(r.querySelector('.lq')&&x.stock_quantity!=null)r.querySelector('.lq').value=x.stock_quantity;
+    if(r.querySelector('.aiq')&&x.invoice_quantity!=null)r.querySelector('.aiq').value=x.invoice_quantity;
+    if(r.querySelector('.lpuht')&&x.unit_price_ht!=null)r.querySelector('.lpuht').value=Number(x.unit_price_ht).toFixed(4);
+    if(r.querySelector('.lputtc')&&x.unit_price_ttc!=null)r.querySelector('.lputtc').value=Number(x.unit_price_ttc).toFixed(4);
+    if(r.querySelector('.apuht')&&x.unit_price_ht!=null)r.querySelector('.apuht').value=Number(x.unit_price_ht).toFixed(4);
+    if(r.querySelector('.aputtc')&&x.unit_price_ttc!=null)r.querySelector('.aputtc').value=Number(x.unit_price_ttc).toFixed(4);
+    if(r.querySelector('.attc')&&x.line_total_ttc!=null)r.querySelector('.attc').value=Number(x.line_total_ttc).toFixed(2);
+    if(r.classList.contains('invoice-line-v5')){r.dataset.confidence=String(x.reader_confidence??r.dataset.confidence??0);r.classList.toggle('good',x.agent_status==='ok');r.classList.toggle('warnline',x.agent_status!=='ok')}
+    else r.dataset.meta=encodeURIComponent(JSON.stringify({...rowMeta(r),...x,quantity:x.stock_quantity}));
   });
 }
 async function prepareAgent(){
@@ -57,6 +67,8 @@ async function prepareAgent(){
   const b=byId('validate');if(b)b.textContent=result.document_type==='credit_note'?'Valider humainement et retirer du stock':'Valider humainement et mettre à jour le stock';
   const s=byId('saveStatus');if(s){s.className='status '+(result.can_validate?'ok':'err');s.textContent=result.can_validate?'Agent Secrétaire terminé. Validation humaine obligatoire avant modification du stock.':'Agent Secrétaire terminé, mais une ou plusieurs lignes sont bloquées. Corrige-les puis relance le contrôle.'}
 }
+const baseReader=window.reader;
+if(typeof baseReader==='function')window.reader=async function(action,file,text,extra={}){const out=await baseReader(action,file,text,extra);if(action==='verify')window.__secretariatDocumentType=out.document_type||'invoice';return out};
 const oldHandle=window.handle;
 if(typeof oldHandle==='function')window.handle=async function(file){await oldHandle(file);if(!byId('review')?.classList.contains('hide')){agentState={reviewId:null,prepared:false,canValidate:false,items:[]};const b=ensureAgentBox();if(b)b.innerHTML='<b>Agent Secrétaire Stock</b><div class="muted">Préparation du contrôle ligne par ligne…</div>';try{await prepareAgent()}catch(e){const s=byId('saveStatus');if(s){s.className='status err';s.textContent=e.message||'Agent Secrétaire indisponible'}}}};
 window.validateInvoice=async()=>{
