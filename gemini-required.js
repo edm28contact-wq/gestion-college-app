@@ -40,14 +40,14 @@ async function verifierCall(action,body){
   const r=await nativeFetch(VERIFIER+'?action='+encodeURIComponent(action),{method:'POST',headers:{'content-type':'application/json',...(tk?{authorization:'Bearer '+tk}:{})},body:JSON.stringify(body),cache:'no-store'});
   return {r,j:await bodyJson(r)}
 }
-async function readAccounting(id,readNo){
+async function readAccounting(id,readNo,context={}){
   let attempt=0;
   for(;;){
     attempt++;
     try{
       message(readNo===3?`Lecture Gemini 3/3 de départage · tentative ${attempt}…`:`Lecture Gemini ${readNo}/2 obligatoire · tentative ${attempt}…`);
       await paceModel(modelForRead(readNo));
-      const {r,j}=await verifierCall('read',{id,read_no:readNo});
+      const {r,j}=await verifierCall('read',{id,read_no:readNo,...context});
       if(r.ok&&j?.ok&&j?.analysis&&j?.model)return j;
       if(permanent(j,r.status)){message(j?.error||'Gemini non configuré.',true);throw new Error(j?.error||'Gemini non configuré.')}
       if(!temporary(j,r.status))throw new Error(j?.error||`Lecture Gemini ${readNo} impossible`);
@@ -68,7 +68,7 @@ async function ensureAccountingDoubleRead(id){
   if(!compared.r.ok)throw new Error(compared.j?.error||'Comparaison Gemini impossible');
   if(compared.j?.requires_third_read===true){
     message('Écart détecté : troisième lecture Gemini indépendante de départage…');
-    const third=await readAccounting(key,3);
+    const third=await readAccounting(key,3,{first:first.analysis,second:second.analysis});
     compared=await verifierCall('compare',{id:key,first:first.analysis,second:second.analysis,third:third.analysis,first_model:first.model,second_model:second.model,third_model:third.model});
   }
   const {r,j}=compared;
