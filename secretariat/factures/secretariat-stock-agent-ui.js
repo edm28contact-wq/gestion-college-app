@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const AGENT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-stock-agent';
-let agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,canValidate:false,items:[]};window.__secretariatDocumentType='invoice';
+let agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,items:[]};window.__secretariatDocumentType='invoice';window.__secretariatReaderCertified={headerTriple:false};
 const byId=id=>document.getElementById(id);
 const esc2=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function auth2(){return {'content-type':'application/json','authorization':'Bearer '+token,'x-admin-session':token}}
@@ -27,15 +27,16 @@ function collectUiItems(){
     line_total_ttc:advanced?numv(r.querySelector('.lttc')):numv(r.querySelector('.attc'))??m.line_total_ttc??null,
     vat_rate:advanced?numv(r.querySelector('.lvat')):m.vat_rate??null,
     reader_confidence:advanced?Number(r.dataset.confidence||0):Number(m.reader_confidence||0),
-    double_read_agreement:advanced?r.dataset.agreement==='true':!!m.double_read_agreement
+    double_read_agreement:advanced?r.dataset.agreement==='true':!!m.double_read_agreement,
+    triple_read_agreement:advanced?(r.dataset.tripleAgreement==='true'):!!m.triple_read_agreement
   }})
 }
 function renderAgent(result){
-  agentState={reviewId:result.review_id,documentType:result.document_type,movementSign:result.movement_sign,prepared:true,canValidate:!!result.can_validate,items:result.items||[]};
+  agentState={reviewId:result.review_id,documentType:result.document_type,movementSign:result.movement_sign,prepared:true,items:result.items||[]};
   const box=ensureAgentBox();if(!box)return;
   const credit=result.document_type==='credit_note',a=result.agent||{},rows=result.items||[];
   box.innerHTML=`<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><b>Agent Secrétaire Stock</b><div class="muted">Analyse des lignes, prix unitaires, produits existants et mouvements de stock.</div></div><span class="pill" style="background:${credit?'#fdeaea':'#e7f4eb'};color:${credit?'#941f1f':'#176b3a'}">${credit?'AVOIR · retrait du stock':'FACTURE · entrée en stock'}</span></div>
-  <div class="muted" style="margin-top:8px">Confiance agent : <b>${Math.round(Number(a.confidence||0)*100)} %</b> · ${a.blocked_lines||0} bloquée(s) · ${a.review_lines||0} à contrôler.</div>
+  <div class="muted" style="margin-top:8px">Confiance agent : <b>${Math.round(Number(a.confidence||0)*100)} %</b> · ${a.blocked_lines||0} ligne(s) bloquée(s) · mode automatique strict.</div>
   <div style="margin-top:8px">${rows.map(x=>`<div style="padding:7px 0;border-bottom:1px solid #e6ebef"><b>${esc2(x.detected_label||x.detected_reference||'Produit')}</b> → ${x.product_exists?`<span class="ok">${esc2(x.product_name||x.product_code)}</span>`:'<span class="err">Produit absent de la base</span>'}<div class="muted">Qté facture ${x.invoice_quantity??'—'} · Qté stock ${x.stock_quantity??'—'} · PU HT ${x.unit_price_ht??'—'} € · PU TTC ${x.unit_price_ttc??'—'} €${x.calculated_unit_price?' · prix unitaire calculé':''} · ${esc2(x.agent_reason||'')}</div></div>`).join('')}</div>`;
 }
 function syncAgentRows(items){
@@ -61,30 +62,22 @@ async function prepareAgent(){
   const result=await agentReq('prepare',{
     file_hash:current.hash,file_name:current.file.name,raw_text:current.text,
     supplier:byId('supplier')?.value||'',invoice_number:byId('number')?.value||'',invoice_date:byId('date')?.value||'',
-    document_type:window.__secretariatDocumentType||'invoice',reader_version:13,items
+    document_type:window.__secretariatDocumentType||'invoice',header_triple_agreement:window.__secretariatReaderCertified?.headerTriple===true,reader_version:15,items
   });
   syncAgentRows(result.items||[]);renderAgent(result);
-  const b=byId('validate');if(b)b.textContent=result.document_type==='credit_note'?'Valider humainement et retirer du stock':'Valider humainement et mettre à jour le stock';
-  const s=byId('saveStatus');if(s){s.className='status '+(result.can_validate?'ok':'err');s.textContent=result.can_validate?'Agent Secrétaire terminé. Validation humaine obligatoire avant modification du stock.':'Agent Secrétaire terminé, mais une ou plusieurs lignes sont bloquées. Corrige-les puis relance le contrôle.'}
+  const b=byId('validate');if(b){b.style.display='none';b.disabled=true}
+  const st=byId('saveStatus');
+  if(st){
+    if(result.stock_updated){st.className='status ok';st.textContent=result.document_type==='credit_note'?'Agent Secrétaire certifié : avoir appliqué automatiquement, stock diminué.':'Agent Secrétaire certifié : facture appliquée automatiquement, stock mis à jour.'}
+    else{st.className='status err';st.textContent='Document bloqué automatiquement : stock inchangé. '+((result.items||[]).filter(x=>x.agent_status==='blocked').map(x=>x.agent_reason).filter(Boolean).join(' | ')||'Certification stricte incomplète.')}
+  }
+  if(result.stock_updated){db=await req(SEC+'?action=data');await loadHistory()}
 }
 const baseReader=window.reader;
-if(typeof baseReader==='function')window.reader=async function(action,file,text,extra={}){const out=await baseReader(action,file,text,extra);if(action==='verify')window.__secretariatDocumentType=out.document_type||'invoice';return out};
+if(typeof baseReader==='function')window.reader=async function(action,file,text,extra={}){const out=await baseReader(action,file,text,extra);if(action==='verify'){window.__secretariatDocumentType=out.document_type||'invoice';window.__secretariatReaderCertified={headerTriple:out.header_triple_agreement===true,tripleRead:out.triple_read===true,models:out.ai?.models||[]}}return out};
 const oldHandle=window.handle;
 if(typeof oldHandle==='function')window.handle=async function(file){await oldHandle(file);if(!byId('review')?.classList.contains('hide')){agentState={reviewId:null,prepared:false,canValidate:false,items:[]};const b=ensureAgentBox();if(b)b.innerHTML='<b>Agent Secrétaire Stock</b><div class="muted">Préparation du contrôle ligne par ligne…</div>';try{await prepareAgent()}catch(e){const s=byId('saveStatus');if(s){s.className='status err';s.textContent=e.message||'Agent Secrétaire indisponible'}}}};
-window.validateInvoice=async()=>{
-  const msg=byId('saveStatus');
-  if(!agentState.prepared){try{await prepareAgent()}catch(e){if(msg){msg.className='status err';msg.textContent=e.message}return}}
-  if(!agentState.canValidate){if(msg){msg.className='status err';msg.textContent='Validation bloquée : relancez l’Agent Secrétaire après avoir corrigé les lignes inconnues ou incohérentes.'}return}
-  const items=collectUiItems().map(x=>({...x,stock_quantity:x.quantity}));
-  if(!confirm(agentState.documentType==='credit_note'?'Confirmer cet avoir ? Les quantités validées seront retirées du stock.':'Confirmer cette facture ? Les quantités validées seront ajoutées au stock.'))return;
-  const btn=byId('validate');if(btn)btn.disabled=true;
-  try{
-    const r=await agentReq('validate',{review_id:agentState.reviewId,items});
-    if(msg){msg.className='status ok';msg.textContent=agentState.documentType==='credit_note'?'Avoir validé. Stock diminué avec traçabilité.':'Facture validée. Stock mis à jour avec traçabilité.'}
-    db=await req(SEC+'?action=data');await loadHistory();setTimeout(resetReview,1200)
-  }catch(e){if(msg){msg.className='status err';msg.textContent=e.message||'Validation impossible'}}
-  finally{if(btn)btn.disabled=false}
-};
+window.validateInvoice=async()=>{const msg=byId('saveStatus');if(msg){msg.className='status err';msg.textContent='Validation humaine désactivée. Le stock est mis à jour uniquement par certification automatique stricte.'}};
 const originalReset=window.resetReview;
-window.resetReview=()=>{agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,canValidate:false,items:[]};window.__secretariatDocumentType='invoice';if(originalReset)originalReset()};
+window.resetReview=()=>{agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,items:[]};window.__secretariatDocumentType='invoice';window.__secretariatReaderCertified={headerTriple:false};if(originalReset)originalReset()};
 })();
