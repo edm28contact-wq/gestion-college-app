@@ -16,7 +16,7 @@ function ensurePriceFields(r,item={}){
   r.appendChild(box)
 }
 function collectUiItems(){
-  return rowNodes().map((r,i)=>{const m=rowMeta(r),advanced=r.classList.contains('invoice-line-v5'),qty=advanced?numv(r.querySelector('.liq')):numv(r.querySelector('.aiq'))??Number(m.invoice_quantity??r.querySelector('.lq')?.value||0),stockQty=advanced?numv(r.querySelector('.lsq')):numv(r.querySelector('.lq'));return {
+  return rowNodes().map((r,i)=>{const m=rowMeta(r),advanced=r.classList.contains('invoice-line-v5'),qty=advanced?numv(r.querySelector('.liq')):(numv(r.querySelector('.aiq'))??Number((m.invoice_quantity??r.querySelector('.lq')?.value)??0)),stockQty=advanced?numv(r.querySelector('.lsq')):numv(r.querySelector('.lq'));return {
     line_no:i+1,product_id:r.querySelector('.lp')?.value||m.product_id||'',
     detected_reference:advanced?(r.dataset.reference||''):String(m.detected_reference||''),
     detected_label:advanced?(r.querySelector('.detected')?.textContent||''):String(m.detected_label||m.product_name||r.querySelector('.lp')?.selectedOptions?.[0]?.textContent||''),
