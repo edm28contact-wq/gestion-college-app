@@ -12,7 +12,7 @@
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
-const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null;
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null;
 const pages=[['dashboard','Tableau de bord'],['tenants','Suivi locataires'],['properties','Dossiers logement'],['config','Configuration'],['guide','Guide / commandes']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
