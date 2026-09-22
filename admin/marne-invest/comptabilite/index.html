@@ -28,7 +28,7 @@
   </section>
 </main>
 <script>
-const token=localStorage.getItem('marne_invest_admin_token')||'';
+const token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'';
 const status=document.getElementById('status');
 if(!token){status.className='status err';status.textContent='Session Marne Invest absente. Connectez-vous d’abord à l’administration Marne Invest.'}
 else{status.textContent='Espace Comptabilité Marne Invest actif';document.getElementById('content').hidden=false}
