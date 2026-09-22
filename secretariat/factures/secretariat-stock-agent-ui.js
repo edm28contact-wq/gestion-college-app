@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const AGENT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-stock-agent';
-let agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,items:[]};window.__secretariatDocumentType='invoice';window.__secretariatReaderCertified={headerTriple:false};
+let agentState={reviewId:null,documentType:'invoice',movementSign:1,prepared:false,items:[]};window.__secretariatDocumentType='invoice';window.__secretariatReaderCertified={headerDouble:false};
 const byId=id=>document.getElementById(id);
 const esc2=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function auth2(){return {'content-type':'application/json','authorization':'Bearer '+token,'x-admin-session':token}}
@@ -28,7 +28,7 @@ function collectUiItems(){
     vat_rate:advanced?numv(r.querySelector('.lvat')):m.vat_rate??null,
     reader_confidence:advanced?Number(r.dataset.confidence||0):Number(m.reader_confidence||0),
     double_read_agreement:advanced?r.dataset.agreement==='true':!!m.double_read_agreement,
-    triple_read_agreement:advanced?(r.dataset.tripleAgreement==='true'):!!m.triple_read_agreement
+    triple_read_agreement:false
   }})
 }
 function renderAgent(result){
@@ -62,7 +62,7 @@ async function prepareAgent(){
   const result=await agentReq('prepare',{
     file_hash:current.hash,file_name:current.file.name,raw_text:current.text,
     supplier:byId('supplier')?.value||'',invoice_number:byId('number')?.value||'',invoice_date:byId('date')?.value||'',
-    document_type:window.__secretariatDocumentType||'invoice',header_triple_agreement:window.__secretariatReaderCertified?.headerTriple===true,reader_version:23,items
+    document_type:window.__secretariatDocumentType||'invoice',header_double_agreement:window.__secretariatReaderCertified?.headerDouble===true,reader_version:24,items
   });
   syncAgentRows(result.items||[]);renderAgent(result);
   const b=byId('validate');if(b){b.style.display='none';b.disabled=true}
@@ -74,7 +74,7 @@ async function prepareAgent(){
   if(result.stock_updated){db=await req(SEC+'?action=data');await loadHistory()}
 }
 const baseReader=window.reader;
-if(typeof baseReader==='function')window.reader=async function(action,file,text,extra={}){const out=await baseReader(action,file,text,extra);if(action==='verify'){window.__secretariatDocumentType=out.document_type||'invoice';window.__secretariatReaderCertified={headerTriple:out.header_triple_agreement===true,tripleRead:out.triple_read===true,models:out.ai?.models||[]}}return out};
+if(typeof baseReader==='function')window.reader=async function(action,file,text,extra={}){const out=await baseReader(action,file,text,extra);if(action==='verify'){window.__secretariatDocumentType=out.document_type||'invoice';window.__secretariatReaderCertified={headerDouble:out.header_double_agreement===true,doubleRead:out.double_read===true,models:out.ai?.models||[]}}return out};
 const oldHandle=window.handle;
 if(typeof oldHandle==='function')window.handle=async function(file){await oldHandle(file);if(!byId('review')?.classList.contains('hide')){agentState={reviewId:null,prepared:false,canValidate:false,items:[]};const b=ensureAgentBox();if(b)b.innerHTML='<b>Agent Secrétaire Stock</b><div class="muted">Préparation du contrôle ligne par ligne…</div>';try{await prepareAgent()}catch(e){const s=byId('saveStatus');if(s){s.className='status err';s.textContent=e.message||'Agent Secrétaire indisponible'}}}};
 window.validateInvoice=async()=>{const msg=byId('saveStatus');if(msg){msg.className='status err';msg.textContent='Validation humaine désactivée. Le stock est mis à jour uniquement par certification automatique stricte.'}};
