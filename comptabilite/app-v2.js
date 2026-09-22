@@ -48,7 +48,7 @@ function amounts(t){const ht=last(t,/(?:total\s+(?:eur\s+)?ht|montant\s+ht)\s*[:
 async function processFile(file){if(!file||file.type!=='application/pdf'){alert('PDF requis.');return}try{prog(2,'Préparation…');const t=await textPdf(file),a=amounts(t),f=new FormData();f.append('file',file);f.append('raw_text',t);f.append('supplier',supplier(t));f.append('invoice_number',invNo(t));f.append('invoice_date',invDate(t));f.append('amount_ht',a.ht??'');f.append('amount_vat',a.vat??'');f.append('amount_ttc',a.ttc??'');f.append('vat_rate',a.rate??'');prog(90,'Enregistrement…');const r=await api('upload','POST',f,true),j=await r.json();await refresh();page='dashboard';render();review(j.item.id)}catch(e){$('imsg').className='status err';$('imsg').textContent=e.message}}
 
 function isoDate(d){return d.toISOString().slice(0,10)}
-function exportDefaults(){const d=new Date(),from=new Date(d.getFullYear(),d.getMonth(),1),to=new Date(d.getFullYear(),d.getMonth()+1,0);return {from:isoDate(from),to:isoDate(to)}}
+function exportDefaults(){const ready=(db?.invoices||[]).filter(i=>i.workflow_stage==='validee_humain'&&i.invoice_date).sort((a,b)=>String(b.invoice_date).localeCompare(String(a.invoice_date))),base=ready.length?new Date(String(ready[0].invoice_date)+'T12:00:00'):new Date(),from=new Date(base.getFullYear(),base.getMonth(),1),to=new Date(base.getFullYear(),base.getMonth()+1,0);return {from:isoDate(from),to:isoDate(to)}}
 function exportEligible(from,to){return (db.invoices||[]).filter(i=>i.workflow_stage==='validee_humain'&&String(i.invoice_date||'')>=from&&String(i.invoice_date||'')<=to)}
 async function batchRequest(params={},raw=false){
   const u=new URL(BATCH_BASE);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));
