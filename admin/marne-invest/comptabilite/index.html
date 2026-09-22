@@ -1,37 +1,35 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Comptabilité Marne Invest</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comptabilité 9 Marne</title>
 <style>
-:root{font-family:Inter,system-ui,Arial,sans-serif;color:#17202a;background:#f4f6f8;--p:#334155;--line:#d7dee5;--muted:#6b7785}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1100px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:22px}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;text-decoration:none;display:inline-block;cursor:pointer}.primary{background:var(--p);color:#fff}.secondary{background:#e8edf1;color:#17202a}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.kpi{font-size:25px;font-weight:800;margin-top:4px}.muted{color:var(--muted);font-size:13px}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2f5;font-size:12px;font-weight:700}.status{min-height:22px;margin:8px 0}.err{color:#a32929}@media(max-width:760px){.wrap{padding:14px}.top{flex-direction:column}.grid{grid-template-columns:1fr}}
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#17202a;background:#f4f6f8;--p:#334155;--line:#d7dee5;--muted:#6b7785;--bad:#a32929;--ok:#176b3a}*{box-sizing:border-box}body{margin:0}.hide{display:none!important}.wrap{max-width:1200px;margin:auto;padding:24px}.login{min-height:100vh;display:grid;place-items:center;padding:20px}.login .box{width:min(430px,100%);background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px}.top,.actions{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}.btn{border:0;border-radius:9px;padding:10px 14px;font-weight:700;text-decoration:none;cursor:pointer;background:#e8edf1;color:#17202a}.primary{background:var(--p);color:#fff}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.kpi{font-size:25px;font-weight:800;margin-top:4px}.muted{color:var(--muted);font-size:13px}.status{min-height:22px;margin:8px 0}.err{color:var(--bad)}.ok{color:var(--ok)}input{width:100%;padding:10px;border:1px solid #c7d0d9;border-radius:9px;font:inherit}.table{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px}table{border-collapse:collapse;width:100%;min-width:760px}th,td{padding:9px;border-bottom:1px solid #edf0f2;text-align:left}th{background:#f7f9fa}.num{text-align:right;font-variant-numeric:tabular-nums}@media(max-width:800px){.wrap{padding:14px}.grid{grid-template-columns:1fr 1fr}}@media(max-width:520px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<main class="wrap">
-  <div class="top">
-    <div><span class="pill">Marne Invest</span><h1 style="margin:7px 0 5px">Comptabilité Marne Invest</h1><div class="muted">Espace comptable dédié à la société Marne Invest</div></div>
-    <div class="actions"><a class="btn secondary" href="../">Retour Admin Marne Invest</a><a class="btn secondary" href="../../holding/">Retour Holding</a></div>
-  </div>
-  <div id="status" class="status">Vérification de la session…</div>
-  <section id="content" hidden>
-    <div class="grid">
-      <div class="card"><div class="muted">Loyers / recettes</div><div class="kpi">—</div><div class="muted">Suivi comptable à connecter</div></div>
-      <div class="card"><div class="muted">Charges / dépenses</div><div class="kpi">—</div><div class="muted">Suivi comptable à connecter</div></div>
-      <div class="card"><div class="muted">Pièces à contrôler</div><div class="kpi">—</div><div class="muted">Factures et justificatifs</div></div>
-    </div>
-    <div class="card">
-      <h2 style="margin-top:0">Périmètre comptable Marne Invest</h2>
-      <div class="muted">Ce module est désormais séparé de la comptabilité du Collège. Il est destiné aux recettes locatives, charges, factures, dépenses, rapprochements, exports et suivi comptable propres à Marne Invest.</div>
-    </div>
-  </section>
+<section id="login" class="login hide"><form class="box" onsubmit="event.preventDefault();login()"><h1>Comptabilité 9 Marne</h1><p class="muted">Connexion gérée par la Holding.</p><label>Utilisateur</label><input id="user" autocomplete="username"><br><br><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><br><br><button class="btn primary" type="submit" style="width:100%">Se connecter</button><div id="loginStatus" class="status"></div></form></section>
+<main id="app" class="wrap hide">
+<div class="top"><div><h1>Comptabilité 9 Marne</h1><div id="who" class="muted">Marne Invest · synthèse locative</div></div><div class="actions"><a class="btn" href="../">Administration 9 Marne</a><a class="btn" href="../locataires/">Gestion locataire</a><a class="btn" href="../studios/">Gestion studio</a><a class="btn" href="../../holding/">Holding</a><button class="btn" onclick="refresh()">Actualiser</button><button class="btn" onclick="logout()">Déconnexion</button></div></div>
+<div id="status" class="status"></div>
+<section class="grid">
+<div class="card"><div class="muted">Loyers / paiements dus</div><div id="due" class="kpi">—</div></div>
+<div class="card"><div class="muted">Paiements reçus</div><div id="received" class="kpi">—</div></div>
+<div class="card"><div class="muted">Solde cumulé</div><div id="balance" class="kpi">—</div></div>
+<div class="card"><div class="muted">Lignes en retard</div><div id="late" class="kpi">—</div></div>
+</section>
+<div class="card"><h2 style="margin-top:0">Suivi par locataire</h2><div class="muted">Synthèse issue de la gestion locative 9 Marne. Les écritures comptables détaillées pourront être ajoutées dans ce module sans mélanger les données du Collège.</div></div>
+<div id="table" class="table"></div>
 </main>
 <script>
-const token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'';
-const status=document.getElementById('status');
-if(!token){status.className='status err';status.textContent='Session Marne Invest absente. Connectez-vous d’abord à l’administration Marne Invest.'}
-else{status.textContent='Espace Comptabilité Marne Invest actif';document.getElementById('content').hidden=false}
+const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
+let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'';
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),n=v=>Number(v||0),fmt=v=>n(v).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+async function api(action,method='GET',body){const r=await fetch(API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse invalide'}));if(!r.ok)throw Object.assign(new Error(j.error||'Erreur serveur'),{status:r.status});return j}
+async function login(){const st=$('loginStatus');try{st.textContent='Connexion…';const j=await api('login','POST',{username:$('user').value.trim(),password:$('pass').value});token=j.token;localStorage.setItem('marne_invest_admin_token',token);$('pass').value='';await enter()}catch(e){st.className='status err';st.textContent=e.message}}
+function logout(){localStorage.removeItem('marne_invest_admin_token');token='';location.reload()}
+async function enter(){try{$('login').classList.add('hide');$('app').classList.remove('hide');await refresh()}catch(e){if(e.status===401||e.status===403){$('app').classList.add('hide');$('login').classList.remove('hide');$('loginStatus').className='status err';$('loginStatus').textContent=e.message;return}$('status').className='status err';$('status').textContent=e.message}}
+async function refresh(){const db=await api('data');const rows=db.tenants||[];const due=rows.reduce((s,x)=>s+n(x.data?.['Paiement dû']),0),received=rows.reduce((s,x)=>s+n(x.data?.['Paiement reçu']),0),balance=rows.reduce((s,x)=>s+n(x.data?.['Solde']),0),late=rows.filter(x=>x.data?.['Retard']==='OUI').length;$('who').textContent='Marne Invest · '+esc(db.current_user?.display_name||db.current_user?.username||'')+' · actualisé '+new Date(db.server_time).toLocaleString('fr-FR');$('due').textContent=fmt(due);$('received').textContent=fmt(received);$('balance').textContent=fmt(balance);$('late').textContent=late;$('status').className='status ok';$('status').textContent='Données locatives chargées.';$('table').innerHTML='<table><thead><tr><th>Locataire</th><th>Logement</th><th class="num">Dû</th><th class="num">Reçu</th><th class="num">Solde</th><th>Retard</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+esc(x.data?.['Locataire']||'—')+'</td><td>'+esc(x.data?.['Logement']||'—')+'</td><td class="num">'+fmt(x.data?.['Paiement dû'])+'</td><td class="num">'+fmt(x.data?.['Paiement reçu'])+'</td><td class="num">'+fmt(x.data?.['Solde'])+'</td><td>'+esc(x.data?.['Retard']||'NON')+'</td></tr>').join('')+'</tbody></table>'}
+if(token)enter();else $('login').classList.remove('hide');
 </script>
-</body>
-</html>
+</body></html>
