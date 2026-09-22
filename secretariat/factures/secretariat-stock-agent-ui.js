@@ -62,7 +62,7 @@ async function prepareAgent(){
   const result=await agentReq('prepare',{
     file_hash:current.hash,file_name:current.file.name,raw_text:current.text,
     supplier:byId('supplier')?.value||'',invoice_number:byId('number')?.value||'',invoice_date:byId('date')?.value||'',
-    document_type:window.__secretariatDocumentType||'invoice',header_triple_agreement:window.__secretariatReaderCertified?.headerTriple===true,reader_version:19,items
+    document_type:window.__secretariatDocumentType||'invoice',header_triple_agreement:window.__secretariatReaderCertified?.headerTriple===true,reader_version:20,items
   });
   syncAgentRows(result.items||[]);renderAgent(result);
   const b=byId('validate');if(b){b.style.display='none';b.disabled=true}
