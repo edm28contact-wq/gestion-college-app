@@ -1,10 +1,11 @@
 const BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-api';
+const BATCH_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/accounting-batch-export';
 let token=localStorage.getItem('college_accounting_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page='dashboard',agentReturnPoll=null,agentReturnBusy=false;
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function url(action,params={}){const u=new URL(BASE);u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));return u.toString()}
 async function api(action,method='GET',body,raw=false,params={}){const r=await fetch(url(action,params),{method,headers:{...(raw?{}:{'content-type':'application/json'}),...(token?{authorization:'Bearer '+token}:{})},body:raw?body:(body?JSON.stringify(body):undefined),cache:'no-store'});if(raw){if(!r.ok){const j=await r.json().catch(()=>({error:'Erreur serveur'}));throw new Error(j.error||'Erreur serveur')}return r}const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401&&action!=='login'){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
 async function login(){try{const j=await api('login','POST',{username:$('user').value,password:$('pass').value});token=j.token;localStorage.setItem('college_accounting_token',token);if(j.must_change_password){$('login').classList.add('hide');$('first').classList.remove('hide');return}await load()}catch(e){$('loginMsg').textContent=e.message}}
-async function firstPassword(){const a=$('fp1').value,b=$('fp2').value;if(a.length<10)return $('firstMsg').textContent='10 caractères minimum.';if(a!==b)return $('firstMsg').textContent='Les mots de passe ne correspondent pas.';try{await api('change-password','POST',{password:a});localStorage.removeItem('college_accounting_token');location.reload()}catch(e){$('firstMsg').textContent=e.message}}
+async function firstPassword(){const a=$('fp1').value,b=$('fp2').value;if(a.length<14)return $('firstMsg').textContent='14 caractères minimum.';if(a!==b)return $('firstMsg').textContent='Les mots de passe ne correspondent pas.';try{await api('change-password','POST',{password:a});localStorage.removeItem('college_accounting_token');location.reload()}catch(e){$('firstMsg').textContent=e.message}}
 function logout(){if(agentReturnPoll)clearInterval(agentReturnPoll);agentReturnPoll=null;['college_accounting_token','edm_admin_token','holding_admin_token'].forEach(k=>localStorage.removeItem(k));token='';location.reload()}
 async function load(){db=await api('data');$('login').classList.add('hide');$('first').classList.add('hide');$('app').classList.remove('hide');$('who').textContent=(db.current_user.display_name||'Comptabilité')+' · validation humaine obligatoire';render();startAgentReturnPolling()}
 async function refresh(){db=await api('data');render()}
@@ -28,7 +29,7 @@ function startAgentReturnPolling(){
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshAgentReturns()});
 }
 function show(p){page=p;render()}
-function render(){if(!db)return;[['td','dashboard'],['ti','import'],['tr','rules'],['ts','settings']].forEach(([id,p])=>$(id).className='btn '+(page===p?'active':'secondary'));({dashboard,import:importPage,rules:rulesPage,settings:settingsPage}[page]||dashboard)()}
+function render(){if(!db)return;[['td','dashboard'],['ti','import'],['te','export'],['tr','rules'],['ts','settings']].forEach(([id,p])=>$(id).className='btn '+(page===p?'active':'secondary'));({dashboard,import:importPage,export:exportPage,rules:rulesPage,settings:settingsPage}[page]||dashboard)()}
 function money(v){return v==null?'—':Number(v).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'}
 function badge(s){return s==='exportee'?'<span class="badge expb">Exportée</span>':s==='validee'?'<span class="badge okb">Validée</span>':s==='erreur'?'<span class="badge errb">Erreur</span>':'<span class="badge warn">À contrôler</span>'}
 function workflowBadge(i){const s=String(i?.workflow_stage||'a_traiter');return s==='exportee_charlemagne'?'<span class="badge expb">Export Charlemagne</span>':s==='validee_humain'?'<span class="badge okb">Validée humainement</span>':s==='traitee_agent'?'<span class="badge warn">À valider humainement</span>':s==='traitee_gemini'?'<span class="badge warn">Traitée par Gemini · en attente Agent</span>':'<span class="badge warn">Facture à traiter</span>'}
@@ -45,6 +46,53 @@ function nval(s){const n=Number(String(s||'').replace(/[\s ]/g,'').replace(',',
 function last(t,re){const a=[...t.matchAll(re)];return a.length?nval(a[a.length-1][1]):null}
 function amounts(t){const ht=last(t,/(?:total\s+(?:eur\s+)?ht|montant\s+ht)\s*[:€]?\s*([0-9][0-9\s .,]*)/ig),ttc=last(t,/(?:total\s+(?:eur\s+)?ttc|montant\s+ttc)\s*[:€]?\s*([0-9][0-9\s .,]*)/ig),vat=last(t,/(?:montant\s+tva|tva\s+\d+(?:[.,]\d+)?\s*%)\s*[:€]?\s*([0-9][0-9\s .,]*)/ig);const rm=t.match(/tva\s*(\d+(?:[.,]\d+)?)\s*%/i);return {ht,ttc,vat,rate:rm?nval(rm[1]):null}}
 async function processFile(file){if(!file||file.type!=='application/pdf'){alert('PDF requis.');return}try{prog(2,'Préparation…');const t=await textPdf(file),a=amounts(t),f=new FormData();f.append('file',file);f.append('raw_text',t);f.append('supplier',supplier(t));f.append('invoice_number',invNo(t));f.append('invoice_date',invDate(t));f.append('amount_ht',a.ht??'');f.append('amount_vat',a.vat??'');f.append('amount_ttc',a.ttc??'');f.append('vat_rate',a.rate??'');prog(90,'Enregistrement…');const r=await api('upload','POST',f,true),j=await r.json();await refresh();page='dashboard';render();review(j.item.id)}catch(e){$('imsg').className='status err';$('imsg').textContent=e.message}}
+
+function isoDate(d){return d.toISOString().slice(0,10)}
+function exportDefaults(){const d=new Date(),from=new Date(d.getFullYear(),d.getMonth(),1),to=new Date(d.getFullYear(),d.getMonth()+1,0);return {from:isoDate(from),to:isoDate(to)}}
+function exportEligible(from,to){return (db.invoices||[]).filter(i=>i.workflow_stage==='validee_humain'&&String(i.invoice_date||'')>=from&&String(i.invoice_date||'')<=to)}
+async function batchRequest(params={},raw=false){
+  const u=new URL(BATCH_BASE);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));
+  const r=await fetch(u,{headers:{...(token?{authorization:'Bearer '+token}:{})},cache:'no-store'});
+  if(raw){if(!r.ok){const j=await r.json().catch(()=>({error:'Erreur export Charlemagne'}));if(r.status===401)logout();throw new Error(j.error||'Erreur export Charlemagne')}return r}
+  const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur export Charlemagne');return j
+}
+async function exportPage(){
+  const def=exportDefaults();
+  $('content').innerHTML=`<div class="card"><div class="actions" style="justify-content:space-between"><div><h2 style="margin:0">Générer l’import Charlemagne</h2><p class="muted">Le fichier contient uniquement les factures validées humainement et non encore exportées. Format : TXT tabulé Windows-1252.</p></div></div><div class="fields"><div><label>Du</label><input id="charFrom" type="date" value="${def.from}" onchange="updateCharPreview()"></div><div><label>Au</label><input id="charTo" type="date" value="${def.to}" onchange="updateCharPreview()"></div><div><label>Factures prêtes</label><div id="charCount" class="kpi" style="padding-top:5px">0</div></div></div><div id="charPreview" class="muted" style="margin:10px 0"></div><button id="charGenerate" class="btn primary" onclick="generateCharlemagne()">Générer le fichier d’import Charlemagne</button><div id="charStatus" class="status"></div></div><div class="card"><div class="actions" style="justify-content:space-between"><h2 style="margin:0">Historique des lots</h2><button class="btn secondary" onclick="loadCharBatches()">Actualiser</button></div><div id="charHistory" class="muted" style="margin-top:10px">Chargement…</div></div>`;
+  updateCharPreview();await loadCharBatches()
+}
+function updateCharPreview(){
+  const from=$('charFrom')?.value||'',to=$('charTo')?.value||'',list=from&&to?exportEligible(from,to):[],total=list.reduce((s,i)=>s+Number(i.amount_ttc||0),0);
+  if($('charCount'))$('charCount').textContent=list.length;
+  if($('charPreview'))$('charPreview').innerHTML=list.length?`${list.length} facture${list.length>1?'s':''} prête${list.length>1?'s':''} · total TTC ${money(total)}<br>${list.slice(0,12).map(i=>esc((i.invoice_date||'')+' · '+(i.supplier||'')+' · '+(i.invoice_number||''))).join('<br>')}${list.length>12?'<br>…':''}`:'Aucune facture validée non exportée sur cette période.';
+  if($('charGenerate'))$('charGenerate').disabled=!list.length||!from||!to||from>to
+}
+function responseFileName(r,fallback){const h=r.headers.get('content-disposition')||'',m=h.match(/filename="?([^";]+)"?/i);return m?.[1]||fallback}
+function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1200)}
+async function generateCharlemagne(){
+  const from=$('charFrom').value,to=$('charTo').value,btn=$('charGenerate'),st=$('charStatus');
+  if(!from||!to||from>to){st.className='status err';st.textContent='Période invalide.';return}
+  const eligible=exportEligible(from,to);if(!eligible.length){st.className='status err';st.textContent='Aucune facture prête à exporter.';return}
+  if(!confirm(`Générer le lot Charlemagne pour ${eligible.length} facture${eligible.length>1?'s':''} du ${from} au ${to} ?\n\nCes factures seront marquées comme exportées afin d’éviter les doublons.`))return;
+  btn.disabled=true;st.className='status';st.textContent='Génération et contrôles en cours…';
+  try{
+    const r=await batchRequest({mode:'generate',from,to},true),blob=await r.blob(),name=responseFileName(r,`import-charlemagne-${from}-${to}.txt`);
+    downloadBlob(blob,name);
+    st.className='status ok';st.textContent=`Fichier généré : ${name} · ${r.headers.get('x-invoice-count')||eligible.length} facture(s).`;
+    await refresh();await loadCharBatches();updateCharPreview()
+  }catch(e){st.className='status err';st.textContent=e.message}
+  finally{btn.disabled=false;updateCharPreview()}
+}
+async function loadCharBatches(){
+  const el=$('charHistory');if(!el)return;
+  try{
+    const j=await batchRequest({mode:'list'}),b=j.batches||[];
+    if(!b.length){el.innerHTML='Aucun lot généré.';return}
+    el.innerHTML=`<div class="table"><table><thead><tr><th>Lot</th><th>Période</th><th>Factures</th><th>Lignes</th><th>TTC</th><th>Généré le</th><th>Statut</th><th></th></tr></thead><tbody>${b.map(x=>`<tr><td><b>${esc(x.batch_no)}</b><br><span class="muted">${esc(x.file_name)}</span></td><td>${esc(x.period_from)} → ${esc(x.period_to)}</td><td>${Number(x.invoice_count||0)}</td><td>${Number(x.line_count||0)}</td><td>${money(x.total_ttc)}</td><td>${x.generated_at?new Date(x.generated_at).toLocaleString('fr-FR'):'—'}</td><td>${x.cancelled_at?'<span class="badge errb">Annulé</span>':x.imported_at?'<span class="badge okb">Importé</span>':'<span class="badge expb">Généré</span>'}</td><td>${x.cancelled_at?'':`<button class="btn secondary" onclick="downloadCharBatch('${x.id}')">Retélécharger</button>`}</td></tr>`).join('')}</tbody></table></div>`
+  }catch(e){el.innerHTML=`<span class="err">${esc(e.message)}</span>`}
+}
+async function downloadCharBatch(id){try{const r=await batchRequest({mode:'download',id},true),b=await r.blob();downloadBlob(b,responseFileName(r,'import-charlemagne.txt'))}catch(e){alert(e.message)}}
+
 function rulesPage(){$('content').innerHTML=`<div class="card"><h2>Règles fournisseurs</h2>${db.rules.map(r=>`<div class="rule"><b>${esc(r.supplier_name)}</b><span>${esc(r.supplier_account)}</span><span>${esc(r.expense_account)}</span><span>${esc(r.expense_label||'')}</span></div>`).join('')}</div>`}
 function settingsPage(){$('content').innerHTML='<div class="card"><h2>Paramètres</h2><p>La TVA est non récupérable dans ce module : les charges sont ventilées au TTC. Le total des charges doit être égal au TTC avant validation.</p></div>'}
 function chargeRow(account='',label='',amount=''){const id=crypto.randomUUID();return `<div class="charge-row" data-row="${id}"><input class="c-account" placeholder="Compte de charge" value="${esc(account)}"><input class="c-label" placeholder="Libellé" value="${esc(label)}"><input class="c-amount" type="number" step="0.01" placeholder="Montant TTC" value="${esc(amount)}" oninput="updateChargeTotal()"><button class="btn secondary" onclick="removeCharge('${id}')">Supprimer</button></div>`}
