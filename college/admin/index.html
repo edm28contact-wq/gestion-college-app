@@ -17,7 +17,7 @@
 <script>
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats';
-let token=localStorage.getItem('college_admin_token')||'',db=null,page='dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('college_admin_token')||'',db=null,page=['dashboard','categories','subcategories','products','apps','events','purchases','stats','readerSettings'].includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
 const pages=[['dashboard','Tableau de bord'],['categories','Catégories'],['subcategories','Sous-catégories'],['products','Produits & stocks'],['apps','Applications'],['events','Mouvements'],['purchases','Achats'],['stats','Statistiques'],['readerSettings','Lecteur PDF & IA']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function frError(v){const s=String(v||'Erreur serveur');if(/failed to fetch|networkerror|network request failed/i.test(s))return 'Connexion au service impossible. Vérifiez le réseau puis réessayez.';return s}
