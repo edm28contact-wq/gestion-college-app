@@ -86,8 +86,15 @@ async function inspectOdFile(file){
       st.textContent='Agent Comptable · lecture 2/2 du PDF…';const second=await payrollRead(file,2);
       const reads=[first,second];st.textContent='Comparaison des deux lectures…';j=await payrollCompare(file,reads);
       if(j.requires_third_read){
-        st.textContent='Désaccord détecté · lecture 3/3 de départage…';reads.push(await payrollRead(file,3));
-        st.textContent='Contrôle final des trois lectures…';j=await payrollCompare(file,reads)
+        st.textContent='Désaccord détecté · lecture 3/3 de départage…';
+        try{
+          reads.push(await payrollRead(file,3));
+          st.textContent='Contrôle final des trois lectures…';j=await payrollCompare(file,reads)
+        }catch(e){
+          odInspect={is_pdf:true,_reads:reads,requires_third_read:true};
+          pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">La 3e lecture est temporairement indisponible.</b><div class="muted" style="margin:8px 0">'+esc(e.message)+'</div><button class="btn primary" onclick="retryPayrollThirdRead()">Réessayer uniquement la lecture 3</button></div>';
+          st.className='status err';st.textContent='Les lectures 1 et 2 sont conservées. Aucune donnée n’est perdue.';return
+        }
       }
       j.reads=reads.length;j._reads=reads
     }else{
@@ -97,6 +104,20 @@ async function inspectOdFile(file){
     pv.innerHTML=`<div class="table"><table><thead><tr><th>Feuille / source</th><th>Lignes</th><th>Débit</th><th>Crédit</th><th>Écart</th><th>Période</th><th>Journal cible</th><th></th></tr></thead><tbody>${cs.map((x,i)=>{const ok=!x.error&&Number(x.difference||0)===0,learn=!isPdf&&/chambertin/i.test(String(x.sheet_name||''));return `<tr><td><b>${esc(x.sheet_name||'TXT')}</b>${x.error?`<br><span class="err">${esc(x.error)}</span>`:''}${isPdf?`<br><span class="muted">Agent Comptable · ${j.reads||2} lecture(s) · modèle Chambertin v${j.template_version||'?'}</span>`:''}</td><td>${x.line_count??'—'}</td><td>${x.debit_total==null?'—':money(x.debit_total)}</td><td>${x.credit_total==null?'—':money(x.credit_total)}</td><td class="${ok?'ok':'err'}">${x.error?'—':money(x.difference||0)}</td><td>${x.period_from?esc(x.period_from)+(x.period_to&&x.period_to!==x.period_from?' → '+esc(x.period_to):''):'—'}</td><td><select id="odJournal_${i}"><option value="OD">OD</option><option value="AC">AC</option></select></td><td>${learn?`<button class="btn secondary" onclick="learnChambertin(${i})">Apprendre Chambertin</button> `:''}${ok?`<button class="btn primary" onclick="generateOd(${i})">Générer Charlemagne</button>`:'<span class="muted">Non générable</span>'}</td></tr>`}).join('')}</tbody></table></div>`;
     st.className='status ok';st.textContent=isPdf?`${file.name} contrôlé par l’Agent Comptable · ${j.reads} lecture(s) · écriture équilibrée à 0,00 €.`:`${file.name} analysé · ${cs.length} feuille(s) détectée(s).`;
   }catch(e){st.className='status err';st.textContent=e.message}
+}
+async function retryPayrollThirdRead(){
+  const st=$('odStatus'),pv=$('odPreview');if(!odFile||!odInspect?._reads?.[0]||!odInspect?._reads?.[1])return;
+  st.className='status';st.textContent='Nouvelle tentative de la lecture 3 uniquement…';
+  try{
+    const reads=[odInspect._reads[0],odInspect._reads[1],await payrollRead(odFile,3)];
+    st.textContent='Contrôle final des trois lectures…';const j=await payrollCompare(odFile,reads);j.reads=reads.length;j._reads=reads;odInspect={...j,is_pdf:true};
+    const cs=j.candidates||[];if(!cs.length)throw new Error('Aucune écriture reconnue après départage.');
+    pv.innerHTML=`<div class="table"><table><thead><tr><th>Feuille / source</th><th>Lignes</th><th>Débit</th><th>Crédit</th><th>Écart</th><th>Période</th><th>Journal cible</th><th></th></tr></thead><tbody>${cs.map((x,i)=>{const ok=!x.error&&Number(x.difference||0)===0;return `<tr><td><b>${esc(x.sheet_name||'Chambertin (PDF)')}</b><br><span class="muted">Agent Comptable · 3 lectures · modèle Chambertin v${j.template_version||'?'}</span></td><td>${x.line_count??'—'}</td><td>${x.debit_total==null?'—':money(x.debit_total)}</td><td>${x.credit_total==null?'—':money(x.credit_total)}</td><td class="${ok?'ok':'err'}">${money(x.difference||0)}</td><td>${esc(x.period_from||'—')}</td><td><select id="odJournal_${i}"><option value="OD">OD</option><option value="AC">AC</option></select></td><td>${ok?`<button class="btn primary" onclick="generateOd(${i})">Générer Charlemagne</button>`:'<span class="muted">Non générable</span>'}</td></tr>`}).join('')}</tbody></table></div>`;
+    st.className='status ok';st.textContent=`${odFile.name} contrôlé · lecture 3 réussie · écriture équilibrée à 0,00 €.`;
+  }catch(e){
+    st.className='status err';st.textContent=e.message;
+    pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">Lecture 3 toujours indisponible.</b><div class="muted" style="margin:8px 0">Les lectures 1 et 2 restent conservées.</div><button class="btn primary" onclick="retryPayrollThirdRead()">Réessayer uniquement la lecture 3</button></div>'
+  }
 }
 async function learnChambertin(index){
   const st=$('odStatus'),candidate=odInspect?.candidates?.[index];if(!odFile||!candidate?.sheet_name)return;
