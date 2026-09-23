@@ -68,13 +68,21 @@ async function odPage(){
   $('content').innerHTML=`<div class="card"><h2>OD Salaires</h2><p class="muted">PDF de paie : l’IA lit uniquement les valeurs du document. Le moteur reproduit ensuite le modèle Chambertin : lignes miroir, regroupements, contrôle URSSAF, Débit = Crédit à 0,00 €, puis génération du TXT Charlemagne. Excel/TXT restent importables directement.</p><div id="odDrop" class="drop"><b>Déposer un PDF de paie ou une feuille OD</b><br><span class="muted">.pdf, .xlsm, .xlsx ou .txt · PDF 20 Mo maximum</span><input id="odFile" class="hide" type="file" accept=".pdf,.xlsm,.xlsx,.txt,application/pdf,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div><div class="muted" style="margin-top:8px">Pour apprendre ou mettre à jour le modèle : dépose le classeur <b>OD Injection salaires</b>, puis clique <b>Apprendre Chambertin</b> sur la feuille correspondante.</div><div id="odStatus" class="status" style="margin-top:10px"></div><div id="odPreview" style="margin-top:12px"></div></div><div class="card"><div class="actions" style="justify-content:space-between"><h2 style="margin:0">Historique OD</h2><button class="btn secondary" onclick="loadOdHistory()">Actualiser</button></div><div id="odHistory" class="muted" style="margin-top:10px">Chargement…</div></div>`;
   const d=$('odDrop'),f=$('odFile');d.onclick=()=>f.click();f.onchange=()=>inspectOdFile(f.files[0]);d.ondragover=e=>{e.preventDefault();d.classList.add('drag')};d.ondragleave=()=>d.classList.remove('drag');d.ondrop=e=>{e.preventDefault();d.classList.remove('drag');inspectOdFile(e.dataTransfer.files[0])};await loadOdHistory()
 }
-async function payrollRead(file,readNo){
-  const fd=new FormData();fd.append('file',file);fd.append('read_no',String(readNo));
+async function payrollRead(file,readNo,focus=''){
+  const fd=new FormData();fd.append('file',file);fd.append('read_no',String(readNo));if(focus)fd.append('focus',focus);
   const j=await payrollOdRequest('read',fd,false);return j.read
 }
 async function payrollCompare(file,reads){
   const fd=new FormData();fd.append('file',file);fd.append('first',JSON.stringify(reads[0]));fd.append('second',JSON.stringify(reads[1]));if(reads[2])fd.append('third',JSON.stringify(reads[2]));
   return payrollOdRequest('compare',fd,false)
+}
+function renderChambertinSheet(j){
+  const rows=Array.isArray(j?.sheet_rows)?j.sheet_rows:[];
+  if(!rows.length)return '';
+  return '<div class="card" style="margin:12px 0"><div class="actions" style="justify-content:space-between;align-items:center"><div><h3 style="margin:0">Chambertin rempli par l’agent</h3><div class="muted">Les montants ci-dessous correspondent aux cellules G3:G20 du modèle.</div></div><span class="badge">Modèle v'+esc(j.template_version||'?')+'</span></div>'+
+    '<div class="table" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Journal</th><th>Compte</th><th>Libellé compte</th><th>Libellé écriture</th><th>Montant</th><th>D/C</th><th>Origine</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr><td>'+esc(r.date_compact||'')+'</td><td>'+esc(r.journal||'OD')+'</td><td><b>'+esc(r.account||'')+'</b></td><td>'+esc(r.account_label||'')+'</td><td>'+esc(r.entry_label||'')+'</td><td style="text-align:right">'+money(Number(r.amount||0))+'</td><td><b>'+esc(r.side||'')+'</b></td><td>'+(r.derived?'<span class="badge">calculé</span>':'<span class="badge okb">lu IA</span>')+'</td></tr>').join('')+
+    '</tbody></table></div></div>'
 }
 async function inspectOdFile(file){
   const st=$('odStatus'),pv=$('odPreview');odFile=file;odInspect=null;if(!file)return;st.className='status';pv.innerHTML='';
@@ -86,14 +94,14 @@ async function inspectOdFile(file){
       st.textContent='Agent Comptable · lecture 2/2 du PDF…';const second=await payrollRead(file,2);
       const reads=[first,second];st.textContent='Comparaison des deux lectures…';j=await payrollCompare(file,reads);
       if(j.requires_third_read){
-        st.textContent='Désaccord détecté · lecture 3/3 de départage…';
+        st.textContent=j.control_error?'Contrôle incohérent · lecture 3/3 ciblée…':'Désaccord détecté · lecture 3/3 de départage…';
         try{
-          reads.push(await payrollRead(file,3));
+          reads.push(await payrollRead(file,3,j.focus_prompt||''));
           st.textContent='Contrôle final des trois lectures…';j=await payrollCompare(file,reads)
         }catch(e){
           const msg=String(e?.message||'Erreur de contrôle');
           const aiUnavailable=/Lecture PDF 3 impossible|Gemini|temporairement|429|503|délai|timeout|aborted/i.test(msg);
-          odInspect={is_pdf:true,_reads:reads,requires_third_read:aiUnavailable};
+          odInspect={...j,is_pdf:true,_reads:reads,requires_third_read:aiUnavailable};
           if(aiUnavailable){
             pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">La 3e lecture est temporairement indisponible.</b><div class="muted" style="margin:8px 0">'+esc(msg)+'</div><button class="btn primary" onclick="retryPayrollThirdRead()">Réessayer uniquement la lecture 3</button></div>';
             st.className='status err';st.textContent='Les lectures 1 et 2 sont conservées. Aucune donnée n’est perdue.';
@@ -118,7 +126,7 @@ async function inspectOdFile(file){
     const rc=isPdf&&Array.isArray(j.control?.reconciled_deductions)&&j.control.reconciled_deductions.length
       ? '<div class="card" style="margin:10px 0;border-color:#b7d9b7"><b class="ok">Contrôle URSSAF réconcilié exactement</b><div class="muted" style="margin-top:6px">'+esc(j.control.reconciled_deductions.map(x=>x.label+' '+Number(x.amount||0).toFixed(2)+' €').join(' + '))+' retiré(s) du total salarial lu car déjà comptabilisé(s) séparément dans le modèle.</div><div class="muted">Total lu : '+esc(Number(j.control.raw_contribution_total||0).toFixed(2))+' € · total ajusté : '+esc(Number(j.control.adjusted_contribution_total||0).toFixed(2))+' € · URSSAF attendu : '+esc(Number(j.control.urssaf_balance||0).toFixed(2))+' €.</div></div>'
       : '';
-    pv.innerHTML=rc+`<div class="table"><table><thead><tr><th>Feuille / source</th><th>Lignes</th><th>Débit</th><th>Crédit</th><th>Écart</th><th>Période</th><th>Journal cible</th><th></th></tr></thead><tbody>${cs.map((x,i)=>{const ok=!x.error&&Number(x.difference||0)===0,learn=!isPdf&&/chambertin/i.test(String(x.sheet_name||''));return `<tr><td><b>${esc(x.sheet_name||'TXT')}</b>${x.error?`<br><span class="err">${esc(x.error)}</span>`:''}${isPdf?`<br><span class="muted">Agent Comptable · ${j.reads||2} lecture(s) · modèle Chambertin v${j.template_version||'?'}</span>`:''}</td><td>${x.line_count??'—'}</td><td>${x.debit_total==null?'—':money(x.debit_total)}</td><td>${x.credit_total==null?'—':money(x.credit_total)}</td><td class="${ok?'ok':'err'}">${x.error?'—':money(x.difference||0)}</td><td>${x.period_from?esc(x.period_from)+(x.period_to&&x.period_to!==x.period_from?' → '+esc(x.period_to):''):'—'}</td><td><select id="odJournal_${i}"><option value="OD">OD</option><option value="AC">AC</option></select></td><td>${learn?`<button class="btn secondary" onclick="learnChambertin(${i})">Apprendre Chambertin</button> `:''}${ok?`<button class="btn primary" onclick="generateOd(${i})">Générer Charlemagne</button>`:'<span class="muted">Non générable</span>'}</td></tr>`}).join('')}</tbody></table></div>`;
+    pv.innerHTML=rc+(isPdf?renderChambertinSheet(j):'')+`<div class="table"><table><thead><tr><th>Feuille / source</th><th>Lignes</th><th>Débit</th><th>Crédit</th><th>Écart</th><th>Période</th><th>Journal cible</th><th></th></tr></thead><tbody>${cs.map((x,i)=>{const ok=!x.error&&Number(x.difference||0)===0,learn=!isPdf&&/chambertin/i.test(String(x.sheet_name||''));return `<tr><td><b>${esc(x.sheet_name||'TXT')}</b>${x.error?`<br><span class="err">${esc(x.error)}</span>`:''}${isPdf?`<br><span class="muted">Agent Comptable · ${j.reads||2} lecture(s) · modèle Chambertin v${j.template_version||'?'}</span>`:''}</td><td>${x.line_count??'—'}</td><td>${x.debit_total==null?'—':money(x.debit_total)}</td><td>${x.credit_total==null?'—':money(x.credit_total)}</td><td class="${ok?'ok':'err'}">${x.error?'—':money(x.difference||0)}</td><td>${x.period_from?esc(x.period_from)+(x.period_to&&x.period_to!==x.period_from?' → '+esc(x.period_to):''):'—'}</td><td><select id="odJournal_${i}"><option value="OD">OD</option><option value="AC">AC</option></select></td><td>${learn?`<button class="btn secondary" onclick="learnChambertin(${i})">Apprendre Chambertin</button> `:''}${ok?`<button class="btn primary" onclick="generateOd(${i})">Enregistrer au format TXT</button>`:'<span class="muted">Non générable</span>'}</td></tr>`}).join('')}</tbody></table></div>`;
     st.className='status ok';st.textContent=isPdf?`${file.name} contrôlé · IA = lecture seulement · moteur Chambertin déterministe · ${j.reads} lecture(s) · écriture équilibrée à 0,00 €${j.control?` · URSSAF ${money(j.control.urssaf_balance||0)}`:''}.`:`${file.name} analysé · ${cs.length} feuille(s) détectée(s).`;
   }catch(e){st.className='status err';st.textContent=e.message}
 }
@@ -126,7 +134,7 @@ async function retryPayrollThirdRead(){
   const st=$('odStatus'),pv=$('odPreview');if(!odFile||!odInspect?._reads?.[0]||!odInspect?._reads?.[1])return;
   st.className='status';st.textContent='Nouvelle tentative de la lecture 3 uniquement…';
   try{
-    const reads=[odInspect._reads[0],odInspect._reads[1],await payrollRead(odFile,3)];
+    const reads=[odInspect._reads[0],odInspect._reads[1],await payrollRead(odFile,3,odInspect.focus_prompt||'')];
     st.textContent='Contrôle final des trois lectures…';const j=await payrollCompare(odFile,reads);j.reads=reads.length;j._reads=reads;odInspect={...j,is_pdf:true};
     if(j.requires_third_retry){
       const ds=j.disagreements||[];
@@ -155,8 +163,8 @@ async function learnChambertin(index){
 }
 async function generateOd(index){
   const st=$('odStatus'),candidate=odInspect?.candidates?.[index],targetJournal=$('odJournal_'+index)?.value||'OD';if(!odFile||!candidate)return;if(Number(candidate.difference||0)!==0){st.className='status err';st.textContent='Écriture déséquilibrée.';return}
-  if(!confirm(`Générer le fichier Charlemagne en journal ${targetJournal} depuis ${candidate.sheet_name||odFile.name} ?\n\nDébit = Crédit = ${money(candidate.debit_total)}.`))return;
-  st.className='status';st.textContent=odInspect?.is_pdf?'Nouvelle lecture de contrôle et génération Charlemagne…':'Génération et contrôles OD en cours…';
+  if(!confirm(`Exécuter « Enregistrer au format TXT » en journal ${targetJournal} ?\n\nDébit = Crédit = ${money(candidate.debit_total)}.`))return;
+  st.className='status';st.textContent=odInspect?.is_pdf?'Exécution du bouton « Enregistrer au format TXT »…':'Génération et contrôles OD en cours…';
   try{
     const fd=new FormData();fd.append('file',odFile);fd.append('target_journal',targetJournal);if(candidate.sheet_name&&!odInspect?.is_pdf)fd.append('sheet_name',candidate.sheet_name);if(odInspect?.is_pdf){fd.append('first',JSON.stringify(odInspect._reads?.[0]||{}));fd.append('second',JSON.stringify(odInspect._reads?.[1]||{}));if(odInspect._reads?.[2])fd.append('third',JSON.stringify(odInspect._reads[2]))}
     const r=odInspect?.is_pdf?await payrollOdRequest('generate',fd,true):await odRequest('generate','POST',fd,true),blob=await r.blob(),name=responseFileName(r,targetJournal+'-Salaires.txt');downloadBlob(blob,name);st.className='status ok';st.textContent=`Fichier généré : ${name} · journal ${targetJournal} · ${r.headers.get('x-line-count')||candidate.line_count} ligne(s) · équilibre 0,00 €.`;await loadOdHistory()
