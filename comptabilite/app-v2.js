@@ -51,7 +51,7 @@ async function processFile(file){if(!file||file.type!=='application/pdf'){alert(
 
 function isoDate(d){return d.toISOString().slice(0,10)}
 
-let odFile=null,odInspect=null,odBatchResults=[];
+let odFile=null,odInspect=null,odBatchResults=[],odReadCache=new Map();
 async function odRequest(mode,method='GET',body=null,raw=false,params={}){
   const u=new URL(OD_BASE);u.searchParams.set('mode',mode);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));
   const r=await fetch(u,{method,headers:{...(token?{authorization:'Bearer '+token}:{}),...(!raw&&method==='POST'&&!body?.append?{'content-type':'application/json'}:{})},body:body||undefined,cache:'no-store'});
@@ -73,6 +73,19 @@ function setOdProgress(percent,label=''){
   const p=Math.max(0,Math.min(100,Math.round(Number(percent)||0)));box.classList.remove('hide');bar.style.width=p+'%';pct.textContent=p+' %';if(label)lab.textContent=label
 }
 function resetOdProgress(){const box=$('odProgress'),bar=$('odProgressBar'),pct=$('odProgressPct'),lab=$('odProgressLabel');if(!box)return;box.classList.add('hide');if(bar)bar.style.width='0%';if(pct)pct.textContent='0 %';if(lab)lab.textContent='Préparation…'}
+function odCacheKey(file){return [file?.name||'',file?.size||0,file?.lastModified||0].join('|')}
+function isTemporaryAiError(msg){return /Gemini indisponible|Délai de lecture dépassé|high demand|429|503|504|rate limit|quota|temporair|timeout|aborted/i.test(String(msg||''))}
+function cachedPayrollRead(file,readNo){return odReadCache.get(odCacheKey(file))?.[readNo]||null}
+function savePayrollRead(file,readNo,read){const k=odCacheKey(file),x=odReadCache.get(k)||{};x[readNo]=read;odReadCache.set(k,x)}
+async function payrollReadResilient(file,readNo,focus=''){
+  const cached=cachedPayrollRead(file,readNo);if(cached)return cached;
+  let lastErr;
+  for(let attempt=1;attempt<=2;attempt++){
+    try{const r=await payrollRead(file,readNo,focus);savePayrollRead(file,readNo,r);return r}
+    catch(e){lastErr=e;if(!isTemporaryAiError(e?.message)||attempt===2)throw e;await new Promise(r=>setTimeout(r,3000))}
+  }
+  throw lastErr
+}
 async function payrollRead(file,readNo,focus=''){
   const fd=new FormData();fd.append('file',file);fd.append('read_no',String(readNo));if(focus)fd.append('focus',focus);
   const j=await payrollOdRequest('read',fd,false);return j.read
@@ -99,10 +112,17 @@ function renderOdBatchSummary(){
   const pv=$('odPreview'),st=$('odStatus');if(!pv||!st||!odBatchResults.length)return;
   const ready=odBatchResults.filter(x=>odBatchState(x).label==='Prêt').length;
   pv.innerHTML='<div class="card"><div class="actions" style="justify-content:space-between"><div><h3 style="margin:0">Importation multiple OD</h3><div class="muted">'+ready+' prêt(s) sur '+odBatchResults.length+' fichier(s).</div></div></div><div class="table" style="margin-top:10px"><table><thead><tr><th>Fichier</th><th>État</th><th>Détail</th><th></th></tr></thead><tbody>'+
-    odBatchResults.map((x,i)=>{const b=odBatchState(x);return '<tr><td><b>'+esc(x.file?.name||'OD')+'</b></td><td><span class="'+b.cls+'">'+esc(b.label)+'</span></td><td class="muted">'+esc(x.status||x.error||'')+'</td><td><button class="btn secondary" onclick="openOdBatch('+i+')">Ouvrir</button></td></tr>'}).join('')+
+    odBatchResults.map((x,i)=>{const b=odBatchState(x);return '<tr><td><b>'+esc(x.file?.name||'OD')+'</b></td><td><span class="'+b.cls+'">'+esc(x.retryable?'À reprendre':b.label)+'</span></td><td class="muted">'+esc(x.status||x.error||'')+'</td><td><button class="btn secondary" onclick="openOdBatch('+i+')">Ouvrir</button>'+(x.retryable?' <button class="btn primary" onclick="retryOdBatch('+i+')">Réessayer</button>':'')+'</td></tr>'}).join('')+
     '</tbody></table></div></div>';
   st.className='status '+(ready===odBatchResults.length?'ok':'');
   st.textContent=ready+' OD prêt(s) sur '+odBatchResults.length+'. Chaque fichier reste indépendant.'
+}
+async function retryOdBatch(index){
+  const x=odBatchResults[index];if(!x?.file)return;
+  const st=$('odStatus'),pv=$('odPreview');st.className='status';st.textContent='Nouvelle tentative · '+x.file.name;
+  await inspectOdFile(x.file);
+  odBatchResults[index]={file:x.file,inspect:odInspect,preview:pv?.innerHTML||'',status:st?.textContent||'',statusClass:st?.className||'status',retryable:isTemporaryAiError(st?.textContent||''),error:odInspect?'':'Analyse non terminée'};
+  renderOdBatchSummary()
 }
 function openOdBatch(index){
   const x=odBatchResults[index],pv=$('odPreview'),st=$('odStatus');if(!x||!pv||!st)return;
@@ -116,13 +136,15 @@ async function inspectOdFiles(fileList){
   for(let i=0;i<files.length;i++){
     st.className='status';st.textContent='OD '+(i+1)+'/'+files.length+' · '+files[i].name;
     await inspectOdFile(files[i]);
+    const temporary=isTemporaryAiError(st?.textContent||'');
     odBatchResults.push({
       file:files[i],
       inspect:odInspect,
       preview:pv?.innerHTML||'',
-      status:st?.textContent||'',
-      statusClass:st?.className||'status',
-      error:odInspect?'':'Analyse non terminée'
+      status:temporary?'À reprendre automatiquement dès que Gemini répond':(st?.textContent||''),
+      statusClass:temporary?'status err':(st?.className||'status'),
+      retryable:temporary,
+      error:odInspect?'':(temporary?'Indisponibilité temporaire Gemini':'Analyse non terminée')
     });
     setOdProgress(Math.round(((i+1)/files.length)*100),'Lot OD · '+(i+1)+'/'+files.length+' traité(s)')
   }
@@ -134,13 +156,13 @@ async function inspectOdFile(file){
   try{
     let j;
     if(isPdf){
-      setOdProgress(15,'Lecture IA 1/2…');st.textContent='Agent Comptable · lecture 1/2 du PDF…';const first=await payrollRead(file,1);setOdProgress(35,'Lecture IA 1 terminée');
-      setOdProgress(40,'Lecture IA 2/2…');st.textContent='Agent Comptable · lecture 2/2 du PDF…';const second=await payrollRead(file,2);setOdProgress(60,'Lecture IA 2 terminée');
+      setOdProgress(15,'Lecture IA 1/2…');st.textContent='Agent Comptable · lecture 1/2 du PDF…';const first=await payrollReadResilient(file,1);setOdProgress(35,'Lecture IA 1 terminée');
+      setOdProgress(40,'Lecture IA 2/2…');st.textContent='Agent Comptable · lecture 2/2 du PDF…';const second=await payrollReadResilient(file,2);setOdProgress(60,'Lecture IA 2 terminée');
       const reads=[first,second];setOdProgress(65,'Comparaison des lectures…');st.textContent='Comparaison des deux lectures…';j=await payrollCompare(file,reads);
       if(j.requires_third_read){
         setOdProgress(72,j.control_error?'Lecture ciblée de contrôle 3/3…':'Lecture de départage 3/3…');st.textContent=j.control_error?'Contrôle incohérent · lecture 3/3 ciblée…':'Désaccord détecté · lecture 3/3 de départage…';
         try{
-          reads.push(await payrollRead(file,3,j.focus_prompt||''));setOdProgress(86,'Contrôle final…');
+          reads.push(await payrollReadResilient(file,3,j.focus_prompt||''));setOdProgress(86,'Contrôle final…');
           st.textContent='Contrôle final des trois lectures…';j=await payrollCompare(file,reads)
         }catch(e){
           const msg=String(e?.message||'Erreur de contrôle');
@@ -178,7 +200,7 @@ async function retryPayrollThirdRead(){
   const st=$('odStatus'),pv=$('odPreview');if(!odFile||!odInspect?._reads?.[0]||!odInspect?._reads?.[1])return;
   setOdProgress(72,'Nouvelle lecture ciblée 3/3…');st.className='status';st.textContent='Nouvelle tentative de la lecture 3 uniquement…';
   try{
-    const reads=[odInspect._reads[0],odInspect._reads[1],await payrollRead(odFile,3,odInspect.focus_prompt||'')];
+    const reads=[odInspect._reads[0],odInspect._reads[1],await payrollReadResilient(odFile,3,odInspect.focus_prompt||'')];
     setOdProgress(86,'Contrôle final…');st.textContent='Contrôle final des trois lectures…';const j=await payrollCompare(odFile,reads);j.reads=reads.length;j._reads=reads;odInspect={...j,is_pdf:true};
     if(j.requires_third_retry){
       const ds=j.disagreements||[];
