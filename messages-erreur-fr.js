@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const originalFetch=window.fetch.bind(window);
-  const expressionsFrancaises=/\b(accès|administration|achat|action|application|article|autorisation|catégorie|code|commande|compte|configuration|connexion|date|donnée|erreur|facture|fichier|fournisseur|identifiant|information|inventaire|lecture|ligne|méthode|montant|mot de passe|produit|quantité|réponse|session|site|stock|serveur|utilisateur|valeur|verrouillé|introuvable|invalide|incorrect|obligatoire|requis|manquant|insuffisant|déjà|impossible)\b/i;
+  const expressionsFrancaises=/\b(accès|administration|achat|action|application|article|autorisation|catégorie|code|commande|compte|configuration|connexion|date|donnée|erreur|facture|fichier|fournisseur|identifiant|information|inventaire|journal|lecture|ligne|méthode|modèle|montant|mot de passe|paie|période|produit|quantité|réponse|session|site|stock|serveur|utilisateur|valeur|verrouillé|introuvable|invalide|incorrect|obligatoire|requis|manquant|insuffisant|déjà|impossible|appris|apprendre|apprenez|confirmé|confirmée|déséquilibré|déséquilibrée)\b/i;
 
   function traduire(message,status=0){
     const m=String(message||'').trim();
