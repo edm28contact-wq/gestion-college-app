@@ -91,9 +91,17 @@ async function inspectOdFile(file){
           reads.push(await payrollRead(file,3));
           st.textContent='Contrôle final des trois lectures…';j=await payrollCompare(file,reads)
         }catch(e){
-          odInspect={is_pdf:true,_reads:reads,requires_third_read:true};
-          pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">La 3e lecture est temporairement indisponible.</b><div class="muted" style="margin:8px 0">'+esc(e.message)+'</div><button class="btn primary" onclick="retryPayrollThirdRead()">Réessayer uniquement la lecture 3</button></div>';
-          st.className='status err';st.textContent='Les lectures 1 et 2 sont conservées. Aucune donnée n’est perdue.';return
+          const msg=String(e?.message||'Erreur de contrôle');
+          const aiUnavailable=/Lecture PDF 3 impossible|Gemini|temporairement|429|503|délai|timeout|aborted/i.test(msg);
+          odInspect={is_pdf:true,_reads:reads,requires_third_read:aiUnavailable};
+          if(aiUnavailable){
+            pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">La 3e lecture est temporairement indisponible.</b><div class="muted" style="margin:8px 0">'+esc(msg)+'</div><button class="btn primary" onclick="retryPayrollThirdRead()">Réessayer uniquement la lecture 3</button></div>';
+            st.className='status err';st.textContent='Les lectures 1 et 2 sont conservées. Aucune donnée n’est perdue.';
+          }else{
+            pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">Contrôle comptable refusé.</b><div class="muted" style="margin:8px 0">'+esc(msg)+'</div></div>';
+            st.className='status err';st.textContent='Le PDF a été lu, mais le moteur du tableur bloque l’écriture car un contrôle comptable ne correspond pas.';
+          }
+          return
         }
         if(j.requires_third_retry){
           odInspect={...j,is_pdf:true,_reads:reads};
