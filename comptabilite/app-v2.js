@@ -95,6 +95,12 @@ async function inspectOdFile(file){
           pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">La 3e lecture est temporairement indisponible.</b><div class="muted" style="margin:8px 0">'+esc(e.message)+'</div><button class="btn primary" onclick="retryPayrollThirdRead()">Réessayer uniquement la lecture 3</button></div>';
           st.className='status err';st.textContent='Les lectures 1 et 2 sont conservées. Aucune donnée n’est perdue.';return
         }
+        if(j.requires_third_retry){
+          odInspect={...j,is_pdf:true,_reads:reads};
+          const ds=j.disagreements||[];
+          pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">Désaccord persistant après 3 lectures.</b>'+ds.map(x=>'<div style="margin-top:8px"><b>'+esc((x.account||'')+' · '+(x.account_label||''))+'</b><br><span class="muted">'+esc('Valeurs lues : '+(x.values||[]).join(' € / ')+' €')+'</span></div>').join('')+'<button class="btn primary" style="margin-top:12px" onclick="retryPayrollThirdRead()">Relire uniquement la ligne en désaccord</button></div>';
+          st.className='status err';st.textContent='Aucun montant n’est choisi automatiquement tant que deux lectures ne concordent pas.';return
+        }
       }
       j.reads=reads.length;j._reads=reads
     }else{
@@ -111,6 +117,11 @@ async function retryPayrollThirdRead(){
   try{
     const reads=[odInspect._reads[0],odInspect._reads[1],await payrollRead(odFile,3)];
     st.textContent='Contrôle final des trois lectures…';const j=await payrollCompare(odFile,reads);j.reads=reads.length;j._reads=reads;odInspect={...j,is_pdf:true};
+    if(j.requires_third_retry){
+      const ds=j.disagreements||[];
+      pv.innerHTML='<div class="card" style="border-color:#e0a0a0"><b class="err">La ligne reste non confirmée.</b>'+ds.map(x=>'<div style="margin-top:8px"><b>'+esc((x.account||'')+' · '+(x.account_label||''))+'</b><br><span class="muted">'+esc('Valeurs lues : '+(x.values||[]).join(' € / ')+' €')+'</span></div>').join('')+'<button class="btn primary" style="margin-top:12px" onclick="retryPayrollThirdRead()">Refaire uniquement le départage</button></div>';
+      st.className='status err';st.textContent='Blocage conservé : deux lectures doivent confirmer exactement le même montant.';return
+    }
     const cs=j.candidates||[];if(!cs.length)throw new Error('Aucune écriture reconnue après départage.');
     pv.innerHTML=`<div class="table"><table><thead><tr><th>Feuille / source</th><th>Lignes</th><th>Débit</th><th>Crédit</th><th>Écart</th><th>Période</th><th>Journal cible</th><th></th></tr></thead><tbody>${cs.map((x,i)=>{const ok=!x.error&&Number(x.difference||0)===0;return `<tr><td><b>${esc(x.sheet_name||'Chambertin (PDF)')}</b><br><span class="muted">Agent Comptable · 3 lectures · modèle Chambertin v${j.template_version||'?'}</span></td><td>${x.line_count??'—'}</td><td>${x.debit_total==null?'—':money(x.debit_total)}</td><td>${x.credit_total==null?'—':money(x.credit_total)}</td><td class="${ok?'ok':'err'}">${money(x.difference||0)}</td><td>${esc(x.period_from||'—')}</td><td><select id="odJournal_${i}"><option value="OD">OD</option><option value="AC">AC</option></select></td><td>${ok?`<button class="btn primary" onclick="generateOd(${i})">Générer Charlemagne</button>`:'<span class="muted">Non générable</span>'}</td></tr>`}).join('')}</tbody></table></div>`;
     st.className='status ok';st.textContent=`${odFile.name} contrôlé · lecture 3 réussie · écriture équilibrée à 0,00 €.`;
