@@ -51,7 +51,7 @@ async function processFile(file){if(!file||file.type!=='application/pdf'){alert(
 
 function isoDate(d){return d.toISOString().slice(0,10)}
 
-let odFile=null,odInspect=null;
+let odFile=null,odInspect=null,odBatchResults=[];
 async function odRequest(mode,method='GET',body=null,raw=false,params={}){
   const u=new URL(OD_BASE);u.searchParams.set('mode',mode);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));
   const r=await fetch(u,{method,headers:{...(token?{authorization:'Bearer '+token}:{}),...(!raw&&method==='POST'&&!body?.append?{'content-type':'application/json'}:{})},body:body||undefined,cache:'no-store'});
@@ -65,8 +65,8 @@ async function payrollOdRequest(mode,body,raw=false){
   const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur Agent Comptable paie');return j
 }
 async function odPage(){
-  $('content').innerHTML=`<div class="card"><h2>OD Salaires</h2><p class="muted">PDF de paie : l’IA lit uniquement les valeurs du document. Le moteur reproduit ensuite le modèle Chambertin : lignes miroir, regroupements, contrôle URSSAF, Débit = Crédit à 0,00 €, puis génération du TXT Charlemagne. Excel/TXT restent importables directement.</p><div id="odDrop" class="drop"><b>Déposer un PDF de paie ou une feuille OD</b><br><span class="muted">.pdf, .xlsm, .xlsx ou .txt · PDF 20 Mo maximum</span><input id="odFile" class="hide" type="file" accept=".pdf,.xlsm,.xlsx,.txt,application/pdf,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div><div class="muted" style="margin-top:8px">Pour apprendre ou mettre à jour le modèle : dépose le classeur <b>OD Injection salaires</b>, puis clique <b>Apprendre Chambertin</b> sur la feuille correspondante.</div><div id="odStatus" class="status" style="margin-top:10px"></div><div id="odProgress" class="hide" style="margin-top:10px"><div class="actions" style="justify-content:space-between;margin-bottom:5px"><span id="odProgressLabel" class="muted">Préparation…</span><b id="odProgressPct">0 %</b></div><div style="height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden"><div id="odProgressBar" style="height:100%;width:0%;background:#2563eb;border-radius:999px;transition:width .25s ease"></div></div></div><div id="odPreview" style="margin-top:12px"></div></div><div class="card"><div class="actions" style="justify-content:space-between"><h2 style="margin:0">Historique OD</h2><button class="btn secondary" onclick="loadOdHistory()">Actualiser</button></div><div id="odHistory" class="muted" style="margin-top:10px">Chargement…</div></div>`;
-  const d=$('odDrop'),f=$('odFile');d.onclick=()=>f.click();f.onchange=()=>inspectOdFile(f.files[0]);d.ondragover=e=>{e.preventDefault();d.classList.add('drag')};d.ondragleave=()=>d.classList.remove('drag');d.ondrop=e=>{e.preventDefault();d.classList.remove('drag');inspectOdFile(e.dataTransfer.files[0])};await loadOdHistory()
+  $('content').innerHTML=`<div class="card"><h2>OD Salaires</h2><p class="muted">PDF de paie : l’IA lit uniquement les valeurs du document. Le moteur reproduit ensuite le modèle Chambertin : lignes miroir, regroupements, contrôle URSSAF, Débit = Crédit à 0,00 €, puis génération du TXT Charlemagne. Excel/TXT restent importables directement.</p><div id="odDrop" class="drop"><b>Déposer un ou plusieurs PDF de paie / feuilles OD</b><br><span class="muted">Sélection multiple autorisée · .pdf, .xlsm, .xlsx ou .txt · PDF 20 Mo maximum par fichier</span><input id="odFile" class="hide" type="file" multiple accept=".pdf,.xlsm,.xlsx,.txt,application/pdf,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div><div class="muted" style="margin-top:8px">Pour apprendre ou mettre à jour le modèle : dépose le classeur <b>OD Injection salaires</b>, puis clique <b>Apprendre Chambertin</b> sur la feuille correspondante.</div><div id="odStatus" class="status" style="margin-top:10px"></div><div id="odProgress" class="hide" style="margin-top:10px"><div class="actions" style="justify-content:space-between;margin-bottom:5px"><span id="odProgressLabel" class="muted">Préparation…</span><b id="odProgressPct">0 %</b></div><div style="height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden"><div id="odProgressBar" style="height:100%;width:0%;background:#2563eb;border-radius:999px;transition:width .25s ease"></div></div></div><div id="odPreview" style="margin-top:12px"></div></div><div class="card"><div class="actions" style="justify-content:space-between"><h2 style="margin:0">Historique OD</h2><button class="btn secondary" onclick="loadOdHistory()">Actualiser</button></div><div id="odHistory" class="muted" style="margin-top:10px">Chargement…</div></div>`;
+  const d=$('odDrop'),f=$('odFile');d.onclick=()=>f.click();f.onchange=()=>inspectOdFiles(f.files);d.ondragover=e=>{e.preventDefault();d.classList.add('drag')};d.ondragleave=()=>d.classList.remove('drag');d.ondrop=e=>{e.preventDefault();d.classList.remove('drag');inspectOdFiles(e.dataTransfer.files)};await loadOdHistory()
 }
 function setOdProgress(percent,label=''){
   const box=$('odProgress'),bar=$('odProgressBar'),pct=$('odProgressPct'),lab=$('odProgressLabel');if(!box||!bar||!pct||!lab)return;
@@ -88,6 +88,45 @@ function renderChambertinSheet(j){
     '<div class="table" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Journal</th><th>Compte</th><th>Libellé compte</th><th>Libellé écriture</th><th>Montant</th><th>D/C</th><th>Origine</th></tr></thead><tbody>'+
     rows.map(r=>'<tr><td>'+esc(r.date_compact||'')+'</td><td>'+esc(r.journal||'OD')+'</td><td><b>'+esc(r.account||'')+'</b></td><td>'+esc(r.account_label||'')+'</td><td>'+esc(r.entry_label||'')+'</td><td style="text-align:right">'+money(Number(r.amount||0))+'</td><td><b>'+esc(r.side||'')+'</b></td><td>'+(r.derived?'<span class="badge">calculé</span>':'<span class="badge okb">lu IA</span>')+'</td></tr>').join('')+
     '</tbody></table></div></div>'
+}
+function odBatchState(item){
+  const cs=item?.inspect?.candidates||[],ok=cs.some(x=>!x.error&&Number(x.difference||0)===0);
+  if(ok)return {label:'Prêt',cls:'ok'};
+  if(item?.inspect)return {label:'À contrôler',cls:'err'};
+  return {label:'Bloqué',cls:'err'}
+}
+function renderOdBatchSummary(){
+  const pv=$('odPreview'),st=$('odStatus');if(!pv||!st||!odBatchResults.length)return;
+  const ready=odBatchResults.filter(x=>odBatchState(x).label==='Prêt').length;
+  pv.innerHTML='<div class="card"><div class="actions" style="justify-content:space-between"><div><h3 style="margin:0">Importation multiple OD</h3><div class="muted">'+ready+' prêt(s) sur '+odBatchResults.length+' fichier(s).</div></div></div><div class="table" style="margin-top:10px"><table><thead><tr><th>Fichier</th><th>État</th><th>Détail</th><th></th></tr></thead><tbody>'+
+    odBatchResults.map((x,i)=>{const b=odBatchState(x);return '<tr><td><b>'+esc(x.file?.name||'OD')+'</b></td><td><span class="'+b.cls+'">'+esc(b.label)+'</span></td><td class="muted">'+esc(x.status||x.error||'')+'</td><td><button class="btn secondary" onclick="openOdBatch('+i+')">Ouvrir</button></td></tr>'}).join('')+
+    '</tbody></table></div></div>';
+  st.className='status '+(ready===odBatchResults.length?'ok':'');
+  st.textContent=ready+' OD prêt(s) sur '+odBatchResults.length+'. Chaque fichier reste indépendant.'
+}
+function openOdBatch(index){
+  const x=odBatchResults[index],pv=$('odPreview'),st=$('odStatus');if(!x||!pv||!st)return;
+  odFile=x.file;odInspect=x.inspect||null;pv.innerHTML='<div class="actions" style="margin-bottom:10px"><button class="btn secondary" onclick="renderOdBatchSummary()">← Retour aux '+odBatchResults.length+' OD</button></div>'+String(x.preview||'');
+  st.className=x.statusClass||'status';st.textContent=x.status||x.error||''
+}
+async function inspectOdFiles(fileList){
+  const files=[...(fileList||[])].filter(Boolean);if(!files.length)return;
+  if(files.length===1){odBatchResults=[];return inspectOdFile(files[0])}
+  odBatchResults=[];const st=$('odStatus'),pv=$('odPreview');
+  for(let i=0;i<files.length;i++){
+    st.className='status';st.textContent='OD '+(i+1)+'/'+files.length+' · '+files[i].name;
+    await inspectOdFile(files[i]);
+    odBatchResults.push({
+      file:files[i],
+      inspect:odInspect,
+      preview:pv?.innerHTML||'',
+      status:st?.textContent||'',
+      statusClass:st?.className||'status',
+      error:odInspect?'':'Analyse non terminée'
+    });
+    setOdProgress(Math.round(((i+1)/files.length)*100),'Lot OD · '+(i+1)+'/'+files.length+' traité(s)')
+  }
+  renderOdBatchSummary()
 }
 async function inspectOdFile(file){
   const st=$('odStatus'),pv=$('odPreview');odFile=file;odInspect=null;if(!file)return;st.className='status';pv.innerHTML='';setOdProgress(5,'Préparation du fichier…');
