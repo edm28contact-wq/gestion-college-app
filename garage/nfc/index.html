@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<title>Sortie NFC · Garage</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#17202a;background:#f4f6f8;--ok:#16803a;--bad:#b42318;--ink:#243447}
+*{box-sizing:border-box}body{margin:0;min-height:100vh}.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px}.card{width:min(520px,100%);background:#fff;border:1px solid #dde3e8;border-radius:24px;padding:22px;box-shadow:0 8px 28px rgba(0,0,0,.08);text-align:center}.photo{width:min(300px,75vw);height:min(300px,75vw);margin:0 auto 18px;border-radius:22px;border:1px solid #e2e7eb;background:#f8fafb;display:flex;align-items:center;justify-content:center;overflow:hidden}.photo img{width:100%;height:100%;object-fit:contain}.name{font-size:28px;font-weight:800;line-height:1.15}.meta{margin-top:8px;color:#66717c}.qty{font-size:42px;font-weight:900;margin:22px 0 6px}.unit{color:#66717c;margin-bottom:22px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:12px}.btn{border:0;border-radius:16px;padding:16px 18px;font-size:18px;font-weight:800;cursor:pointer}.validate{background:var(--ok);color:#fff}.refuse{background:#e9edf1;color:#223}.status{margin-top:16px;min-height:24px}.err{color:var(--bad)}.hide{display:none!important}.result{min-height:72vh;display:flex;flex-direction:column;align-items:center;justify-content:center}.check{font-size:120px;line-height:1;color:var(--ok)}.cross{font-size:110px;line-height:1;color:var(--bad)}.result-title{font-size:28px;font-weight:900;margin-top:12px}.small{font-size:14px;color:#66717c;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="card" class="card">
+    <div id="loading">Lecture de l’étiquette NFC…</div>
+    <div id="product" class="hide">
+      <div class="photo" id="photo"></div>
+      <div class="name" id="name"></div>
+      <div class="meta" id="location"></div>
+      <div class="qty" id="qty"></div>
+      <div class="unit" id="unit"></div>
+      <div class="actions">
+        <button id="validateBtn" class="btn validate" onclick="confirmExit()">Valider</button>
+        <button id="refuseBtn" class="btn refuse" onclick="refuseExit()">Refuser</button>
+      </div>
+      <div id="msg" class="status"></div>
+    </div>
+    <div id="result" class="result hide"></div>
+  </div>
+</div>
+<script>
+const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/garage-nfc';
+const token=new URLSearchParams(location.search).get('t')||'';
+let sessionId='',product=null,busy=false;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(method='GET',body){
+  const u=new URL(API);
+  if(method==='GET')u.searchParams.set('t',token);
+  const r=await fetch(u,{method,headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,cache:'no-store'});
+  const j=await r.json().catch(()=>({error:'Réponse serveur invalide'}));
+  if(!r.ok)throw new Error(j.error||'Erreur serveur');
+  return j;
+}
+function disableButtons(v){busy=v;$('validateBtn').disabled=v;$('refuseBtn').disabled=v}
+function showError(message){$('loading').classList.add('hide');$('product').classList.add('hide');$('result').classList.remove('hide');$('result').innerHTML='<div class="cross">×</div><div class="result-title">Refusé</div><div class="small">'+esc(message)+'</div>'}
+function showSuccess(remaining){$('product').classList.add('hide');$('result').classList.remove('hide');$('result').innerHTML='<div class="check">✓</div><div class="result-title">Validé</div><div class="small">Sortie enregistrée'+(Number.isFinite(Number(remaining))?' · stock restant : '+Number(remaining):'')+'</div>';if(navigator.vibrate)navigator.vibrate(120)}
+function showRefused(){ $('product').classList.add('hide');$('result').classList.remove('hide');$('result').innerHTML='<div class="cross">×</div><div class="result-title">Refusé</div><div class="small">Aucune modification du stock.</div>'}
+async function load(){
+  try{
+    if(!token)throw new Error('Lien NFC manquant.');
+    const j=await api();
+    sessionId=j.session_id;product=j.product;
+    $('loading').classList.add('hide');$('product').classList.remove('hide');
+    $('name').textContent=product.name||'Produit';
+    $('location').textContent=product.garage_location?product.garage_location:'';
+    $('qty').textContent=String(product.exit_quantity??1);
+    $('unit').textContent=product.unit||'unité';
+    $('photo').innerHTML=product.image_url?'<img src="'+esc(product.image_url)+'" alt="">':'<span style="color:#74808b">Aucune photo</span>';
+  }catch(e){showError(e.message)}
+}
+async function confirmExit(){
+  if(busy)return;
+  try{
+    disableButtons(true);$('msg').className='status';$('msg').textContent='Enregistrement…';
+    const j=await api('POST',{action:'confirm',token,session_id:sessionId});
+    if(!j.validated)throw new Error('Validation non confirmée par le serveur.');
+    showSuccess(j.remaining_stock);
+  }catch(e){disableButtons(false);$('msg').className='status err';$('msg').textContent=e.message}
+}
+async function refuseExit(){
+  if(busy)return;
+  try{
+    disableButtons(true);
+    const j=await api('POST',{action:'refuse',token,session_id:sessionId});
+    if(!j.refused)throw new Error('Refus non confirmé.');
+    showRefused();
+  }catch(e){disableButtons(false);$('msg').className='status err';$('msg').textContent=e.message}
+}
+load();
+</script>
+</body>
+</html>
