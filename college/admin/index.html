@@ -34,7 +34,7 @@ function show(p){page=p;render();if(p==='stats')loadStats().catch(e=>showStatus(
 function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('title').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard,categories,subcategories,products,apps,events,purchases,stats:statsPage,readerSettings:readerSettingsPage}[page]||dashboard)()}
 const bal=id=>Number(db.balances.find(x=>x.product_id===id)?.quantity||0),cat=id=>db.categories.find(x=>x.id===id),sub=id=>(db.subcategories||[]).find(x=>x.id===id),prod=id=>db.products.find(x=>x.id===id),appById=id=>db.applications.find(x=>x.id===id);
 const nfcTag=id=>(db.nfc_tags||[]).find(x=>x.product_id===id&&x.active!==false);
-const productImage=p=>p?.image_path?PRODUCT_IMAGE_BASE+String(p.image_path).split('/').map(encodeURIComponent).join('/'):'';
+const productImage=p=>{const v=String(p?.image_path||'');return /^(data:|https?:\/\/)/i.test(v)?v:(v?PRODUCT_IMAGE_BASE+v.split('/').map(encodeURIComponent).join('/'):'')};
 
 function statusPill(active){return active?'<span class="pill ok">Actif</span>':'<span class="pill off">Inactif</span>'}
 function showStatus(t,ok=false){const x=$('pageStatus');if(x){x.className='status '+(ok?'ok':'err');x.textContent=t}else alert(t)}
