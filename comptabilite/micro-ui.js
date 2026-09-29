@@ -171,14 +171,35 @@ function microImportPage(){
 }
 
 function microDocumentsPage(){
-  const y=Number(sessionStorage.getItem('micro_accounting_year')||microYear());
-  $('content').innerHTML='<div class="card"><div class="actions" style="justify-content:space-between"><div><h2 style="margin:0">Livres & documents</h2><div class="muted">Exports lisibles pour contrôle, sauvegarde ou transmission.</div></div><div style="width:130px">'+microSelectYear('microDocYear','microRefreshDocYear()')+'</div></div></div>'+
+  const y=Number(sessionStorage.getItem('micro_accounting_year')||microYear()),periodicity=microCaPeriodicity(),rows=microPeriodRows(8),today=microToday();
+  const periodRows=rows.map(p=>{
+    const pub=microPeriodPublication(p),total=microPeriodTotal(p),current=p.start<=today&&p.end>=today,finished=p.end<today;
+    return '<tr><td><b>'+esc(p.label)+'</b><div class="muted">'+p.start+' → '+p.end+'</div></td><td>'+money(total)+'</td><td>'+(pub?'<span class="badge okb">Publiée le '+esc(pub.publication_date)+'</span>':current?'<span class="badge warn">En cours</span>':'<span class="badge warn">À publier</span>')+'</td><td>'+(pub?esc(pub.reference||'—'):(finished&&microCanWrite()?'<button class="btn primary compact" onclick="microPublishCa(\''+p.start+'\')">Marquer publiée</button>':'—'))+'</td></tr>'
+  }).join('');
+  $('content').innerHTML=
+  '<div class="card"><div class="actions" style="justify-content:space-between"><div><h2 style="margin:0">Déclaration du chiffre d’affaires</h2><div class="muted">Choisis la même périodicité que ta déclaration. Chaque nouvelle période repart automatiquement à zéro à l’écran, sans supprimer l’historique.</div></div><div style="min-width:210px"><label>Périodicité du CA</label><select id="microCaPeriod" onchange="microSaveCaPeriodicity(this.value)" '+(microCanWrite()?'':'disabled')+'><option value="monthly" '+(periodicity==='monthly'?'selected':'')+'>Mensuelle</option><option value="quarterly" '+(periodicity==='quarterly'?'selected':'')+'>Trimestrielle</option></select></div></div><div class="table" style="margin-top:12px"><table><thead><tr><th>Période</th><th>CA encaissé</th><th>État</th><th>Référence</th></tr></thead><tbody>'+periodRows+'</tbody></table></div><div id="microCaMsg" class="status"></div></div>'+
+  '<div class="card"><div class="actions" style="justify-content:space-between"><div><h2 style="margin:0">Livres & documents</h2><div class="muted">Exports lisibles pour contrôle, sauvegarde ou transmission.</div></div><div style="width:130px">'+microSelectYear('microDocYear','microRefreshDocYear()')+'</div></div></div>'+
   '<div class="grid"><div class="card"><h3>Livre des recettes</h3><p class="muted">Ordre chronologique, origine, montant, mode de règlement et référence du justificatif.</p><button class="btn primary" onclick="microExportRevenues()">Exporter CSV '+y+'</button></div>'+
   '<div class="card"><h3>Registre des achats</h3><p class="muted">Factures fournisseurs avec montant TTC et informations de règlement.</p><button class="btn primary" onclick="microExportPurchases()">Exporter CSV '+y+'</button></div>'+
   '<div class="card"><h3>Factures originales</h3><p class="muted">Les PDF fournisseurs importés restent consultables depuis Dépenses.</p><button class="btn secondary" onclick="show(\'expenses\')">Ouvrir</button></div>'+
   '<div class="card"><h3>Outils comptables</h3><p class="muted">OD salaires, export Charlemagne et réglages techniques sont rangés à part.</p><button class="btn secondary" onclick="show(\'advanced\')">Outils avancés</button></div></div>'+
-  '<div class="card micro-note"><b>Conservation</b><div class="muted" style="margin-top:5px">Les factures et pièces justificatives comptables doivent être conservées pendant 10 ans. Ce back-office ne supprime donc pas les écritures enregistrées du livre des recettes : une correction est tracée par annulation.</div></div>'
+  '<div class="card micro-note"><b>Conservation</b><div class="muted" style="margin-top:5px">Les factures et pièces justificatives comptables doivent être conservées pendant 10 ans. Le système garde les anciennes périodes même lorsque le compteur de la nouvelle période revient à zéro.</div></div>'
 }
+window.microSaveCaPeriodicity=async value=>{
+  const msg=$('microCaMsg');
+  try{
+    if(msg){msg.className='status';msg.textContent='Enregistrement…'}
+    await api('micro-settings-save','POST',{ca_periodicity:value});
+    await refresh();page='documents';render()
+  }catch(e){if(msg){msg.className='status err';msg.textContent=e.message}else alert(e.message)}
+};
+window.microPublishCa=async start=>{
+  const p=microPeriodAt(start,microCaPeriodicity()),reference=prompt('Référence de la déclaration '+p.label+' (facultatif) :');
+  if(reference===null)return;
+  if(!confirm('Confirmer que le chiffre d’affaires de '+p.label+' a été publié / déclaré ?\n\nLa période sera clôturée dans le back-office mais aucune recette ne sera supprimée.'))return;
+  try{await api('micro-ca-publish','POST',{period_start:start,reference});await refresh();page='documents';render()}catch(e){alert(e.message)}
+};
+
 window.microRefreshDocYear=()=>{sessionStorage.setItem('micro_accounting_year',$('microDocYear').value);microDocumentsPage()};
 window.microExportRevenues=()=>{
   const y=microSelectedYear('microDocYear'),rows=(db.micro_revenues||[]).filter(x=>Number(String(x.receipt_date||'').slice(0,4))===y),
