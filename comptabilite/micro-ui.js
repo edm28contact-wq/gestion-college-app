@@ -59,31 +59,35 @@ importPage=function(){microImportPage()};
 review=async function(id){return microReview(id)};
 
 function microDashboard(){
-  const y=microYear(),revenues=microActiveRevenues().filter(x=>Number(String(x.receipt_date||'').slice(0,4))===y),
-        revenueTotal=revenues.reduce((s,x)=>s+microNum(x.amount),0),
+  const y=microYear(),annualRevenues=microActiveRevenues().filter(x=>Number(String(x.receipt_date||'').slice(0,4))===y),
+        annualTotal=annualRevenues.reduce((s,x)=>s+microNum(x.amount),0),
+        period=microPeriodAt(),periodTotal=microPeriodTotal(period),
+        previous=microShiftPeriod(period,-1),previousPublication=microPeriodPublication(previous),previousTotal=microPeriodTotal(previous),
         meta=microPurchaseMetaMap(),
         paid=(db.invoices||[]).filter(i=>{const m=meta.get(i.id);return m?.payment_date&&Number(String(m.payment_date).slice(0,4))===y}),
         paidTotal=paid.reduce((s,i)=>s+microNum(i.amount_ttc),0),
         pending=(db.invoices||[]).filter(i=>!['validee_humain','exportee_charlemagne'].includes(String(i.workflow_stage||''))),
         completeMissing=(db.invoices||[]).filter(i=>['validee_humain','exportee_charlemagne'].includes(String(i.workflow_stage||''))&&(!meta.get(i.id)?.payment_date||!meta.get(i.id)?.payment_method)),
-        lastRevenues=revenues.slice(0,6);
+        lastRevenues=annualRevenues.slice(0,6),
+        cadence=microCaPeriodicity()==='quarterly'?'Trimestrielle':'Mensuelle';
   $('content').innerHTML=
-    '<div class="micro-hero"><div><h2 style="margin:0">Vue simple · '+y+'</h2><p class="muted" style="margin:5px 0 0">Recettes encaissées, dépenses fournisseurs et justificatifs. Les contrôles comptables détaillés restent en arrière-plan.</p></div><div class="actions">'+
+    '<div class="micro-hero"><div><h2 style="margin:0">Vue simple · '+y+'</h2><p class="muted" style="margin:5px 0 0">Période de déclaration CA : <b>'+cadence+'</b>. Le compteur repart automatiquement à zéro au début de chaque nouvelle période.</p></div><div class="actions">'+
     (microCanWrite()?'<button class="btn primary" onclick="show(\'revenues\')">+ Recette</button><button class="btn secondary" onclick="show(\'import\')">+ Facture fournisseur</button>':'')+
     '</div></div>'+
-    '<div class="grid"><div class="card"><div class="muted">Chiffre d’affaires encaissé '+y+'</div><div class="kpi">'+money(revenueTotal)+'</div><div class="muted">'+revenues.length+' recette(s)</div></div>'+
+    '<div class="grid"><div class="card"><div class="muted">CA période en cours · '+esc(period.label)+'</div><div class="kpi">'+money(periodTotal)+'</div><div class="muted">'+period.start+' → '+period.end+'</div></div>'+
+    '<div class="card"><div class="muted">CA annuel '+y+'</div><div class="kpi">'+money(annualTotal)+'</div><div class="muted">'+annualRevenues.length+' recette(s)</div></div>'+
     '<div class="card"><div class="muted">Dépenses réglées '+y+'</div><div class="kpi">'+money(paidTotal)+'</div><div class="muted">'+paid.length+' règlement(s)</div></div>'+
-    '<div class="card"><div class="muted">Factures à contrôler</div><div class="kpi">'+pending.length+'</div><div class="muted">Validation humaine quand nécessaire</div></div>'+
-    '<div class="card"><div class="muted">Règlements à compléter</div><div class="kpi">'+completeMissing.length+'</div><div class="muted">Date ou mode de règlement manquant</div></div></div>'+
-    '<div class="card"><div class="actions" style="justify-content:space-between"><div><b>À faire</b><div class="muted">Seulement les actions utiles au quotidien.</div></div><div class="actions"><button class="btn secondary" onclick="show(\'expenses\')">Voir les dépenses</button><button class="btn secondary" onclick="show(\'documents\')">Livres & exports</button></div></div>'+
+    '<div class="card"><div class="muted">Factures à contrôler</div><div class="kpi">'+pending.length+'</div><div class="muted">Validation humaine quand nécessaire</div></div></div>'+
+    '<div class="card"><div class="actions" style="justify-content:space-between"><div><b>À faire</b><div class="muted">Seulement les actions utiles au quotidien.</div></div><div class="actions"><button class="btn secondary" onclick="show(\'expenses\')">Voir les dépenses</button><button class="btn secondary" onclick="show(\'documents\')">CA & documents</button></div></div>'+
     '<div style="margin-top:12px">'+
+    (!previousPublication?'<div class="micro-task"><div><b>CA '+esc(previous.label)+' à publier</b><div class="muted">'+money(previousTotal)+' · période terminée</div></div><button class="btn primary" onclick="show(\'documents\')">Ouvrir</button></div>':'')+
     (pending.length?'<div class="micro-task"><b>'+pending.length+' facture(s) fournisseur à contrôler</b><button class="btn primary" onclick="show(\'expenses\')">Ouvrir</button></div>':'<div class="micro-task ok"><b>Aucune facture urgente à contrôler</b></div>')+
     (completeMissing.length?'<div class="micro-task"><b>'+completeMissing.length+' facture(s) validée(s) sans règlement complet</b><button class="btn secondary" onclick="show(\'expenses\')">Compléter</button></div>':'')+
     '</div></div>'+
     '<div class="card"><b>Dernières recettes</b><div class="table" style="margin-top:8px"><table><thead><tr><th>N°</th><th>Date</th><th>Origine</th><th>Libellé</th><th>Montant</th><th>Règlement</th></tr></thead><tbody>'+
     (lastRevenues.length?lastRevenues.map(x=>'<tr><td>R-'+String(x.entry_no).padStart(6,'0')+'</td><td>'+esc(x.receipt_date)+'</td><td>'+esc(x.origin)+'</td><td>'+esc(x.description)+'</td><td><b>'+money(x.amount)+'</b></td><td>'+esc(microPaymentLabels[x.payment_method]||x.payment_method)+'</td></tr>').join(''):'<tr><td colspan="6" class="muted">Aucune recette saisie pour '+y+'.</td></tr>')+
     '</tbody></table></div></div>'+
-    '<div class="card micro-note"><b>Cadre micro-entreprise</b><div class="muted" style="margin-top:5px">Configuration actuelle : TVA non récupérable. Les pièces restent conservées dans le système fournisseur. Depuis le 1er septembre 2026, la réception des factures électroniques doit être possible ; l’émission pour les micro-entreprises est prévue au 1er septembre 2027.</div></div>'
+    '<div class="card micro-note"><b>Fonctionnement de la remise à zéro</b><div class="muted" style="margin-top:5px">Aucune écriture n’est effacée. Le compteur de CA affiché repart à zéro à chaque nouveau mois ou trimestre selon ton choix, tandis que le total annuel et les anciens livres restent conservés.</div></div>'
 }
 
 function microRevenuesPage(){
