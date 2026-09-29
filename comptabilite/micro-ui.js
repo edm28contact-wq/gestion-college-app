@@ -216,11 +216,23 @@ window.microExportPurchases=()=>{
 
 function microAdvancedPage(){
   $('content').innerHTML='<div class="card"><h2>Outils avancés</h2><p class="muted">Ces fonctions restent disponibles mais ne sont plus dans le parcours quotidien.</p></div><div class="grid">'+
+  '<div class="card"><h3>Réinitialiser le back-office</h3><p class="muted">Remet les filtres et l’écran à leur état initial. <b>Aucune recette, facture ou écriture comptable n’est supprimée.</b></p><button class="btn secondary" onclick="microResetBackOffice()">Réinitialiser</button></div>'+
   '<div class="card"><h3>OD Salaires</h3><p class="muted">Moteur existant conservé sans modification.</p><button class="btn secondary" onclick="show(\'od\')">Ouvrir</button></div>'+
   '<div class="card"><h3>Export Charlemagne</h3><p class="muted">Exports comptables historiques.</p><button class="btn secondary" onclick="show(\'export\')">Ouvrir</button></div>'+
   '<div class="card"><h3>Règles fournisseurs</h3><p class="muted">Comptes et règles utilisés automatiquement en arrière-plan.</p><button class="btn secondary" onclick="show(\'rules\')">Ouvrir</button></div>'+
   '<div class="card"><h3>Réglages techniques</h3><p class="muted">IA et paramètres de contrôle.</p><button class="btn secondary" onclick="show(\'settings\')">Ouvrir</button></div></div>'
 }
+window.microResetBackOffice=async()=>{
+  if(!confirm('Réinitialiser l’interface du back-office ?\n\nLes données comptables seront conservées.'))return;
+  try{
+    await api('micro-backoffice-reset','POST',{});
+    sessionStorage.removeItem('micro_accounting_year');
+    try{closeModal()}catch{}
+    page='dashboard';
+    await refresh();
+    render()
+  }catch(e){alert(e.message)}
+};
 
 if(db)render();
 })();
