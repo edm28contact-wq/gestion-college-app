@@ -21,6 +21,20 @@ function microSelectYear(id,onchange){
   return '<select id="'+id+'" onchange="'+onchange+'">'+years.map(y=>'<option value="'+y+'" '+(y===value?'selected':'')+'>'+y+'</option>').join('')+'</select>'
 }
 function microSelectedYear(id){const y=Number($(id)?.value||sessionStorage.getItem('micro_accounting_year')||microYear());sessionStorage.setItem('micro_accounting_year',String(y));return y}
+const microCaPeriodicity=()=>db?.micro_settings?.ca_periodicity==='quarterly'?'quarterly':'monthly';
+function microDateParts(v){const [y,m,d]=String(v||microToday()).split('-').map(Number);return {y,m,d}}
+function microPeriodAt(dateValue=microToday(),periodicity=microCaPeriodicity()){
+  const {y,m}=microDateParts(dateValue),startMonth=periodicity==='quarterly'?Math.floor((m-1)/3)*3+1:m,start=new Date(Date.UTC(y,startMonth-1,1)),end=new Date(Date.UTC(y,startMonth-1+(periodicity==='quarterly'?3:1),0));
+  const startIso=start.toISOString().slice(0,10),endIso=end.toISOString().slice(0,10),label=periodicity==='quarterly'?'T'+(Math.floor((startMonth-1)/3)+1)+' '+y:new Intl.DateTimeFormat('fr-FR',{month:'long',year:'numeric',timeZone:'UTC'}).format(start);
+  return {start:startIso,end:endIso,label,periodicity}
+}
+function microShiftPeriod(period,delta){
+  const {y,m}=microDateParts(period.start),step=period.periodicity==='quarterly'?3:1,d=new Date(Date.UTC(y,m-1+delta*step,1));
+  return microPeriodAt(d.toISOString().slice(0,10),period.periodicity)
+}
+function microPeriodRows(count=8){const current=microPeriodAt(),rows=[];for(let i=0;i<count;i++)rows.push(microShiftPeriod(current,-i));return rows}
+function microPeriodTotal(period){return microActiveRevenues().filter(x=>String(x.receipt_date||'')>=period.start&&String(x.receipt_date||'')<=period.end).reduce((s,x)=>s+microNum(x.amount),0)}
+function microPeriodPublication(period){return (db?.micro_ca_publications||[]).find(x=>x.periodicity===period.periodicity&&x.period_start===period.start&&x.period_end===period.end)}
 function microStatusBadge(i){
   const s=microInvoiceState(i);
   return s==='Validée'?'<span class="badge okb">Validée</span>':s==='À valider'?'<span class="badge warn">À valider</span>':'<span class="badge warn">À contrôler</span>'
