@@ -4,7 +4,7 @@ const legacyImportPage=importPage;
 const microPaymentLabels={virement:'Virement',carte:'Carte',cheque:'Chèque',especes:'Espèces',prelevement:'Prélèvement',autre:'Autre'};
 const microCategoryLabels={marchandises:'Marchandises',fournitures:'Fournitures',services:'Services',frais:'Frais',autre:'Autre'};
 const microActivityLabels={vente:'Vente',service:'Prestation de services',autre:'Autre'};
-const microToday=()=>new Date().toISOString().slice(0,10);
+const microToday=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())};
 const microYear=()=>new Date().getFullYear();
 const microCanWrite=()=>db?.current_user?.can_write!==false;
 const microActiveRevenues=()=>((db?.micro_revenues)||[]).filter(x=>!x.cancelled_at);
