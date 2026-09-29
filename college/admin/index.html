@@ -138,7 +138,7 @@ window.renderSiteProducts=()=>{const cid=$('scat').value,selected=window._siteSe
 window.saveSite=async id=>{try{const opts={};['inventory','outgoing','purchases','purchase_history','unit_price','current_stock','supplier','service','note'].forEach(k=>opts[k]=$('opt_'+k).checked);const pids=[...document.querySelectorAll('.siteprod:checked')].map(x=>x.value);await call(SITE,'save','POST',{id:id||null,name:$('sname').value,code:$('scode').value,category_id:$('scat').value,color:$('scolor').value,services:$('sservices').value.split(',').map(x=>x.trim()).filter(Boolean),description:$('sdesc').value,site_options:opts,product_ids:pids});closeModal();await refresh()}catch(e){modalError(e)}};
 window.disableSite=async id=>{if(!confirm('Désactiver cette application publique ?'))return;try{await call(SITE,'delete','POST',{id});await refresh();showStatus('Application désactivée.',true)}catch(e){showStatus(frError(e.message))}};
 function events(){
-  const items=db.event_items||[],events=db.events||[],services=[...new Set(events.map(e=>String(e.service||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const items=db.event_items||[],events=(db.events||[]).filter(e=>cat(appById(e.application_id)?.category_id)?.code==='entretien'),services=[...new Set(events.map(e=>String(e.service||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
   $('content').innerHTML=`<div class="toolbar"><button class="btn secondary" onclick="exportWorkbook('events')">Exporter Excel</button></div>
   <div class="actions" style="margin-top:12px;flex-wrap:wrap">
     <input id="eventSearch" class="search" placeholder="Rechercher mouvement, produit, note…" oninput="filterEvents()">
@@ -158,7 +158,7 @@ window.filterEvents=()=>{
   });
 };
 function purchases(){
-  const rows=db.purchases||[],suppliers=[...new Set(rows.map(p=>String(p.supplier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const rows=(db.purchases||[]).filter(p=>stockManaged(prod(p.product_id))),suppliers=[...new Set(rows.map(p=>String(p.supplier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
   $('content').innerHTML=`<div class="toolbar"><button class="btn secondary" onclick="exportWorkbook('purchases')">Exporter Excel</button></div>
   <div class="actions" style="margin-top:12px;flex-wrap:wrap">
     <input id="purchaseSearch" class="search" placeholder="Rechercher achat, produit, note…" oninput="filterPurchases()">
