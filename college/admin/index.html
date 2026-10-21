@@ -17,7 +17,7 @@
 <script>
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
-const requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',events:'Mouvements',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
+const requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',events:'Mouvements',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',manual:'Manuel d’utilisation'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
 const pages=[['dashboard','Accueil'],['products','Produits'],['categories','Catégories'],['purchases','Achats'],['events','Mouvements'],['advanced','Outils avancés']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function frError(v){const s=String(v||'Erreur serveur');if(/failed to fetch|networkerror|network request failed/i.test(s))return 'Connexion au service impossible. Vérifiez le réseau puis réessayez.';return s}
@@ -31,7 +31,7 @@ function init(){$('nav').innerHTML=pages.map(([k,n])=>`<button data-p="${k}" onc
 async function enterApp(){init();$('login').classList.add('hide');$('passwordChange').classList.add('hide');$('app').classList.remove('hide');await refresh()}
 async function refresh(){const [main,sites]=await Promise.all([call(ADMIN,'data'),call(SITE,'list')]);db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+esc(main.current_user?.display_name||main.current_user?.username||'');render()}
 function show(p){page=p;render();if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
-function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page||(b.dataset.p==='advanced'&&['categories','subcategories','apps','stats','readerSettings'].includes(page))));$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,purchases,advanced:advancedPage,stats:statsPage,readerSettings:readerSettingsPage}[page]||dashboard)()}
+function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page||(b.dataset.p==='advanced'&&['categories','subcategories','apps','stats','readerSettings','manual'].includes(page))));$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,purchases,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage}[page]||dashboard)()}
 const bal=id=>Number(db.balances.find(x=>x.product_id===id)?.quantity||0),cat=id=>db.categories.find(x=>x.id===id),sub=id=>(db.subcategories||[]).find(x=>x.id===id),prod=id=>db.products.find(x=>x.id===id),appById=id=>db.applications.find(x=>x.id===id);
 const stockManaged=p=>['entretien','secraitaire'].includes(String(cat(p?.category_id)?.code||''));
 const nfcTag=id=>(db.nfc_tags||[]).find(x=>x.product_id===id&&x.active!==false);
@@ -44,7 +44,159 @@ function dashboard(){
   $('content').innerHTML=`<div class="actions" style="margin-bottom:12px"><button class="btn primary" onclick="show('products')">Produits & stock</button><button class="btn secondary" onclick="show('purchases')">Achats</button><a class="btn secondary" href="../../comptabilite/">Comptabilité micro-entreprise</a></div><div class="grid"><div class="card"><div class="muted">Produits gérés en stock</div><div class="kpi">${ps.length}</div></div><div class="card"><div class="muted">À réapprovisionner</div><div class="kpi">${low.length}</div></div><div class="card"><div class="muted">Valeur du stock géré</div><div class="kpi">${value.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div></div><div class="card"><div class="muted">Mouvements chargés</div><div class="kpi">${events.length}</div></div></div>${low.length?`<div class="card"><div class="top"><div><b>À réapprovisionner</b><div class="muted">Produits sous le minimum.</div></div><button class="btn secondary" onclick="show('products')">Ouvrir le stock</button></div><div class="muted" style="margin-top:8px">${low.slice(0,20).map(p=>`${esc(p.name)} : ${bal(p.id)} / minimum ${Number(p.min_stock||0)}`).join('<br>')}</div></div>`:''}<div class="card"><b>Activité stock</b><div class="muted" style="margin-top:8px">${purchases.length} achat(s) enregistré(s) · ${events.length} mouvement(s) chargé(s).</div></div><div id="pageStatus" class="status"></div>`
 }
 function advancedPage(){
-  $('content').innerHTML=`<div class="card"><h2>Outils avancés</h2><p class="muted">Réglages de structure et fonctions techniques. Ils restent disponibles mais ne sont plus dans le parcours quotidien.</p></div><div class="grid"><div class="card"><h3>Structure produits</h3><p class="muted">Catégories et sous-catégories.</p><div class="actions"><button class="btn secondary" onclick="show('categories')">Catégories</button><button class="btn secondary" onclick="show('subcategories')">Sous-catégories</button></div></div><div class="card"><h3>Applications</h3><p class="muted">Configuration des applications publiques.</p><button class="btn secondary" onclick="show('apps')">Applications</button></div><div class="card"><h3>Statistiques</h3><p class="muted">Analyses détaillées des mouvements.</p><button class="btn secondary" onclick="show('stats')">Statistiques</button></div><div class="card"><h3>Lecteur PDF & IA</h3><p class="muted">Réglages sensibles du lecteur de factures.</p><button class="btn secondary" onclick="show('readerSettings')">Réglages IA</button></div></div>`
+  $('content').innerHTML=`<div class="card"><h2>Outils avancés</h2><p class="muted">Réglages de structure et fonctions techniques. Ils restent disponibles mais ne sont plus dans le parcours quotidien.</p></div><div class="grid"><div class="card"><h3>Manuel d’utilisation</h3><p class="muted">Guide complet de l’administration Collège : produits, stock, achats, QR/NFC, applications, statistiques et réglages sensibles.</p><button class="btn primary" onclick="show('manual')">Ouvrir le manuel complet</button></div><div class="card"><h3>Structure produits</h3><p class="muted">Catégories et sous-catégories.</p><div class="actions"><button class="btn secondary" onclick="show('categories')">Catégories</button><button class="btn secondary" onclick="show('subcategories')">Sous-catégories</button></div></div><div class="card"><h3>Applications</h3><p class="muted">Configuration des applications publiques.</p><button class="btn secondary" onclick="show('apps')">Applications</button></div><div class="card"><h3>Statistiques</h3><p class="muted">Analyses détaillées des mouvements.</p><button class="btn secondary" onclick="show('stats')">Statistiques</button></div><div class="card"><h3>Lecteur PDF & IA</h3><p class="muted">Réglages sensibles du lecteur de factures.</p><button class="btn secondary" onclick="show('readerSettings')">Réglages IA</button></div></div>`
+}
+function manualPage(){
+  $('content').innerHTML=`
+  <div id="manual-top" class="card">
+    <div class="top">
+      <div>
+        <h2 style="margin:0">Manuel d’utilisation complet — Administration Collège</h2>
+        <p class="muted" style="margin-bottom:0">Ce guide décrit les fonctions réellement disponibles dans cet espace d’administration. Les actions marquées comme sensibles ou destructives doivent être utilisées avec précaution.</p>
+      </div>
+      <button class="btn secondary" onclick="show('advanced')">Retour aux outils avancés</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Sommaire</h3>
+    <div class="actions" style="justify-content:flex-start">
+      <a class="btn secondary compact" href="#manual-access">1. Connexion</a>
+      <a class="btn secondary compact" href="#manual-dashboard">2. Accueil</a>
+      <a class="btn secondary compact" href="#manual-products">3. Produits & stock</a>
+      <a class="btn secondary compact" href="#manual-qr">4. QR & NFC</a>
+      <a class="btn secondary compact" href="#manual-purchases">5. Achats</a>
+      <a class="btn secondary compact" href="#manual-events">6. Mouvements</a>
+      <a class="btn secondary compact" href="#manual-structure">7. Catégories</a>
+      <a class="btn secondary compact" href="#manual-apps">8. Applications</a>
+      <a class="btn secondary compact" href="#manual-stats">9. Statistiques</a>
+      <a class="btn secondary compact" href="#manual-exports">10. Exports Excel</a>
+      <a class="btn secondary compact" href="#manual-ai">11. Lecteur PDF & IA</a>
+      <a class="btn secondary compact" href="#manual-workflows">12. Procédures conseillées</a>
+      <a class="btn secondary compact" href="#manual-troubleshooting">13. Dépannage</a>
+    </div>
+  </div>
+
+  <div id="manual-access" class="card">
+    <h3>1. Connexion, session et sécurité</h3>
+    <p><b>Connexion.</b> L’administration Collège utilise un compte autorisé par la Holding. Après connexion, l’écran affiche le nom du compte actif et l’heure de la dernière actualisation des données.</p>
+    <p><b>Premier changement de mot de passe.</b> Si le compte impose un changement de mot de passe, un nouveau mot de passe d’au moins 10 caractères doit être défini avant toute opération sensible.</p>
+    <p><b>Déconnexion.</b> Le bouton « Déconnexion » supprime la session locale. Si une session expire, l’application redemande une connexion.</p>
+    <p><b>Actualiser.</b> Le bouton « Actualiser » recharge les données depuis le serveur. Utilisez-le si une modification faite dans un autre onglet n’apparaît pas immédiatement.</p>
+    <p><b>Accès rapide.</b> Les boutons du bandeau donnent accès à la Holding, au Secrétariat, à la Comptabilité et à « Accès & liens » lorsqu’il est disponible.</p>
+  </div>
+
+  <div id="manual-dashboard" class="card">
+    <h3>2. Accueil / tableau de bord</h3>
+    <p>Le tableau de bord synthétise uniquement les catégories gérées en stock par l’administration Collège, notamment Produits entretien et secretaria.</p>
+    <p>Il affiche : le nombre de produits gérés en stock, le nombre de produits à réapprovisionner, la valeur estimée du stock et le nombre de mouvements chargés.</p>
+    <p>La zone « À réapprovisionner » apparaît lorsqu’un stock est inférieur au minimum défini dans la fiche produit. Le bouton « Produits & stock » permet d’ouvrir directement la liste des produits.</p>
+  </div>
+
+  <div id="manual-products" class="card">
+    <h3>3. Produits & stock</h3>
+    <p><b>Liste et filtres.</b> La page Produits permet de rechercher par nom, code, unité, catégorie, sous-catégorie, conditionnement, colisage ou emplacement. Les filtres disponibles portent sur la catégorie, la sous-catégorie, l’état actif/inactif, l’état du stock et la programmation NFC.</p>
+    <p><b>États de stock.</b> « Rupture » correspond à un stock inférieur ou égal à zéro. « Sous le minimum » indique un stock positif mais inférieur au minimum. « Stock OK » signifie que le stock est au moins égal au minimum. « Non géré » concerne les catégories sans gestion de stock manuelle.</p>
+    <p><b>Créer ou modifier une fiche.</b> Une fiche produit peut contenir : nom, code, catégorie, sous-catégorie, unité de stock, prix unitaire, stock initial, stock minimum, stock cible, conditionnement, colisage, libellé d’unité d’inventaire, coefficient achat → stock, coefficient inventaire → stock, emplacement garage, quantité par sortie QR/NFC et état actif/inactif.</p>
+    <p><b>Photo produit.</b> Sur une fiche existante, une photo JPEG, PNG ou WebP peut être téléversée. La taille maximale acceptée par l’interface est de 20 Mo. La photo actuelle est affichée en haut de la fiche.</p>
+    <p><b>Stock manuel.</b> Le bouton « Stock » est réservé aux catégories Produits entretien et secretaria. Il remplace directement le stock actuel par la valeur saisie. La valeur doit être numérique et positive ou nulle.</p>
+    <p><b>Suppression.</b> La suppression d’un produit demande une confirmation explicite « SUPPRIMER ». Elle peut être refusée si le produit possède déjà un historique de stock, d’achat, de sortie, de facture ou de commande. Dans ce cas, désactivez plutôt le produit si vous souhaitez le retirer de l’usage courant.</p>
+    <div class="card" style="background:#fff8e8;border-color:#ead8a6;margin:10px 0 0"><b>Conseil</b><div class="muted" style="margin-top:6px">Pour éviter les incohérences, définissez la catégorie et les coefficients avant d’enregistrer des achats ou des inventaires.</div></div>
+  </div>
+
+  <div id="manual-qr" class="card">
+    <h3>4. Étiquettes de sortie QR et NFC</h3>
+    <p>Dans une fiche produit existante, la zone « Étiquettes de sortie » permet de générer le QR et de programmer un tag NFC. Le QR et le NFC ouvrent la même fiche de sortie sécurisée pour le produit concerné.</p>
+    <p><b>Charger le lien de sortie.</b> À l’ouverture de la fiche produit, l’administration demande au serveur le lien de sortie courant et génère le QR correspondant.</p>
+    <p><b>Imprimer.</b> « Imprimer les 2 étiquettes » prépare une étiquette QR et une étiquette NFC. « Imprimer QR » ne prépare que la partie QR.</p>
+    <p><b>Tester.</b> Les boutons « Tester QR » et « Tester NFC » ouvrent le lien correspondant dans un nouvel onglet. Il est recommandé de tester après toute génération ou renouvellement.</p>
+    <p><b>Programmer le NFC.</b> Sur un navigateur compatible Web NFC, « Programmer NFC » écrit directement l’URL sur le tag. Approchez le tag du téléphone lorsque le navigateur le demande.</p>
+    <p><b>Solution de secours avec NFC Tools.</b> Si l’écriture NFC directe n’est pas disponible, « Copier le lien pour NFC Tools » copie l’URL. Dans NFC Tools : Écrire → Ajouter un enregistrement → URL/URI → coller → Écrire.</p>
+    <p><b>Renouveler / invalider.</b> Cette action génère une nouvelle version du lien de sortie. Tous les anciens QR et tags NFC de ce produit deviennent alors invalides. N’utilisez cette fonction que si vous voulez volontairement rendre les anciennes étiquettes inutilisables.</p>
+    <p><b>Indicateurs.</b> Les pastilles « QR » et « NFC » dans la liste produits indiquent si une étiquette QR a déjà été générée et si un tag NFC a été programmé.</p>
+    <div class="card" style="background:#fdeaea;border-color:#efb9b9;margin:10px 0 0"><b>Important</b><div class="muted" style="margin-top:6px">Ne renouvelez pas un lien après avoir plastifié ou posé des étiquettes, sauf si vous prévoyez de remplacer toutes les anciennes étiquettes du produit.</div></div>
+  </div>
+
+  <div id="manual-purchases" class="card">
+    <h3>5. Achats</h3>
+    <p>Depuis la liste des produits, le bouton « Achat » ouvre le formulaire d’enregistrement d’un achat. Les champs disponibles sont la date, la quantité achetée, le prix unitaire, le fournisseur et une note.</p>
+    <p>Le coefficient « achat → stock » de la fiche produit est appliqué pour augmenter automatiquement le stock. Exemple : si un colis acheté représente plusieurs unités de stock, le coefficient doit traduire cette conversion.</p>
+    <p>La page « Achats » affiche l’historique et permet de filtrer par texte, catégorie, fournisseur, état validé/annulé et plage de dates.</p>
+  </div>
+
+  <div id="manual-events" class="card">
+    <h3>6. Mouvements</h3>
+    <p>La page « Mouvements » regroupe les sorties et inventaires issus des applications rattachées aux catégories gérées par le Collège.</p>
+    <p>Chaque mouvement affiche la date, le type, l’application, le service, le nombre d’articles, la quantité totale et la note.</p>
+    <p>Les filtres permettent de rechercher par texte et de limiter l’affichage par type, catégorie, application, service et période.</p>
+  </div>
+
+  <div id="manual-structure" class="card">
+    <h3>7. Catégories et sous-catégories</h3>
+    <p><b>Catégories.</b> Une catégorie possède un nom, un code, un mode, une couleur et un état actif/inactif. Les modes disponibles sont « Inventaire + sorties », « Inventaire » et « Sorties ».</p>
+    <p><b>Remise à zéro.</b> Pour la catégorie Produits entretien, un bouton permet de remettre tous les stocks de la catégorie à zéro. La confirmation exacte « REMETTRE A ZERO » est demandée.</p>
+    <p><b>Suppression de catégorie.</b> La suppression demande « SUPPRIMER » et est refusée si des produits ou applications sont encore liés à la catégorie.</p>
+    <p><b>Sous-catégories.</b> Une sous-catégorie possède un nom, un code, une catégorie parente, un ordre d’affichage et un état actif/inactif. La liste peut être filtrée par recherche, catégorie et état.</p>
+    <div class="card" style="background:#fdeaea;border-color:#efb9b9;margin:10px 0 0"><b>Précaution</b><div class="muted" style="margin-top:6px">Les codes de catégorie et de sous-catégorie servent de référence technique. Évitez de les modifier après mise en production sans vérifier les applications et les produits associés.</div></div>
+  </div>
+
+  <div id="manual-apps" class="card">
+    <h3>8. Applications publiques</h3>
+    <p>La page « Applications » permet de créer et configurer les applications publiques utilisées par les services.</p>
+    <p><b>Paramètres.</b> Une application contient un nom, un code, une catégorie, une couleur, une liste de services séparés par des virgules, une description et la liste des produits visibles.</p>
+    <p><b>Fonctions activables.</b> Inventaire, sorties de stock, achats, historique des achats, prix unitaires, stock actuel, fournisseur, service et notes peuvent être activés ou désactivés individuellement.</p>
+    <p><b>Produits visibles.</b> Seuls les produits actifs de la catégorie choisie sont proposés dans la liste de sélection.</p>
+    <p><b>Ouvrir.</b> Une application active peut être ouverte directement depuis l’administration.</p>
+    <p><b>QR d’application.</b> Le bouton « QR » génère un QR à partir du lien public actif de l’application. Le QR peut être testé puis téléchargé en PNG.</p>
+    <p><b>Désactiver.</b> Une application active peut être désactivée. Cette action retire son accès courant sans supprimer automatiquement sa configuration historique.</p>
+  </div>
+
+  <div id="manual-stats" class="card">
+    <h3>9. Statistiques</h3>
+    <p>La page « Statistiques » calcule les entrées et sorties sur une période mensuelle ou annuelle à partir d’une date de référence.</p>
+    <p>Les résultats affichent la valeur des entrées, la valeur des sorties, la quantité entrée et la quantité sortie, avec un détail par catégorie.</p>
+  </div>
+
+  <div id="manual-exports" class="card">
+    <h3>10. Exports Excel</h3>
+    <p>Les exports Excel sont générés directement dans le navigateur au format .xlsx.</p>
+    <p><b>Produits & stock.</b> Exporte notamment code, produit, catégorie, sous-catégorie, unité, prix, stock, minimum, cible, conditionnement, colisage, coefficients et état.</p>
+    <p><b>Catégories.</b> Exporte code, nom, mode et état.</p>
+    <p><b>Achats.</b> Exporte date, produit, quantité, prix unitaire, fournisseur, note et état d’annulation.</p>
+    <p><b>Mouvements.</b> Exporte date, type, application, service et note.</p>
+  </div>
+
+  <div id="manual-ai" class="card">
+    <h3>11. Lecteur PDF & IA</h3>
+    <p>Cette zone est réservée au compte administrateur global et demande une nouvelle authentification avant accès. La session sensible expire automatiquement après quelques minutes et n’est pas conservée comme jeton permanent dans le navigateur.</p>
+    <p><b>Lecture PDF.</b> Active ou désactive le texte natif du PDF, l’OCR local haute qualité, l’échelle OCR du document entier, l’échelle de relecture ciblée et la relecture automatique des zones douteuses.</p>
+    <p><b>Lectures Gemini.</b> Permet de définir le nombre minimum de lectures, l’utilisation d’une troisième lecture en cas de désaccord et les modèles utilisés pour les lectures 1, 2 et 3.</p>
+    <p><b>Niveaux de fiabilité.</b> Définit les seuils de concordance des lignes, les seuils de confiance, la tolérance de calcul et la confiance minimale pour l’association produit → compte.</p>
+    <p><b>Contrôles finaux.</b> Permet d’imposer un contrôle final GPT, une validation humaine et/ou un blocage si des données restent non résolues.</p>
+    <p><b>Verrouiller maintenant.</b> Ferme immédiatement l’accès sensible sans attendre son expiration automatique.</p>
+    <div class="card" style="background:#fff8e8;border-color:#ead8a6;margin:10px 0 0"><b>Conseil</b><div class="muted" style="margin-top:6px">Ne modifiez les seuils ou modèles que si vous connaissez l’impact attendu sur le traitement des factures et la validation comptable.</div></div>
+  </div>
+
+  <div id="manual-workflows" class="card">
+    <h3>12. Procédures conseillées</h3>
+    <p><b>Créer un nouveau produit.</b> 1) Vérifier ou créer la catégorie. 2) Vérifier ou créer la sous-catégorie. 3) Ajouter le produit avec son code et ses unités. 4) Régler les coefficients. 5) Enregistrer. 6) Ajouter la photo. 7) Définir le stock si la catégorie est gérée. 8) Générer puis tester le QR. 9) Programmer et tester le NFC si nécessaire.</p>
+    <p><b>Enregistrer un réapprovisionnement.</b> Ouvrir Produits → choisir le produit → Achat → saisir date, quantité, prix, fournisseur et note → Enregistrer. Contrôler ensuite le stock.</p>
+    <p><b>Corriger un stock.</b> Produits → bouton Stock → saisir le stock réel. Utiliser cette action pour une correction manuelle ponctuelle ; pour un achat normal, utilisez plutôt « Achat » afin de conserver l’historique.</p>
+    <p><b>Créer une application de service.</b> Outils avancés → Applications → Créer une application → choisir la catégorie → régler les fonctions visibles → choisir les produits → Enregistrer → Ouvrir pour tester → générer le QR d’application si besoin.</p>
+    <p><b>Remplacer une ancienne étiquette QR/NFC.</b> Si le lien a été renouvelé, générer les nouvelles étiquettes, les tester, puis remplacer physiquement les anciennes. Un ancien QR ou tag NFC ne doit pas être conservé après renouvellement.</p>
+  </div>
+
+  <div id="manual-troubleshooting" class="card">
+    <h3>13. Dépannage rapide</h3>
+    <p><b>« Session expirée ».</b> Reconnectez-vous puis rechargez les données.</p>
+    <p><b>Une modification n’apparaît pas.</b> Cliquez sur « Actualiser » ou revenez à la page concernée après enregistrement.</p>
+    <p><b>Le QR n’apparaît pas.</b> Rechargez la fiche produit. Si le générateur QR n’est pas disponible, rechargez complètement la page et vérifiez la connexion réseau.</p>
+    <p><b>Le NFC ne s’écrit pas directement.</b> Utilisez « Copier le lien pour NFC Tools » et programmez le tag depuis NFC Tools.</p>
+    <p><b>Un ancien QR/NFC ne fonctionne plus.</b> Vérifiez si « Renouveler / invalider » a été utilisé. Dans ce cas l’ancienne étiquette est volontairement invalidée.</p>
+    <p><b>Suppression refusée.</b> Le produit ou la catégorie possède probablement des dépendances ou un historique. Désactivez l’élément ou supprimez d’abord les dépendances autorisées.</p>
+    <p><b>Export Excel impossible.</b> Rechargez la page puis réessayez ; l’export dépend du chargement de la bibliothèque Excel dans le navigateur.</p>
+    <div class="actions" style="margin-top:12px"><a class="btn secondary" href="#manual-top">Retour en haut</a><button class="btn primary" onclick="show('advanced')">Retour aux outils avancés</button></div>
+  </div>`;
 }
 function categories(){
   $('content').innerHTML=`<div class="toolbar"><div class="actions"><button class="btn primary" onclick="editCategory()">Ajouter une catégorie</button><button class="btn secondary" onclick="exportWorkbook('categories')">Exporter Excel</button></div><div class="muted">Toutes les catégories sont affichées, actives ou inactives.</div></div><br><div class="table"><table><thead><tr><th>Nom</th><th>Code</th><th>Mode</th><th>État</th><th>Produits</th><th>Actions</th></tr></thead><tbody>${db.categories.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.code)}</td><td>${esc(c.app_mode)}</td><td>${statusPill(c.active)}</td><td>${db.products.filter(p=>p.category_id===c.id).length}</td><td class="nowrap"><button class="btn secondary compact" onclick="editCategory('${c.id}')">Modifier</button> ${c.code==='entretien'?`<button class="btn danger compact" onclick="resetCategory('${c.id}')">Remettre les stocks à zéro</button>`:''} <button class="btn danger compact" onclick="deleteCategory('${c.id}')">Supprimer</button></td></tr>`).join('')}</tbody></table></div><div id="pageStatus" class="status"></div>`
