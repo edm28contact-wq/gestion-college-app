@@ -1,6 +1,6 @@
 // Compatibilite Gestion Holding -> backend EDM actif.
 // La cle ci-dessous est la cle anonyme publique Supabase, jamais une cle service_role.
-const GH_SUPABASE_URL='https://ojjbnwpkfvzjfukgqddz.supabase.co';
+const GH_SUPABASE_URL='https://zreegtzfpwrjgdhhunxx.supabase.co';
 const GH_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYXNlIiwicmVmIjoib2pqYm53cGtmdnpqZnVrZ3FkZHoiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc4MzE3MjQ0OSwiZXhwIjoyMDk4NzQ4NDQ5fQ.oHKf-cT3VpyoxKrOdqj1qgHZ5TzekKsVW7XhVLNeldA';
 const GH_ADMIN_API=GH_SUPABASE_URL+'/functions/v1/admin-api';
 
