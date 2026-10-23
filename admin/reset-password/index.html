@@ -10,7 +10,7 @@
 <body>
 <div class="box">
   <h1>Nouveau mot de passe admin</h1>
-  <p class="muted">Choisissez un nouveau mot de passe d’au moins 14 caractères. Il ne sera pas enregistré dans GitHub.</p>
+  <p class="muted">Choisissez un nouveau mot de passe d’au moins 10 caractères. Il ne sera pas enregistré dans GitHub.</p>
   <div id="form">
     <label for="p1">Nouveau mot de passe</label>
     <input id="p1" type="password" autocomplete="new-password">
@@ -28,7 +28,7 @@ const form=document.getElementById('form');
 if(!token){form.classList.add('hide');status.className='status err';status.textContent='Lien de réinitialisation invalide.'}
 document.getElementById('submit').addEventListener('click',async()=>{
   const p1=document.getElementById('p1').value,p2=document.getElementById('p2').value;
-  if(p1.length<14){status.className='status err';status.textContent='Le mot de passe doit contenir au moins 14 caractères.';return}
+  if(p1.length<10){status.className='status err';status.textContent='Le mot de passe doit contenir au moins 10 caractères.';return}
   if(p1!==p2){status.className='status err';status.textContent='Les deux mots de passe ne correspondent pas.';return}
   const button=document.getElementById('submit');button.disabled=true;status.className='status';status.textContent='Enregistrement…';
   try{
