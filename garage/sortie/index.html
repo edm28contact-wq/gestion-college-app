@@ -20,7 +20,7 @@
     <div class="meta" id="location"></div>
     <div class="qty-edit">
       <button id="qtyMinus" class="qty-step" type="button" onclick="adjustQty(-1)">−</button>
-      <input id="qty" class="qty-input" type="number" min="0.001" step="0.001" inputmode="decimal" aria-label="Quantité de sortie">
+      <input id="qty" class="qty-input" type="number" min="1" step="1" inputmode="numeric" aria-label="Quantité de sortie">
       <button id="qtyPlus" class="qty-step" type="button" onclick="adjustQty(1)">+</button>
     </div>
     <div class="unit" id="unit"></div>
@@ -49,7 +49,7 @@ async function api(method='GET',body){
 function disableButtons(v){busy=v;$('validateBtn').disabled=v;$('refuseBtn').disabled=v;$('qty').disabled=v;$('qtyMinus').disabled=v;$('qtyPlus').disabled=v}
 function quantityValue(){
   const raw=String($('qty').value||'').replace(',','.'),q=Number(raw),stock=Number(product?.current_stock);
-  if(!Number.isFinite(q)||q<=0)throw new Error('Indique une quantité supérieure à 0.');
+  if(!Number.isFinite(q)||q<=0||!Number.isInteger(q))throw new Error('Indique une quantité entière supérieure à 0.');
   if(q>1000000)throw new Error('Quantité trop élevée.');
   if(Number.isFinite(stock)&&q>stock)throw new Error('Stock insuffisant : '+stock+' '+(product?.unit||'unité')+'.');
   return q;
@@ -72,14 +72,14 @@ async function load(){
     $('name').textContent=product.name||'Produit';
     $('location').textContent=product.garage_location||'';
     $('qty').value=String(product.exit_quantity??1);
-    $('unit').textContent=product.unit||'unité';
-    $('stock').textContent='Stock disponible : '+Number(product.current_stock||0)+' '+(product.unit||'unité');
+    $('unit').textContent=product.display_unit||'unité';
+    $('stock').textContent='Stock disponible : '+Number(product.current_stock||0).toLocaleString('fr-FR')+' '+(product.display_unit||'unité');
     $('photo').innerHTML=product.image_url?'<img src="'+esc(product.image_url)+'" alt="">':'<span style="color:#74808b">Aucune photo</span>';
   }catch(e){showFatal(e.message)}
 }
 async function confirmExit(){
   if(busy)return;
-  try{const quantity=quantityValue();disableButtons(true);$('msg').className='status';$('msg').textContent='Enregistrement de '+quantity+' '+(product?.unit||'unité')+'…';const j=await api('POST',{action:'confirm',token,session_id:sessionId,channel,quantity});if(!j.validated)throw new Error('Validation non confirmée par le serveur.');showSuccess(j.remaining_stock)}
+  try{const quantity=quantityValue();disableButtons(true);$('msg').className='status';$('msg').textContent='Enregistrement de '+quantity+' '+(product?.display_unit||'unité')+'…';const j=await api('POST',{action:'confirm',token,session_id:sessionId,channel,quantity});if(!j.validated)throw new Error('Validation non confirmée par le serveur.');showSuccess(j.remaining_stock)}
   catch(e){disableButtons(false);$('msg').className='status err';$('msg').textContent=e.message}
 }
 async function refuseExit(){
