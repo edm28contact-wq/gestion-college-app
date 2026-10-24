@@ -107,14 +107,17 @@ const validRef=s=>/^[A-Z0-9][A-Z0-9._/-]{1,39}$/i.test(String(s||""));
 function standard(ref,label,q,unit,vat,pu,ht,raw){
  const quantity=decimal(q),rate=decimal(vat),price=decimal(pu),total=decimal(ht);
  if(!validRef(ref)||!clean(label)||quantity===null||quantity<=0||quantity>1000000||rate===null||rate>100||price===null||total===null)return null;
- return {layout:"standard",line_number:null,reference:clean(ref).toUpperCase(),designation:clean(label),delivered_quantity:quantity,delivered_unit:clean(unit),quantity,unit:clean(unit),vat:rate,vat_code:"",unit_price_ht:price,total_ht:total,sourceLine:raw,needs_review:false,review_reason:""};
+ const warning=unitReview(unit,unit);
+ return {layout:"standard",line_number:null,reference:clean(ref).toUpperCase(),designation:clean(label),delivered_quantity:quantity,delivered_unit:clean(unit),quantity,unit:clean(unit),vat:rate,vat_code:"",unit_price_ht:price,total_ht:total,sourceLine:raw,needs_review:!!warning,review_reason:warning};
 }
 function fromCells(cols,raw){
  const c=cols.map(clean);
  if(c.length>=11&&/^\d{1,3}$/.test(c[0])&&validRef(c[1])){
   const delivered=decimal(c[3]),priced=decimal(c[5]),pu=decimal(c[9]),total=decimal(c[10]);
-  if(delivered!==null&&priced!==null&&pu!==null&&total!==null)
-   return {layout:"pomona",line_number:Number(c[0]),reference:c[1],designation:c[2],delivered_quantity:delivered,delivered_unit:c[4],quantity:priced,unit:c[6],vat_code:c[7],vat:decimal(c[8]),unit_price_ht:pu,total_ht:total,sourceLine:raw,needs_review:false,review_reason:""};
+  if(delivered!==null&&priced!==null&&pu!==null&&total!==null){
+   const warning=unitReview(c[4],c[6]);
+   return {layout:"pomona",line_number:Number(c[0]),reference:c[1],designation:c[2],delivered_quantity:delivered,delivered_unit:c[4],quantity:priced,unit:c[6],vat_code:c[7],vat:decimal(c[8]),unit_price_ht:pu,total_ht:total,sourceLine:raw,needs_review:!!warning,review_reason:warning};
+  }
  }
  if(c.length>=7)return standard(c[0],c[1],c[2],c[3],c[4],c[5],c[6],raw);
  return null;
@@ -130,7 +133,8 @@ function parsePomona(raw,rates){
  const delivered=decimal(m[2]),priced=decimal(m[4]),price=decimal(m[6]),total=decimal(m[9]);
  if(delivered===null||priced===null||price===null||total===null||delivered<=0||priced<=0)return null;
  const vatCode=m[7].toUpperCase()+m[8],rate=rates[String(m[8])];
- const row={layout:"pomona",line_number:prefix?Number(prefix[1]):null,reference:prefix?prefix[2]:"",designation:clean(m[1]),delivered_quantity:delivered,delivered_unit:m[3].toUpperCase(),quantity:priced,unit:m[5].toUpperCase(),vat:rate??"",vat_code:vatCode,unit_price_ht:price,total_ht:total,sourceLine:raw,needs_review:false,review_reason:""};
+ const warning=unitReview(m[3],m[5]);
+ const row={layout:"pomona",line_number:prefix?Number(prefix[1]):null,reference:prefix?prefix[2]:"",designation:clean(m[1]),delivered_quantity:delivered,delivered_unit:m[3].toUpperCase(),quantity:priced,unit:m[5].toUpperCase(),vat:rate??"",vat_code:vatCode,unit_price_ht:price,total_ht:total,sourceLine:raw,needs_review:!!warning,review_reason:warning};
  return prefix?{row}:{orphan:row};
 }
 function invoiceSummary(lines){
