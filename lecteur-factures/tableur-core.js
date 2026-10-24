@@ -13,10 +13,96 @@ function decimal(v){
  if(!/^\d{1,9}(?:\.\d{1,4})?$/.test(s))return null;
  const n=Number(s);return Number.isFinite(n)?n:null;
 }
+// Known invoice units and aliases. Other syntactically valid units are kept but flagged.
+const UNIT_GROUPS=[
+ ["pièce","U|UN|UNIT|UNITE|UNITÉ|UNITES|UNITÉS|PIECE|PIÈCE|PIECES|PIÈCES|PCE|PCS|PC|PU|EA|EACH|ARTICLE|ART|ELEMENT|ÉLÉMENT"],
+ ["colis","COL|COLIS|COLI|COLL"],
+ ["carton","CART|CARTON|CARTONS|CTN|CRT|CAISSE|CAIS"],
+ ["lot","LOT|LOTS|ENS|ENSEMBLE|KIT|ASSORTIMENT"],
+ ["pack","PACK|PACKS|PCK|PK|PKT|PACK DE 6|PACK DE 12"],
+ ["paquet","PAQUET|PAQUETS|PQT|PAQ"],
+ ["palette","PAL|PALETTE|PALETTES|PALET|PLT"],
+ ["douzaine","DZ|DZN|DOUZ|DOUZAINE"],
+ ["boîte","BOITE|BOÎTE|BOITES|BOÎTES|BTE|BOX|BOI"],
+ ["barquette","BQT|BQTE|BARQ|BARQUETTE|BARQUETTES"],
+ ["pot","POT|POTS|PT"],
+ ["seau","SEA|SEAU|SEAUX"],
+ ["sac","SAC|SACS|BAG"],
+ ["sachet","SACH|SACHET|SACHETS|SCH"],
+ ["dose","DOSE|DOSES|DOSETTE|DOSETTES|DOS"],
+ ["bouteille","BT|BTL|BTLE|BOUT|BOUTEILLE|BOUTEILLES|BOTTLE"],
+ ["bidon","BID|BIDON|BIDONS|JERRICAN"],
+ ["flacon","FL|FLAC|FLACON|FLACONS|FLC"],
+ ["fût","FUT|FÛT|FUTS|FÛTS|TONNEAU"],
+ ["rouleau","RL|RLX|ROUL|ROULEAU|ROULEAUX|ROLL"],
+ ["ramette","RAM|RAMETTE|RAMETTES|RAME|RAMES"],
+ ["bobine","BOB|BOBINE|BOBINES"],
+ ["plaque","PLQ|PLAQUE|PLAQUES"],
+ ["plateau","PLATEAU|PLATEAUX|PLAT"],
+ ["barre","BARRE|BARRES|BARR"],
+ ["cartouche","CARTOUCHE|CARTOUCHES"],
+ ["gobelet","GOB|GOBELET|GOBELETS"],
+ ["tube","TUB|TUBE|TUBES"],
+ ["bocal","BOCAL|BOCAUX|BOC"],
+ ["bac","BAC|BACS"],
+ ["portion","PORTION|PORTIONS|POR|PART|PARTS"],
+ ["repas","REPAS|MENU|MENUS"],
+ ["kg","KG|KGS|KILOGRAMME|KILOGRAMMES|KILO|KILOS"],
+ ["g","G|GR|GRAMME|GRAMMES|GRAM"],
+ ["mg","MG|MILLIGRAMME|MILLIGRAMMES"],
+ ["µg","µG|μG|MCG|MICROGRAMME"],
+ ["tonne","T|TONNE|TONNES|TON"],
+ ["litre","L|LT|LTR|LITRE|LITRES|LTS"],
+ ["ml","ML|MILLILITRE|MILLILITRES"],
+ ["cl","CL|CENTILITRE|CENTILITRES"],
+ ["dl","DL|DECILITRE|DÉCILITRE"],
+ ["hl","HL|HECTOLITRE|HECTOLITRES"],
+ ["m","M|METRE|MÈTRE|METRES|MÈTRES|METRE LINEAIRE|MÈTRE LINÉAIRE"],
+ ["cm","CM|CENTIMETRE|CENTIMÈTRE"],
+ ["mm","MM|MILLIMETRE|MILLIMÈTRE"],
+ ["km","KM|KILOMETRE|KILOMÈTRE"],
+ ["m²","M2|M²|METRE CARRE|MÈTRE CARRÉ|MÈTRES CARRÉS"],
+ ["m³","M3|M³|METRE CUBE|MÈTRE CUBE|MÈTRES CUBES"],
+ ["cm³","CM3|CM³"],
+ ["kWh","KWH|K.W.H|KILOWATTHEURE"],
+ ["MWh","MWH|MEGAWATTHEURE"],
+ ["Wh","WH|WATTHEURE"],
+ ["kVA","KVA|KVAH|KVARH"],
+ ["heure","H|HR|HRS|HEURE|HEURES|HOUR|HOURS"],
+ ["minute","MIN|MINUTE|MINUTES"],
+ ["jour","J|JR|JRS|JOUR|JOURS|DAY|DAYS"],
+ ["semaine","SEM|SEMAINE|SEMAINES|WEEK"],
+ ["mois","MOIS|MO|MONTH|MONTHS"],
+ ["année","AN|ANS|ANNEE|ANNÉE|ANNEES|ANNÉES|YEAR"],
+ ["trimestre","TRIM|TRIMESTRE|TRIMESTRES"],
+ ["forfait","FORFAIT|FORFAITS|FFT|FRT"],
+ ["abonnement","ABO|ABT|ABONNEMENT|ABONNEMENTS"],
+ ["prestation","PRESTA|PRESTATION|PRESTATIONS|SERV|SERVICE|SERVICES"],
+ ["intervention","INTERVENTION|INTERVENTIONS|INT"],
+ ["session","SESSION|SESSIONS"],
+ ["nuit","NUIT|NUITS"],
+ ["pourcentage","%|POURCENT|POURCENTAGE|PCT"]
+];
+const unitKey=value=>clean(value).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase()
+ .replace(/²/g,"2").replace(/³/g,"3").replace(/[µμ]/g,"U").replace(/[.\s_-]/g,"");
+const UNIT_LOOKUP=new Map();
+for(const [canonical,aliases] of UNIT_GROUPS)for(const a of aliases.split("|"))UNIT_LOOKUP.set(unitKey(a),canonical);
+function unitInfo(value){const raw=clean(value),canonical=UNIT_LOOKUP.get(unitKey(raw))||null;return {raw,canonical,recognized:!!canonical};}
+function unitReview(delivered,billed){
+ const problems=[],seen=new Set();
+ for(const [role,value] of [["livraison",delivered],["facturation",billed]]){
+  if(value===null||value===undefined||String(value).trim()==="")continue;
+  if(!unitInfo(value).recognized&&!seen.has(unitKey(value))){problems.push("Unité de "+role+" inconnue « "+clean(value)+" » : à vérifier.");seen.add(unitKey(value));}
+ }
+ return problems.join(" ");
+}
+const knownUnits=()=>UNIT_GROUPS.map(([canonical,aliases])=>({canonical,example:aliases.split("|")[0]}));
 const number="\\d+(?:[.,]\\d{1,4})?";
-const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+(COL|COLIS|PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|SACH|BARQ|SEAU|SEAUX|SEA)\\s+("+number+")\\s+(PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|COL|COLIS|SACH|BARQ|SEAU|SEAUX|SEA)\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
+const unitWord="[A-Za-zÀ-ÿµμ°º²³0-9%./_-]{1,24}";
+const unitToken=unitWord+"(?:\\s+"+unitWord+"){0,2}";
+const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+("+unitToken+")\\s+("+number+")\\s+("+unitToken+")\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
 const pomonaPrefix=/^(\d{1,3})\s*\/\s*(\d{2,14})\s+(.+)$/i;
-const standardRE=/^([A-Z0-9][A-Z0-9._/-]{1,39})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-zÀ-ÿ.]{1,20})\s+(\d{1,2}(?:[.,]\d+)?)\s*%?\s+(\d+(?:[.,]\d{1,4})?)\s+(\d+(?:[.,]\d{1,2})?)\s*€?\s*$/i;
+const standardRE=new RegExp("^([A-Z0-9][A-Z0-9._/-]{1,39})\\s+(.+?)\\s+("+number+")\\s+("+unitToken+")\\s+(\\d{1,2}(?:[.,]\\d{1,2})?)\\s*%?\\s+("+number+")\\s+("+number+")\\s*€?\\s*$","i");
 const validRef=s=>/^[A-Z0-9][A-Z0-9._/-]{1,39}$/i.test(String(s||""));
 function standard(ref,label,q,unit,vat,pu,ht,raw){
  const quantity=decimal(q),rate=decimal(vat),price=decimal(pu),total=decimal(ht);
@@ -279,7 +365,7 @@ function mergeRows(existing,incoming,replaceAll=false){
   output.sort((a,b)=>Number(a.line_number??999999)-Number(b.line_number??999999));
  return {rows:output,added,updated,unchanged,ambiguous};
 }
-const api={parse,format,check,match,supplierKey,mergeRows,detectProfile,decimal,norm};
+const api={parse,format,check,match,supplierKey,mergeRows,detectProfile,decimal,norm,unitInfo,unitReview,knownUnits};
 if(typeof module==="object"&&module.exports)module.exports=api;
 else root.InvoiceTableurCore=api;
 })(typeof window!=="undefined"?window:this);
