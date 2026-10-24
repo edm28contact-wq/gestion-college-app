@@ -80,5 +80,28 @@ function process(pages){
 }
 document.addEventListener("invoice-reader:ready",e=>{if(db)process(e.detail.pages);else load().then(ok=>{if(ok)process(window.InvoiceReader?.pages?.()||e.detail.pages)})});
 document.addEventListener("DOMContentLoaded",()=>{load();document.getElementById("learningRefresh")?.addEventListener("click",()=>{load().then(ok=>{if(ok)process(window.InvoiceReader?.pages?.()||[])})})});
-window.InvoiceLearning={refresh:()=>load(),process};
+
+async function fingerprint(){
+ const file=window.InvoiceReader?.file?.();if(!file)return "";
+ const digest=await crypto.subtle.digest("SHA-256",await file.arrayBuffer());
+ return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+async function sendLearning(action,product_ids=[]){
+ const file_hash=await fingerprint();if(!file_hash)return;
+ const pages=window.InvoiceReader?.pages?.()||[];
+ const supplier_name=document.getElementById("supplierMatch")?.value?.trim()||"";
+ if(!supplier_name)return updateLabel("Apprentissage en attente : fournisseur à identifier.");
+ const raw=pages.map(p=>p.text).join("\n");
+ const observed=(db?.secretariat||[]).flatMap(p=>p.known_product_codes||[]).filter(code=>code&&raw.includes(code));
+ const payload={action,file_hash,supplier_key:norm(supplier_name),supplier_name,page_count:pages.length,ocr_page_count:pages.filter(p=>p.source==="OCR").length,product_codes:observed.slice(0,100),product_ids};
+ for(const token of tokens())try{
+  const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json",authorization:"Bearer "+token},body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});
+  if(!r.ok)continue;
+  const x=await r.json();updateLabel(action==="observe"?(x.duplicate?"Facture déjà connue : apprentissage conservé.":"Facture mémorisée pour les prochaines lectures."):"Produits vérifiés enregistrés dans l'apprentissage.");return x;
+ }catch{}
+ updateLabel("Apprentissage non synchronisé : réessayez après reconnexion.");
+}
+document.addEventListener("invoice-reader:ready",()=>{setTimeout(()=>{void sendLearning("observe")},300)});
+document.addEventListener("invoice-learning:confirm",e=>{void sendLearning("confirm",e.detail?.product_ids||[])});
+window.InvoiceLearning={refresh:()=>load(),process,observe:()=>sendLearning("observe")};
 })();
