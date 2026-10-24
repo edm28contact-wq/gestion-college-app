@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id),C=window.InvoiceTableurCore;
 const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-central-catalog";
 let catalog=null,records=[],ignored=[],unresolved=[],summary=null;
-const tokens=()=>["college_accounting_token","college_secretariat_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
+const tokens=()=>["college_accounting_token","college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
 function status(message,error=false){$("status").textContent=message;$("status").className="status"+(error?" err":"")}
 async function loadCatalog(){
  for(const token of tokens()){
