@@ -32,14 +32,14 @@ function render(){
   if(r.layout==="pomona"){const n=make("td",r.line_number??"");tr.append(n)}else{tr.append(make("td",r.line_number??""))}
   for(const [field,width] of [["reference",100],["designation",270],["delivered_quantity",75],["delivered_unit",70],["quantity",75],["unit",70],["vat_code",55],["vat",60],["unit_price_ht",85],["total_ht",95]]){
    const td=make("td"),input=make("input");input.value=r[field]??"";input.style.width=width+"px";
-   input.setAttribute("aria-label",field+" ligne "+(index+1));input.addEventListener("change",()=>{r[field]=input.value;r.verified=false;render()});td.append(input);tr.append(td);
+   input.setAttribute("aria-label",field+" ligne "+(index+1));input.addEventListener("change",()=>{r[field]=input.value;r.verified=false;if(["quantity","delivered_quantity","unit","delivered_unit","reference"].includes(field)){r.stock_quantity=null;r.stock_manual=false}render()});td.append(input);tr.append(td);
   }
   const td=make("td"),selector=make("select");
   selector.style.minWidth="240px";selector.append(make("option","À associer"));selector.firstChild.value="";
   for(const p of products){const o=make("option",p.code+" — "+p.name);o.value=p.id;selector.append(o)}
   selector.value=productId;
   if(productId&&!selector.value){r.product_id="";r.verified=false;selector.value="";}
-  selector.onchange=()=>{r.product_id=selector.value;r.verified=false;render()};
+  selector.onchange=()=>{r.product_id=selector.value;r.verified=false;r.stock_quantity=null;r.stock_manual=false;render()};
   td.append(selector,make("small",r.product_id?"Sélection manuelle":match.source));tr.append(td);
   const valid=make("td",(test.ok?"HT cohérent":"À vérifier : "+test.text)+(r.needs_review?" · "+(r.review_reason||"Unité ou ligne à vérifier"):""));valid.className=test.ok&&!r.needs_review?"ok":"err";tr.append(valid);
   const checkTd=make("td"),check=make("input");check.type="checkbox";check.checked=!!r.verified;check.disabled=!test.ok||!productId;
@@ -211,7 +211,7 @@ function boot(){
  $("manualReplace").onclick=()=>applyCorrectedLines(true);
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
  document.addEventListener("invoice-pdf:replace",()=>{
-  $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();
+  $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;["finalInvoiceNumber","finalInvoiceDate","finalInvoiceHT"].forEach(id=>$(id).value="");render();
   extractionStatus("Lecture du PDF lancée. Le texte doit apparaître automatiquement dans cette zone.");
   status("Facture importée : extraction du texte en cours...");
  });
