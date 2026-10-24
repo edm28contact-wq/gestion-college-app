@@ -14,7 +14,7 @@ function percent(n){progress.hidden=false;progress.value=Math.max(0,Math.min(100
 function controls(){transcribeButton.disabled=!currentFile||working;ocrButton.disabled=!currentFile||working;cancelButton.hidden=!working;input.disabled=false}
 function checkVersion(v){if(v!==version)throw new Error("Lecture annulée")}
 async function getPdfJs(){
- if(!pdfLib)pdfLib=import(PDF_LIB).then(module=>{module.GlobalWorkerOptions.workerSrc=PDF_WORKER;return module}).catch(e=>{pdfLib=null;throw e});
+ if(!pdfLib)pdfLib=import(PDF_LIB).catch(()=>import("https://unpkg.com/pdfjs-dist@6.2.108/build/pdf.min.mjs")).then(module=>{module.GlobalWorkerOptions.workerSrc=PDF_WORKER;return module}).catch(e=>{pdfLib=null;throw new Error("PDF.js inaccessible : "+(e?.message||String(e)))});
  return pdfLib;
 }
 async function getTesseract(){
@@ -126,11 +126,12 @@ async function transcribe(forceOcr=false){
   document.dispatchEvent(new CustomEvent("invoice-pdf:transcribed",{detail:{text:result,pages,scanned,warnings,fileName:file.name}}));
   if(result.trim()){
    notice("Transcription visible : "+pdf.numPages+" page(s) · "+scanned+" page(s) OCR · "+warnings+" page(s) à contrôler. Le tableau est rempli à partir du texte.");
-  }else notice("Aucun texte extrait. Vérifiez le PDF ou collez la transcription manuellement.",true);
+  }else {notice("Aucun texte extrait. Utilisez Forcer OCR ou collez le texte.",true);document.dispatchEvent(new CustomEvent("invoice-pdf:error",{detail:{message:"Aucun texte reconnu dans ce PDF"}}));}
  }catch(e){
   if(thisVersion===version){
    const result=allText(pages);
    if(result)document.dispatchEvent(new CustomEvent("invoice-pdf:transcribed",{detail:{text:result,pages,scanned,warnings:1,partial:true}}));
+   document.dispatchEvent(new CustomEvent("invoice-pdf:error",{detail:{message:e?.message||String(e)}}));
    notice("Transcription incomplète : "+(e?.message||String(e))+(result?" Les pages déjà lues sont disponibles.":""),true);
   }
  }finally{
