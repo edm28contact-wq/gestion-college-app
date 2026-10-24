@@ -111,7 +111,8 @@ async function sendLearning(action,product_ids=[]){
  }catch{}
  updateLabel("Apprentissage non synchronisé : réessayez après reconnexion.");
 }
-document.addEventListener("invoice-reader:ready",()=>{setTimeout(()=>{void sendLearning("observe")},300)});
-document.addEventListener("invoice-learning:confirm",e=>{void sendLearning("confirm",e.detail?.product_ids||[])});
+document.addEventListener("invoice-reader:ready",()=>{setTimeout(()=>{void sendLearning("observe")},800)});
+document.getElementById("supplierMatch")?.addEventListener("change",()=>{if(window.InvoiceReader?.pages?.()?.length){process(window.InvoiceReader.pages());void sendLearning("observe");}});
+document.addEventListener("invoice-learning:confirm",e=>{void (async()=>{await sendLearning("observe");await sendLearning("confirm",e.detail?.product_ids||[]);})();});
 window.InvoiceLearning={refresh:()=>load(),process,observe:()=>sendLearning("observe")};
 })();
