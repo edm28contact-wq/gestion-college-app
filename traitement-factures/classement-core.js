@@ -15,6 +15,7 @@ function matchesToken(text,ref) {
  return new RegExp("(?:^|[^a-z0-9])"+pattern+"(?=$|[^a-z0-9])","i").test(text);
 }
 function matchProduct(text,db,supplier) {
+ const sameSupplier=(a,b)=>norm(a).replace(/\s/g,"")===norm(b).replace(/\s/g,"");
  const products=(db?.products||[]).filter(p=>p.active!==false);
  const codes=products.filter(p=>String(p.code||"").length>=3&&matchesToken(text,String(p.code)));
  if(codes.length===1)return {product:codes[0],source:"Référence exacte"};
@@ -23,18 +24,25 @@ function matchProduct(text,db,supplier) {
  if(names.length===1)return {product:names[0],source:"Nom exact"};
  if(names.length>1)return {source:"Noms multiples"};
  const skey=norm(supplier);
- const aliases=(db?.learned_products||[]).filter(a=>skey&&norm(a.supplier_key)===skey&&
+ const aliases=(db?.learned_products||[]).filter(a=>skey&&sameSupplier(a.supplier_key,skey)&&
    (norm(a.product_name).length>=9&&line.includes(norm(a.product_name))||
     String(a.product_code||"").length>=3&&matchesToken(text,String(a.product_code))));
  const ids=[...new Set(aliases.map(a=>a.product_id))];
  if(ids.length===1){const p=products.find(x=>x.id===ids[0]);if(p)return {product:p,source:"Apprentissage fournisseur"};}
- return {source:ids.length>1?"Aliases multiples":"Produit non reconnu"};
+ if(ids.length>1)return {source:"Aliases multiples"};
+ const central=(db?.supplier_product_catalog||[]).filter(a=>a.product_id&&a.supplier_name&&sameSupplier(a.supplier_name,supplier)&&((a.supplier_reference&&matchesToken(text,a.supplier_reference))||(a.product_code&&matchesToken(text,a.product_code))||(norm(a.supplier_product_name).length>=8&&norm(text).includes(norm(a.supplier_product_name)))));
+ const centralIds=[...new Set(central.map(a=>a.product_id))];
+ if(centralIds.length===1){const p=products.find(x=>x.id===centralIds[0]);if(p)return {product:p,source:"Catalogue central fournisseur"};}
+ return {source:centralIds.length>1?"Correspondances fournisseur multiples":"Produit non reconnu"};
 }
 function charge(text,p,db,supplier) {
  const skey=norm(supplier),accountSet=new Set((db?.accounts||[]).map(a=>String(a.account)));
+ const central=(db?.supplier_product_catalog||[]).filter(row=>row.product_id===p?.id&&row.account&&norm(row.supplier_name).replace(/\s/g,"")===skey.replace(/\s/g,""));
+ const centralAccounts=[...new Set(central.filter(row=>row.account_source==="Historique comptable exact").map(row=>row.account))];
+ if(centralAccounts.length===1)return centralAccounts[0];
  const choices=(db?.keywords||[]).filter(k=>{
   if(!accountSet.has(String(k.expense_account)))return false;
-  if(k.supplier_key&&norm(k.supplier_key)!==skey)return false;
+  if(k.supplier_key&&norm(k.supplier_key).replace(/\s/g,"")!==skey.replace(/\s/g,""))return false;
   const word=norm(k.keyword);
   return word.length>=3&&(norm(p?.code)===word||norm(text).includes(word));
  });
@@ -45,7 +53,9 @@ function charge(text,p,db,supplier) {
  if(rs.length!==1)return "";
  const defaults=(db?.supplier_charges||[]).filter(c=>c.supplier_rule_id===rs[0].id&&c.is_default&&accountSet.has(String(c.expense_account)));
  if(defaults.length===1)return String(defaults[0].expense_account);
- return rs[0].expense_account&&accountSet.has(String(rs[0].expense_account))?String(rs[0].expense_account):"";
+ if(rs[0].expense_account&&accountSet.has(String(rs[0].expense_account)))return String(rs[0].expense_account);
+ const centralDefaults=[...new Set(central.filter(row=>row.account_source==="Compte par défaut fournisseur (à vérifier)").map(row=>row.account))];
+ return centralDefaults.length===1?centralDefaults[0]:"";
 }
 function amounts(line,product) {
  const code=String(product?.code||"");
