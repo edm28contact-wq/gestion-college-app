@@ -70,10 +70,8 @@ function process(pages){
    const p=sourcePages.find(t=>t.number===x.page);
    if(!p)return;
    const lines=p.text.split(/\r?\n/),old=lines[x.line-1]||"";
-   const escaped=x.source.replace(/[.*+?^$()|[\]{}]/g,"\\   const re=new RegExp(x.source.replace(/[.*+?^$()|[\]{}]/g,"\\$&"),"g");");
-   const re=new RegExp(escaped,"g");
-   if(!re.test(old)){updateLabel("Texte modifié depuis la proposition. Relecture nécessaire.");return;}
-   lines[x.line-1]=old.replace(re,x.replacement);
+   if(!old.includes(x.source)){updateLabel("Texte modifié depuis la proposition. Relecture nécessaire.");return;}
+   lines[x.line-1]=old.split(x.source).join(x.replacement);
    window.InvoiceReader?.setPageText?.(x.page,lines.join("\n"));
    button.disabled=true;updateLabel("Correction lexicale appliquée. Reclasser les produits pour mettre le tableau à jour.");
   };
