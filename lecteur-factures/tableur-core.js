@@ -116,7 +116,7 @@ function parse(text){
  }
  // A top-of-page priced fragment can complete a bottom-of-page article.
  // Reassemble only a unique unambiguous pair, then require human verification.
- if(partial.length===1&&orphan.length===1&&orphan[0].sourceLineNumber<partial[0].sourceLineNumber){
+ if(partial.length===1&&orphan.length===1&&Math.abs(orphan[0].sourceLineNumber-partial[0].sourceLineNumber)<80){
   const head=partial[0],tail=orphan[0];
   rows.push({...tail,line_number:head.line_number,reference:head.reference,designation:head.designation+" "+tail.designation,
    sourceLine:head.sourceLine+"\n"+tail.sourceLine,sourceLineNumber:head.sourceLineNumber,
