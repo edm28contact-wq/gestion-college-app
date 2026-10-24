@@ -90,6 +90,25 @@ function applyCorrectedLines(replaceAll=false){
  field.value="";
  status((replaceAll?"Tableau remplacé. ":"Corrections appliquées. ")+merged.updated+" ligne(s) corrigée(s), "+merged.added+" ajoutée(s), "+merged.unchanged+" inchangée(s)"+(merged.ambiguous?" · "+merged.ambiguous+" référence(s) ambiguë(s) ajoutée(s) sans association automatique":"")+". Les lignes modifiées doivent être revérifiées.");
 }
+async function saveVerifiedAssociations(){
+ const supplier=$("supplierMatch").value.trim();
+ const supplierKey=C.norm(supplier).replace(/\\s+/g,"");
+ const layout=records.some(r=>r.layout==="pomona")?"pomona":"standard";
+ if(supplierKey.length<2)return status("Indiquez le fournisseur avant d'enregistrer les associations.",true);
+ const selected=records.filter(r=>r.verified&&C.check(r).ok).map(r=>({supplier_reference:String(r.reference),supplier_label:r.designation,product_id:r.product_id||C.match(r,catalog,supplier).product?.id}));
+ if(!selected.length)return status("Cochez « Vérifié » pour chaque produit à mémoriser.",true);
+ if(selected.some(r=>!r.product_id))return status("Un produit confirmé n'est plus disponible dans le catalogue.",true);
+ if(new Set(selected.map(r=>C.norm(r.supplier_reference).replace(/\\s+/g,""))).size!==selected.length)return status("Référence fournisseur en double : vérifiez les lignes avant l'apprentissage.",true);
+ const token=tokens()[0];if(!token)return status("Session requise : connectez-vous à l'administration ou à la comptabilité.",true);
+ const btn=$("saveMappings");btn.disabled=true;
+ try{
+  const response=await fetch("https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-ocr-learning",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({action:"verify-product-mappings",supplier_key:supplierKey,supplier_name:supplier,layout_type:layout,items:selected})});
+  const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||"Enregistrement indisponible");
+  status(data.confirmed+" association(s) mémorisée(s) pour "+supplier+" / "+layout+". Elles seront réutilisées sur les prochaines factures.");
+  await loadCatalog();
+ }catch(e){status("Impossible de mémoriser : "+(e?.message||String(e)),true)}
+ finally{btn.disabled=false}
+}
 function exportTsv(){
  const selected=records.filter(r=>r.verified).map(r=>{const p=(catalog?.products||[]).find(x=>x.id===(r.product_id||C.match(r,catalog,$("supplierMatch").value).product?.id));return {r,p}});
  if(!selected.length){status("Cochez les produits vérifiés avant l’export.",true);return}
@@ -101,6 +120,7 @@ function exportTsv(){
 }
 function boot(){
  $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
+ $("saveMappings").onclick=saveVerifiedAssociations;
  $("manualApply").onclick=()=>applyCorrectedLines(false);
  $("manualReplace").onclick=()=>applyCorrectedLines(true);
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
