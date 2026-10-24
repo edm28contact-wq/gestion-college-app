@@ -14,7 +14,7 @@ function decimal(v){
 const number="\\d+(?:[.,]\\d{1,4})?";
 const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+(COL|COLIS|PU|PCE|PCS|POT|BT\\.?|BOUT|KG|L|SACH|BARQ)\\s+("+number+")\\s+(PU|PCE|PCS|POT|BT\\.?|BOUT|KG|L|COL|COLIS|SACH|BARQ)\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
 const pomonaPrefix=/^(\d{1,3})\s*\/\s*(\d{2,14})\s+(.+)$/i;
-const standardRE=/^([A-Z][A-Z0-9._/-]{1,39})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-zÀ-ÿ.]{1,20})\s+(\d{1,2}(?:[.,]\d+)?)\s*%?\s+(\d+(?:[.,]\d{1,4})?)\s+(\d+(?:[.,]\d{1,2})?)\s*€?\s*$/i;
+const standardRE=/^([A-Z0-9][A-Z0-9._/-]{1,39})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-zÀ-ÿ.]{1,20})\s+(\d{1,2}(?:[.,]\d+)?)\s*%?\s+(\d+(?:[.,]\d{1,4})?)\s+(\d+(?:[.,]\d{1,2})?)\s*€?\s*$/i;
 const validRef=s=>/^[A-Z0-9][A-Z0-9._/-]{1,39}$/i.test(String(s||""));
 function standard(ref,label,q,unit,vat,pu,ht,raw){
  const quantity=decimal(q),rate=decimal(vat),price=decimal(pu),total=decimal(ht);
@@ -164,7 +164,58 @@ function match(row,db,supplier){
  const suggestions=products.map(p=>{const t=new Set(norm(p.name).split(/\s+/).filter(w=>w.length>=4));return {p,score:[...words].filter(w=>t.has(w)).length/Math.max(1,Math.max(words.size,t.size))}}).filter(x=>x.score>=.25).sort((a,b)=>b.score-a.score).slice(0,3).map(x=>x.p);
  return {product:null,source:"À associer manuellement",suggestions};
 }
-const api={parse,format,check,match,decimal,norm};
+
+// Reconcile corrected/pasted product lines without duplicating a unique supplier reference.
+function mergeRows(existing,incoming,replaceAll=false){
+ const old=Array.isArray(existing)?existing:[],items=Array.isArray(incoming)?incoming:[];
+ const output=replaceAll?[]:old.map(r=>({...r})),used=new Set();
+ let added=0,updated=0,unchanged=0,ambiguous=0;
+ const fields=["reference","designation","delivered_quantity","delivered_unit","quantity","unit","vat_code","vat","unit_price_ht","total_ht"];
+ function equal(a,b){
+  return fields.every(k=>["quantity","delivered_quantity","vat","unit_price_ht","total_ht"].includes(k)?
+    decimal(a?.[k])===decimal(b?.[k]):norm(a?.[k])===norm(b?.[k]));
+ }
+ function locate(row){
+  const ref=code(row.reference);if(!ref)return -1;
+  const candidates=old.map((r,i)=>({r,i})).filter(x=>!used.has(x.i)&&code(x.r.reference)===ref);
+  if(!candidates.length)return -1;
+  if(row.line_number!=null){
+   const exact=candidates.filter(x=>x.r.line_number!=null&&Number(x.r.line_number)===Number(row.line_number));
+   if(exact.length===1)return exact[0].i;
+   if(exact.length>1)return -2;
+  }
+  const same=candidates.filter(x=>equal(x.r,row));
+  if(same.length===1)return same[0].i;
+  if(candidates.length===1&&(row.line_number==null||candidates[0].r.line_number==null))return candidates[0].i;
+  return -2;
+ }
+ function combine(row,index){
+  if(index<0)return {...row,product_id:"",verified:false,manual_corrected:true};
+  const prev=old[index];
+  // A short corrected line must never turn two delivered cartons into 276 cartons.
+  const carry=prev.layout==="pomona"&&row.layout!=="pomona"?
+   {...row,layout:"pomona",line_number:prev.line_number,delivered_quantity:prev.delivered_quantity,
+    delivered_unit:prev.delivered_unit,vat_code:prev.vat_code||row.vat_code}:row;
+  const same=equal(prev,carry)&&Number(prev.line_number??-1)===Number(carry.line_number??-1);
+  return {...prev,...carry,product_id:prev.product_id||"",verified:same?!!prev.verified:false,
+   needs_review:same?!!prev.needs_review:!!carry.needs_review,manual_corrected:!same||!!prev.manual_corrected};
+ }
+ for(const item of items){
+  const index=locate(item);
+  if(index>=0){
+   const next=combine(item,index);used.add(index);
+   if(replaceAll)output.push(next);else output[index]=next;
+   if(equal(old[index],next)&&!!old[index].verified===!!next.verified)unchanged++;else updated++;
+  }else{
+   if(index===-2)ambiguous++;
+   output.push(combine(item,-1));added++;
+  }
+ }
+ if(output.some(x=>x.line_number!==null&&x.line_number!==undefined))
+  output.sort((a,b)=>Number(a.line_number??999999)-Number(b.line_number??999999));
+ return {rows:output,added,updated,unchanged,ambiguous};
+}
+const api={parse,format,check,match,mergeRows,decimal,norm};
 if(typeof module==="object"&&module.exports)module.exports=api;
 else root.InvoiceTableurCore=api;
 })(typeof window!=="undefined"?window:this);
