@@ -1,59 +1,69 @@
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id),C=window.InvoiceTableurCore;
-let records=[];
-function cell(parent,tag,text){const x=document.createElement(tag);x.textContent=String(text??"");parent.append(x);return x}
-function render(){
- const body=$("tableurBody");if(!body)return;body.replaceChildren();
- const suppliers=$("supplierMatch")?.value||"",catalog=window.InvoiceManualCatalog?.()||null;
- let matched=0,valid=0;
- for(const [idx,r] of records.entries()){
-  const tr=document.createElement("tr");
-  const input=(key,width=100)=>{const td=document.createElement("td"),i=document.createElement("input");i.value=String(r[key]??"");i.style.width=width+"px";i.setAttribute("aria-label",key);i.addEventListener("change",()=>{r[key]=i.value;r.accepted=false;render()});td.append(i);tr.append(td)};
-  input("reference",105);input("designation",310);input("quantity",73);input("unit",85);input("vat",65);input("unit_price_ht",85);input("total_ht",95);
-  const result=C.match(r,catalog,suppliers),control=C.check(r);r.match=result;
-  const td=document.createElement("td");
-  const select=document.createElement("select");select.style.maxWidth="280px";
-  const none=document.createElement("option");none.value="";none.textContent="À rapprocher";select.append(none);
-  const all=(catalog?.products||[]).filter(p=>p.active!==false);
-  const options=result.product?[result.product]:result.suggestions||[];
-  const candidates=[...new Map([...options,...all].map(p=>[p.id,p])).values()];
-  for(const p of candidates){const option=document.createElement("option");option.value=p.id;option.textContent=p.code+" — "+p.name;select.append(option)}
-  const chosen=r.product_id||result.product?.id||"";
-  select.value=chosen;select.addEventListener("change",()=>{r.product_id=select.value;r.accepted=false;render()});td.append(select);
-  const note=document.createElement("div");note.className="muted";note.textContent=r.product_id?"Produit choisi manuellement":result.source;td.append(note);tr.append(td);
-  const status=document.createElement("td");status.textContent=(control.ok?"HT correct":"HT incohérent")+" · "+(chosen?"Produit associé":"Produit inconnu");tr.append(status);
-  const action=document.createElement("td");const box=document.createElement("input");box.type="checkbox";box.checked=!!r.accepted;box.disabled=!chosen||!control.ok;box.setAttribute("aria-label","Confirmer "+r.reference);box.addEventListener("change",()=>{r.accepted=box.checked;render()});action.append(box);tr.append(action);
-  const remove=document.createElement("td");const btn=document.createElement("button");btn.className="btn";btn.textContent="Retirer";btn.onclick=()=>{records.splice(idx,1);render()};remove.append(btn);tr.append(remove);body.append(tr);
-  if(chosen)matched++;if(r.accepted&&chosen&&control.ok)valid++;
+const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-central-catalog";
+let catalog=null,records=[],ignored=[];
+const tokens=()=>["college_accounting_token","college_secretariat_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
+function status(message,error=false){$("status").textContent=message;$("status").className="status"+(error?" err":"")}
+async function loadCatalog(){
+ for(const token of tokens()){
+  try{const res=await fetch(API,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;status("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
  }
- $("tableurCount").textContent=records.length+" ligne(s) détectée(s) · "+matched+" associée(s) · "+valid+" confirmée(s)";
- $("tableurTransfer").disabled=valid===0;
+ status("Catalogue non connecté. Vous pouvez nettoyer la transcription et remplir le tableau, puis vous connecter à la comptabilité pour associer les produits.",true);
 }
-function parse(){
- if(!C)return $("tableurStatus").textContent="Module de saisie indisponible.";
- const source=$("tableurPaste").value,result=C.parse(source);
- if(result.error){$("tableurStatus").textContent=result.error;return}
- records=result.rows.map(r=>({...r,accepted:false,product_id:""}));
- $("tableurStatus").textContent=records.length+" ligne(s) trouvée(s), "+result.ignored+" ligne(s) ignorée(s) (titres, expédition, notes). Vérifiez les associations et les calculs.";
+function make(tag,text){const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e}
+function render(){
+ const body=$("tableurBody");body.replaceChildren();
+ let associated=0,verified=0;
+ for(const [index,r] of records.entries()){
+  const tr=make("tr"),match=C.match(r,catalog,$("supplierMatch").value),test=C.check(r);
+  const productId=r.product_id||match.product?.id||"";
+  const products=(catalog?.products||[]).filter(p=>p.active!==false);
+  for(const [field,width] of [["reference",100],["designation",270],["quantity",74],["unit",80],["vat",65],["unit_price_ht",85],["total_ht",95]]){
+   const td=make("td"),input=make("input");input.value=r[field]??"";input.style.width=width+"px";
+   input.setAttribute("aria-label",field+" ligne "+(index+1));input.addEventListener("change",()=>{r[field]=input.value;r.verified=false;render()});td.append(input);tr.append(td);
+  }
+  const td=make("td"),selector=make("select");
+  selector.style.minWidth="240px";selector.append(make("option","À associer"));selector.firstChild.value="";
+  for(const p of products){const o=make("option",p.code+" — "+p.name);o.value=p.id;selector.append(o)}
+  selector.value=productId;
+  selector.onchange=()=>{r.product_id=selector.value;r.verified=false;render()};
+  td.append(selector,make("small",r.product_id?"Sélection manuelle":match.source));tr.append(td);
+  const valid=make("td",test.ok?"Montant HT cohérent":"À vérifier : "+test.text);valid.className=test.ok?"ok":"err";tr.append(valid);
+  const checkTd=make("td"),check=make("input");check.type="checkbox";check.checked=!!r.verified;check.disabled=!test.ok||!productId;
+  check.title="Confirmer la ligne";check.onchange=()=>{r.verified=check.checked;render()};checkTd.append(check);tr.append(checkTd);
+  const action=make("td"),remove=make("button","Retirer");remove.className="btn";remove.onclick=()=>{records.splice(index,1);render()};action.append(remove);tr.append(action);body.append(tr);
+  if(productId)associated++;if(r.verified&&test.ok&&productId)verified++;
+ }
+ $("metrics").textContent=records.length+" lignes produits · "+associated+" associées · "+verified+" vérifiées · "+ignored.length+" lignes inutiles écartées";
+ $("cleanText").value=C.format(records);
+ $("ignoredCount").textContent=ignored.length+" lignes écartées";
+ $("ignoredList").value=ignored.map(x=>"Ligne "+x.line+" : "+x.text).join("\n");
+ $("exportRows").disabled=!records.length;
+}
+function analyze(){
+ const result=C.parse($("sourceText").value);
+ if(result.error){status(result.error,true);return}
+ if(records.length&&!confirm("Remplacer les "+records.length+" lignes du tableau actuel ?"))return;
+ records=result.rows.map(r=>({...r,product_id:"",verified:false}));
+ ignored=result.ignoredLines||[];
+ status("Transcription nettoyée : "+records.length+" ligne(s) de produit détectée(s) et "+ignored.length+" ligne(s) écartée(s). Vérifiez les associations.");
  render();
 }
-function importRows(){
- const catalog=window.InvoiceManualCatalog?.();if(!catalog){$("tableurStatus").textContent="Catalogue indisponible : reconnectez-vous.";return}
- const rows=records.filter(r=>r.accepted).map(r=>{
-  const hit=r.match,product=(catalog.products||[]).find(p=>p.id===(r.product_id||hit?.product?.id));
-  if(!product||!C.check(r).ok)return null;
-  return {product_id:product.id,product_code:product.code,source_reference:r.reference,raw:[r.reference,r.designation,r.quantity,r.unit,r.vat,r.unit_price_ht,r.total_ht].join(" "),qty:r.quantity,unit:r.unit_price_ht,ht:r.total_ht,vat:r.vat,unit_label:r.unit,match_source:r.product_id?"Tableur : association confirmée":"Tableur : "+hit.source};
- }).filter(Boolean);
- if(!rows.length)return;
- document.dispatchEvent(new CustomEvent("invoice-tableur:import",{detail:{rows}}));
- $("tableurStatus").textContent=rows.length+" ligne(s) transférée(s) vers Produits. Contrôlez les comptes et validez dans le tableau de rapprochement.";
+function exportTsv(){
+ const selected=records.filter(r=>r.verified).map(r=>{const p=(catalog?.products||[]).find(x=>x.id===(r.product_id||C.match(r,catalog,$("supplierMatch").value).product?.id));return {r,p}});
+ if(!selected.length){status("Cochez les produits vérifiés avant l’export.",true);return}
+ const header=["Réf. fournisseur","Désignation fournisseur","Quantité","Unité","TVA %","PU HT","Total HT","Code produit","Nom produit"];
+ const safe=x=>{let v=String(x??"").replace(/[\t\r\n]+/g," ");return /^[=+@-]/.test(v)?"'"+v:v};
+ const tsv=[header.join("\t"),...selected.map(({r,p})=>[r.reference,r.designation,r.quantity,r.unit,r.vat,r.unit_price_ht,r.total_ht,p?.code||"",p?.name||""].map(safe).join("\t"))].join("\n");
+ const link=make("a");const url=URL.createObjectURL(new Blob([tsv],{type:"text/tab-separated-values;charset=utf-8"}));link.href=url;link.download="facture_produits_verifies.tsv";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+ status("Export effectué : "+selected.length+" produits vérifiés. Aucun stock ni aucune facture enregistrés.");
 }
 function boot(){
- $("tableurAnalyze")?.addEventListener("click",parse);
- $("tableurTransfer")?.addEventListener("click",importRows);
- $("tableurClear")?.addEventListener("click",()=>{$("tableurPaste").value="";records=[];render();$("tableurStatus").textContent="Saisie vidée."});
- $("supplierMatch")?.addEventListener("change",()=>{records.forEach(r=>{r.accepted=false;r.product_id=""});render()});
+ $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
+ $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];render();status("Saisie vidée.")};
+ $("supplierMatch").onchange=()=>{records.forEach(r=>{r.verified=false;r.product_id=""});render()};
+ render();loadCatalog();
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
 })();
