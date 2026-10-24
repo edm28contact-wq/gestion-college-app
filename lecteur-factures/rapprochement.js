@@ -186,14 +186,17 @@ function makeCard(row){
  productRow.append(productPicker(row),makeSelectAccount(row));
  article.append(productRow);
  const numeric=document.createElement("div");numeric.className="match-fields five";
- for(const [label,key] of [["Quantité facturée"+(row.unit_label?" ("+row.unit_label+")":""),"qty"],["Prix unitaire HT","unit"],["Total HT","ht"],["TVA %","vat"],["Total TTC","ttc"]])numeric.append(input(label,key,row));
+ for(const [label,key] of [["Quantité facturée"+(row.unit_label?" ("+row.unit_label+")":""),"qty"],["Qté tarifée / stock"+(row.priced_unit_label?" ("+row.priced_unit_label+")":""),"stock_qty"],["Prix unitaire HT","unit"],["Total HT","ht"],["TVA % (facultatif)","vat"],["Total TTC (facultatif)","ttc"]]){
+  if(key==="stock_qty"&&row.stock_qty===undefined)continue;
+  numeric.append(input(label,key,row));
+ }
  article.append(numeric);
  const notes=document.createElement("div");notes.className="match-notes";
  if(review.errors.length)notes.textContent="À corriger : "+review.errors.join(" · ");
  else notes.textContent="Montants cohérents. Vérifiez les valeurs sur la facture.";
  if(review.warnings.length)notes.textContent+=" · "+review.warnings.join(" · ");
  const stockLabel=product?.stock_count_mode==="litre"?"L":product?.unit||"u";
- if(review.stockQty!==null)notes.textContent+=" · "+(row.stock_qty?"Stock d’après facture : ":"Conversion stock estimée : ")+review.stockQty.toLocaleString("fr-FR")+" "+stockLabel+" (×"+(row.stock_factor||review.factor)+").";
+ if(review.stockQty!==null)notes.textContent+=" · "+(row.stock_qty?"Quantité tarifée selon facture : ":"Conversion stock estimée : ")+review.stockQty.toLocaleString("fr-FR")+" "+stockLabel+(row.stock_factor?" (×"+row.stock_factor+" par colis).":"");
  notes.className+=" "+(review.errors.length?"warn":"ok");article.append(notes);
  const actions=document.createElement("div");actions.className="card-actions";
  const verified=document.createElement("label");verified.className="check-label";
@@ -283,10 +286,11 @@ async function readNumbers(){
     if(!row||!state.rows.includes(row)||row.product_id!==result.product_id)continue;
     const values=result.values||{};
     for(const key of ["qty","unit","ht","vat","ttc"]){
+     if(key==="qty"&&row.stock_qty!==undefined)continue;
      if(values[key]!==null&&values[key]!==undefined&&String(row[key]??"").trim()==="")row[key]=String(values[key]);
     }
     row.checked=false;
-    row.read_status=(result.issues||[]).join(" · ");
+    row.read_status=(result.issues||[]).filter(x=>row.stock_qty===undefined||!/Quantité × prix HT différent/.test(x)).filter(x=>!/Total TTC absent ou à contrôler/.test(x)).join(" · ");
     updates++;if(result.issues?.length)alerts++;
    }
    say("Lecture des montants : "+Math.min(i+8,work.length)+"/"+work.length+" ligne(s)…");
