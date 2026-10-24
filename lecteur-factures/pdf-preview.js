@@ -196,6 +196,8 @@ ocrButton.addEventListener("click",()=>{
 });
 cancelButton.addEventListener("click",()=>{version++;working=false;controls();notice("Transcription interrompue. Les pages déjà transcrites restent visibles.",true)});
 remove.addEventListener("click",()=>{clearPreview();notice("PDF retiré. La transcription et le tableau restent disponibles.")});
+// Called only after the server confirms the invoice, order, purchases and stock sync.
+document.addEventListener("invoice-pdf:reset-after-success",()=>{clearPreview(true);notice("Prêt pour la facture suivante : importez un nouveau PDF.");});
 window.addEventListener("pagehide",()=>{version++;if(currentUrl)URL.revokeObjectURL(currentUrl);currentUrl=null});
 controls();
 })();
