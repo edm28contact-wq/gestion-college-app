@@ -30,9 +30,13 @@ function continuation(text){
  const s=clean(text);
  return s.length>=5&&s.length<=75&&!/[\d:;@]/.test(s)&&!/^(?:n[°o]\b|total\b|exp[eé]dition\b|ajout\b|fournisseur\b|d[eé]signation\b|livraison\b|facture\b|report\b)/i.test(s)&&/^[A-Za-zÀ-ÿ '"’.-]+$/.test(s)&&s.split(/\s+/).length<=5;
 }
+function format(rows){
+ const cleanCell=x=>clean(x).replace(/[\t\r\n]+/g," ");
+ return ["Référence\tDésignation\tQuantité\tUnité\tTVA %\tPrix HT\tTotal HT",...rows.map(r=>[r.reference,r.designation,r.quantity,r.unit,r.vat,r.unit_price_ht,r.total_ht].map(cleanCell).join("\t"))].join("\n");
+}
 function parse(text){
- if(typeof text!=="string"||text.length>150000)return {rows:[],ignored:0,error:"Texte trop volumineux (150 000 caractères maximum)."};
- const lines=text.replace(/\r\n?/g,"\n").split("\n"),rows=[];
+ if(typeof text!=="string"||text.length>150000)return {rows:[],ignored:0,ignoredLines:[],cleanedText:"",error:"Texte trop volumineux (150 000 caractères maximum)."};
+ const lines=text.replace(/\r\n?/g,"\n").split("\n"),rows=[],ignoredLines=[];
  let ignored=0;
  for(let i=0;i<Math.min(lines.length,1000);i++){
   const raw=clean(lines[i]);
@@ -58,9 +62,9 @@ function parse(text){
     continue;
    }
   }
-  ignored++;
+  ignored++;ignoredLines.push({line:i+1,text:line});
  }
- return {rows,ignored,error:rows.length?"": "Aucune ligne de produit détectée. Collez des colonnes Référence, Désignation, Quantité, Unité, TVA, Prix HT, Total HT."};
+ return {rows,ignored,ignoredLines,cleanedText:format(rows),error:rows.length?"": "Aucune ligne de produit détectée. Collez des colonnes Référence, Désignation, Quantité, Unité, TVA, Prix HT, Total HT."};
 }
 function check(row){
  const quantity=decimal(row.quantity),price=decimal(row.unit_price_ht),total=decimal(row.total_ht),vat=decimal(row.vat);
@@ -102,7 +106,7 @@ function match(row,db,supplier){
  }).filter(x=>x.score>=.25).sort((a,b)=>b.score-a.score).slice(0,3).map(x=>x.p);
  return {product:null,source:"Aucune correspondance certaine",suggestions:ranked};
 }
-const api={parse,check,match,decimal,norm};
+const api={parse,format,check,match,decimal,norm};
 if(typeof module==="object"&&module.exports)module.exports=api;
 else root.InvoiceTableurCore=api;
 })(typeof window!=="undefined"?window:this);
