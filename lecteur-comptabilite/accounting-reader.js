@@ -114,15 +114,24 @@ function analyze(){
   for(const [key,id] of [["ht","totalHT"],["vat","totalVAT"],["ttc","totalTTC"]]){
    $(id).value=extraction[key]?.value==null?"":euro(extraction[key].value);
   }
+  const rateField=$("vatRate");rateField.value=extraction.taxRates?.length===1?String(extraction.taxRates[0]):"";
   const docTypes=["facture","avoir","recapitulatif","echeancier","non_facture","a_verifier"];
   $("docType").value=docTypes.includes(extraction.type)?extraction.type:"a_verifier";
-  $("layoutInfo").textContent="Modèle : "+(profile?.supplier_name||"non reconnu")+" · "+(extraction.variant?.label||profile?.layout_type||"générique")+" · "+(extraction.issues.length?"à vérifier : "+extraction.issues.join(", "):"lecture cohérente, contrôle humain requis");
+  $("layoutInfo").textContent=(extraction.computation?.message?extraction.computation.message+" · ":"")+"Modèle : "+(profile?.supplier_name||"non reconnu")+" · "+(extraction.variant?.label||profile?.layout_type||"générique")+" · "+(extraction.issues.length?"à vérifier : "+extraction.issues.join(", "):"lecture cohérente, contrôle humain requis");
  }else{
   $("layoutInfo").textContent="Moteur de modèles indisponible. Saisissez les champs manuellement.";
   msg("Moteur de modèles indisponible. Aucune donnée extraite.",true);return;
  }
  verify();
  msg("Lecture effectuée selon "+(profile?.supplier_name||"un modèle générique")+" : "+(extraction.issues.length?extraction.issues.join(" · "):"champs proposés à vérifier avant validation")+".");
+}
+function calculateFromTTC(){
+ const rate=cleanAmount($("vatRate").value),ttc=cleanAmount($("totalTTC").value);
+ if(rate===null||ttc===null)return msg("Saisissez le TTC et confirmez un taux de TVA avant le calcul.",true);
+ const result=window.AccountingModelCore?.fromTtc(ttc,rate);
+ if(!result)return msg("Calcul impossible : taux ou TTC invalide.",true);
+ $("totalHT").value=euro(result.ht);$("totalVAT").value=euro(result.vat);
+ msg("Calcul indicatif à "+rate+" % : HT "+euro(result.ht)+" €, TVA "+euro(result.vat)+" €. Vérifiez le taux sur le PDF avant comptabilisation.");verify();
 }
 function verify(){
  const ht=cleanAmount($("totalHT").value),vat=cleanAmount($("totalVAT").value),ttc=cleanAmount($("totalTTC").value),type=$("docType").value,errors=[];
@@ -141,9 +150,10 @@ function verify(){
 function copy(){verify();const fields=[["Fournisseur","supplierMatch"],["Document","docType"],["Numéro","invoiceNumber"],["Date","invoiceDate"],["Début période","periodStart"],["Fin période","periodEnd"],["HT","totalHT"],["TVA","totalVAT"],["TTC","totalTTC"],["Compte fournisseur","supplierAccount"],["Charge","chargeAccount"],["Journal","journal"]];const value=fields.map(([l,k])=>l+" : "+$(k).value).join("\n")+"\nContrôle : "+$("summary").textContent;navigator.clipboard.writeText(value).then(()=>msg("Fiche copiée. Aucun enregistrement comptable effectué.")).catch(()=>msg("Copie refusée par le navigateur.",true))}
 function boot(){
  $("supplierSelect").onchange=chooseSupplier;
+ $("calculateFromTTC").onclick=calculateFromTTC;
  $("analyze").onclick=analyze;$("check").onclick=verify;$("copy").onclick=copy;$("refreshCatalog").onclick=loadCatalog;
  $("clear").onclick=()=>{$("sourceText").value="";lastText="";msg("Transcription effacée.")};
- document.addEventListener("invoice-pdf:replace",()=>{lastText="";chosenSupplierKey="";$("supplierSelect").value="";$("supplierMatch").value="";$("invoiceNumber").value="";$("invoiceDate").value="";["totalHT","totalVAT","totalTTC","supplierAccount"].forEach(id=>$(id).value="");$("chargeAccount").value="";$("sourceText").value="";msg("Extraction PDF en cours…")});
+ document.addEventListener("invoice-pdf:replace",()=>{lastText="";chosenSupplierKey="";$("supplierSelect").value="";$("supplierMatch").value="";$("invoiceNumber").value="";$("invoiceDate").value="";["totalHT","totalVAT","totalTTC","supplierAccount","vatRate"].forEach(id=>$(id).value="");$("chargeAccount").value="";$("sourceText").value="";msg("Extraction PDF en cours…")});
  document.addEventListener("invoice-pdf:partial",e=>{if(e.detail?.text)$("sourceText").value=e.detail.text});
  document.addEventListener("invoice-pdf:transcribed",e=>{const t=String(e.detail?.text||"");$("sourceText").value=t;lastText=t;if(t.trim())analyze();else msg("PDF sans texte : utilisez Forcer OCR.",true)});
  document.addEventListener("invoice-pdf:error",e=>msg("Erreur PDF : "+(e.detail?.message||"lecture impossible"),true));
