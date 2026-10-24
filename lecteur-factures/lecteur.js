@@ -157,6 +157,7 @@
     if(state.processing)return;
     if(state.url) URL.revokeObjectURL(state.url);
     state.file=null; state.pages=[]; state.selected=0; state.url=null;
+    document.dispatchEvent(new CustomEvent("invoice-reader:reset"));
     $("preview").removeAttribute("src");
     $("fileName").textContent="";
     $("summary").textContent="";
@@ -169,6 +170,7 @@
     if(file.size===0 || file.size>MAX_BYTES) {
       notice("Taille invalide : le PDF doit faire entre 1 octet et 20 Mo.", "err");updateControls();return;
     }
+    document.dispatchEvent(new CustomEvent("invoice-reader:reset"));
     state.file=file;
     state.url=URL.createObjectURL(file);
     $("preview").src=state.url+"#page=1&zoom=page-fit";
@@ -231,6 +233,7 @@
       state.processing=false;
       updateControls();updateSummary();
       if(completed){
+        document.dispatchEvent(new CustomEvent("invoice-reader:ready",{detail:{fileName:state.file?.name||"",pages:state.pages.map(p=>({number:p.number,text:p.text,source:p.source,warning:p.warning}))}}));
         const warnings=state.pages.filter(p=>p.warning).length;
         notice(warnings?"Transcription terminée : "+warnings+" page(s) à vérifier avant utilisation.":"Transcription terminée. Contrôlez le texte avant de l'utiliser.",warnings?"warn":"ok");
       }
@@ -286,6 +289,7 @@
       updateControls();
     }
   }
+  window.InvoiceReader={focusPage(number){const index=state.pages.findIndex(p=>p.number===Number(number));if(index>=0)selectPage(index)}};
   function showOrigin() {
     const origin=new URLSearchParams(location.search).get("origine");
     $("back").href=origin==="secretariat"?"../secretariat/factures-v25/":"../comptabilite/";
@@ -300,6 +304,7 @@
     $("pageText").addEventListener("input",e=>{
       const p=state.pages[state.selected];
       if(p)p.text=e.target.value;
+      document.dispatchEvent(new CustomEvent("invoice-reader:edited"));
     });
     $("exportTxt").addEventListener("click",exportTxt);
     $("exportExcel").addEventListener("click",exportExcel);
