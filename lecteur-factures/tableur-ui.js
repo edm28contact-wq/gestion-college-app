@@ -67,7 +67,18 @@ function exportTsv(){
 function boot(){
  $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
- document.addEventListener("invoice-pdf:replace",()=>{$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Nouvelle facture importée. Collez la transcription de ce PDF pour continuer.")});
+ document.addEventListener("invoice-pdf:replace",()=>{$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Facture importée : extraction du texte en cours...")});
+ document.addEventListener("invoice-pdf:partial",e=>{const text=String(e.detail?.text||"");if(text)$("sourceText").value=text;});
+ document.addEventListener("invoice-pdf:transcribed",e=>{
+  const text=String(e.detail?.text||"");if(!text.trim()){status("PDF sans texte exploitable. Utilisez « Forcer OCR » ou saisissez le texte manuellement.",true);return}
+  $("sourceText").value=text;
+  const result=C.parse(text);
+  if(result.error){status("Transcription affichée, mais aucune ligne complète détectée. Corrigez le texte puis cliquez sur « Nettoyer et repérer les produits ».",true);return}
+  records=result.rows.map(r=>({...r,product_id:"",verified:false}));
+  ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||null;
+  render();
+  status("PDF transcrit : "+(e.detail?.pages?.length||0)+" page(s), "+records.length+" produit(s) détecté(s). Vérifiez le texte et les montants avant de valider.");
+ });
  $("supplierMatch").onchange=()=>{records.forEach(r=>{r.verified=false;r.product_id=""});render()};
  render();loadCatalog();
 }
