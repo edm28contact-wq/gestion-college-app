@@ -67,15 +67,32 @@ async function recognize(page,worker){
  if(!context)throw new Error("Aucun moteur de rendu disponible pour l'OCR");
  try{
   await page.render({canvasContext:context,viewport,background:"rgb(255,255,255)"}).promise;
-  const result=await worker.recognize(canvas);
-  return {text:String(result?.data?.text||"").trim(),confidence:Number(result?.data?.confidence)||0};
+  let enhanced=null,baseResult=null,preparedResult=null;
+  const enhancer=window.InvoiceImageEnhancer;
+  try{
+   if(enhancer?.prepare){
+    try{
+     enhanced=enhancer.prepare(canvas);
+     preparedResult=await worker.recognize(enhanced.canvas);
+    }catch(error){console.warn("Prétraitement OCR indisponible :",error);preparedResult=null;}
+   }
+   // Read the original as a fallback if the enhanced version is poor or unclear.
+   if(!preparedResult||!String(preparedResult.data?.text||"").trim()||Number(preparedResult.data?.confidence||0)<76){
+    baseResult=await worker.recognize(canvas);
+   }
+   const asData=r=>({text:String(r?.data?.text||"").trim(),confidence:Number(r?.data?.confidence)||0});
+   const original=baseResult?asData(baseResult):null,improved=preparedResult?asData(preparedResult):null;
+   const chooseOriginal=original&&(!improved||!enhancer||enhancer.score(original)>enhancer.score(improved)+2);
+   const selected=chooseOriginal?original:(improved||original||{text:"",confidence:0});
+   return {...selected,enhanced:!!improved&&!chooseOriginal,enhancementMode:!!improved&&!chooseOriginal?"Contraste et netteté améliorés":"Image originale"};
+  }finally{if(enhanced?.canvas){enhanced.canvas.width=0;enhanced.canvas.height=0;}}
  }finally{canvas.width=0;canvas.height=0}
 }
 function allText(pages){return pages.map(x=>x.text).filter(Boolean).join("\n")}
 async function transcribe(forceOcr=false){
  if(!currentFile||working)return;
  const thisVersion=++version,file=currentFile;let pdf=null,worker=null;
- let pages=[],warnings=0,scanned=0;
+ let pages=[],warnings=0,scanned=0,enhancedPages=0;
  working=true;controls();percent(1);
  notice("Ouverture et transcription du PDF...");
  try{
@@ -107,7 +124,7 @@ async function transcribe(forceOcr=false){
       notice("OCR local, page "+n+"/"+pdf.numPages+"...");
       const ocr=await recognize(page,worker);checkVersion(thisVersion);
       if(ocr.text){
-       text=ocr.text;source="OCR";scanned++;
+       text=ocr.text;source=ocr.enhanced?"OCR amélioré":"OCR original";scanned++;if(ocr.enhanced)enhancedPages++;
        if(ocr.confidence<65){warning="OCR peu fiable : vérifiez les références et les montants.";warnings++}
       }else{warning="Aucun texte OCR reconnu.";warnings++}
      }catch(e){
@@ -123,14 +140,14 @@ async function transcribe(forceOcr=false){
   }
   checkVersion(thisVersion);
   const result=allText(pages);
-  document.dispatchEvent(new CustomEvent("invoice-pdf:transcribed",{detail:{text:result,pages,scanned,warnings,fileName:file.name}}));
+  document.dispatchEvent(new CustomEvent("invoice-pdf:transcribed",{detail:{text:result,pages,scanned,warnings,enhancedPages,fileName:file.name}}));
   if(result.trim()){
-   notice("Transcription visible : "+pdf.numPages+" page(s) · "+scanned+" page(s) OCR · "+warnings+" page(s) à contrôler. Le tableau est rempli à partir du texte.");
+   notice("Transcription visible : "+pdf.numPages+" page(s) · "+scanned+" page(s) OCR · "+enhancedPages+" améliorée(s) · "+warnings+" page(s) à contrôler. Le tableau est rempli à partir du texte.");
   }else {notice("Aucun texte extrait. Utilisez Forcer OCR ou collez le texte.",true);document.dispatchEvent(new CustomEvent("invoice-pdf:error",{detail:{message:"Aucun texte reconnu dans ce PDF"}}));}
  }catch(e){
   if(thisVersion===version){
    const result=allText(pages);
-   if(result)document.dispatchEvent(new CustomEvent("invoice-pdf:transcribed",{detail:{text:result,pages,scanned,warnings:1,partial:true}}));
+   if(result)document.dispatchEvent(new CustomEvent("invoice-pdf:transcribed",{detail:{text:result,pages,scanned,warnings:1,enhancedPages,partial:true}}));
    document.dispatchEvent(new CustomEvent("invoice-pdf:error",{detail:{message:e?.message||String(e)}}));
    notice("Transcription incomplète : "+(e?.message||String(e))+(result?" Les pages déjà lues sont disponibles.":""),true);
   }
