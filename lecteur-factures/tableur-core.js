@@ -141,6 +141,13 @@ function check(row){
  const expected=pricedTotal(q,pu),ok=Math.abs(expected-ht)<=.02;
  return {ok,expected,text:ok?"Calcul HT correct":"Écart HT : "+expected.toFixed(2)+" € attendu"};
 }
+function detectProfile(text,db){
+ const t=norm(text).replace(/\s+/g," ");
+ if(/passion\s*froid|passionfroid/.test(t)&&/qt[eé]?\s*livr[eé]e|qt[eé]?\s*fact|article\s*[-–]/i.test(t)||/passionfroid/.test(t))return {supplier_key:"passionfroid",supplier_name:"PASSION FROID / POMONA",layout_type:"pomona"};
+ if(/henri\s*julien|henrijulien/.test(t))return {supplier_key:"henrijulien",supplier_name:"HENRI JULIEN",layout_type:"standard"};
+ if(/la\s*normande/.test(t)&&/mise\s+a\s+disposition|repas\s+livres|facturation/.test(t))return {supplier_key:"lanormande",supplier_name:"LA NORMANDE",layout_type:"la_normande"};
+ return null;
+}
 function match(row,db,supplier){
  const products=(db?.products||[]).filter(p=>p.active!==false),ref=code(row.reference),skey=code(supplier);
  const unique=(items,source)=>{
@@ -155,6 +162,12 @@ function match(row,db,supplier){
   const central=(db?.supplier_product_catalog||[]).filter(a=>code(a.supplier_key||a.supplier_name)===skey&&code(a.supplier_reference)===ref);
   const mapped=unique(central,"Référence fournisseur confirmée");if(mapped)return mapped;
  }
+ const seen=(db?.product_observations||[]).filter(o=>code(o.supplier_key)===skey&&String(o.layout_type)===String(row.layout||"standard")&&code(o.supplier_reference_norm||o.supplier_reference)===ref);
+ if(skey&&seen.length===1&&seen[0].match_basis==="reference_exact"){
+  const p=products.find(p=>p.id===seen[0].product_id);
+  if(p)return {product:p,source:"Référence historique retrouvée ("+seen[0].observed_documents+" facture(s)) — à confirmer",suggestions:[],historical:true};
+ }
+ if(skey&&seen.length>1)return {product:null,source:"Historique ambigu : vérifier",suggestions:seen.map(o=>products.find(p=>p.id===o.product_id)).filter(Boolean)};
  const exact=products.filter(p=>code(p.code)===ref);
  if(exact.length===1)return {product:exact[0],source:"Référence catalogue exacte",suggestions:[]};
  if(exact.length>1)return {product:null,source:"Code catalogue ambigu",suggestions:[]};
@@ -217,7 +230,7 @@ function mergeRows(existing,incoming,replaceAll=false){
   output.sort((a,b)=>Number(a.line_number??999999)-Number(b.line_number??999999));
  return {rows:output,added,updated,unchanged,ambiguous};
 }
-const api={parse,format,check,match,mergeRows,decimal,norm};
+const api={parse,format,check,match,mergeRows,detectProfile,decimal,norm};
 if(typeof module==="object"&&module.exports)module.exports=api;
 else root.InvoiceTableurCore=api;
 })(typeof window!=="undefined"?window:this);
