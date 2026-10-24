@@ -6,7 +6,7 @@ const CATALOG_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice
 const NUMERIC_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-numeric-reader";
 const EXCEL_LIB="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
 const CACHE_KEY="college_invoice_catalog_v1";
-const state={catalog:null,rows:[],excluded:[],pages:[],fileName:"",catalogStamp:"",online:false,dirty:false,busy:false,requestSeq:0};
+const state={catalog:null,rows:[],excluded:[],pages:[],fileName:"",catalogStamp:"",online:false,dirty:false,busy:false,requestSeq:0,savedId:""};
 const say=(message,type="")=>{const el=$("matchStatus");el.textContent=message;el.className="status "+type};
 const tokenList=()=>[localStorage.getItem("college_accounting_token"),localStorage.getItem("college_secretariat_token"),localStorage.getItem("edm_admin_token"),localStorage.getItem("holding_admin_token")].filter(Boolean);
 const validCatalog=c=>c&&c.read_only===true&&["products","accounts","keywords","supplier_rules","supplier_charges","learned_products"].every(k=>Array.isArray(c[k]));
@@ -55,7 +55,12 @@ function lookupProduct(text){
  const key=CORE.norm(text);
  if(!key)return null;
  const matches=(state.catalog?.products||[]).filter(p=>CORE.norm(displayProduct(p))===key || CORE.norm(p.code)===key);
- return matches.length===1?matches[0]:null;
+ if(matches.length===1)return matches[0];
+ const products=state.catalog?.products||[];
+ const prefix=products.filter(p=>CORE.norm(p.code)===key||CORE.norm(p.name)===key);
+ if(prefix.length===1)return prefix[0];
+ const partial=products.filter(p=>CORE.norm(p.code).startsWith(key)&&key.length>=3||CORE.norm(p.name).includes(key)&&key.length>=5);
+ return partial.length===1?partial[0]:null;
 }
 function saveBackup(){
  if(!state.catalog)return;
@@ -142,15 +147,17 @@ function productPicker(row){
  const el=document.createElement("input");el.type="search";el.setAttribute("list","productSuggestions");el.placeholder="Ex. RV40 ou Hygiwash";
  const p=(state.catalog?.products||[]).find(x=>x.id===row.product_id);
  el.value=p?displayProduct(p):(row.search_text||"");
- el.addEventListener("change",()=>{
+ const choose=()=>{
   const hit=lookupProduct(el.value);
   row.search_text=el.value;
   row.product_id=hit?.id||"";row.reference=hit?.code||"";
   row.account=hit?CORE.charge(row.raw,hit,state.catalog,$("supplierMatch").value):"";
   row.checked=false;state.dirty=true;
   render();
-  if(!hit)say("Produit non identifié : sélectionnez une suggestion exacte du catalogue.","warn");
- });
+  if(!hit)say("Plusieurs produits possibles ou aucune correspondance : précisez le nom ou la référence.","warn");
+ };
+ el.addEventListener("change",choose);
+ el.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();choose();}});
  label.append(el);return label;
 }
 function makeCard(row){
@@ -307,7 +314,42 @@ async function exportFinal(){
   say("Tableau téléchargé. Export de préparation uniquement, pas un import Charlemagne.","ok");
  }catch(err){say("Export impossible : "+err.message,"err")}
 }
+const SAVE_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-reader-save";
+function invoiceTotal(key){
+ const vals=state.rows.map(r=>CORE.decimal(r[key]));
+ return vals.length&&vals.every(v=>v!==null)?Math.round(vals.reduce((a,b)=>a+b,0)*100)/100:null;
+}
+async function saveInvoice(){
+ const file=window.InvoiceReader?.file?.();
+ if(!file)return say("Le PDF original n'est pas disponible.","err");
+ if(state.savedId)return say("Facture déjà enregistrée sous l'identifiant "+state.savedId+".","warn");
+ const supplier=$("supplierMatch").value.trim(),number=$("supplierInvoiceNo").value.trim(),date=$("supplierInvoiceDate").value;
+ if(!supplier||!number)return say("Renseignez le fournisseur et le numéro de facture.","warn");
+ if(!state.rows.length)return say("Ajoutez au moins une ligne de produit.","warn");
+ const token=localStorage.getItem("college_accounting_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token");
+ if(!token)return say("Connectez-vous à la Comptabilité pour enregistrer la facture.","warn");
+ const btn=$("saveInvoice");btn.disabled=true;
+ try{
+  const fd=new FormData();fd.append("file",file);fd.append("supplier",supplier);fd.append("invoice_number",number);fd.append("invoice_date",date);
+  const ht=invoiceTotal("ht"),ttc=invoiceTotal("ttc");
+  if(ht!==null)fd.append("amount_ht",String(ht));
+  if(ttc!==null)fd.append("amount_ttc",String(ttc));
+  if(ht!==null&&ttc!==null)fd.append("amount_vat",String(Math.round((ttc-ht)*100)/100));
+  fd.append("raw_text",state.pages.map(p=>p.text).join("\n"));
+  fd.append("items",JSON.stringify(state.rows.map(r=>({...r,issues:CORE.check(r,state.catalog).errors.concat(CORE.check(r,state.catalog).warnings)}))));
+  const res=await fetch(SAVE_API,{method:"POST",headers:{authorization:"Bearer "+token},body:fd,signal:AbortSignal.timeout(45000)});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok){
+    if(data.invoice_id)state.savedId=data.invoice_id;
+    throw Error(data.error||"Enregistrement refusé ("+res.status+")");
+  }
+  state.savedId=data.invoice_id;
+  say("Facture enregistrée dans « Factures fournisseurs » : "+state.rows.length+" ligne(s), sans mouvement de stock.","ok");
+ }catch(err){say("Enregistrement : "+err.message,"err")}
+ finally{btn.disabled=!!state.savedId}
+}
 function onReaderReady(event){
+ state.savedId="";$("saveInvoice").disabled=false;
  state.requestSeq++;
  state.pages=event.detail?.pages||[];
  state.fileName=event.detail?.fileName||"";
@@ -323,7 +365,7 @@ function boot(){
  $("backupCatalog").onclick=saveBackup;
  $("importCatalog").onchange=e=>loadBackup(e.target.files?.[0]);
  $("readNumbers").onclick=()=>readNumbers().catch(e=>say("Erreur de lecture IA : "+e.message,"err"));
- $("exportMatched").onclick=exportFinal;
+ $("saveInvoice").onclick=saveInvoice;
  $("tabProducts").onclick=()=>switchView("products");
  $("tabTranscript").onclick=()=>switchView("transcript");
  $("supplierMatch").addEventListener("change",()=>{if(state.pages.length)classify(true)});
@@ -333,7 +375,7 @@ function boot(){
  };
  document.addEventListener("invoice-reader:ready",onReaderReady);
  document.addEventListener("invoice-reader:reset",()=>{
-  state.requestSeq++;state.pages=[];state.fileName="";state.rows=[];state.excluded=[];state.dirty=false;render();say("Facture précédente effacée. Lecture en attente.");
+  state.savedId="";$("saveInvoice").disabled=false;state.requestSeq++;state.pages=[];state.fileName="";state.rows=[];state.excluded=[];state.dirty=false;render();say("Facture précédente effacée. Lecture en attente.");
  });
  document.addEventListener("invoice-reader:edited",()=>{
   state.pages=window.InvoiceReader?.pages?.()||state.pages;
