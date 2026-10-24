@@ -290,7 +290,7 @@
       updateControls();
     }
   }
-  window.InvoiceReader={focusPage(number){const index=state.pages.findIndex(p=>p.number===Number(number));if(index>=0)selectPage(index)},pages(){return state.pages.map(p=>({number:p.number,text:p.text,source:p.source,warning:p.warning}))}};
+  window.InvoiceReader={file(){return state.file},focusPage(number){const index=state.pages.findIndex(p=>p.number===Number(number));if(index>=0)selectPage(index)},pages(){return state.pages.map(p=>({number:p.number,text:p.text,source:p.source,warning:p.warning}))}};
   function showOrigin() {
     const origin=new URLSearchParams(location.search).get("origine");
     $("back").href=origin==="secretariat"?"../secretariat/factures-v25/":"../comptabilite/";
