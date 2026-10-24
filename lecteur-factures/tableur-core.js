@@ -14,7 +14,7 @@ function decimal(v){
  const n=Number(s);return Number.isFinite(n)?n:null;
 }
 const number="\\d+(?:[.,]\\d{1,4})?";
-const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+(COL|COLIS|PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|SACH|BARQ)\\s+("+number+")\\s+(PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|COL|COLIS|SACH|BARQ)\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
+const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+(COL|COLIS|PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|SACH|BARQ|SEAU|SEAUX|SEA)\\s+("+number+")\\s+(PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|COL|COLIS|SACH|BARQ|SEAU|SEAUX|SEA)\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
 const pomonaPrefix=/^(\d{1,3})\s*\/\s*(\d{2,14})\s+(.+)$/i;
 const standardRE=/^([A-Z0-9][A-Z0-9._/-]{1,39})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-zÀ-ÿ.]{1,20})\s+(\d{1,2}(?:[.,]\d+)?)\s*%?\s+(\d+(?:[.,]\d{1,4})?)\s+(\d+(?:[.,]\d{1,2})?)\s*€?\s*$/i;
 const validRef=s=>/^[A-Z0-9][A-Z0-9._/-]{1,39}$/i.test(String(s||""));
@@ -125,6 +125,35 @@ function parse(text){
   for(const item of partial)unresolvedLines.push({line:item.sourceLineNumber,text:item.sourceLine,reason:"Début d'article sans prix ni quantités : rapprochement nécessaire."});
   for(const item of orphan)unresolvedLines.push({line:item.sourceLineNumber,text:item.sourceLine,reason:"Fin de ligne tarifée sans code article : à rattacher manuellement."});
  }
+ // Refill the tax-rate column when lines are pasted from a table but the invoice VAT summary is present.
+ for(const r of rows){
+  if(r.layout==="pomona"&&(r.vat===null||r.vat===undefined||r.vat==="")){
+   const rateCode=String(r.vat_code||"").match(/(\d{1,2})$/)?.[1];
+   if(rateCode&&Object.prototype.hasOwnProperty.call(meta.vat_rates,rateCode))r.vat=meta.vat_rates[rateCode];
+  }
+ }
+ // OCR engines occasionally duplicate an identical numbered line. Keep one and preserve
+ // conflicting duplicates as review items rather than silently summing a repeated charge.
+ const uniqueRows=[],seen=new Map();
+ for(const row of rows){
+  const key=row.layout==="pomona"&&row.line_number!==null&&row.reference?row.line_number+"|"+code(row.reference):null;
+  if(!key){uniqueRows.push(row);continue}
+  const previous=seen.get(key);
+  if(previous){
+   const same=["quantity","delivered_quantity","unit_price_ht","total_ht"].every(k=>decimal(previous[k])===decimal(row[k]))
+    &&norm(previous.designation)===norm(row.designation);
+   if(same){
+    ignoredLines.push({line:row.sourceLineNumber,text:row.sourceLine,reason:"Ligne déjà reconnue : doublon exact écarté."});
+    continue;
+   }
+   previous.needs_review=true;
+   previous.review_reason="Deux lignes portent le même numéro/référence avec des données différentes.";
+   row.needs_review=true;
+   row.review_reason=previous.review_reason;
+  }else seen.set(key,row);
+  uniqueRows.push(row);
+ }
+ rows.splice(0,rows.length,...uniqueRows);
  if(pomona)rows.sort((a,b)=>(a.line_number??9999)-(b.line_number??9999)||a.sourceLineNumber-b.sourceLineNumber);
  if(meta.expected_ht!==null){
   meta.calculated_ht=round(rows.reduce((n,r)=>n+(decimal(r.total_ht)||0),0));
