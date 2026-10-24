@@ -92,13 +92,13 @@ function applyCorrectedLines(replaceAll=false){
 }
 async function saveVerifiedAssociations(){
  const supplier=$("supplierMatch").value.trim();
- const supplierKey=C.norm(supplier).replace(/\\s+/g,"");
+ const supplierKey=C.norm(supplier).replace(/\s+/g,"");
  const layout=records.some(r=>r.layout==="pomona")?"pomona":"standard";
  if(supplierKey.length<2)return status("Indiquez le fournisseur avant d'enregistrer les associations.",true);
  const selected=records.filter(r=>r.verified&&C.check(r).ok).map(r=>({supplier_reference:String(r.reference),supplier_label:r.designation,product_id:r.product_id||C.match(r,catalog,supplier).product?.id}));
  if(!selected.length)return status("Cochez « Vérifié » pour chaque produit à mémoriser.",true);
  if(selected.some(r=>!r.product_id))return status("Un produit confirmé n'est plus disponible dans le catalogue.",true);
- if(new Set(selected.map(r=>C.norm(r.supplier_reference).replace(/\\s+/g,""))).size!==selected.length)return status("Référence fournisseur en double : vérifiez les lignes avant l'apprentissage.",true);
+ if(new Set(selected.map(r=>C.norm(r.supplier_reference).replace(/\s+/g,""))).size!==selected.length)return status("Référence fournisseur en double : vérifiez les lignes avant l'apprentissage.",true);
  const token=tokens()[0];if(!token)return status("Session requise : connectez-vous à l'administration ou à la comptabilité.",true);
  const btn=$("saveMappings");btn.disabled=true;
  try{
