@@ -3,15 +3,23 @@
 const $=id=>document.getElementById(id),C=window.InvoiceTableurCore;
 const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-central-catalog";
 let catalog=null,records=[],ignored=[],unresolved=[],summary=null;
+let currentProfile=null;
 const tokens=()=>["college_accounting_token","college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
 function status(message,error=false){$("status").textContent=message;$("status").className="status"+(error?" err":"")}
 function catalogStatus(message,error=false){const el=$("catalogStatus")||$("status");el.textContent=message;el.className="muted"+(error?" err":"")}
 function extractionStatus(message,error=false){const el=$("extractionStatus");if(!el)return;el.textContent=message;el.className="muted"+(error?" err":"")}
 async function loadCatalog(){
  for(const token of tokens()){
-  try{const res=await fetch(API,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;catalogStatus("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
+  try{const res=await fetch(API,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;detectSupplier($("sourceText").value);catalogStatus("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
  }
  catalogStatus("Catalogue non connecté. La transcription PDF fonctionne néanmoins. Connectez-vous à la comptabilité pour associer les produits.",true);
+}
+function detectSupplier(raw){
+ const profile=C.detectProfile(raw,catalog);
+ if(!profile)return;
+ currentProfile=profile;
+ const field=$("supplierMatch");
+ if(field&&(!field.value.trim()||field.dataset.auto==="true")){field.value=profile.supplier_name;field.dataset.auto="true";}
 }
 function make(tag,text){const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e}
 function render(){
@@ -49,6 +57,7 @@ function render(){
  $("exportRows").disabled=!records.length;
 }
 function applyTranscription(text,origin="manuel"){
+ detectSupplier(text);
  const result=C.parse(text);
  records=result.rows.map(r=>({...r,product_id:"",verified:false}));
  ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||null;
@@ -69,6 +78,7 @@ function analyze(){
 function applyCorrectedLines(replaceAll=false){
  const field=$("manualLines"),raw=field?.value||"";
  if(!raw.trim())return status("Collez les lignes corrigées avant de les appliquer.",true);
+ detectSupplier(raw);
  const result=C.parse(raw);
  if(!result.rows.length)return status("Aucune ligne produit complète reconnue dans le collage. Contrôlez la référence, la quantité et les montants. Le tableau actuel reste intact.",true);
  if(replaceAll&&records.length&&!confirm("Remplacer le tableau actuel par les lignes corrigées ?"))return;
@@ -106,6 +116,7 @@ function boot(){
  document.addEventListener("invoice-pdf:transcribed",e=>{
   const text=String(e.detail?.text||"");
   $("sourceText").value=text;
+  detectSupplier(text);
   if(!text.trim()){
    extractionStatus("Aucun texte extrait. Cliquez sur « Forcer OCR (PDF scanné) ». Si cela échoue, le détail de l’erreur sera affiché.",true);
    status("PDF sans texte exploitable. Utilisez « Forcer OCR » ou collez la transcription manuellement.",true);return;
@@ -118,7 +129,7 @@ function boot(){
   extractionStatus("Impossible de transcrire automatiquement : "+message,true);
   status("Erreur de lecture PDF : "+message+" · Vous pouvez toujours coller le texte manuellement.",true);
  });
- $("supplierMatch").onchange=()=>{records.forEach(r=>{r.verified=false;r.product_id=""});render()};
+ $("supplierMatch").onchange=()=>{$("supplierMatch").dataset.auto="false";records.forEach(r=>{r.verified=false;r.product_id=""});render()};
  render();loadCatalog();
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
