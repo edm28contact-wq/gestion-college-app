@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">\n<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">\n<meta http-equiv="Pragma" content="no-cache">\n<meta http-equiv="Expires" content="0">
 <title>Administration Collège</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>\n<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
@@ -15,7 +15,7 @@
 <section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" href="../../admin/holding/">Holding</a><a class="btn secondary" href="../../secretariat/">Secrétariat</a><a class="btn secondary" href="../../comptabilite/">Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
 <div id="modal"></div>
 <script>
-const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
+const UI_VERSION='2026.10.24-1106';\nconst ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
 const requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',events:'Mouvements',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',manual:'Manuel d’utilisation'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
 const pages=[['dashboard','Accueil'],['products','Produits'],['categories','Catégories'],['purchases','Achats'],['events','Mouvements'],['advanced','Outils avancés']];
@@ -29,7 +29,7 @@ async function changePassword(){const a=$('newPass1').value,b=$('newPass2').valu
 function logout(reload=true){['college_admin_token','edm_admin_token','holding_admin_token'].forEach(k=>localStorage.removeItem(k));token='';db=null;sensitiveToken='';sensitiveExpires=0;readerSettings=null;if(reload)location.reload();else{$('app').classList.add('hide');$('passwordChange').classList.add('hide');$('login').classList.remove('hide')}}
 function init(){$('nav').innerHTML=pages.map(([k,n])=>`<button data-p="${k}" onclick="show('${k}')">${n}</button>`).join('')}
 async function enterApp(){init();$('login').classList.add('hide');$('passwordChange').classList.add('hide');$('app').classList.remove('hide');await refresh()}
-async function refresh(){const [main,sites]=await Promise.all([call(ADMIN,'data'),call(SITE,'list')]);db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+esc(main.current_user?.display_name||main.current_user?.username||'');render()}
+async function refresh(){const [main,sites]=await Promise.all([call(ADMIN,'data'),call(SITE,'list')]);db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+esc(main.current_user?.display_name||main.current_user?.username||'');render()}
 function show(p){page=p;render();if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
 function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page||(b.dataset.p==='advanced'&&['categories','subcategories','apps','stats','readerSettings','manual'].includes(page))));$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,purchases,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage}[page]||dashboard)()}
 const bal=id=>Number(db.balances.find(x=>x.product_id===id)?.quantity||0),cat=id=>db.categories.find(x=>x.id===id),sub=id=>(db.subcategories||[]).find(x=>x.id===id),prod=id=>db.products.find(x=>x.id===id),appById=id=>db.applications.find(x=>x.id===id);
