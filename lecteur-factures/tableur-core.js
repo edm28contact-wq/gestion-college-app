@@ -143,7 +143,7 @@ function check(row){
 }
 function detectProfile(text,db){
  const t=norm(text).replace(/\s+/g," ");
- if(/passion\s*froid|passionfroid/.test(t)&&/qt[eé]?\s*livr[eé]e|qt[eé]?\s*fact|article\s*[-–]/i.test(t)||/passionfroid/.test(t))return {supplier_key:"passionfroid",supplier_name:"PASSION FROID / POMONA",layout_type:"pomona"};
+ if(/passion\s*froid|passionfroid/.test(t)&&/qt[eé]?\s*livr[eé]e|qt[eé]?\s*fact|article\s*[-–]/i.test(t)||/passionfroid/.test(t))return {supplier_key:"passionfroid",supplier_name:"PASSION FROID",layout_type:"pomona"};
  if(/henri\s*julien|henrijulien/.test(t))return {supplier_key:"henrijulien",supplier_name:"HENRI JULIEN",layout_type:"standard"};
  if(/la\s*normande/.test(t)&&/mise\s+a\s+disposition|repas\s+livres|facturation/.test(t))return {supplier_key:"lanormande",supplier_name:"LA NORMANDE",layout_type:"la_normande"};
  return null;
