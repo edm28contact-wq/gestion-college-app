@@ -89,7 +89,7 @@ function classify(inputs,db,supplier) {
   const quantities=raw.match(/(\d+[,.]?\d*)\s*COL\b[\s\S]{0,30}?(\d+[,.]?\d*)\s*POT\b/i);
   if(quantities){
    const colis=decimal(quantities[1]),pots=decimal(quantities[2]);
-   if(colis>0&&pots>colis){r.qty=String(colis);r.stock_qty=String(pots);r.stock_factor=pots/colis;r.unit_label="COL";r.read_status="Quantité facturée en colis ; conversion stock à vérifier";}
+   if(colis>0&&pots>colis){r.qty=String(colis);r.stock_qty=String(pots);r.stock_factor=pots/colis;r.unit_label="COL";r.read_status="Quantité facturée en colis ; conversion stock à vérifier";const price=raw.match(/(?:^|\s)(0[.,]\d{2,4})(?=\s|$)/);if(price){const pu=decimal(price[1]);if(pu!==null)r.unit=String(pu);const candidate=Math.round(pots*pu*100)/100;if(raw.replace(/,/g,".").includes(candidate.toFixed(2)))r.ht=String(candidate);}}
   }
   if(!parsed.ambiguous && !r.stock_qty){r.qty=String(parsed.qty);r.unit=String(parsed.unit);r.ht=String(parsed.ht);if(parsed.ttc!==null)r.ttc=String(parsed.ttc);if(parsed.vat!==null)r.vat=String(parsed.vat);}
   matched.push(r);
@@ -107,7 +107,7 @@ function check(row,db) {
  if(ht===null||ht<0)errors.push("Total HT à vérifier");
  if(ttc===null||ttc<0)errors.push("Total TTC à vérifier");
  if(vat!==null&&(vat<0||vat>100))errors.push("Taux TVA invalide");
- if(q!==null&&pu!==null&&ht!==null&&Math.abs(Math.round(q*pu*100)/100-ht)>.02)errors.push("Qté × PU HT ≠ HT");
+ if(q!==null&&pu!==null&&ht!==null&&Math.abs(Math.round((row.stock_qty?decimal(row.stock_qty):q)*pu*100)/100-ht)>.02)errors.push("Quantité facturée/stock × PU HT ≠ HT");
  if(ht!==null&&ttc!==null){
   if(ttc+.02<ht)errors.push("TTC inférieur au HT");
   if(vat!==null&&Math.abs(Math.round(ht*(1+vat/100)*100)/100-ttc)>.02)errors.push("HT + TVA ≠ TTC");
