@@ -27,11 +27,12 @@ function fillAccounts(){
  select.value=previous;
 }
 function identify(text){
- const t=norm(text).replace(/\s+/g," ");
- const list=[...(catalog?.accounting_layouts||[])].sort((a,b)=>String(b.supplier_name||"").length-String(a.supplier_name||"").length);
- const hits=list.map(p=>{const names=[p.supplier_name,...(p.detection_tokens||[])].filter(Boolean);return {p,score:names.reduce((v,name)=>{const n=norm(name);return n.length>=4&&t.includes(n)?Math.max(v,n.length):v},0)}}).filter(x=>x.score).sort((a,b)=>b.score-a.score);
- // Reject a supplier inferred from a common word without any distinctive signature.
- const top=hits[0];return top&&top.score>=5?top.p:null;
+ const header=String(text||"").split(/\n/).slice(0,32).join(" ");
+ const t=norm(header),all=(catalog?.accounting_layouts||[]);
+ const exact=[["henrijulien",/henri\s*julien|henrijulien/i],["passionfroid",/passion\s*froid|passionfroid/i],["lanormande",/la\s*normande/i],["freemobile",/free\s*mobile/i],["freepro",/free\s*pro|freebox\s*pro/i]];
+ for(const [key,re] of exact)if(re.test(header)){const found=all.find(x=>x.supplier_key===key);if(found)return found}
+ const hits=all.map(p=>{const names=[p.supplier_name,...(p.detection_tokens||[])].filter(Boolean);return {p,score:names.reduce((v,name)=>{const n=norm(name);if(n.length<5)return v;const pattern=new RegExp("(^|\\\\s)"+n.replace(/[.*+?^${}()|[\\]\\]/g,"\\\\$&").replace(/\\s+/g,"\\\\s+")+"(?=\\\\s|$)","i");return pattern.test(t)?Math.max(v,n.length):v},0)}}).filter(x=>x.score).sort((a,b)=>b.score-a.score);
+ return hits[0]?.score>=5?hits[0].p:null;
 }
 function chooseSupplier(){
  const v=$("supplierSelect").value;
@@ -82,7 +83,7 @@ function showProfiles(active=null){
 }
 function suggestAccount(profile){
  if(!profile||!catalog)return;
- const rules=(catalog.supplier_rules||[]).filter(r=>norm(r.supplier_key||r.supplier_name).replace(/\s/g,"")===norm(profile.supplier_key).replace(/\s/g,""));
+ const rules=(catalog.supplier_rules||[]).filter(r=>norm(r.supplier_key||r.supplier_name).replace(/\s/g,"")===norm(profile.supplier_key).replace(/\s/g,"")||norm(r.supplier_name)===norm(profile.supplier_name));
  if(rules.length!==1)return;
  const r=rules[0];if(r.supplier_account)$("supplierAccount").value=r.supplier_account;
  const accounts=(catalog.supplier_charges||[]).filter(x=>x.supplier_rule_id===r.id&&x.active!==false);
@@ -92,7 +93,10 @@ function suggestAccount(profile){
 function analyze(){
  const text=$("sourceText").value;if(!text.trim())return msg("Aucun texte : importez un PDF ou collez la transcription.",true);
  lastText=text;
- const profile=(catalog?.accounting_layouts||[]).find(x=>x.supplier_key===$("supplierSelect").value)||identify(text);
+ const detected=identify(text);
+ const selected=(catalog?.accounting_layouts||[]).find(x=>x.supplier_key===chosenSupplierKey);
+ const profile=selected||detected;
+ if(selected&&detected&&selected.supplier_key!==detected.supplier_key)msg("Le fournisseur choisi diffère du nom détecté : vérifiez la facture.",true);
  if(profile){
   $("supplierMatch").value=profile.supplier_name;
   $("supplierSelect").value=profile.supplier_key;
@@ -136,7 +140,7 @@ function boot(){
  $("supplierSelect").onchange=chooseSupplier;
  $("analyze").onclick=analyze;$("check").onclick=verify;$("copy").onclick=copy;$("refreshCatalog").onclick=loadCatalog;
  $("clear").onclick=()=>{$("sourceText").value="";lastText="";msg("Transcription effacée.")};
- document.addEventListener("invoice-pdf:replace",()=>{lastText="";$("sourceText").value="";msg("Extraction PDF en cours…")});
+ document.addEventListener("invoice-pdf:replace",()=>{lastText="";chosenSupplierKey="";$("supplierSelect").value="";$("supplierMatch").value="";$("invoiceNumber").value="";$("invoiceDate").value="";["totalHT","totalVAT","totalTTC","supplierAccount"].forEach(id=>$(id).value="");$("chargeAccount").value="";$("sourceText").value="";msg("Extraction PDF en cours…")});
  document.addEventListener("invoice-pdf:partial",e=>{if(e.detail?.text)$("sourceText").value=e.detail.text});
  document.addEventListener("invoice-pdf:transcribed",e=>{const t=String(e.detail?.text||"");$("sourceText").value=t;lastText=t;if(t.trim())analyze();else msg("PDF sans texte : utilisez Forcer OCR.",true)});
  document.addEventListener("invoice-pdf:error",e=>msg("Erreur PDF : "+(e.detail?.message||"lecture impossible"),true));
