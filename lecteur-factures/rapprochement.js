@@ -123,7 +123,7 @@ function classify(confirmReplace=true){
  state.rows=result.matched.map((r,i)=>({...r,id:"row"+String(i+1),checked:false}));
  state.excluded=result.excluded.map((r,i)=>({...r,id:"excluded"+String(i+1)}));
  state.dirty=false;render();
- $("rightTabs").hidden=false;
+
  switchView("products");
  say(state.rows.length+" produit(s) rapproché(s) · "+state.excluded.length+" ligne(s) à examiner. Vérifiez quantités et prix.","ok");
 }
@@ -201,7 +201,7 @@ function makeCard(row){
  const actions=document.createElement("div");actions.className="card-actions";
  const verified=document.createElement("label");verified.className="check-label";
  const check=document.createElement("input");check.type="checkbox";check.checked=!!row.checked;check.disabled=!review.ready;
- check.addEventListener("change",()=>{row.checked=check.checked;state.dirty=true;render()});
+ check.addEventListener("change",()=>{row.checked=check.checked;state.dirty=true;render();if(row.checked&&row.product_id)document.dispatchEvent(new CustomEvent("invoice-learning:confirm",{detail:{product_ids:[row.product_id]}}));});
  verified.append(check,document.createTextNode(" Vérifié sur le PDF"));actions.append(verified);
  const remove=document.createElement("button");remove.type="button";remove.className="btn small";remove.textContent="Mettre à contrôler";
  remove.addEventListener("click",()=>{
@@ -364,10 +364,19 @@ async function saveInvoice(){
  }catch(err){say("Enregistrement : "+err.message,"err")}
  finally{btn.disabled=!!state.savedId}
 }
+function fillInvoiceMetadata(pages){
+ const header=pages.slice(0,2).map(p=>String(p.text||"").split(/\r?\n/).slice(0,65).join("\n")).join("\n");
+ const invoiceMatch=header.match(/(?:facture|invoice)\s*(?:n(?:[°ºo.]|um[eé]ro)?\s*)?[:#-]?\s*([A-Z0-9][A-Z0-9._/-]{2,})/i);
+ if(invoiceMatch&&!/^(?:du|de|des|date|total|ht|ttc)$/i.test(invoiceMatch[1])&&!$("supplierInvoiceNo").value)$("supplierInvoiceNo").value=invoiceMatch[1];
+ const dateLine=header.split("\n").find(line=>/\b(?:date\s*(?:de\s*)?(?:facture|document|[eé]mission)|factur[eé]\s+le)\b/i.test(line))||"";
+ const dateMatch=dateLine.match(/\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})[/.\-](\d{1,2})[/.\-](20\d{2}|\d{2})\b/);
+ if(dateMatch&&!$("supplierInvoiceDate").value){const year=Number(dateMatch[1]||((dateMatch[6].length===2?"20":"")+dateMatch[6]));const month=Number(dateMatch[2]||dateMatch[5]),day=Number(dateMatch[3]||dateMatch[4]);const d=new Date(Date.UTC(year,month-1,day));if(d.getUTCFullYear()===year&&d.getUTCMonth()===month-1&&d.getUTCDate()===day)$("supplierInvoiceDate").value=[year,String(month).padStart(2,"0"),String(day).padStart(2,"0")].join("-");}
+}
 function onReaderReady(event){
  state.savedId="";$("saveInvoice").disabled=false;
  state.requestSeq++;
  state.pages=event.detail?.pages||[];
+ fillInvoiceMetadata(state.pages);
  state.fileName=event.detail?.fileName||"";
  state.dirty=false;state.rows=[];state.excluded=[];
  render();switchView("products");
