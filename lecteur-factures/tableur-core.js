@@ -148,8 +148,28 @@ function detectProfile(text,db){
  if(/la\s*normande/.test(t)&&/mise\s+a\s+disposition|repas\s+livres|facturation/.test(t))return {supplier_key:"lanormande",supplier_name:"LA NORMANDE",layout_type:"la_normande"};
  return null;
 }
+function supplierKey(name,db){
+ const key=code(name);
+ if(!key)return "";
+ const profiles=db?.layout_profiles||[];
+ const matched=profiles.find(p=>code(p.supplier_key)===key||code(p.supplier_name)===key);
+ if(matched)return code(matched.supplier_key);
+ if(key==="pomona"||key.includes("passionfroid"))return "passionfroid";
+ if(key.includes("henrijulien"))return "henrijulien";
+ if(key.includes("lanormande"))return "lanormande";
+ return key;
+}
 function match(row,db,supplier){
- const products=(db?.products||[]).filter(p=>p.active!==false),ref=code(row.reference),skey=code(supplier);
+ const products=(db?.products||[]).filter(p=>p.active!==false),ref=code(row.reference),skey=supplierKey(supplier,db);
+ const layout=String(row.layout||"standard");
+ // Confirmed mappings always take precedence over historic observations.
+ const confirmed=(db?.verified_mappings||[]).filter(m=>code(m.supplier_key)===skey&&String(m.layout_type)===layout&&code(m.supplier_reference_norm||m.supplier_reference)===ref);
+ if(skey&&confirmed.length===1){
+  const item=products.find(p=>p.id===confirmed[0].product_id);
+  if(item)return {product:item,source:"Association vérifiée pour ce fournisseur et ce format",suggestions:[],confirmed:true};
+  return {product:null,source:"Ancienne association : produit inactif ou absent, à vérifier",suggestions:[],conflict:true};
+ }
+ if(skey&&confirmed.length>1)return {product:null,source:"Associations vérifiées contradictoires, à contrôler",suggestions:[],conflict:true};
  const unique=(items,source)=>{
   const ids=[...new Set(items.map(x=>x.id||x.product_id).filter(Boolean))];
   if(ids.length===1){const p=products.find(x=>x.id===ids[0]);if(p)return {product:p,source,suggestions:[]};}
@@ -162,7 +182,7 @@ function match(row,db,supplier){
   const central=(db?.supplier_product_catalog||[]).filter(a=>code(a.supplier_key||a.supplier_name)===skey&&code(a.supplier_reference)===ref);
   const mapped=unique(central,"Référence fournisseur confirmée");if(mapped)return mapped;
  }
- const seen=(db?.product_observations||[]).filter(o=>code(o.supplier_key)===skey&&String(o.layout_type)===String(row.layout||"standard")&&code(o.supplier_reference_norm||o.supplier_reference)===ref);
+ const seen=(db?.product_observations||[]).filter(o=>code(o.supplier_key)===skey&&String(o.layout_type)===layout&&code(o.supplier_reference_norm||o.supplier_reference)===ref);
  if(skey&&seen.length===1&&seen[0].match_basis==="reference_exact"){
   const p=products.find(p=>p.id===seen[0].product_id);
   if(p)return {product:p,source:"Référence historique retrouvée ("+seen[0].observed_documents+" facture(s)) — à confirmer",suggestions:[],historical:true};
@@ -230,7 +250,7 @@ function mergeRows(existing,incoming,replaceAll=false){
   output.sort((a,b)=>Number(a.line_number??999999)-Number(b.line_number??999999));
  return {rows:output,added,updated,unchanged,ambiguous};
 }
-const api={parse,format,check,match,mergeRows,detectProfile,decimal,norm};
+const api={parse,format,check,match,supplierKey,mergeRows,detectProfile,decimal,norm};
 if(typeof module==="object"&&module.exports)module.exports=api;
 else root.InvoiceTableurCore=api;
 })(typeof window!=="undefined"?window:this);
