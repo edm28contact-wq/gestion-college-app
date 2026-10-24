@@ -66,6 +66,20 @@ function analyze(){
  if(records.length&&!confirm("Remplacer les "+records.length+" lignes du tableau actuel ?"))return;
  applyTranscription(text,"manuel");
 }
+function applyCorrectedLines(replaceAll=false){
+ const field=$("manualLines"),raw=field?.value||"";
+ if(!raw.trim())return status("Collez les lignes corrigées avant de les appliquer.",true);
+ const result=C.parse(raw);
+ if(!result.rows.length)return status("Aucune ligne produit complète reconnue dans le collage. Contrôlez la référence, la quantité et les montants. Le tableau actuel reste intact.",true);
+ if(replaceAll&&records.length&&!confirm("Remplacer le tableau actuel par les lignes corrigées ?"))return;
+ const merged=C.mergeRows(records,result.rows,replaceAll);
+ records=merged.rows;
+ if(replaceAll){ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||null;}
+ else if(result.unresolvedLines?.length)unresolved.push(...result.unresolvedLines);
+ render();
+ field.value="";
+ status((replaceAll?"Tableau remplacé. ":"Corrections appliquées. ")+merged.updated+" ligne(s) corrigée(s), "+merged.added+" ajoutée(s), "+merged.unchanged+" inchangée(s)"+(merged.ambiguous?" · "+merged.ambiguous+" référence(s) ambiguë(s) ajoutée(s) sans association automatique":"")+". Les lignes modifiées doivent être revérifiées.");
+}
 function exportTsv(){
  const selected=records.filter(r=>r.verified).map(r=>{const p=(catalog?.products||[]).find(x=>x.id===(r.product_id||C.match(r,catalog,$("supplierMatch").value).product?.id));return {r,p}});
  if(!selected.length){status("Cochez les produits vérifiés avant l’export.",true);return}
@@ -77,6 +91,8 @@ function exportTsv(){
 }
 function boot(){
  $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
+ $("manualApply").onclick=()=>applyCorrectedLines(false);
+ $("manualReplace").onclick=()=>applyCorrectedLines(true);
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
  document.addEventListener("invoice-pdf:replace",()=>{
   $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();
