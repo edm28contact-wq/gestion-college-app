@@ -5,11 +5,13 @@ const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-central
 let catalog=null,records=[],ignored=[],unresolved=[],summary=null;
 const tokens=()=>["college_accounting_token","college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
 function status(message,error=false){$("status").textContent=message;$("status").className="status"+(error?" err":"")}
+function catalogStatus(message,error=false){const el=$("catalogStatus")||$("status");el.textContent=message;el.className="muted"+(error?" err":"")}
+function extractionStatus(message,error=false){const el=$("extractionStatus");if(!el)return;el.textContent=message;el.className="muted"+(error?" err":"")}
 async function loadCatalog(){
  for(const token of tokens()){
-  try{const res=await fetch(API,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;status("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
+  try{const res=await fetch(API,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;catalogStatus("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
  }
- status("Catalogue non connecté. Vous pouvez nettoyer la transcription et remplir le tableau, puis vous connecter à la comptabilité pour associer les produits.",true);
+ catalogStatus("Catalogue non connecté. La transcription PDF fonctionne néanmoins. Connectez-vous à la comptabilité pour associer les produits.",true);
 }
 function make(tag,text){const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e}
 function render(){
@@ -41,19 +43,28 @@ function render(){
  const target=summary?.expected_ht;
  $("invoiceTotals").textContent="Total HT des lignes : "+total.toFixed(2)+" €"+(target!==null&&target!==undefined?" · Total facture : "+Number(target).toFixed(2)+" € · Écart : "+(Math.round((total-target)*100)/100).toFixed(2)+" €":" · Total HT facture non détecté")+(summary?.expected_vat!=null?" · TVA : "+Number(summary.expected_vat).toFixed(2)+" €":"")+(summary?.expected_ttc!=null?" · TTC : "+Number(summary.expected_ttc).toFixed(2)+" €":"");
  $("invoiceTotals").className=target!=null&&Math.abs(total-target)>.02?"err":"ok";
- $("cleanText").value=C.format(records);
+ $("cleanText").value=records.length?C.format(records):($("sourceText").value.trim()?"Aucun produit reconnu dans le texte brut. La transcription complète reste visible en haut. Consultez les lignes ignorées pour corriger leur structure.":"");
  $("ignoredCount").textContent=ignored.length+" lignes écartées · "+unresolved.length+" fragments non résolus";
  $("ignoredList").value=[...unresolved.map(x=>"À RÉPARER — ligne "+x.line+" : "+x.text+" ("+x.reason+")"),...ignored.map(x=>"Ligne "+x.line+" : "+x.text)].join("\n");
  $("exportRows").disabled=!records.length;
 }
-function analyze(){
- const result=C.parse($("sourceText").value);
- if(result.error){status(result.error,true);return}
- if(records.length&&!confirm("Remplacer les "+records.length+" lignes du tableau actuel ?"))return;
+function applyTranscription(text,origin="manuel"){
+ const result=C.parse(text);
  records=result.rows.map(r=>({...r,product_id:"",verified:false}));
  ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||null;
- status("Transcription nettoyée ("+(summary?.layout||"classique")+") : "+records.length+" produit(s), "+(summary?.reconstructed||0)+" ligne(s) recomposée(s), "+unresolved.length+" fragment(s) non résolu(s)."+(summary?.reconciled===true?" Total HT de la facture retrouvé.":" Vérifiez les montants et les associations."));
  render();
+ if(result.error){
+  status("Texte "+(origin==="PDF"?"du PDF ":"")+"reçu ("+text.length+" caractères) mais aucun article complet reconnu. Les "+ignored.length+" lignes ignorées sont affichées. Corrigez le texte brut ou forcez l’OCR.",true);
+ }else{
+  status("Transcription "+(origin==="PDF"?"PDF ":"")+"nettoyée : "+records.length+" produit(s), "+(summary?.reconstructed||0)+" ligne(s) recomposée(s), "+unresolved.length+" fragment(s) non résolu(s)."+(summary?.reconciled===true?" Total HT retrouvé.":" Vérifiez les montants."));
+ }
+ return result;
+}
+function analyze(){
+ const text=$("sourceText").value;
+ if(!text.trim())return status("Aucune transcription à analyser. Importez un PDF ou collez les lignes de facture.",true);
+ if(records.length&&!confirm("Remplacer les "+records.length+" lignes du tableau actuel ?"))return;
+ applyTranscription(text,"manuel");
 }
 function exportTsv(){
  const selected=records.filter(r=>r.verified).map(r=>{const p=(catalog?.products||[]).find(x=>x.id===(r.product_id||C.match(r,catalog,$("supplierMatch").value).product?.id));return {r,p}});
@@ -67,17 +78,29 @@ function exportTsv(){
 function boot(){
  $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
- document.addEventListener("invoice-pdf:replace",()=>{$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Facture importée : extraction du texte en cours...")});
- document.addEventListener("invoice-pdf:partial",e=>{const text=String(e.detail?.text||"");if(text)$("sourceText").value=text;});
+ document.addEventListener("invoice-pdf:replace",()=>{
+  $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();
+  extractionStatus("Lecture du PDF lancée. Le texte doit apparaître automatiquement dans cette zone.");
+  status("Facture importée : extraction du texte en cours...");
+ });
+ document.addEventListener("invoice-pdf:partial",e=>{
+  const text=String(e.detail?.text||"");
+  if(text){$("sourceText").value=text;extractionStatus("Texte extrait : "+text.length+" caractères · page "+(e.detail?.page||"?")+"/"+(e.detail?.total||"?")+". Lecture en cours...");}
+ });
  document.addEventListener("invoice-pdf:transcribed",e=>{
-  const text=String(e.detail?.text||"");if(!text.trim()){status("PDF sans texte exploitable. Utilisez « Forcer OCR » ou saisissez le texte manuellement.",true);return}
+  const text=String(e.detail?.text||"");
   $("sourceText").value=text;
-  const result=C.parse(text);
-  if(result.error){status("Transcription affichée, mais aucune ligne complète détectée. Corrigez le texte puis cliquez sur « Nettoyer et repérer les produits ».",true);return}
-  records=result.rows.map(r=>({...r,product_id:"",verified:false}));
-  ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||null;
-  render();
-  status("PDF transcrit : "+(e.detail?.pages?.length||0)+" page(s), "+records.length+" produit(s) détecté(s). Vérifiez le texte et les montants avant de valider.");
+  if(!text.trim()){
+   extractionStatus("Aucun texte extrait. Cliquez sur « Forcer OCR (PDF scanné) ». Si cela échoue, le détail de l’erreur sera affiché.",true);
+   status("PDF sans texte exploitable. Utilisez « Forcer OCR » ou collez la transcription manuellement.",true);return;
+  }
+  extractionStatus("Transcription visible : "+text.length+" caractères, "+(e.detail?.pages?.length||0)+" page(s). Vérifiez le texte avant validation.");
+  applyTranscription(text,"PDF");
+ });
+ document.addEventListener("invoice-pdf:error",e=>{
+  const message=String(e.detail?.message||"Erreur de transcription inconnue");
+  extractionStatus("Impossible de transcrire automatiquement : "+message,true);
+  status("Erreur de lecture PDF : "+message+" · Vous pouvez toujours coller le texte manuellement.",true);
  });
  $("supplierMatch").onchange=()=>{records.forEach(r=>{r.verified=false;r.product_id=""});render()};
  render();loadCatalog();
