@@ -67,6 +67,7 @@ function exportTsv(){
 function boot(){
  $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
+ document.addEventListener("invoice-pdf:replace",()=>{$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Nouvelle facture importée. Collez la transcription de ce PDF pour continuer.")});
  $("supplierMatch").onchange=()=>{records.forEach(r=>{r.verified=false;r.product_id=""});render()};
  render();loadCatalog();
 }
