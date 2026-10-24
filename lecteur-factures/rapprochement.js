@@ -186,14 +186,14 @@ function makeCard(row){
  productRow.append(productPicker(row),makeSelectAccount(row));
  article.append(productRow);
  const numeric=document.createElement("div");numeric.className="match-fields five";
- for(const [label,key] of [["Quantité achetée","qty"],["Prix unitaire HT","unit"],["Total HT","ht"],["TVA %","vat"],["Total TTC","ttc"]])numeric.append(input(label,key,row));
+ for(const [label,key] of [["Quantité facturée"+(row.unit_label?" ("+row.unit_label+")":""),"qty"],["Prix unitaire HT","unit"],["Total HT","ht"],["TVA %","vat"],["Total TTC","ttc"]])numeric.append(input(label,key,row));
  article.append(numeric);
  const notes=document.createElement("div");notes.className="match-notes";
  if(review.errors.length)notes.textContent="À corriger : "+review.errors.join(" · ");
  else notes.textContent="Montants cohérents. Vérifiez les valeurs sur la facture.";
  if(review.warnings.length)notes.textContent+=" · "+review.warnings.join(" · ");
  const stockLabel=product?.stock_count_mode==="litre"?"L":product?.unit||"u";
- if(review.stockQty!==null)notes.textContent+=" · Conversion stock estimée : "+review.stockQty.toLocaleString("fr-FR")+" "+stockLabel+" (×"+review.factor+").";
+ if(review.stockQty!==null)notes.textContent+=" · "+(row.stock_qty?"Stock d’après facture : ":"Conversion stock estimée : ")+review.stockQty.toLocaleString("fr-FR")+" "+stockLabel+" (×"+(row.stock_factor||review.factor)+").";
  notes.className+=" "+(review.errors.length?"warn":"ok");article.append(notes);
  const actions=document.createElement("div");actions.className="card-actions";
  const verified=document.createElement("label");verified.className="check-label";
@@ -388,7 +388,7 @@ function boot(){
  };
  document.addEventListener("invoice-reader:ready",onReaderReady);
  document.addEventListener("invoice-reader:reset",()=>{
-  state.savedId="";$("saveInvoice").disabled=false;state.requestSeq++;state.pages=[];state.fileName="";state.rows=[];state.excluded=[];state.dirty=false;render();say("Facture précédente effacée. Lecture en attente.");
+  state.savedId="";$("supplierMatch").value="";$("supplierInvoiceNo").value="";$("supplierInvoiceDate").value="";$("saveInvoice").disabled=false;state.requestSeq++;state.pages=[];state.fileName="";state.rows=[];state.excluded=[];state.dirty=false;render();say("Facture précédente effacée. Lecture en attente.");
  });
  document.addEventListener("invoice-reader:edited",()=>{
   state.pages=window.InvoiceReader?.pages?.()||state.pages;
