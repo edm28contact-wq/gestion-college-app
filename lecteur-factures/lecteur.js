@@ -177,6 +177,7 @@
     $("fileName").textContent=file.name+" ("+(file.size/1024/1024).toFixed(2)+" Mo)";
     notice("PDF chargé. Cliquez sur « Transcrire le PDF ». Le fichier reste dans votre navigateur.");
     updateControls();
+    void run();
   }
   async function run() {
     if(state.processing||!state.file)return;
@@ -289,7 +290,7 @@
       updateControls();
     }
   }
-  window.InvoiceReader={focusPage(number){const index=state.pages.findIndex(p=>p.number===Number(number));if(index>=0)selectPage(index)}};
+  window.InvoiceReader={focusPage(number){const index=state.pages.findIndex(p=>p.number===Number(number));if(index>=0)selectPage(index)},pages(){return state.pages.map(p=>({number:p.number,text:p.text,source:p.source,warning:p.warning}))}};
   function showOrigin() {
     const origin=new URLSearchParams(location.search).get("origine");
     $("back").href=origin==="secretariat"?"../secretariat/factures-v25/":"../comptabilite/";
