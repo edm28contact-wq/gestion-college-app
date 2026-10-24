@@ -96,6 +96,7 @@ async function saveVerifiedAssociations(){
  const supplierKey=C.supplierKey(supplier,catalog);
  const layout=records.some(r=>r.layout==="pomona")?"pomona":"standard";
  if(supplierKey.length<2)return status("Indiquez le fournisseur avant d'enregistrer les associations.",true);
+ if(unresolved.length||!records.length||(summary?.expected_ht!=null&&Math.abs(records.reduce((n,r)=>n+(C.decimal(r.total_ht)||0),0)-summary.expected_ht)>.02))return status("Validation bloquée : corrigez les lignes non résolues et l’écart HT avant de mémoriser les associations.",true);
  const selected=records.filter(r=>r.verified&&C.check(r).ok).map(r=>({supplier_reference:String(r.reference),supplier_label:r.designation,product_id:r.product_id||C.match(r,catalog,supplier).product?.id}));
  if(!selected.length)return status("Cochez « Vérifié » pour chaque produit à mémoriser.",true);
  if(selected.some(r=>!r.product_id))return status("Un produit confirmé n'est plus disponible dans le catalogue.",true);
