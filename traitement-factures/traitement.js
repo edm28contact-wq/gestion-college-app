@@ -17,7 +17,7 @@ function account(line){
 function classify(){
  if(!catalog)return note("Aucune fiche catalogue. Connectez Supabase ou importez votre fiche JSON.");
  const result=CORE.classify(allRaw.length?allRaw:rows,catalog,$("supplier").value);
- rows=result.matched;excluded=result.excluded;render();renderExcluded();
+ rows=result.matched;excluded=result.excluded;render();renderExcluded();$("readAI").disabled=!rows.length;
  note(rows.length+" produits reconnus, "+excluded.length+" lignes hors tableau. Quantités et prix à contrôler avant export.");
 }
 const CACHE_KEY="college_invoice_catalog_v1";
@@ -97,8 +97,43 @@ async function exportFile(){
  XLSX.writeFile(wb,"traitement_facture.xlsx");note("Excel exporté. Aucune écriture ni stock modifié.");}
  catch(e){note("Export impossible : "+e.message)}
 }
+const NUMERIC_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-numeric-reader";
+let numericBusy=false;
+function authTokens(){return [localStorage.getItem("college_accounting_token"),localStorage.getItem("college_secretariat_token"),localStorage.getItem("edm_admin_token"),localStorage.getItem("holding_admin_token")].filter(Boolean)}
+async function readNumbersAI(){
+ if(numericBusy||!catalog||!rows.length)return;
+ numericBusy=true;$("readAI").disabled=true;
+ let completed=0,alerts=0,errors=[];
+ try{
+  const tokens=authTokens();if(!tokens.length)throw Error("Session absente : reconnectez-vous à Comptabilité ou Secrétariat.");
+  for(let index=0;index<rows.length;index+=8){
+   const part=rows.slice(index,index+8),payload={rows:part.map((r,i)=>({id:"r"+(index+i),product_id:r.product_id,raw:r.raw}))};
+   let data=null,errorMessage="Accès ou connexion impossible";
+   for(const token of tokens){
+    try{
+     const res=await fetch(NUMERIC_API,{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
+     const out=await res.json().catch(()=>({}));
+     if(res.ok){data=out;break}
+     errorMessage=out.error||"Erreur HTTP "+res.status;
+     if(res.status!==401&&res.status!==403)break;
+    }catch(e){errorMessage=e.message||String(e)}
+   }
+   if(!data){errors.push(errorMessage);continue}
+   for(const item of data.results||[]){
+    const n=Number(String(item.id).slice(1)),row=rows[n];
+    if(!row||row.product_id!==item.product_id||!part.includes(row))continue;
+    const v=item.values||{};
+    for(const field of ["qty","unit","ht","vat","ttc"])if(v[field]!==null&&v[field]!==undefined&&String(row[field]??"").trim()==="")row[field]=String(v[field]);
+    row.read_status=item.issues?.join(" ; ")||"Lecture IA : calculs cohérents, contrôle humain requis";
+    row.checked=false;completed++;if(item.issues?.length)alerts++;
+   }
+   note("Lecture IA : "+Math.min(index+8,rows.length)+"/"+rows.length+" lignes examinées.");
+  }
+  render();note("IA : "+completed+" lignes traitées, "+alerts+" avec réserve. "+(errors.length?errors.join(" | "):"Vérifiez chaque ligne avant export."));
+ }finally{numericBusy=false;$("readAI").disabled=false}
+}
 function boot(){
- $("connect").onclick=connect;$("saveCatalog").onclick=exportCatalog;$("offlineFile").onchange=e=>importCatalog(e.target.files?.[0]);$("showExcluded").onclick=()=>{$("excludedView").hidden=!$("excludedView").hidden};$("restoreAll").onclick=()=>{for(const e of excluded)rows.push(CORE.empty(e.page,e.raw));excluded=[];render();renderExcluded()};$("classify").onclick=classify;$("sourceFile").onchange=e=>importFile(e.target.files?.[0]);
+ $("readAI").onclick=()=>readNumbersAI().catch(e=>note("Lecture IA indisponible : "+e.message));$("connect").onclick=connect;$("saveCatalog").onclick=exportCatalog;$("offlineFile").onchange=e=>importCatalog(e.target.files?.[0]);$("showExcluded").onclick=()=>{$("excludedView").hidden=!$("excludedView").hidden};$("restoreAll").onclick=()=>{for(const e of excluded)rows.push(CORE.empty(e.page,e.raw));excluded=[];render();renderExcluded()};$("classify").onclick=classify;$("sourceFile").onchange=e=>importFile(e.target.files?.[0]);
  $("addRow").onclick=()=>{rows.push({page:1,raw:"",reference:"",product_id:"",qty:"",unit:"",vat:"",ht:"",ttc:"",account:"",checked:false});render()};
  $("export").onclick=exportFile;$("supplier").onchange=()=>{const r=catalog?.supplier_rules?.find(x=>norm(x.supplier_name)===norm($("supplier").value));if(r)$("supplierAccount").value=r.supplier_account||""};
  render();renderExcluded();connect();
