@@ -9,16 +9,18 @@ const extract=(text,p)=>{
  const supplier=p?.supplier_key||"",lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.replace(/[\u00a0\u202f]/g," ").replace(/\s{2,}/g," ").trim()).filter(Boolean);
  const generic=[/num[eé]ro\s+de\s+(?:la\s+)?facture\s*[: ]+([\w./-]{3,})/i,/facture\s*n[°ºo.]?\s*[: ]+([\w./-]{3,})/i,/invoice\s+number\s+([\w-]{4,})/i];
  const specific={freepro:[/\b\d\d\/\d\d\/20\d\d\s+(F\d{9,})/],freemobile:[/facture\s+n[°ºo.]?\s*(\d{8,})\s+du/i],engie:[/facture\s+n[°ºo.]?\s*(\d{8,})\s+du/i],edf:[/d[eé]tail\s+de\s+votre\s+facture\s+du\s+[\d/]+\s+n[°ºo.]?\s*(\d{8,})/i],amazon:[/num[eé]ro\s+de\s+la\s+facture\s+([A-Z][\w-]{6,})/i],suez:[/facture\s+n[°ºo.]?\s*:\s*(\d{8,})/i],totalenergies:[/N[°ºo.]\s*(\d{7,}\s*[-–]\s*[A-Z]\d+)/i]};
- const number=getNo(lines,[...(specific[supplier]||[]),...generic]);
+ const number=getNo(lines,[...(supplier==="henrijulien"?[/\bfacture\s+(FA[-\s]?\d{5,})\b/i]:[]),...(specific[supplier]||[]),...generic]);
  let date=null;
  const reDate=/date\s+(?:de\s+(?:la\s+)?)?(?:facture|facturation|d['’]?[eé]mission)\s*[: /]+\s*(\d\d?[/.]\d\d?[/.]\d{2,4}|\d\d?\s+\w+\s+20\d\d)/i;
  for(const line of lines){const m=line.match(reDate);if(m){const d=dates(m[1]);if(d){date={value:d,source:line};break}}}
  if(!date){for(const line of lines){if(/facture.+\bdu\b|date\s*:|date of issue|date de la facture|date de vente/i.test(line)){const d=dates(line);if(d){date={value:d,source:line};break}}}}
+ if(!date&&supplier==="henrijulien"){for(const line of lines.slice(0,35)){const m=line.match(/\b(?:date\s+document|date\s+facture)\s*[: ]*([0-3]?\d[/.][01]?\d[/.]20\d\d)/i);if(m){const d=dates(m[1]);if(d){date={value:d,source:line};break}}}}
  if(!date&&supplier==="freepro")for(const l of lines){if(/\bF20\d{8}/.test(l)){const d=dates(l);if(d){date={value:d,source:l};break}}}
  const amount=(pattern)=>getAmount(lines,[new RegExp(pattern+"\\s*[:=]?\\s*"+amountPattern,"i")]);
  let ht=amount("(?:total\\s+ht|sous[- ]total\\s+ht|montant\\s+hors\\s+tva|total\\s+electricite\\s*\\/\\s*hors\\s+tva|total\\s+de\\s+la\\s+facture\\s+ht)");
  let vat=amount("(?:total\\s+tva(?:\\s+\\d{1,2}%)?|montant\\s+tva(?:\\s*\\([^)]*\\))?|tva\\s+pay[eé]e\\s+sur\\s+les\\s+d[eé]bits)");
  let ttc=amount("(?:total\\s+ttc|montant\\s+ttc\\s+[aà]\\s+payer|montant\\s+[aà]\\s+payer|somme\\s*[àa]\\s*payer\\s*ttc|net\\s+[àa]\\s+(?:payer|pr[eé]lever)|facture\\s+ttc)");
+ if(supplier==="henrijulien"){const joined=lines.join(" ");const m=joined.match(/total\s+eur\s+ht\s*[: ]*([\d.,]+)[\s\S]{0,140}?tva\s*20%\s*[: ]*([\d.,]+)[\s\S]{0,100}?total\s+eur\s+ttc\s*[: ]*([\d.,]+)/i);if(m){ht={value:money(m[1]),source:"Total EUR HT"};vat={value:money(m[2]),source:"TVA 20%"};ttc={value:money(m[3]),source:"Total EUR TTC"}}else{ht=amount("(?:total\\s+eur\\s+ht|total\\s+ht|total\\s+hors\\s+taxes)");ttc=amount("(?:total\\s+eur\\s+ttc|total\\s+ttc|net\\s+[àa]\\s+payer)");vat=amount("(?:montant\\s+tva|tva\\s*20%|total\\s+tva)")}}
  if(supplier==="freepro"){ht=amount("total\\s+ht");vat=amount("total\\s+tva\\s+\\d+%");ttc=amount("total\\s+ttc")}
  if(supplier==="edf"){ht=amount("montant\\s+hors\\s+tva");vat=amount("montant\\s+tva(?:\\s*\\([^)]*\\))?");ttc=amount("facture\\s+ttc")}
  if(supplier==="engie"){ht=amount("total\\s+[eé]lectricit[eé]\\s*\\/\\s*hors\\s+tva");vat=amount("tva\\s+pay[eé]e\\s+sur\\s+les\\s+d[eé]bits");ttc=amount("montant\\s+ttc\\s+[aà]\\s+payer")}
