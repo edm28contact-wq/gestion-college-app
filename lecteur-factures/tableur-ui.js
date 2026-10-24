@@ -43,7 +43,7 @@ function render(){
   td.append(selector,make("small",r.product_id?"Sélection manuelle":match.source));tr.append(td);
   const valid=make("td",(test.ok?"HT cohérent":"À vérifier : "+test.text)+(r.needs_review?" · "+(r.review_reason||"Unité ou ligne à vérifier"):""));valid.className=test.ok&&!r.needs_review?"ok":"err";tr.append(valid);
   const checkTd=make("td"),check=make("input");check.type="checkbox";check.checked=!!r.verified;check.disabled=!test.ok||!productId;
-  check.title=r.needs_review?(r.review_reason||"Vérifier la ligne sur le PDF"):"Confirmer la ligne";check.onchange=()=>{r.verified=check.checked;render()};checkTd.append(check);tr.append(checkTd);
+  check.title=r.needs_review?(r.review_reason||"Vérifier la ligne sur le PDF"):"Confirmer la ligne";check.onchange=()=>{r.verified=check.checked;if(check.checked&&r.needs_review)r.manual_corrected=true;render()};checkTd.append(check);tr.append(checkTd);
   const action=make("td"),remove=make("button","Retirer");remove.className="btn";remove.onclick=()=>{records.splice(index,1);render()};action.append(remove);tr.append(action);body.append(tr);
   if(productId)associated++;if(r.verified&&test.ok&&productId)verified++;
  }
@@ -56,10 +56,12 @@ function render(){
  $("ignoredCount").textContent=ignored.length+" lignes écartées · "+unresolved.length+" fragments non résolus";
  $("ignoredList").value=[...unresolved.map(x=>"À RÉPARER — ligne "+x.line+" : "+x.text+" ("+x.reason+")"),...ignored.map(x=>"Ligne "+x.line+" : "+x.text)].join("\n");
  $("exportRows").disabled=!records.length;
+ renderStockPreview();
 }
 function applyTranscription(text,origin="manuel"){
  detectSupplier(text);
  const result=C.parse(text);
+ $("finalInvoiceNumber").value=getInvoiceNumber();$("finalInvoiceDate").value=getInvoiceDate();$("finalInvoiceHT").value=result.meta?.expected_ht??"";
  records=result.rows.map(r=>({...r,product_id:"",verified:false}));
  ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||null;
  render();
@@ -127,9 +129,84 @@ function exportTsv(){
  const link=make("a");const url=URL.createObjectURL(new Blob([tsv],{type:"text/tab-separated-values;charset=utf-8"}));link.href=url;link.download="facture_produits_verifies.tsv";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
  status("Export effectué : "+selected.length+" produits vérifiés. Aucun stock ni aucune facture enregistrés.");
 }
+
+function inferStockQty(r,product){
+ const a=C.decimal(r.quantity),b=C.decimal(r.delivered_quantity),unit=C.unitInfo(r.unit).canonical,del=C.unitInfo(r.delivered_unit).canonical,stock=C.unitInfo(product?.unit).canonical;
+ if(stock&&stock===unit&&a>0)return a;
+ if(stock&&stock===del&&b>0)return b;
+ return null;
+}
+function getInvoiceDate(){
+ const text=$("sourceText").value;
+ const p=[/(?:date\s*(?:de\s*)?(?:facture|document)|factur[eé]\s+le)\s*[: ]*\s*(\d{1,2}[/.]\d{1,2}[/.]\d{4})/i,/\b(?:du|le)\s*(\d{1,2}[/.]\d{1,2}[/.]\d{4})/i];
+ for(const re of p){const v=text.match(re)?.[1];if(!v)continue;const m=v.match(/(\d{1,2})[/.](\d{1,2})[/.](\d{4})/);if(m){const iso=m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0"),d=new Date(iso+"T12:00:00Z");if(!isNaN(+d)&&d.toISOString().slice(0,10)===iso)return iso}}
+ return "";
+}
+function getInvoiceNumber(){
+ const t=$("sourceText").value;
+ const formats=[/\bfacture\s*(?:n[°oº.]?\s*)?[:#-]?\s*(FA[- ]?\d{5,}|\d{7,})\b/i,/\bfacture\s*[:#]?\s*([A-Z][A-Z0-9/-]{5,})\b/i];
+ return formats.map(re=>t.match(re)?.[1]).find(Boolean)||"";
+}
+function renderStockPreview(){
+ const rows=$("stockPreview");if(!rows)return;
+ rows.replaceChildren();
+ for(const [i,r] of records.entries()){
+  const t=make("tr"),match=C.match(r,catalog,$("supplierMatch").value);
+  const product=(catalog?.products||[]).find(x=>x.id===(r.product_id||match.product?.id));
+  const unit=product?.unit||"—",qty=r.stock_quantity??inferStockQty(r,product);
+  if(r.stock_quantity==null&&qty!=null)r.stock_quantity=qty;
+  for(const v of [r.reference,product?.name||"À associer",r.delivered_quantity+" "+r.delivered_unit,r.quantity+" "+r.unit,unit])t.append(make("td",v));
+  const td=make("td"),input=make("input");input.type="number";input.min="0.001";input.max="1000000";input.step="0.001";input.style.width="110px";input.value=qty??"";
+  input.title="Quantité qui sera réellement ajoutée au stock du collège";
+  input.onchange=()=>{r.stock_quantity=input.value;r.stock_manual=true;r.verified=false;render()};
+  td.append(input);t.append(td);
+  t.append(make("td",qty==null?"Conversion à confirmer":r.stock_manual?"Saisie manuelle : vérifier":"Unité concordante"));
+  rows.append(t);
+ }
+}
+async function finalizeInvoice(){
+ if(unresolved.length||!records.length||!catalog)return status("Complétez la facture et corrigez les fragments non résolus.",true);
+ const supplier=$("supplierMatch").value.trim(),number=$("finalInvoiceNumber").value.trim(),date=$("finalInvoiceDate").value;
+ const h=C.decimal($("finalInvoiceHT").value);
+ if(!supplier||!number||!date||h==null||h<=0)return status("Fournisseur, numéro, date et total HT obligatoires.",true);
+ const total=records.reduce((n,r)=>n+(C.decimal(r.total_ht)||0),0);
+ if(Math.abs(h-total)>.02)return status("Total HT différent des lignes : validation bloquée.",true);
+ if(summary?.expected_ht!=null&&Math.abs(summary.expected_ht-h)>.02)return status("Total HT différent du PDF : validation bloquée.",true);
+ const file=$("invoicePdf").files?.[0];
+ if(!file||file.size>8*1024*1024)return status("Importez le PDF original (maximum 8 Mo) avant validation.",true);
+ if(records.some(r=>!r.verified||!C.check(r).ok||!r.stock_quantity||C.decimal(r.stock_quantity)<=0||r.needs_review&&!r.manual_corrected))return status("Chaque produit, montant, unité et quantité de stock doit être vérifié.",true);
+ const items=records.map(r=>{
+  const match=C.match(r,catalog,supplier),product=(catalog.products||[]).find(x=>x.id===(r.product_id||match.product?.id));
+  return {product_id:product?.id,stock_quantity:C.decimal(r.stock_quantity),invoice_quantity:C.decimal(r.quantity),delivered_quantity:C.decimal(r.delivered_quantity),invoice_unit:r.unit,delivered_unit:r.delivered_unit,detected_label:r.designation,detected_reference:r.reference,unit_price_ht:C.decimal(r.unit_price_ht),line_total_ht:C.decimal(r.total_ht),vat_rate:C.decimal(r.vat),verified:true};
+ });
+ if(items.some(x=>!x.product_id||!x.stock_quantity))return status("Un ou plusieurs produits du catalogue sont introuvables.",true);
+ const msg="Confirmer l'enregistrement définitif de cette facture ?\n"+records.length+" lignes seront transférées vers Secrétariat → Commandes et Administration → Achats. Le stock sera augmenté UNE FOIS, selon les quantités saisies.";
+ if(!confirm(msg))return;
+ const btn=$("finalizeInvoice");btn.disabled=true;
+ try{
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  const digest=[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(v=>v.toString(16).padStart(2,"0")).join("");
+  let b64="";for(let i=0;i<bytes.length;i+=8192)b64+=String.fromCharCode(...bytes.slice(i,i+8192));
+  b64=btoa(b64);
+  let result=null;
+  for(const token of tokens()){
+   const response=await fetch("https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-tableur-finalize",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({file_hash:digest,file_name:file.name,pdf_base64:b64,supplier,supplier_key:C.supplierKey(supplier,catalog),invoice_number:number,invoice_date:date,expected_ht:h,raw_text:$("sourceText").value,items})});
+   const data=await response.json();
+   if(response.status===401||response.status===403)continue;
+   if(!response.ok||!data.ok)throw Error(data.error||"Validation impossible");
+   result=data;break;
+  }
+  if(!result)throw Error("Session autorisée introuvable : reconnectez-vous au Secrétariat.");
+  status("Facture validée. Commande CMD-"+String(result.order_no).padStart(6,"0")+" enregistrée, "+result.stock_products+" produits en Achats et stocks synchronisés.");
+  btn.textContent="Facture déjà transférée";btn.disabled=true;
+  $("finalizeLinks").hidden=false;
+ }catch(e){status("Facture non validée : "+(e?.message||String(e)),true);btn.disabled=false}
+}
+
 function boot(){
  $("analyze").onclick=analyze;$("exportRows").onclick=exportTsv;$("refreshCatalog").onclick=loadCatalog;
  $("saveMappings").onclick=saveVerifiedAssociations;
+ $("finalizeInvoice").onclick=finalizeInvoice;
  $("manualApply").onclick=()=>applyCorrectedLines(false);
  $("manualReplace").onclick=()=>applyCorrectedLines(true);
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
