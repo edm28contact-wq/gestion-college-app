@@ -6,6 +6,7 @@ let catalog=null,records=[],ignored=[],unresolved=[],summary=null;
 let currentProfile=null;
 const tokens=()=>["college_accounting_token","college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
 function status(message,error=false){$("status").textContent=message;$("status").className="status"+(error?" err":"")}
+function transferStatus(message,error=false){const e=$("transferStatus");if(e){e.textContent=message;e.className="status"+(error?" err":"")};status(message,error)}
 function catalogStatus(message,error=false){const el=$("catalogStatus")||$("status");el.textContent=message;el.className="muted"+(error?" err":"")}
 function extractionStatus(message,error=false){const el=$("extractionStatus");if(!el)return;el.textContent=message;el.className="muted"+(error?" err":"")}
 async function loadCatalog(){
@@ -164,22 +165,35 @@ function renderStockPreview(){
   rows.append(t);
  }
 }
+function resetAfterSuccessfulTransfer(result){
+ const label="Facture enregistrée · CMD-"+String(result.order_no).padStart(6,"0")+" · "+result.stock_products+" produit(s) synchronisé(s). Vous pouvez importer la facture suivante.";
+ document.dispatchEvent(new Event("invoice-pdf:reset-after-success"));
+ records=[];ignored=[];unresolved=[];summary=null;currentProfile=null;
+ $("sourceText").value="";$("manualLines").value="";$("supplierMatch").value="";delete $("supplierMatch").dataset.auto;
+ for(const id of ["finalInvoiceNumber","finalInvoiceDate","finalInvoiceHT"])$(id).value="";
+ render();
+ const button=$("finalizeInvoice");button.textContent="Valider et transférer vers Commandes + Achats + Stocks";button.disabled=false;
+ $("finalizeLinks").hidden=false;
+ extractionStatus("Nouvelle facture : importez le prochain PDF.");
+ transferStatus(label);
+ $("transferStatus").scrollIntoView({behavior:"smooth",block:"center"});
+}
 async function finalizeInvoice(){
- if(unresolved.length||!records.length||!catalog)return status("Complétez la facture et corrigez les fragments non résolus.",true);
+ if(unresolved.length||!records.length||!catalog)return transferStatus("Complétez la facture et corrigez les fragments non résolus.",true);
  const supplier=$("supplierMatch").value.trim(),number=$("finalInvoiceNumber").value.trim(),date=$("finalInvoiceDate").value;
  const h=C.decimal($("finalInvoiceHT").value);
- if(!supplier||!number||!date||h==null||h<=0)return status("Fournisseur, numéro, date et total HT obligatoires.",true);
+ if(!supplier||!number||!date||h==null||h<=0)return transferStatus("Fournisseur, numéro, date et total HT obligatoires.",true);
  const total=records.reduce((n,r)=>n+(C.decimal(r.total_ht)||0),0);
- if(Math.abs(h-total)>.02)return status("Total HT différent des lignes : validation bloquée.",true);
- if(summary?.expected_ht!=null&&Math.abs(summary.expected_ht-h)>.02)return status("Total HT différent du PDF : validation bloquée.",true);
+ if(Math.abs(h-total)>.02)return transferStatus("Total HT différent des lignes : validation bloquée.",true);
+ if(summary?.expected_ht!=null&&Math.abs(summary.expected_ht-h)>.02)return transferStatus("Total HT différent du PDF : validation bloquée.",true);
  const file=$("invoicePdf").files?.[0];
- if(!file||file.size>8*1024*1024)return status("Importez le PDF original (maximum 8 Mo) avant validation.",true);
- if(records.some(r=>!r.verified||!C.check(r).ok||!r.stock_quantity||C.decimal(r.stock_quantity)<=0||r.needs_review&&!r.manual_corrected))return status("Chaque produit, montant, unité et quantité de stock doit être vérifié.",true);
+ if(!file||file.size>8*1024*1024)return transferStatus("Importez le PDF original (maximum 8 Mo) avant validation.",true);
+ if(records.some(r=>!r.verified||!C.check(r).ok||!r.stock_quantity||C.decimal(r.stock_quantity)<=0||r.needs_review&&!r.manual_corrected))return transferStatus("Chaque produit, montant, unité et quantité de stock doit être vérifié.",true);
  const items=records.map(r=>{
   const match=C.match(r,catalog,supplier),product=(catalog.products||[]).find(x=>x.id===(r.product_id||match.product?.id));
   return {product_id:product?.id,stock_quantity:C.decimal(r.stock_quantity),invoice_quantity:C.decimal(r.quantity),delivered_quantity:C.decimal(r.delivered_quantity),invoice_unit:r.unit,delivered_unit:r.delivered_unit,detected_label:r.designation,detected_reference:r.reference,unit_price_ht:C.decimal(r.unit_price_ht),line_total_ht:C.decimal(r.total_ht),vat_rate:C.decimal(r.vat),verified:true};
  });
- if(items.some(x=>!x.product_id||!x.stock_quantity))return status("Un ou plusieurs produits du catalogue sont introuvables.",true);
+ if(items.some(x=>!x.product_id||!x.stock_quantity))return transferStatus("Un ou plusieurs produits du catalogue sont introuvables.",true);
  const msg="Confirmer l'enregistrement définitif de cette facture ?\n"+records.length+" lignes seront transférées vers Secrétariat → Commandes et Administration → Achats. Le stock sera augmenté UNE FOIS, selon les quantités saisies.";
  if(!confirm(msg))return;
  const btn=$("finalizeInvoice");btn.disabled=true;
@@ -200,7 +214,7 @@ async function finalizeInvoice(){
   status("Facture validée. Commande CMD-"+String(result.order_no).padStart(6,"0")+" enregistrée, "+result.stock_products+" produits en Achats et stocks synchronisés.");
   btn.textContent="Facture déjà transférée";btn.disabled=true;
   $("finalizeLinks").hidden=false;
- }catch(e){status("Facture non validée : "+(e?.message||String(e)),true);btn.disabled=false}
+ }catch(e){transferStatus("Facture non validée : "+(e?.message||String(e)),true);btn.disabled=false}
 }
 
 function boot(){
@@ -211,7 +225,7 @@ function boot(){
  $("manualReplace").onclick=()=>applyCorrectedLines(true);
  $("clear").onclick=()=>{if(records.length&&!confirm("Effacer la transcription et le tableau ?"))return;$("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;render();status("Saisie vidée.")};
  document.addEventListener("invoice-pdf:replace",()=>{
-  $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;["finalInvoiceNumber","finalInvoiceDate","finalInvoiceHT"].forEach(id=>$(id).value="");render();
+  $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;currentProfile=null;$("supplierMatch").value="";delete $("supplierMatch").dataset.auto;["finalInvoiceNumber","finalInvoiceDate","finalInvoiceHT"].forEach(id=>$(id).value="");$("finalizeLinks").hidden=true;transferStatus("");render();
   extractionStatus("Lecture du PDF lancée. Le texte doit apparaître automatiquement dans cette zone.");
   status("Facture importée : extraction du texte en cours...");
  });
