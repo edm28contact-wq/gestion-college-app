@@ -19,7 +19,7 @@
 <section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" href="../../admin/holding/">Holding</a><a class="btn secondary" href="../../secretariat/">Secrétariat</a><a class="btn secondary" href="../../secretariat/planning/">Planning du personnel / Paie</a><a class="btn secondary" href="../../comptabilite/">Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
 <div id="modal"></div>
 <script>
-const UI_VERSION='2026.10.24-apps4';
+const UI_VERSION='2026.10.24-apps4-tese2';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
 const requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',events:'Mouvements',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',manual:'Manuel d’utilisation',salaires:'Salaires'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
@@ -414,6 +414,6 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 if(token)enterApp().catch(()=>logout());
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261024-1"></script>
+<script src="./salaires.js?v=20261024-tese-login-v2"></script>
 </body>
 </html>
