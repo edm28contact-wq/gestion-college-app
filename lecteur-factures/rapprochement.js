@@ -336,7 +336,8 @@ function boot(){
   state.requestSeq++;state.pages=[];state.fileName="";state.rows=[];state.excluded=[];state.dirty=false;render();say("Facture précédente effacée. Lecture en attente.");
  });
  document.addEventListener("invoice-reader:edited",()=>{
-  if(state.rows.length)say("Transcription modifiée. Cliquez sur « Refaire le rapprochement » pour appliquer les corrections.","warn");
+  state.pages=window.InvoiceReader?.pages?.()||state.pages;
+  if(state.rows.length)say("Transcription modifiée. Cliquez sur « Reclasser » pour mettre à jour les produits sans export.","warn");
  });
  render();switchView("products");connect();
 }
