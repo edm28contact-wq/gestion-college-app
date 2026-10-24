@@ -8,6 +8,7 @@ const EXCEL_LIB="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.
 const CACHE_KEY="college_invoice_catalog_v1";
 const state={catalog:null,rows:[],excluded:[],pages:[],fileName:"",catalogStamp:"",online:false,dirty:false,busy:false,requestSeq:0,savedId:""};
 const say=(message,type="")=>{const el=$("matchStatus");el.textContent=message;el.className="status "+type};
+window.InvoiceManualCatalog=()=>state.catalog;
 const tokenList=()=>[localStorage.getItem("college_accounting_token"),localStorage.getItem("college_secretariat_token"),localStorage.getItem("edm_admin_token"),localStorage.getItem("holding_admin_token")].filter(Boolean);
 const validCatalog=c=>c&&c.read_only===true&&["products","accounts","keywords","supplier_rules","supplier_charges","learned_products"].every(k=>Array.isArray(c[k]));
 function currency(n){return new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(n)}
