@@ -14,10 +14,10 @@
 <label><span>Période fin</span><input id="periodEnd" type="date"></label>
 <label><span>Total HT (€)</span><input id="totalHT" inputmode="decimal"></label>
 <label><span>TVA (€)</span><input id="totalVAT" inputmode="decimal"></label>
-<label><span>Total TTC (€)</span><input id="totalTTC" inputmode="decimal"></label>
+<label><span>Total TTC (€)</span><input id="totalTTC" inputmode="decimal"></label><label><span>Taux de TVA pour calcul TTC → HT</span><select id="vatRate"><option value="">Taux à confirmer</option><option value="0">0 %</option><option value="2.1">2,1 %</option><option value="5.5">5,5 %</option><option value="10">10 %</option><option value="20">20 %</option></select></label>
 <label><span>Compte fournisseur</span><input id="supplierAccount" placeholder="401…"></label>
 <label><span>Compte de charge proposé</span><select id="chargeAccount"><option value="">À vérifier</option></select></label>
 <label><span>Journal</span><select id="journal"><option value="AC">AC — Achats</option><option value="OD">OD — Divers</option></select></label>
-</div><div class="tools"><button class="btn" id="check">Vérifier les montants</button><button class="btn" id="copy">Copier la fiche contrôlée</button></div><div id="summary" class="status" role="status"></div><p class="muted">Les valeurs reconnues sont des propositions. Un écart, un avoir, un échéancier ou un récapitulatif doit être vérifié avant comptabilisation. Cette page ne crée pas d’écriture comptable et ne modifie pas les stocks.</p></section>
+</div><div class="tools"><button class="btn" id="calculateFromTTC">Calculer HT et TVA depuis TTC</button><button class="btn" id="check">Vérifier les montants</button><button class="btn" id="copy">Copier la fiche contrôlée</button></div><div id="summary" class="status" role="status"></div><p class="muted">Les valeurs reconnues sont des propositions. Un écart, un avoir, un échéancier ou un récapitulatif doit être vérifié avant comptabilisation. Cette page ne crée pas d’écriture comptable et ne modifie pas les stocks.</p></section>
 <section class="panel"><h2>4. Format de facture reconnu</h2><div id="layoutInfo" class="muted">Aucun format détecté pour le moment.</div><div id="profileList"></div></section>
-</main><script src="./model-core.js?v=2"></script><script src="./accounting-reader.js?v=3"></script><script src="../lecteur-factures/pdf-preview.js?v=3"></script></body></html>
+</main><script src="../lecteur-factures/tableur-core.js?v=6"></script><script src="./model-core.js?v=3"></script><script src="./accounting-reader.js?v=4"></script><script src="../lecteur-factures/pdf-preview.js?v=3"></script></body></html>
