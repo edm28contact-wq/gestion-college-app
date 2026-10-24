@@ -38,6 +38,7 @@ function render(){
   selector.style.minWidth="240px";selector.append(make("option","À associer"));selector.firstChild.value="";
   for(const p of products){const o=make("option",p.code+" — "+p.name);o.value=p.id;selector.append(o)}
   selector.value=productId;
+  if(productId&&!selector.value){r.product_id="";r.verified=false;selector.value="";}
   selector.onchange=()=>{r.product_id=selector.value;r.verified=false;render()};
   td.append(selector,make("small",r.product_id?"Sélection manuelle":match.source));tr.append(td);
   const valid=make("td",(test.ok?"HT cohérent":"À vérifier : "+test.text)+(r.needs_review?" · Ligne recomposée : vérifier la désignation":""));valid.className=test.ok&&!r.needs_review?"ok":"err";tr.append(valid);
@@ -92,18 +93,25 @@ function applyCorrectedLines(replaceAll=false){
 }
 async function saveVerifiedAssociations(){
  const supplier=$("supplierMatch").value.trim();
- const supplierKey=C.norm(supplier).replace(/\s+/g,"");
+ const supplierKey=C.supplierKey(supplier,catalog);
  const layout=records.some(r=>r.layout==="pomona")?"pomona":"standard";
  if(supplierKey.length<2)return status("Indiquez le fournisseur avant d'enregistrer les associations.",true);
  const selected=records.filter(r=>r.verified&&C.check(r).ok).map(r=>({supplier_reference:String(r.reference),supplier_label:r.designation,product_id:r.product_id||C.match(r,catalog,supplier).product?.id}));
  if(!selected.length)return status("Cochez « Vérifié » pour chaque produit à mémoriser.",true);
  if(selected.some(r=>!r.product_id))return status("Un produit confirmé n'est plus disponible dans le catalogue.",true);
  if(new Set(selected.map(r=>C.norm(r.supplier_reference).replace(/\s+/g,""))).size!==selected.length)return status("Référence fournisseur en double : vérifiez les lignes avant l'apprentissage.",true);
- const token=tokens()[0];if(!token)return status("Session requise : connectez-vous à l'administration ou à la comptabilité.",true);
+ const allTokens=tokens();if(!allTokens.length)return status("Session requise : connectez-vous au Secrétariat, à l’administration ou à la comptabilité.",true);
  const btn=$("saveMappings");btn.disabled=true;
  try{
-  const response=await fetch("https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-ocr-learning",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({action:"verify-product-mappings",supplier_key:supplierKey,supplier_name:supplier,layout_type:layout,items:selected})});
-  const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||"Enregistrement indisponible");
+  let data=null,authFailure=false;
+  for(const token of allTokens){
+   const response=await fetch("https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-ocr-learning",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({action:"verify-product-mappings",supplier_key:supplierKey,supplier_name:supplier,layout_type:layout,items:selected})});
+   const result=await response.json();
+   if(response.status===401||response.status===403){authFailure=true;continue}
+   if(!response.ok||!result.ok)throw Error(result.error||"Enregistrement indisponible");
+   data=result;break;
+  }
+  if(!data)throw Error(authFailure?"Les sessions présentes ne sont pas autorisées à enregistrer ces associations. Reconnectez-vous.":"Aucune session utilisable");
   status(data.confirmed+" association(s) mémorisée(s) pour "+supplier+" / "+layout+". Elles seront réutilisées sur les prochaines factures.");
   await loadCatalog();
  }catch(e){status("Impossible de mémoriser : "+(e?.message||String(e)),true)}
