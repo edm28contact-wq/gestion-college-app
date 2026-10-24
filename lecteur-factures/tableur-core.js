@@ -5,6 +5,8 @@ const norm=s=>String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLo
 const code=s=>norm(s).replace(/\s+/g,"");
 const clean=s=>String(s??"").replace(/&nbsp;|&#160;|&#x20;/gi," ").replace(/[\u00a0\u202f\u2007]/g," ").trim();
 const round=n=>Math.round((n+Number.EPSILON)*100)/100;
+// Preserve 4-decimal quantities and prices, then round the product to cents (half up).
+const pricedTotal=(quantity,price)=>Number((BigInt(Math.round(quantity*10000))*BigInt(Math.round(price*10000))+500000n)/1000000n)/100;
 function decimal(v){
  if(v===null||v===undefined||String(v).trim()==="")return null;
  const s=clean(v).replace(/[\s€%]/g,"").replace(",",".");
@@ -12,7 +14,7 @@ function decimal(v){
  const n=Number(s);return Number.isFinite(n)?n:null;
 }
 const number="\\d+(?:[.,]\\d{1,4})?";
-const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+(COL|COLIS|PU|PCE|PCS|POT|BT\\.?|BOUT|KG|L|SACH|BARQ)\\s+("+number+")\\s+(PU|PCE|PCS|POT|BT\\.?|BOUT|KG|L|COL|COLIS|SACH|BARQ)\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
+const pomonaTail=new RegExp("^(.*?)\\s+("+number+")\\s+(COL|COLIS|PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|SACH|BARQ)\\s+("+number+")\\s+(PU|PCE|PCS|POT|BQT\\.?|BQTE\\.?|BT\\.?|BOUT|KG|L|COL|COLIS|SACH|BARQ)\\s+("+number+")\\s+([A-Z])\\s*(\\d{1,2})\\s+("+number+")\\s*(?:EUR|€)?$","i");
 const pomonaPrefix=/^(\d{1,3})\s*\/\s*(\d{2,14})\s+(.+)$/i;
 const standardRE=/^([A-Z0-9][A-Z0-9._/-]{1,39})\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Za-zÀ-ÿ.]{1,20})\s+(\d{1,2}(?:[.,]\d+)?)\s*%?\s+(\d+(?:[.,]\d{1,4})?)\s+(\d+(?:[.,]\d{1,2})?)\s*€?\s*$/i;
 const validRef=s=>/^[A-Z0-9][A-Z0-9._/-]{1,39}$/i.test(String(s||""));
@@ -136,7 +138,7 @@ function parse(text){
 function check(row){
  const q=decimal(row.quantity),delivered=decimal(row.delivered_quantity),pu=decimal(row.unit_price_ht),ht=decimal(row.total_ht),vat=decimal(row.vat);
  if(q===null||q<=0||pu===null||ht===null||delivered===null||delivered<=0||(vat!==null&&vat>100))return {ok:false,text:"Quantités, taux ou prix incomplets / invalides"};
- const expected=round(q*pu),ok=Math.abs(expected-ht)<=.02;
+ const expected=pricedTotal(q,pu),ok=Math.abs(expected-ht)<=.02;
  return {ok,expected,text:ok?"Calcul HT correct":"Écart HT : "+expected.toFixed(2)+" € attendu"};
 }
 function match(row,db,supplier){
