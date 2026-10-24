@@ -5,6 +5,42 @@ const dates=s=>{const m=String(s||"").match(/(\d{4})[-/.](\d\d)[-/.](\d\d)|(\d\d
 const amountPattern="(-?\\d{1,3}(?:[\\u00a0\\u202f ]\\d{3})*[.,]\\d{2}|-?\\d+[.,]\\d{2}|-?\\d{1,6})";
 function getAmount(lines,patterns){for(const re of patterns){for(const line of lines){const m=line.match(re);if(m){const n=money(m[1]);if(n!==null)return {value:n,source:line}}}}return null}
 function getNo(lines,patterns){for(const re of patterns){for(const line of lines){const m=line.match(re);if(m)return {value:m[1],source:line}}}return null}
+
+// Backup calculations are suggestions, never accounting entries.
+const cents=x=>Math.round(Number(x)*100),round=x=>Math.round((Number(x)+Number.EPSILON)*100)/100;
+function fromTtc(ttc,rate){
+ if(!Number.isFinite(ttc)||!Number.isFinite(rate)||rate<0||rate>25)return null;
+ const gross=cents(ttc),base=Math.round(gross/(1+rate/100));
+ return {ht:base/100,vat:(gross-base)/100,ttc:gross/100,rate};
+}
+function rateEvidence(text){
+ const rates=new Set(),reg=/(?:\b(?:tva|taux\s+(?:de\s+)?tva|taxe\s+sur\s+la\s+valeur\s+ajout[eé]e)\s*[:(]?\s*(\d{1,2}(?:[,.]\d{1,2})?)\s*%|\b(\d{1,2}(?:[,.]\d{1,2})?)\s*%\s*(?:de\s+)?tva\b)/gi;
+ for(const m of String(text||"").matchAll(reg)){
+  const rate=Number(String(m[1]||m[2]).replace(",","."));
+  if(Number.isFinite(rate)&&rate>=0&&rate<=25)rates.add(rate);
+ }
+ return [...rates].sort((a,b)=>a-b);
+}
+function pomonaEvidence(text,ttc){
+ if(!g.InvoiceTableurCore?.parse)return null;
+ const invoice=g.InvoiceTableurCore.parse(text);
+ const meta=invoice.meta||{},rows=invoice.rows||[];
+ const rates=Object.values(meta.vat_rates||{}).filter(x=>typeof x==="number");
+ const total=ttc?.value;
+ if(Number.isFinite(meta.expected_ht)&&Number.isFinite(meta.expected_vat)&&Number.isFinite(total)&&Math.abs(round(meta.expected_ht+meta.expected_vat-total))<=.02){
+  return {ht:{value:meta.expected_ht,source:"Tableau de TVA Pomona (document)"},vat:{value:meta.expected_vat,source:"Tableau de TVA Pomona (document)"},rates,kind:"tableau_tva",rowCount:rows.length};
+ }
+ const eligible=rows.length>0&&!invoice.unresolvedLines?.length&&rows.every(r=>g.InvoiceTableurCore.check(r).ok);
+ if(eligible&&Number.isFinite(total)){
+  const sum=round(rows.reduce((n,r)=>n+Number(r.total_ht||0),0));
+  // Only accept when the calculated VAT agrees with a single proven VAT rate.
+  const observed=[...new Set([...rates,...rateEvidence(text)])];
+  const matches=observed.filter(rate=>Math.abs(sum+round(sum*rate/100)-total)<=.04);
+  if(matches.length===1)return {ht:{value:sum,source:"Somme des "+rows.length+" lignes HT Pomona"},vat:{value:round(total-sum),source:"TTC moins lignes HT Pomona"},rates:observed,kind:"lignes_ht",rowCount:rows.length};
+ }
+ return {rates,kind:"unverified_lines",rowCount:rows.length};
+}
+
 const extract=(text,p)=>{
  const supplier=p?.supplier_key||"",lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.replace(/[\u00a0\u202f]/g," ").replace(/\s{2,}/g," ").trim()).filter(Boolean);
  const generic=[/num[eé]ro\s+de\s+(?:la\s+)?facture\s*[: ]+([\w./-]{3,})/i,/facture\s*n[°ºo.]?\s*[: ]+([\w./-]{3,})/i,/invoice\s+number\s+([\w-]{4,})/i];
@@ -27,7 +63,22 @@ const extract=(text,p)=>{
  if(supplier==="totalenergies")for(const l of lines){const m=l.match(/total\s+g[eé]n[eé]ral\s+([\d.,]+)\s+([\d.,]+)\s*(?:eur|€)?\s+([\d.,]+)/i);if(m){ht={value:money(m[1]),source:l};vat={value:money(m[2]),source:l};ttc={value:money(m[3]),source:l};break}}
  if(supplier==="suez"&&ht&&ttc){const found=lines.map(x=>x.match(/^montant\s+tva\s*\([\d.,]+\s*%\)\s*([\d.,]+)/i)).filter(Boolean);if(found.length){const sum=Math.round(found.reduce((v,x)=>v+(money(x[1])||0),0)*100)/100;if(Math.abs(ht.value+sum-ttc.value)<.03)vat={value:sum,source:"Somme des lignes TVA"}}}
  if(supplier==="chatgpt"){const x=amount("(?:subtotal|total|amount\\s+due)\\s*€");if(x){ht=x;ttc=x;if(/reverse charge/i.test(text))vat={value:0,source:"Autoliquidation : vérifier"}}}
- if(!vat&&ht&&ttc)vat={value:Math.round((ttc.value-ht.value)*100)/100,source:"Calcul TTC - HT (à contrôler)"};
+ let computation=null;
+ const pomona=supplier==="passionfroid"?pomonaEvidence(text,ttc):null;
+ if(pomona?.ht&&pomona?.vat&&(!ht||!vat)){
+  if(!ht)ht=pomona.ht;if(!vat)vat=pomona.vat;
+  computation={kind:pomona.kind,verifiedBy:"lecture du document",message:"HT et TVA récupérés du document Pomona."};
+ }
+ if(!vat&&ht&&ttc){vat={value:round(ttc.value-ht.value),source:"TTC - HT (à contrôler)"};computation={kind:"difference",message:"TVA calculée : TTC moins HT."}}
+ if(!ht&&vat&&ttc){ht={value:round(ttc.value-vat.value),source:"TTC - TVA (à contrôler)"};computation={kind:"difference",message:"HT calculé : TTC moins TVA."}}
+ const explicitRates=[...new Set([...rateEvidence(text),...(pomona?.rates||[])])].sort((a,b)=>a-b);
+ if(ttc&&!ht&&!vat&&explicitRates.length===1){
+  const calc=fromTtc(ttc.value,explicitRates[0]);
+  if(calc){ht={value:calc.ht,source:"Calcul TTC / (1 + "+explicitRates[0]+" %)"};
+   vat={value:calc.vat,source:"Calcul TTC - HT"};
+   computation={kind:"single_rate",rate:explicitRates[0],message:"HT et TVA calculés avec le taux de "+explicitRates[0]+" % relevé sur la facture : à confirmer."};}
+ }
+ const suggestedRate=supplier==="passionfroid"&&explicitRates.length===0?5.5:(explicitRates.length===1?explicitRates[0]:null);
  const variant=(p?.field_hints?.variants||[]).map(x=>({...x,score:(x.anchors||[]).filter(a=>norm(text).includes(norm(a))).length})).sort((a,b)=>b.score-a.score)[0];
  const t=norm(text);let type=variant?.score>0?variant.document_type:"facture";
  if(/recapitulatif multilignes/.test(t))type="recapitulatif";
@@ -36,7 +87,9 @@ const extract=(text,p)=>{
  if(ttc?.value<0||/avoir n|facture d avoir|note de credit/.test(t))type="avoir";
  const issues=[];if(!number)issues.push("Numéro non reconnu");if(!date)issues.push("Date non reconnue");if(!ht||!ttc||!vat)issues.push("Montants incomplets");if(ht&&vat&&ttc&&Math.abs(ht.value+vat.value-ttc.value)>.03)issues.push("HT + TVA différent du TTC");if(type!=="facture")issues.push("Type de document à contrôler");
  if(supplier==="amazon"&&new Set(lines.map(x=>x.match(/num[eé]ro\s+de\s+la\s+facture\s+([A-Z][\w-]{6,})/i)?.[1]).filter(Boolean)).size>1)issues.push("Plusieurs factures dans le PDF");
- return {number,date,ht,vat,ttc,variant:variant?.score>0?variant:null,type,issues};
+ if(computation?.kind==="single_rate")issues.push("HT et TVA calculés : vérifier le taux de TVA et les montants sur le PDF");
+ if(explicitRates.length>1&&!ht&&!vat)issues.push("Plusieurs taux de TVA détectés : ventilation obligatoire");
+ return {number,date,ht,vat,ttc,variant:variant?.score>0?variant:null,type,issues,computation,taxRates:explicitRates,suggestedRate,hasMixedVat:explicitRates.length>1,pomonaRows:pomona?.rowCount||0};
  };
-const api={extract,norm,compact};if(typeof module!=="undefined"&&module.exports)module.exports=api;else g.AccountingModelCore=api;
+const api={extract,fromTtc,rateEvidence,norm,compact};if(typeof module!=="undefined"&&module.exports)module.exports=api;else g.AccountingModelCore=api;
 })(typeof window!=="undefined"?window:this);
