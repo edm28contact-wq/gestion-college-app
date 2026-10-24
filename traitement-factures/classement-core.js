@@ -86,10 +86,29 @@ function classify(inputs,db,supplier) {
   const r=empty(input.page||1,raw),parsed=amounts(raw,hit.product);
   r.product_id=hit.product.id;r.reference=hit.product.code;r.match_source=hit.source;r.account=charge(raw,hit.product,db,supplier);
   r.read_status=parsed.quality;
-  const quantities=raw.match(/(\d+[,.]?\d*)\s*COL\b[\s\S]{0,30}?(\d+[,.]?\d*)\s*POT\b/i);
+  const quantities=raw.match(/(\d+(?:[,.]\d+)?)\s*(COL|COLIS)\b[^\n]{0,36}?(\d+(?:[,.]\d+)?)\s*(POT|POTS|PCE|PCS|PI[EÈ]CES?|UNIT[EÉ]S?|KG|L|BTL|BT|BARQ|SACHETS?)\b/i);
   if(quantities){
-   const colis=decimal(quantities[1]),pots=decimal(quantities[2]);
-   if(colis>0&&pots>colis){r.qty=String(colis);r.stock_qty=String(pots);r.stock_factor=pots/colis;r.unit_label="COL";r.read_status="Quantité facturée en colis ; conversion stock à vérifier";const price=raw.match(/(?:^|\s)(0[.,]\d{2,4})(?=\s|$)/);if(price){const pu=decimal(price[1]);if(pu!==null)r.unit=String(pu);const candidate=Math.round(pots*pu*100)/100;if(raw.replace(/,/g,".").includes(candidate.toFixed(2)))r.ht=String(candidate);}}
+   const cartons=decimal(quantities[1]),priced=decimal(quantities[3]);
+   if(cartons>0&&priced>0&&priced>=cartons){
+    r.qty=String(cartons);r.stock_qty=String(priced);r.stock_factor=priced/cartons;
+    r.unit_label=quantities[2].toUpperCase();r.priced_unit_label=quantities[4].toUpperCase();
+    r.read_status="Quantités facture : "+cartons+" "+r.unit_label+" = "+priced+" "+r.priced_unit_label;
+    const tail=raw.slice(quantities.index+quantities[0].length);
+    const candidates=[...tail.matchAll(/(?:^|\s)(\d{1,8}[,.]\d{2,4})(?=\s|$)/g)]
+      .map(m=>decimal(m[1])).filter(n=>n!==null&&n>=0);
+    const solutions=[];
+    for(let i=0;i<candidates.length;i++){
+     for(let j=i+1;j<candidates.length;j++){
+      const pu=candidates[i],total=candidates[j];
+      if(Math.abs(Math.round(priced*pu*100)/100-total)<=0.02)
+       solutions.push({unit:pu,ht:total});
+     }
+    }
+    if(solutions.length===1){
+     r.unit=String(solutions[0].unit);r.ht=String(solutions[0].ht);
+     r.read_status="Quantité × prix unitaire = HT sur "+priced+" "+r.priced_unit_label;
+    }
+   }
   }
   if(!parsed.ambiguous && !r.stock_qty){r.qty=String(parsed.qty);r.unit=String(parsed.unit);r.ht=String(parsed.ht);if(parsed.ttc!==null)r.ttc=String(parsed.ttc);if(parsed.vat!==null)r.vat=String(parsed.vat);}
   matched.push(r);
@@ -105,9 +124,14 @@ function check(row,db) {
  if(q===null||q<=0)errors.push("Quantité à vérifier");
  if(pu===null||pu<0)errors.push("Prix unitaire HT à vérifier");
  if(ht===null||ht<0)errors.push("Total HT à vérifier");
- if(ttc===null||ttc<0)errors.push("Total TTC à vérifier");
+ if(ttc!==null&&ttc<0)errors.push("Total TTC invalide");
  if(vat!==null&&(vat<0||vat>100))errors.push("Taux TVA invalide");
- if(q!==null&&pu!==null&&ht!==null&&Math.abs(Math.round((row.stock_qty?decimal(row.stock_qty):q)*pu*100)/100-ht)>.02)errors.push("Quantité facturée/stock × PU HT ≠ HT");
+ const pricedQty=row.stock_qty!==undefined&&decimal(row.stock_qty)!==null?decimal(row.stock_qty):q;
+ if(q!==null&&row.stock_qty!==undefined&&decimal(row.stock_qty)!==null&&Number.isFinite(Number(row.stock_factor))&&Number(row.stock_factor)>0&&
+    Math.abs(q*Number(row.stock_factor)-decimal(row.stock_qty))>0.01)
+  errors.push("Colis × conditionnement différent de la quantité tarifée");
+ if(pricedQty!==null&&pu!==null&&ht!==null&&Math.abs(Math.round(pricedQty*pu*100)/100-ht)>.02)
+  errors.push("Quantité tarifée × PU HT ≠ total HT");
  if(ht!==null&&ttc!==null){
   if(ttc+.02<ht)errors.push("TTC inférieur au HT");
   if(vat!==null&&Math.abs(Math.round(ht*(1+vat/100)*100)/100-ttc)>.02)errors.push("HT + TVA ≠ TTC");
@@ -116,7 +140,7 @@ function check(row,db) {
  const stockQty=row.stock_qty!==undefined&&decimal(row.stock_qty)!==null?decimal(row.stock_qty):(q!==null&&q>0&&Number.isFinite(factor)&&factor>0?q*factor:null);
  if(product?.stock_count_mode!=="litre"&&stockQty!==null&&Math.abs(stockQty-Math.round(stockQty))>1e-8)warnings.push("Stock fractionnaire à contrôler");
  if(row.stock_qty&&row.stock_factor&&Math.abs(row.stock_factor-factor)>0.001)warnings.push("Conditionnement facture ×"+row.stock_factor+" différent de la fiche produit ×"+factor);
- if(row.read_status&&row.read_status!=="Qté × PU = HT")warnings.push(row.read_status);
+ if(row.read_status&&/ambigu|incoh[ée]rent|non v[ée]rifi[ée]/i.test(row.read_status))warnings.push(row.read_status);
  return {errors,warnings,stockQty,factor,ready:errors.length===0};
 }
 const api={norm,decimal,empty,matchProduct,charge,amounts,classify,check};
