@@ -5,17 +5,27 @@ let db=null,supplier="",proposed=[];
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const tokens=()=>["college_accounting_token","college_secretariat_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean);
 function detect(pages){
- if(!db)return null;
- const text=norm(pages.map(x=>x.text).join(" ").slice(0,12000));
+ if(!db||!pages?.length)return null;
+ const compact=value=>norm(value).replace(/\s+/g,"");
+ const full=compact(pages.map(p=>p.text||"").join(" ").slice(0,16000));
+ const header=compact(String(pages[0].text||"").split(/\r?\n/).slice(0,45).join(" ").slice(0,3500));
  const candidates=[];
  for(const p of db.profiles||[]){
-  const names=[p.supplier_name,...(p.aliases||[])].filter(x=>String(x||"").length>=5);
-  const exact=names.some(name=>text.includes(norm(name)));
-  const signature=(p.strong_text_signatures||[]).filter(x=>norm(x).length>=9&&text.includes(norm(x))).length;
-  if(exact||signature>=2)candidates.push({name:p.supplier_name,key:p.supplier_key,score:(exact?10:0)+Math.min(signature,3)});
+  const names=[p.supplier_name,...(p.aliases||[])].filter(x=>compact(x).length>=8);
+  let score=0;
+  for(const name of names){
+   const v=compact(name),idx=header.indexOf(v);
+   if(idx>=0)score=Math.max(score,200+Math.min(v.length,25)-Math.min(100,idx/30));
+   else if(full.includes(v))score=Math.max(score,40+Math.min(v.length,25));
+  }
+  const signatures=(p.strong_text_signatures||[]).filter(v=>compact(v).length>=24&&full.includes(compact(v)));
+  if(score===0&&signatures.length>0)score=10+Math.min(signatures.length,2);
+  if(score>0)candidates.push({name:p.supplier_name,key:p.supplier_key,score});
  }
  candidates.sort((a,b)=>b.score-a.score);
- return candidates.length&&(!candidates[1]||candidates[0].score>candidates[1].score)?candidates[0]:null;
+ if(!candidates.length||candidates[0].score<40)return null;
+ if(candidates[1]&&candidates[0].score-candidates[1].score<8)return null;
+ return candidates[0];
 }
 function suggested(pages,key){
  if(!db||!key)return[];
