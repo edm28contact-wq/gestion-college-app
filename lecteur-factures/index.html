@@ -16,5 +16,18 @@
 <section class="panel"><h2>Lignes ignorées</h2><div id="ignoredCount" class="muted"></div><textarea id="ignoredList" readonly aria-label="Lignes ignorées"></textarea><div class="muted">Les fragments non résolus sont affichés en premier. Corrigez la transcription d’origine en cas d’erreur.</div></section></div>
 <section class="panel"><div class="top"><div><h2>4. Tableur de rapprochement avec le catalogue</h2><div class="muted">Corrigez les cellules, sélectionnez le bon produit et cochez « Vérifié » uniquement après contrôle de la facture.</div></div><div class="buttons"><button class="btn primary" id="saveMappings" type="button">Mémoriser les associations vérifiées</button><button class="btn primary" id="exportRows" disabled type="button">Exporter les lignes vérifiées</button></div></div>
 <div id="metrics"></div><div id="invoiceTotals" style="margin-bottom:10px;font-weight:700"></div><div class="table-wrap"><table><thead><tr><th>Ligne</th><th>Réf. fournisseur</th><th>Désignation</th><th>Qté livrée</th><th>Unité livrée</th><th>Qté facturée</th><th>Unité facturée</th><th>Code TVA</th><th>TVA %</th><th>Prix HT</th><th>Total HT</th><th>Produit du collège</th><th>Contrôle</th><th>Vérifié</th><th></th></tr></thead><tbody id="tableurBody"></tbody></table></div>
-<p class="muted">L’export est un fichier tableur TSV compatible Excel. Aucun stock, prix catalogue ou facture comptable n'est modifié par cette page.</p></section>
-</main><script src="./tableur-core.js?v=10"></script><script src="./tableur-ui.js?v=12"></script><script src="./ocr-image-enhancer.js?v=1"></script><script src="./pdf-preview.js?v=4"></script></body></html>
+<p class="muted">L’export TSV reste possible sans modifier le stock. Pour une réception réelle, vérifiez chaque ligne puis utilisez la validation ci-dessous.</p></section>
+<section class="panel"><h2>5. Valider la facture et actualiser les stocks</h2>
+<p class="muted">Le PDF original et toutes les lignes doivent être contrôlés. Une seule validation crée une commande reçue dans Secrétariat → Commandes et l’achat dans Admin Collège → Achats, puis actualise les stocks une seule fois.</p>
+<div class="grid">
+<div><label>Numéro de facture <input id="finalInvoiceNumber" placeholder="Ex. FA-0282956"></label></div>
+<div><label>Date de facture <input type="date" id="finalInvoiceDate"></label></div>
+<div><label>Total HT confirmé (€) <input id="finalInvoiceHT" inputmode="decimal" placeholder="Ex. 292,85"></label></div>
+</div>
+<h2 style="margin-top:15px">Quantités à ajouter au stock</h2>
+<p class="muted">La quantité est proposée lorsque l'unité de la facture correspond à l'unité de stock du collège. En cas de différence, renseignez la quantité réelle, puis revérifiez la ligne. Aucune conversion n'est imposée automatiquement.</p>
+<div class="table-wrap"><table><thead><tr><th>Référence</th><th>Produit</th><th>Qté livrée</th><th>Qté facturée</th><th>Unité du collège</th><th>Entrée stock</th><th>Contrôle</th></tr></thead><tbody id="stockPreview"></tbody></table></div>
+<div class="buttons" style="margin-top:16px"><button type="button" id="finalizeInvoice" class="btn primary">Valider et transférer vers Commandes + Achats + Stocks</button></div>
+<div id="finalizeLinks" class="buttons" hidden><a class="btn" href="../secretariat/" target="_blank" rel="noopener">Voir les commandes du Secrétariat</a><a class="btn" href="../admin/" target="_blank" rel="noopener">Voir les achats de l'administration</a></div>
+<p class="muted">Un doublon de numéro ou de PDF empêche une seconde entrée en stock. Les avoirs doivent être traités séparément.</p></section>
+</main><script src="./tableur-core.js?v=10"></script><script src="./tableur-ui.js?v=13"></script><script src="./ocr-image-enhancer.js?v=1"></script><script src="./pdf-preview.js?v=4"></script></body></html>
