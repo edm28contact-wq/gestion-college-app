@@ -2,7 +2,7 @@
 "use strict";
 const $=id=>document.getElementById(id);
 const CORE=window.InvoiceClassify;
-const CATALOG_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-classification-catalog";
+const CATALOG_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-central-catalog";
 const NUMERIC_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-numeric-reader";
 const EXCEL_LIB="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
 const CACHE_KEY="college_invoice_catalog_v1";
@@ -14,10 +14,10 @@ function currency(n){return new Intl.NumberFormat("fr-FR",{style:"currency",curr
 function activate(c,stamp,online) {
  if(!validCatalog(c))throw Error("Catalogue incomplet.");
  state.catalog=c;state.online=online;state.catalogStamp=stamp;
- const text=(online?"Supabase connecté":"Catalogue local (hors connexion)")+" · "+c.products.length+" produits · "+c.accounts.length+" comptes";
+ const text=(online?"Administration centrale synchronisée":"Catalogue local (hors connexion)")+" · "+c.products.length+" produits · "+c.accounts.length+" comptes · "+(c.supplier_product_catalog||[]).length+" lignes fournisseur/produit";
  $("catalogState").textContent=text;
  $("backupCatalog").disabled=false;
- buildSuggestions();
+ buildSuggestions();renderCatalog();
  if(state.pages.length&&!state.dirty)classify(false);
 }
 async function connect(){
@@ -61,6 +61,18 @@ function lookupProduct(text){
  if(prefix.length===1)return prefix[0];
  const partial=products.filter(p=>CORE.norm(p.code).startsWith(key)&&key.length>=3||CORE.norm(p.name).includes(key)&&key.length>=5);
  return partial.length===1?partial[0]:null;
+}
+function renderCatalog(){
+ const body=$("centralCatalogBody");if(!body)return;body.replaceChildren();
+ const filter=CORE.norm($("centralCatalogFilter")?.value||"");
+ const lines=(state.catalog?.supplier_product_catalog||[]).filter(p=>!filter||CORE.norm([p.product_code,p.product_name,p.supplier_name,p.supplier_reference,p.account].join(" ")).includes(filter));
+ for(const p of lines.slice(0,500)){
+  const tr=document.createElement("tr");
+  for(const v of [p.product_code,p.product_name,p.supplier_name||"À identifier",p.supplier_reference||"",p.last_unit_price_ht??"",p.other_unit_price??p.catalog_unit_price??"",p.account||"À vérifier",p.account_source||"",p.stock_quantity??0]){
+   const td=document.createElement("td");td.textContent=String(v);tr.append(td);
+  }body.append(tr);
+ }
+ $("centralCatalogCount").textContent=lines.length+" lignes trouvées"+(lines.length>500?" · 500 affichées":"")+" · synchronisé : "+(state.catalog?.generated_at||state.catalogStamp);
 }
 function saveBackup(){
  if(!state.catalog)return;
@@ -225,7 +237,7 @@ function render(){
  $("verifiedCount").textContent=verified.length+" vérifié(s) · "+pending+" à contrôler";
  const ht=state.rows.reduce((n,r)=>n+(CORE.decimal(r.ht)||0),0);
  $("matchedAmount").textContent="HT saisi : "+currency(ht)+" (lignes incomplètes exclues)";
- $("exportMatched").disabled=!state.rows.length;
+ if($("exportMatched"))$("exportMatched").disabled=!state.rows.length;
  $("readNumbers").disabled=!state.rows.some(r=>!!r.product_id)||state.busy;
  $("excludedBox").open=state.excluded.length>0&&state.rows.length===0;
  if(!state.rows.length)list.textContent=state.excluded.length?"Aucun produit reconnu automatiquement. Utilisez « Associer à un produit » ci-dessous.":"Aucun produit à afficher : importez une facture.";
@@ -363,6 +375,7 @@ function boot(){
  $("refreshMatch").onclick=()=>classify(true);
  $("refreshCatalog").onclick=()=>connect();
  $("backupCatalog").onclick=saveBackup;
+ $("centralCatalogFilter")?.addEventListener("input",renderCatalog);
  $("importCatalog").onchange=e=>loadBackup(e.target.files?.[0]);
  $("readNumbers").onclick=()=>readNumbers().catch(e=>say("Erreur de lecture IA : "+e.message,"err"));
  $("saveInvoice").onclick=saveInvoice;
@@ -382,6 +395,7 @@ function boot(){
   if(state.rows.length)say("Transcription modifiée. Cliquez sur « Reclasser » pour mettre à jour les produits sans export.","warn");
  });
  render();switchView("products");connect();
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&state.online&&!state.dirty)void connect()});
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
 else boot();
