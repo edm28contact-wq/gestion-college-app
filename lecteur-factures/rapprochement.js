@@ -372,6 +372,21 @@ function fillInvoiceMetadata(pages){
  const dateMatch=dateLine.match(/\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})[/.\-](\d{1,2})[/.\-](20\d{2}|\d{2})\b/);
  if(dateMatch&&!$("supplierInvoiceDate").value){const year=Number(dateMatch[1]||((dateMatch[6].length===2?"20":"")+dateMatch[6]));const month=Number(dateMatch[2]||dateMatch[5]),day=Number(dateMatch[3]||dateMatch[4]);const d=new Date(Date.UTC(year,month-1,day));if(d.getUTCFullYear()===year&&d.getUTCMonth()===month-1&&d.getUTCDate()===day)$("supplierInvoiceDate").value=[year,String(month).padStart(2,"0"),String(day).padStart(2,"0")].join("-");}
 }
+function importPastedRows(event){
+ const entries=event.detail?.rows||[];
+ if(!state.catalog)return say("Catalogue indisponible : actualisez la base avant import.","warn");
+ if(!Array.isArray(entries)||!entries.length)return;
+ let added=0,updated=0;
+ for(const entry of entries){
+  if(!entry?.product_id)continue;
+  const key=String(entry.source_reference||"").toUpperCase();
+  const existing=state.rows.find(r=>r.import_source==="tableur"&&r.supplier_reference===key);
+  const row={...CORE.empty(1,entry.raw||""),id:existing?.id||"tableur"+Date.now()+"_"+added,product_id:entry.product_id,reference:entry.product_code,account:CORE.charge(entry.raw||"",state.catalog.products.find(p=>p.id===entry.product_id),state.catalog,$("supplierMatch").value),qty:String(entry.qty),unit:String(entry.unit),ht:String(entry.ht),vat:String(entry.vat),unit_label:entry.unit_label||"",supplier_reference:key,import_source:"tableur",match_source:entry.match_source||"Saisie manuelle",checked:false,read_status:entry.note||""};
+  if(existing){Object.assign(existing,row);updated++}else{state.rows.push(row);added++}
+ }
+ state.dirty=true;render();switchView("products");
+ say(added+" ligne(s) importée(s), "+updated+" mise(s) à jour. Les montants et associations nécessitent une vérification humaine. Aucun stock modifié.","ok");
+}
 function onReaderReady(event){
  state.savedId="";$("saveInvoice").disabled=false;
  state.requestSeq++;
@@ -400,6 +415,7 @@ function boot(){
   state.dirty=true;render();
  };
  document.addEventListener("invoice-reader:ready",onReaderReady);
+ document.addEventListener("invoice-tableur:import",importPastedRows);
  document.addEventListener("invoice-reader:reset",()=>{
   state.savedId="";$("supplierMatch").value="";$("supplierInvoiceNo").value="";$("supplierInvoiceDate").value="";$("saveInvoice").disabled=false;state.requestSeq++;state.pages=[];state.fileName="";state.rows=[];state.excluded=[];state.dirty=false;render();say("Facture précédente effacée. Lecture en attente.");
  });
