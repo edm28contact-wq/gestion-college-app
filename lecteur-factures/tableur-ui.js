@@ -41,9 +41,9 @@ function render(){
   if(productId&&!selector.value){r.product_id="";r.verified=false;selector.value="";}
   selector.onchange=()=>{r.product_id=selector.value;r.verified=false;render()};
   td.append(selector,make("small",r.product_id?"Sélection manuelle":match.source));tr.append(td);
-  const valid=make("td",(test.ok?"HT cohérent":"À vérifier : "+test.text)+(r.needs_review?" · Ligne recomposée : vérifier la désignation":""));valid.className=test.ok&&!r.needs_review?"ok":"err";tr.append(valid);
+  const valid=make("td",(test.ok?"HT cohérent":"À vérifier : "+test.text)+(r.needs_review?" · "+(r.review_reason||"Unité ou ligne à vérifier"):""));valid.className=test.ok&&!r.needs_review?"ok":"err";tr.append(valid);
   const checkTd=make("td"),check=make("input");check.type="checkbox";check.checked=!!r.verified;check.disabled=!test.ok||!productId;
-  check.title=r.needs_review?"Vérifiez la désignation recomposée sur la facture, puis confirmez la ligne":"Confirmer la ligne";check.onchange=()=>{r.verified=check.checked;render()};checkTd.append(check);tr.append(checkTd);
+  check.title=r.needs_review?(r.review_reason||"Vérifier la ligne sur le PDF"):"Confirmer la ligne";check.onchange=()=>{r.verified=check.checked;render()};checkTd.append(check);tr.append(checkTd);
   const action=make("td"),remove=make("button","Retirer");remove.className="btn";remove.onclick=()=>{records.splice(index,1);render()};action.append(remove);tr.append(action);body.append(tr);
   if(productId)associated++;if(r.verified&&test.ok&&productId)verified++;
  }
