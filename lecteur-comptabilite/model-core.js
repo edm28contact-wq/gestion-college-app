@@ -72,13 +72,22 @@ const extract=(text,p)=>{
  if(!vat&&ht&&ttc){vat={value:round(ttc.value-ht.value),source:"TTC - HT (à contrôler)"};computation={kind:"difference",message:"TVA calculée : TTC moins HT."}}
  if(!ht&&vat&&ttc){ht={value:round(ttc.value-vat.value),source:"TTC - TVA (à contrôler)"};computation={kind:"difference",message:"HT calculé : TTC moins TVA."}}
  const explicitRates=[...new Set([...rateEvidence(text),...(pomona?.rates||[])])].sort((a,b)=>a-b);
- if(ttc&&!ht&&!vat&&explicitRates.length===1){
-  const calc=fromTtc(ttc.value,explicitRates[0]);
-  if(calc){ht={value:calc.ht,source:"Calcul TTC / (1 + "+explicitRates[0]+" %)"};
+ const storedRate=p?.field_hints?.default_vat_rate;
+ const defaultRate=typeof storedRate==="number"&&Number.isFinite(storedRate)&&storedRate>=0&&storedRate<=25?storedRate:null;
+ // Supplier default applies only if no invoice VAT rate is readable; it never overwrites explicit amounts.
+ const selectedRate=explicitRates.length===1?explicitRates[0]:(explicitRates.length===0?defaultRate:null);
+ if(ttc&&!ht&&!vat&&selectedRate!==null){
+  const calc=fromTtc(ttc.value,selectedRate);
+  if(calc){
+   const onDocument=explicitRates.length===1;
+   ht={value:calc.ht,source:onDocument?"Calcul TTC au taux indiqué sur la facture":"Calcul TTC au taux habituel fournisseur (à confirmer)"};
    vat={value:calc.vat,source:"Calcul TTC - HT"};
-   computation={kind:"single_rate",rate:explicitRates[0],message:"HT et TVA calculés avec le taux de "+explicitRates[0]+" % relevé sur la facture : à confirmer."};}
+   computation={kind:onDocument?"single_rate":"supplier_default_rate",rate:selectedRate,message:onDocument
+     ?"HT et TVA calculés avec le taux de "+selectedRate+" % relevé sur la facture : à confirmer."
+     :"HT et TVA calculés automatiquement avec le taux habituel de "+selectedRate+" % pour ce fournisseur : à confirmer sur la facture."};
+  }
  }
- const suggestedRate=supplier==="passionfroid"&&explicitRates.length===0?5.5:(explicitRates.length===1?explicitRates[0]:null);
+ const suggestedRate=selectedRate;
  const variant=(p?.field_hints?.variants||[]).map(x=>({...x,score:(x.anchors||[]).filter(a=>norm(text).includes(norm(a))).length})).sort((a,b)=>b.score-a.score)[0];
  const t=norm(text);let type=variant?.score>0?variant.document_type:"facture";
  if(/recapitulatif multilignes/.test(t))type="recapitulatif";
@@ -87,7 +96,8 @@ const extract=(text,p)=>{
  if(ttc?.value<0||/avoir n|facture d avoir|note de credit/.test(t))type="avoir";
  const issues=[];if(!number)issues.push("Numéro non reconnu");if(!date)issues.push("Date non reconnue");if(!ht||!ttc||!vat)issues.push("Montants incomplets");if(ht&&vat&&ttc&&Math.abs(ht.value+vat.value-ttc.value)>.03)issues.push("HT + TVA différent du TTC");if(type!=="facture")issues.push("Type de document à contrôler");
  if(supplier==="amazon"&&new Set(lines.map(x=>x.match(/num[eé]ro\s+de\s+la\s+facture\s+([A-Z][\w-]{6,})/i)?.[1]).filter(Boolean)).size>1)issues.push("Plusieurs factures dans le PDF");
- if(computation?.kind==="single_rate")issues.push("HT et TVA calculés : vérifier le taux de TVA et les montants sur le PDF");
+ if(["single_rate","supplier_default_rate"].includes(computation?.kind))issues.push("HT et TVA calculés : vérifier le taux de TVA et les montants sur le PDF");
+ if(defaultRate!==null&&explicitRates.length&&explicitRates.some(rate=>Math.abs(rate-defaultRate)>0.001))issues.push("Taux du PDF différent du taux habituel fournisseur ("+defaultRate+" %) : contrôle obligatoire");
  if(explicitRates.length>1&&!ht&&!vat)issues.push("Plusieurs taux de TVA détectés : ventilation obligatoire");
  return {number,date,ht,vat,ttc,variant:variant?.score>0?variant:null,type,issues,computation,taxRates:explicitRates,suggestedRate,hasMixedVat:explicitRates.length>1,pomonaRows:pomona?.rowCount||0};
  };
