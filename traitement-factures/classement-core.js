@@ -49,7 +49,7 @@ function charge(text,p,db,supplier) {
  const accounts=[...new Set(choices.map(k=>String(k.expense_account)))];
  if(accounts.length===1)return accounts[0];
  if(accounts.length>1)return "";
- const rs=(db?.supplier_rules||[]).filter(r=>skey&&norm(r.supplier_key||r.supplier_name)===skey);
+ const rs=(db?.supplier_rules||[]).filter(r=>skey&&norm(r.supplier_key||r.supplier_name).replace(/\s/g,"")===skey.replace(/\s/g,""));
  if(rs.length!==1)return "";
  const defaults=(db?.supplier_charges||[]).filter(c=>c.supplier_rule_id===rs[0].id&&c.is_default&&accountSet.has(String(c.expense_account)));
  if(defaults.length===1)return String(defaults[0].expense_account);
@@ -86,7 +86,12 @@ function classify(inputs,db,supplier) {
   const r=empty(input.page||1,raw),parsed=amounts(raw,hit.product);
   r.product_id=hit.product.id;r.reference=hit.product.code;r.match_source=hit.source;r.account=charge(raw,hit.product,db,supplier);
   r.read_status=parsed.quality;
-  if(!parsed.ambiguous){r.qty=String(parsed.qty);r.unit=String(parsed.unit);r.ht=String(parsed.ht);if(parsed.ttc!==null)r.ttc=String(parsed.ttc);if(parsed.vat!==null)r.vat=String(parsed.vat);}
+  const quantities=raw.match(/(\d+[,.]?\d*)\s*COL\b[\s\S]{0,30}?(\d+[,.]?\d*)\s*POT\b/i);
+  if(quantities){
+   const colis=decimal(quantities[1]),pots=decimal(quantities[2]);
+   if(colis>0&&pots>colis){r.qty=String(colis);r.stock_qty=String(pots);r.stock_factor=pots/colis;r.unit_label="COL";r.read_status="Quantité facturée en colis ; conversion stock à vérifier";}
+  }
+  if(!parsed.ambiguous && !r.stock_qty){r.qty=String(parsed.qty);r.unit=String(parsed.unit);r.ht=String(parsed.ht);if(parsed.ttc!==null)r.ttc=String(parsed.ttc);if(parsed.vat!==null)r.vat=String(parsed.vat);}
   matched.push(r);
  }
  return {matched,excluded};
@@ -108,8 +113,9 @@ function check(row,db) {
   if(vat!==null&&Math.abs(Math.round(ht*(1+vat/100)*100)/100-ttc)>.02)errors.push("HT + TVA ≠ TTC");
  }
  const factor=Number(product?.purchase_to_stock_factor??1);
- const stockQty=q!==null&&q>0&&Number.isFinite(factor)&&factor>0?q*factor:null;
+ const stockQty=row.stock_qty!==undefined&&decimal(row.stock_qty)!==null?decimal(row.stock_qty):(q!==null&&q>0&&Number.isFinite(factor)&&factor>0?q*factor:null);
  if(product?.stock_count_mode!=="litre"&&stockQty!==null&&Math.abs(stockQty-Math.round(stockQty))>1e-8)warnings.push("Stock fractionnaire à contrôler");
+ if(row.stock_qty&&row.stock_factor&&Math.abs(row.stock_factor-factor)>0.001)warnings.push("Conditionnement facture ×"+row.stock_factor+" différent de la fiche produit ×"+factor);
  if(row.read_status&&row.read_status!=="Qté × PU = HT")warnings.push(row.read_status);
  return {errors,warnings,stockQty,factor,ready:errors.length===0};
 }
