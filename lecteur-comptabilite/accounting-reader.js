@@ -27,12 +27,15 @@ function fillAccounts(){
  select.value=previous;
 }
 function identify(text){
- const header=String(text||"").split(/\n/).slice(0,32).join(" ");
- const t=norm(header),all=(catalog?.accounting_layouts||[]);
- const exact=[["henrijulien",/henri\s*julien|henrijulien/i],["passionfroid",/passion\s*froid|passionfroid/i],["lanormande",/la\s*normande/i],["freemobile",/free\s*mobile/i],["freepro",/free\s*pro|freebox\s*pro/i]];
- for(const [key,re] of exact)if(re.test(header)){const found=all.find(x=>x.supplier_key===key);if(found)return found}
- const hits=all.map(p=>{const names=[p.supplier_name,...(p.detection_tokens||[])].filter(Boolean);return {p,score:names.reduce((v,name)=>{const n=norm(name);if(n.length<5)return v;const pattern=new RegExp("(^|\\\\s)"+n.replace(/[.*+?^${}()|[\\]\\]/g,"\\\\$&").replace(/\\s+/g,"\\\\s+")+"(?=\\\\s|$)","i");return pattern.test(t)?Math.max(v,n.length):v},0)}}).filter(x=>x.score).sort((a,b)=>b.score-a.score);
- return hits[0]?.score>=5?hits[0].p:null;
+ const header=norm(String(text||"").split(/\n/).slice(0,35).join(" "));
+ const records=catalog?.accounting_layouts||[];
+ const known=[["henrijulien",["henri julien","henrijulien"]],["passionfroid",["passion froid","passionfroid"]],["lanormande",["la normande"]],["freemobile",["free mobile"]],["freepro",["free pro","freebox pro"]]];
+ for(const [key,signatures] of known)if(signatures.some(w=>header.includes(w))){const profile=records.find(p=>p.supplier_key===key);if(profile)return profile}
+ const padded=" "+header+" ";
+ const candidates=records.map(p=>({p,score:[p.supplier_name,...(p.detection_tokens||[])].reduce((best,label)=>{
+  const t=norm(label);return t.length>=5&&padded.includes(" "+t+" ")?Math.max(best,t.length):best;
+ },0)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+ return candidates[0]?.p||null;
 }
 function chooseSupplier(){
  const v=$("supplierSelect").value;
