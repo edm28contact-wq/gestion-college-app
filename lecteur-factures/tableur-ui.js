@@ -137,6 +137,7 @@ function inferStockQty(r,product){
  const unit=C.unitInfo(r.unit).canonical,del=C.unitInfo(r.delivered_unit).canonical;
  const stock=product.stock_count_mode==='litre'?'litre':C.unitInfo(product.unit).canonical;
  const factor=C.decimal(product.purchase_to_stock_factor)||1;
+ if(factor>1&&stock===unit&&stock===del&&a===b)return null;
  if(stock&&stock===unit&&a>0)return a;
  if(stock&&stock===del&&b>0)return b;
  // A documented package conversion can be proposed, never silently confirmed.
