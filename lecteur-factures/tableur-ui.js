@@ -154,8 +154,8 @@ function renderStockPreview(){
  for(const [i,r] of records.entries()){
   const t=make("tr"),match=C.match(r,catalog,$("supplierMatch").value);
   const product=(catalog?.products||[]).find(x=>x.id===(r.product_id||match.product?.id));
-  const unit=product?.unit||"—",qty=r.stock_quantity??inferStockQty(r,product);
-  if(r.stock_quantity==null&&qty!=null)r.stock_quantity=qty;
+  const unit=product?.unit||"—",suggested=inferStockQty(r,product),qty=r.stock_manual?r.stock_quantity:suggested;
+  if(!r.stock_manual&&qty!=null)r.stock_quantity=qty;
   for(const v of [r.reference,product?.name||"À associer",r.delivered_quantity+" "+r.delivered_unit,r.quantity+" "+r.unit,unit])t.append(make("td",v));
   const td=make("td"),input=make("input");input.type="number";input.min="0.001";input.max="1000000";input.step="0.001";input.style.width="110px";input.value=qty??"";
   input.title="Quantité qui sera réellement ajoutée au stock du collège";
@@ -187,7 +187,7 @@ async function finalizeInvoice(){
  if(Math.abs(h-total)>.02)return transferStatus("Total HT différent des lignes : validation bloquée.",true);
  if(summary?.expected_ht!=null&&Math.abs(summary.expected_ht-h)>.02)return transferStatus("Total HT différent du PDF : validation bloquée.",true);
  const file=$("invoicePdf").files?.[0];
- if(!file||file.size>8*1024*1024)return transferStatus("Importez le PDF original (maximum 8 Mo) avant validation.",true);
+ if(!file||file.size>8*1024*1024)return transferStatus("Importez le PDF original (maximum 8 Mo) avant validation. Pour les PDF plus volumineux, réduisez la taille sans modifier la facture.",true);
  if(records.some(r=>!r.verified||!C.check(r).ok||!r.stock_quantity||C.decimal(r.stock_quantity)<=0||r.needs_review&&!r.manual_corrected))return transferStatus("Chaque produit, montant, unité et quantité de stock doit être vérifié.",true);
  const items=records.map(r=>{
   const match=C.match(r,catalog,supplier),product=(catalog.products||[]).find(x=>x.id===(r.product_id||match.product?.id));
@@ -212,8 +212,7 @@ async function finalizeInvoice(){
   }
   if(!result)throw Error("Session autorisée introuvable : reconnectez-vous au Secrétariat.");
   status("Facture validée. Commande CMD-"+String(result.order_no).padStart(6,"0")+" enregistrée, "+result.stock_products+" produits en Achats et stocks synchronisés.");
-  btn.textContent="Facture déjà transférée";btn.disabled=true;
-  $("finalizeLinks").hidden=false;
+  resetAfterSuccessfulTransfer(result);
  }catch(e){transferStatus("Facture non validée : "+(e?.message||String(e)),true);btn.disabled=false}
 }
 
