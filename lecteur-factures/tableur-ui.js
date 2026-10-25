@@ -132,9 +132,15 @@ function exportTsv(){
 }
 
 function inferStockQty(r,product){
- const a=C.decimal(r.quantity),b=C.decimal(r.delivered_quantity),unit=C.unitInfo(r.unit).canonical,del=C.unitInfo(r.delivered_unit).canonical,stock=C.unitInfo(product?.unit).canonical;
+ if(!product)return null;
+ const a=C.decimal(r.quantity),b=C.decimal(r.delivered_quantity);
+ const unit=C.unitInfo(r.unit).canonical,del=C.unitInfo(r.delivered_unit).canonical;
+ const stock=product.stock_count_mode==='litre'?'litre':C.unitInfo(product.unit).canonical;
+ const factor=C.decimal(product.purchase_to_stock_factor)||1;
  if(stock&&stock===unit&&a>0)return a;
  if(stock&&stock===del&&b>0)return b;
+ // A documented package conversion can be proposed, never silently confirmed.
+ if(factor>1&&b>0&&del&&del!==stock&&C.unitInfo(product.unit).recognized)return Math.round(b*factor*1000)/1000;
  return null;
 }
 function getInvoiceDate(){
@@ -161,7 +167,7 @@ function renderStockPreview(){
   input.title="Quantité qui sera réellement ajoutée au stock du collège";
   input.onchange=()=>{r.stock_quantity=input.value;r.stock_manual=true;r.verified=false;render()};
   td.append(input);t.append(td);
-  t.append(make("td",qty==null?"Conversion à confirmer":r.stock_manual?"Saisie manuelle : vérifier":"Unité concordante"));
+  t.append(make("td",qty==null?"Conversion à confirmer":r.stock_manual?"Saisie manuelle : vérifier":suggested!=null&&product&&C.unitInfo(r.delivered_unit).canonical!==C.unitInfo(product.stock_count_mode==="litre"?"litre":product.unit).canonical?"Conversion proposée : vérifier le conditionnement":"Unité concordante"));
   rows.append(t);
  }
 }
