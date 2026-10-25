@@ -49,7 +49,7 @@ async function api(method='GET',body){
 function disableButtons(v){busy=v;$('validateBtn').disabled=v;$('refuseBtn').disabled=v;$('qty').disabled=v;$('qtyMinus').disabled=v;$('qtyPlus').disabled=v}
 function quantityValue(){
   const raw=String($('qty').value||'').replace(',','.'),q=Number(raw),stock=Number(product?.current_stock);
-  if(!Number.isFinite(q)||q<=0||!Number.isInteger(q))throw new Error('Indique une quantité entière supérieure à 0.');
+  if(!Number.isFinite(q)||q<=0||(product?.stock_count_mode!=='litre'&&!Number.isInteger(q)))throw new Error(product?.stock_count_mode==='litre'?'Indique une quantité en litres supérieure à 0.':'Indique une quantité entière supérieure à 0.');
   if(q>1000000)throw new Error('Quantité trop élevée.');
   if(Number.isFinite(stock)&&q>stock)throw new Error('Stock insuffisant : '+stock+' '+(product?.unit||'unité')+'.');
   return q;
@@ -57,7 +57,7 @@ function quantityValue(){
 function adjustQty(delta){
   if(busy)return;
   const current=Number(String($('qty').value||'0').replace(',','.'))||0;
-  const next=Math.max(0.001,current+delta);
+  const step=product?.stock_count_mode==='litre'?0.1:1;const next=Math.max(step,current+delta*step);
   $('qty').value=String(Math.round(next*1000)/1000);
 }
 function showFatal(message){$('loading').classList.add('hide');$('product').classList.add('hide');$('result').classList.remove('hide');$('result').innerHTML='<div class="cross">×</div><div class="result-title">Sortie impossible</div><div class="small">'+esc(message)+'</div>'}
@@ -71,7 +71,7 @@ async function load(){
     $('channel').textContent=channel==='nfc'?'Sortie NFC':'Sortie QR';
     $('name').textContent=product.name||'Produit';
     $('location').textContent=product.garage_location||'';
-    $('qty').value=String(product.exit_quantity??1);
+    $('qty').min=product.stock_count_mode==='litre'?'0.001':'1';$('qty').step=product.stock_count_mode==='litre'?'0.001':'1';$('qty').inputMode=product.stock_count_mode==='litre'?'decimal':'numeric';$('qty').value=String(product.exit_quantity??1);
     $('unit').textContent=product.display_unit||'unité';
     $('stock').textContent='Stock disponible : '+Number(product.current_stock||0).toLocaleString('fr-FR')+' '+(product.display_unit||'unité');
     $('photo').innerHTML=product.image_url?'<img src="'+esc(product.image_url)+'" alt="">':'<span style="color:#74808b">Aucune photo</span>';
