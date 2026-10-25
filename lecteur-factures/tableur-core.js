@@ -352,6 +352,7 @@ function mergeRows(existing,incoming,replaceAll=false){
     delivered_unit:prev.delivered_unit,vat_code:prev.vat_code||row.vat_code}:row;
   const same=equal(prev,carry)&&Number(prev.line_number??-1)===Number(carry.line_number??-1);
   return {...prev,...carry,product_id:prev.product_id||"",verified:same?!!prev.verified:false,
+   stock_quantity:same?prev.stock_quantity:null,stock_manual:same?!!prev.stock_manual:false,
    needs_review:same?!!prev.needs_review:!!carry.needs_review,manual_corrected:!same||!!prev.manual_corrected};
  }
  for(const item of items){
