@@ -10,7 +10,7 @@ function euro(x){return Number(x).toFixed(2).replace(".",",")}
 async function loadCatalog(){
  $("catalogStatus").textContent="Lecture des profils comptables…";
  for(const token of tokens()){
-  try{const r=await fetch(URL_CATALOG,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(14000)});
+  try{const r=await fetch(URL_CATALOG,{headers:{"x-admin-session":token},cache:"no-store",signal:AbortSignal.timeout(14000)});
    if(!r.ok)continue;const data=await r.json();
    if(Array.isArray(data.accounting_layouts)){
     catalog=data;$("profileCount").textContent=data.accounting_layouts.length+" fournisseurs historiques";
