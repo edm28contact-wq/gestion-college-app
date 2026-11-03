@@ -158,7 +158,7 @@ function applyVeryfiInvoice(data){
  if(data.date)$("invoiceDate").value=data.date;
  for(const [name,id] of [["subtotal","totalHT"],["tax","totalVAT"],["total","totalTTC"]])if(data[name]!=null&&Number.isFinite(Number(data[name])))$(id).value=euro(data[name]);
  // Veryfi may return mixed tax rates: never infer one from the vendor.
- const rates=[...new Set((data.line_items||[]).map(x=>Number(x.tax_rate)).filter(x=>Number.isFinite(x)&&x>=0&&x<=25))];
+ const rates=[...new Set((data.line_items||[]).filter(x=>x.tax_rate!==null&&x.tax_rate!==undefined&&x.tax_rate!=="").map(x=>Number(x.tax_rate)).filter(x=>Number.isFinite(x)&&x>=0&&x<=25))];
  $("vatRate").value=rates.length===1?String(rates[0]):"";
  verify();
  msg("Veryfi : fournisseur, numéro, date et montants proposés. Vérifiez les comptes et chaque montant avant tout enregistrement.");
