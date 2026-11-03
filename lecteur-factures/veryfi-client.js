@@ -3,7 +3,8 @@
 const $=id=>document.getElementById(id),btn=$("veryfiRead"),label=$("veryfiStatus");
 if(!btn||!label)return;
 const endpoint="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-veryfi-reader";
-const accountPage=location.pathname.includes("/lecteur-comptabilite/");
+const productReader=location.pathname.includes("/lecteur-factures/");
+const accountPage=location.pathname.includes("/lecteur-comptabilite/")||new URLSearchParams(location.search).get("origine")==="comptabilite";
 const authKeys=accountPage?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 function tokenStillValid(token){
  try{
@@ -16,7 +17,7 @@ function tokenStillValid(token){
 const tokens=()=>[...new Set(authKeys.map(k=>localStorage.getItem(k)).filter(x=>x&&tokenStillValid(x)))];
 let busy=false,selectedFile=null,seq=0,ready=false,activeToken=null,checking=false,needsLogin=false;
 const loginLink=document.createElement("a");
-loginLink.href=accountPage?"../comptabilite/?return=veryfi&reauth=1":"../secretariat/?return=veryfi&reauth=1";
+loginLink.href=accountPage?"../comptabilite/?return=veryfi&reauth=1"+(productReader?"&reader=products":""):"../secretariat/?return=veryfi&reauth=1";
 loginLink.target="_self";
 loginLink.rel="noopener";
 loginLink.textContent=accountPage?"Se connecter à la Comptabilité":"Se connecter au Secrétariat";
@@ -24,6 +25,9 @@ loginLink.className="btn";
 loginLink.style.marginLeft="8px";
 loginLink.style.display="none";
 label.after(loginLink);
+loginLink.addEventListener("click",event=>{
+ if($("invoicePdf")?.files?.[0]&&!confirm("La reconnexion rechargera le lecteur et nécessitera de sélectionner à nouveau le PDF. Continuer ?"))event.preventDefault();
+});
 function status(message,bad=false){label.textContent=message;label.className=(bad?"err ":"")+"muted";}
 const short=val=>String(val==null?"":val).trim();
 function normalizeDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(short(v))?short(v):""}
@@ -49,7 +53,7 @@ async function configured(){
  checking=true;
  if(!tokens().length){
   activeToken=null;ready=false;needsLogin=true;btn.disabled=false;
-  btn.textContent="Se connecter pour utiliser Veryfi";
+  btn.textContent="Lire avec Veryfi";
   loginLink.style.display="inline-block";
   status("Connectez-vous avec votre compte du collège pour activer Veryfi.",true);
   checking=false;
@@ -69,15 +73,14 @@ async function configured(){
   const message=e?.message||String(e);
   needsLogin=/session|connexion au collège/i.test(message);
   loginLink.style.display=needsLogin?"inline-block":"none";
-  btn.textContent=needsLogin?"Se connecter pour utiliser Veryfi":"Lire avec Veryfi";
+  btn.textContent="Lire avec Veryfi";
   status(needsLogin?"Session collège expirée : reconnectez-vous pour utiliser Veryfi.":"Veryfi indisponible : "+message,true);
  }finally{checking=false}
 }
 btn.onclick=async()=>{
- if(needsLogin||!tokens().length||activeToken&&!tokenStillValid(activeToken)){
-  if($("invoicePdf")?.files?.[0]&&!confirm("La connexion va recharger ce lecteur. Il faudra sélectionner de nouveau le PDF. Continuer ?"))return;
-  location.assign(loginLink.href);
-  return;
+ if(!tokens().length){
+  ready=false;activeToken=null;needsLogin=true;loginLink.style.display="inline-block";
+  return status("Session collège expirée : utilisez le lien de connexion pour accéder à Veryfi.",true);
  }
  const file=$("invoicePdf")?.files?.[0];
  if(!file)return status("Importez d’abord un PDF.",true);
@@ -95,7 +98,7 @@ btn.onclick=async()=>{
   status("Lecture Veryfi terminée : "+(data.result?.item_count||0)+" ligne(s) structurée(s). Vérifiez les références, quantités et montants avant validation.");
  }catch(e){
   const message=e?.message||String(e),auth=/session|connexion au collège/i.test(message);
-  if(auth){ready=false;activeToken=null;needsLogin=true;loginLink.style.display="inline-block";btn.textContent="Se connecter pour utiliser Veryfi"}
+  if(auth){ready=false;activeToken=null;needsLogin=true;loginLink.style.display="inline-block";btn.textContent="Lire avec Veryfi"}
   status((auth?"Connexion requise : ":"Veryfi indisponible : ")+message+". L’OCR local et la saisie manuelle restent accessibles.",true)
  }
  finally{busy=false;btn.disabled=false}
