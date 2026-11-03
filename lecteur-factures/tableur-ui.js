@@ -228,38 +228,56 @@ function applyVeryfiInvoice(data){
  if(!data||!Array.isArray(data.line_items))return status("Réponse Veryfi non exploitable.",true);
  if(records.length&&!confirm("Remplacer le tableau actuel par les lignes détectées par Veryfi ? Les vérifications précédentes seront perdues."))return;
  const ocr=String(data.ocr_text||"");
- if(ocr)$("sourceText").value=ocr
+ if(ocr)$("sourceText").value=ocr;
  if(data.vendor){$("supplierMatch").value=data.vendor;$("supplierMatch").dataset.auto="false"}
  if(data.invoice_number)$("finalInvoiceNumber").value=data.invoice_number;
  if(data.date)$("finalInvoiceDate").value=data.date;
- if(data.subtotal!=null)$("finalInvoiceHT").value=Number(data.subtotal).toFixed(2);
- const normalizeNumber=x=>x==null||x===""?null:Number(x);
+ const numeric=x=>{
+  if(x===null||x===undefined||x==="")return null;
+  const n=Number(x);return Number.isFinite(n)?n:null;
+ };
+ const expected=numeric(data.subtotal);
+ if(expected!==null)$("finalInvoiceHT").value=expected.toFixed(2);
  const inferredLayout=C.supplierKey(data.vendor||$("supplierMatch").value,catalog)==="passionfroid"?"pomona":"standard";
- const rows=[];
+ const rows=[],unparsed=[];
  for(const [i,x] of data.line_items.entries()){
-  const q=normalizeNumber(x.quantity),price=normalizeNumber(x.unit_price),total=normalizeNumber(x.total);
-  const amount=Number.isFinite(total)?total:(Number.isFinite(q)&&Number.isFinite(price)?Math.round(q*price*100)/100:null);
-  const pu=Number.isFinite(price)?price:(Number.isFinite(q)&&q>0&&amount!=null?Math.round(amount/q*10000)/10000:null);
-  if(!x.description||!Number.isFinite(q)||q<=0||pu==null||amount==null)continue;
+  const desc=String(x.description||"").trim(),reference=String(x.reference||"").trim();
+  const q=numeric(x.quantity),price=numeric(x.unit_price),amountRaw=numeric(x.total);
+  const amount=amountRaw!==null?amountRaw:(q!==null&&price!==null?Math.round(q*price*100)/100:null);
+  const pu=price!==null?price:(q!==null&&q>0&&amount!==null?Math.round(amount/q*10000)/10000:null);
+  const kind=String(x.raw_type||"").toLowerCase();
+  const taxOrAdjustment=/tax|discount|rebate|shipping|delivery|service|fee|total|subtotal/.test(kind);
+  const complete=!!desc&&q!==null&&q>0&&pu!==null&&amount!==null&&amount>=0;
+  if(taxOrAdjustment||!complete){
+   const explanation=taxOrAdjustment?"Ligne de taxe, frais ou remise à classifier manuellement.":"Quantité, désignation ou prix manquant ; vérifier le PDF et corriger avant validation.";
+   unparsed.push({line:i+1,text:[reference,desc,q??"",pu??"",amount??""].join(" | "),reason:explanation});
+   continue;
+  }
+  const unit=String(x.unit||"").trim()||"unité inconnue";
+  const expectedLine=Math.round(q*pu*100)/100;
+  const mismatch=Math.abs(expectedLine-amount)>.02;
   rows.push({
-   layout:inferredLayout,line_number:i+1,reference:x.reference||"",designation:x.description,
-   delivered_quantity:q,delivered_unit:x.unit||"unité inconnue",quantity:q,unit:x.unit||"unité inconnue",
+   layout:inferredLayout,line_number:i+1,reference,designation:desc,
+   delivered_quantity:q,delivered_unit:unit,quantity:q,unit,
    vat_code:"",vat:x.tax_rate??"",unit_price_ht:pu,total_ht:amount,
-   sourceLine:x.description,sourceLineNumber:i+1,product_id:"",verified:false,
-   needs_review:true,review_reason:"Veryfi : confirmer l’unité, la quantité livrée et le prix HT sur le PDF.",
+   sourceLine:desc,sourceLineNumber:i+1,product_id:"",verified:false,
+   needs_review:true,review_reason:mismatch?"Écart prix × quantité : "+expectedLine.toFixed(2)+" € attendu ; "+amount.toFixed(2)+" € reconnu.":"Veryfi : confirmer la référence, l’unité, la quantité et le prix HT sur le PDF.",
    manual_corrected:false,stock_quantity:null,stock_manual:false
   });
  }
- records=rows;
- ignored=[];unresolved=[];
- const expected=data.subtotal==null?null:Number(data.subtotal);
- summary={expected_ht:Number.isFinite(expected)?expected:null,expected_vat:data.tax??null,expected_ttc:data.total??null,reconciled:false};
- if(!rows.length){
-  if(ocr){const result=C.parse(ocr);records=result.rows.map(r=>({...r,verified:false,product_id:""}));ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||summary}
-  else return status("Veryfi n’a retourné aucune ligne exploitable. Utilisez la transcription locale.",true);
+ records=rows;ignored=[];unresolved=unparsed;
+ summary={expected_ht:expected,expected_vat:numeric(data.tax),expected_ttc:numeric(data.total),reconciled:false};
+ if(!rows.length&&!unparsed.length&&ocr){
+  const result=C.parse(ocr);records=result.rows.map(r=>({...r,verified:false,product_id:""}));
+  ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||summary;
  }
+ if(!records.length&&!unresolved.length)return status("Veryfi n’a retourné aucune ligne exploitable. Utilisez la transcription locale.",true);
+ const sum=records.reduce((n,r)=>n+(numeric(r.total_ht)||0),0),delta=expected===null?null:Math.round((sum-expected)*100)/100;
  render();
- status("Veryfi : "+records.length+" ligne(s) proposées. Les unités et quantités livrées doivent être confirmées. Aucune écriture ni aucun stock enregistré.");
+ const problem=unresolved.length||delta!==null&&Math.abs(delta)>.02;
+ status("Veryfi : "+records.length+" ligne(s) structurée(s) · "+unresolved.length+" ligne(s) à réparer"+
+  (delta===null?" · Total HT à comparer manuellement.":" · Écart HT : "+delta.toFixed(2)+" €.")+
+  " Vérifiez toutes les lignes avant enregistrement ; aucun stock modifié.",!!problem);
 }
 
 function boot(){
