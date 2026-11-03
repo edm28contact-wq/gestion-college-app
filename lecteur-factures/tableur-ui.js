@@ -29,6 +29,8 @@ function render(){
  for(const [index,r] of records.entries()){
   const tr=make("tr"),match=C.match(r,catalog,$("supplierMatch").value),test=C.check(r);
   const productId=r.product_id||match.product?.id||"";
+  const missing=catalog&&!productId;
+  if(missing){tr.style.background="#fff0f0";tr.style.borderLeft="4px solid #c92d2d";tr.title="Produit non retrouvé dans le catalogue actif : contrôle nécessaire."}
   const products=(catalog?.products||[]).filter(p=>p.active!==false);
   if(r.layout==="pomona"){const n=make("td",r.line_number??"");tr.append(n)}else{tr.append(make("td",r.line_number??""))}
   for(const [field,width] of [["reference",100],["designation",270],["delivered_quantity",75],["delivered_unit",70],["quantity",75],["unit",70],["vat_code",55],["vat",60],["unit_price_ht",85],["total_ht",95]]){
@@ -41,21 +43,29 @@ function render(){
   selector.value=productId;
   if(productId&&!selector.value){r.product_id="";r.verified=false;selector.value="";}
   selector.onchange=()=>{r.product_id=selector.value;r.verified=false;r.stock_quantity=null;r.stock_manual=false;render()};
-  td.append(selector,make("small",r.product_id?"Sélection manuelle":match.source));tr.append(td);
+  const badge=make("small",missing?"NON PRÉSENT DANS LE CATALOGUE ACTIF — à vérifier":r.product_id?"Sélection manuelle":match.source);
+  if(missing){badge.style.color="#a41919";badge.style.fontWeight="800"}
+  td.append(selector,badge);tr.append(td);
   const valid=make("td",(test.ok?"HT cohérent":"À vérifier : "+test.text)+(r.needs_review?" · "+(r.review_reason||"Unité ou ligne à vérifier"):""));valid.className=test.ok&&!r.needs_review?"ok":"err";tr.append(valid);
   const checkTd=make("td"),check=make("input");check.type="checkbox";check.checked=!!r.verified;check.disabled=!test.ok||!productId;
   check.title=r.needs_review?(r.review_reason||"Vérifier la ligne sur le PDF"):"Confirmer la ligne";check.onchange=()=>{r.verified=check.checked;if(check.checked&&r.needs_review)r.manual_corrected=true;render()};checkTd.append(check);tr.append(checkTd);
-  const action=make("td"),remove=make("button","Retirer");remove.className="btn";remove.onclick=()=>{records.splice(index,1);render()};action.append(remove);tr.append(action);body.append(tr);
+  const action=make("td"),remove=make("button",missing?"Écarter — pas en stock":"Retirer");remove.className="btn";
+  if(missing){remove.style.background="#fbdada";remove.style.color="#9d1616"}
+  remove.onclick=()=>{
+   if(!confirm("Écarter « "+(r.designation||r.reference)+" » du tableau de réception ? La ligne originale restera dans les éléments écartés. Son montant sera toujours inclus dans le total de la facture et la validation sera bloquée si les montants ne concordent plus."))return;
+   ignored.push({line:r.sourceLineNumber||r.line_number||index+1,text:r.sourceLine||r.designation||r.reference,reason:"Écarté manuellement du tableau de réception — ne pas ajouter en stock",amount:C.decimal(r.total_ht)});
+   records.splice(index,1);render();
+  };action.append(remove);tr.append(action);body.append(tr);
   if(productId)associated++;if(r.verified&&test.ok&&productId)verified++;
  }
- $("metrics").textContent=records.length+" lignes produits · "+associated+" associées · "+verified+" vérifiées · "+ignored.length+" lignes inutiles écartées";
+ $("metrics").textContent=records.length+" lignes produits · "+associated+" associées · "+verified+" vérifiées · "+records.filter(r=>catalog&&!(r.product_id||C.match(r,catalog,$("supplierMatch").value).product?.id)).length+" hors catalogue · "+ignored.length+" lignes écartées";
  const total=records.reduce((sum,r)=>sum+(C.decimal(r.total_ht)||0),0);
  const target=summary?.expected_ht;
  $("invoiceTotals").textContent="Total HT des lignes : "+total.toFixed(2)+" €"+(target!==null&&target!==undefined?" · Total facture : "+Number(target).toFixed(2)+" € · Écart : "+(Math.round((total-target)*100)/100).toFixed(2)+" €":" · Total HT facture non détecté")+(summary?.expected_vat!=null?" · TVA : "+Number(summary.expected_vat).toFixed(2)+" €":"")+(summary?.expected_ttc!=null?" · TTC : "+Number(summary.expected_ttc).toFixed(2)+" €":"");
  $("invoiceTotals").className=target!=null&&Math.abs(total-target)>.02?"err":"ok";
  $("cleanText").value=records.length?C.format(records):($("sourceText").value.trim()?"Aucun produit reconnu dans le texte brut. La transcription complète reste visible en haut. Consultez les lignes ignorées pour corriger leur structure.":"");
  $("ignoredCount").textContent=ignored.length+" lignes écartées · "+unresolved.length+" fragments non résolus";
- $("ignoredList").value=[...unresolved.map(x=>"À RÉPARER — ligne "+x.line+" : "+x.text+" ("+x.reason+")"),...ignored.map(x=>"Ligne "+x.line+" : "+x.text)].join("\n");
+ $("ignoredList").value=[...unresolved.map(x=>"À RÉPARER — ligne "+x.line+" : "+x.text+" ("+x.reason+")"),...ignored.map(x=>"Ligne "+x.line+" : "+x.text+(x.reason?" — "+x.reason:"")+(x.amount!=null?" ("+Number(x.amount).toFixed(2)+" € HT)":""))].join("\n");
  $("exportRows").disabled=!records.length;
  renderStockPreview();
 }
