@@ -38,7 +38,7 @@ function chooseSupplier(key){
   return '<div class="line '+(low(p)?'reorder':'')+'"><div><b>'+esc(p.name)+'</b>'+
    '<div class="muted">'+esc(p.code)+' · stock '+bal(p.id)+' '+esc(p.unit||'')+' · conseillé '+need(p)+'</div>'+
    '<div class="muted">'+(unverified?'Association historique : à vérifier':link.source==="verifie"?'Fournisseur et produit vérifiés':'Lien confirmé par facture, achat ou commande')+'</div></div>'+
-   '<input class="oq" data-id="'+esc(p.id)+'" type="number" min="0" step="'+(fractional?'0.001':'1')+'" value="'+(low(p)?need(p):'')+'" aria-label="Quantité à commander : '+esc(p.name)+'"></div>';
+   '<input class="oq" data-id="'+esc(p.id)+'" type="number" min="0" step="'+(fractional?'0.001':'1')+'" value="" placeholder="0" aria-label="Quantité à commander : '+esc(p.name)+'"></div>';
  }).join(''):
  '<p class="muted">Aucun produit actif lié à ce fournisseur. Vérifiez d’abord le catalogue et les associations de ses factures.</p>';
 }
