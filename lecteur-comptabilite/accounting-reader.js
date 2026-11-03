@@ -148,11 +148,28 @@ function verify(){
  return !errors.length;
 }
 function copy(){verify();const fields=[["Fournisseur","supplierMatch"],["Document","docType"],["Numéro","invoiceNumber"],["Date","invoiceDate"],["Début période","periodStart"],["Fin période","periodEnd"],["HT","totalHT"],["TVA","totalVAT"],["TTC","totalTTC"],["Compte fournisseur","supplierAccount"],["Charge","chargeAccount"],["Journal","journal"]];const value=fields.map(([l,k])=>l+" : "+$(k).value).join("\n")+"\nContrôle : "+$("summary").textContent;navigator.clipboard.writeText(value).then(()=>msg("Fiche copiée. Aucun enregistrement comptable effectué.")).catch(()=>msg("Copie refusée par le navigateur.",true))}
+function applyVeryfiInvoice(data){
+ if(!data)return msg("Réponse Veryfi vide.",true);
+ if($("sourceText").value.trim()&&!confirm("Appliquer les informations Veryfi à la facture actuelle ? Les champs détectés seront remplacés."))return;
+ const text=String(data.ocr_text||"");
+ if(text){$("sourceText").value=text;lastText=text;analyze()}
+ if(data.vendor){$("supplierMatch").value=data.vendor;const identified=identify(data.vendor);if(identified){$("supplierSelect").value=identified.supplier_key;chosenSupplierKey=identified.supplier_key;suggestAccount(identified)}}
+ if(data.invoice_number)$("invoiceNumber").value=data.invoice_number;
+ if(data.date)$("invoiceDate").value=data.date;
+ for(const [name,id] of [["subtotal","totalHT"],["tax","totalVAT"],["total","totalTTC"]])if(data[name]!=null&&Number.isFinite(Number(data[name])))$(id).value=euro(data[name]);
+ // Veryfi may return mixed tax rates: never infer one from the vendor.
+ const rates=[...new Set((data.line_items||[]).map(x=>Number(x.tax_rate)).filter(x=>Number.isFinite(x)&&x>=0&&x<=25))];
+ $("vatRate").value=rates.length===1?String(rates[0]):"";
+ verify();
+ msg("Veryfi : fournisseur, numéro, date et montants proposés. Vérifiez les comptes et chaque montant avant tout enregistrement.");
+}
+
 function boot(){
  $("supplierSelect").onchange=chooseSupplier;
  $("calculateFromTTC").onclick=calculateFromTTC;
  $("analyze").onclick=analyze;$("check").onclick=verify;$("copy").onclick=copy;$("refreshCatalog").onclick=loadCatalog;
  $("clear").onclick=()=>{$("sourceText").value="";lastText="";msg("Transcription effacée.")};
+ document.addEventListener("invoice-veryfi:result",e=>applyVeryfiInvoice(e.detail));
  document.addEventListener("invoice-pdf:replace",()=>{lastText="";chosenSupplierKey="";$("supplierSelect").value="";$("supplierMatch").value="";$("invoiceNumber").value="";$("invoiceDate").value="";["totalHT","totalVAT","totalTTC","supplierAccount","vatRate"].forEach(id=>$(id).value="");$("chargeAccount").value="";$("sourceText").value="";msg("Extraction PDF en cours…")});
  document.addEventListener("invoice-pdf:partial",e=>{if(e.detail?.text)$("sourceText").value=e.detail.text});
  document.addEventListener("invoice-pdf:transcribed",e=>{const t=String(e.detail?.text||"");$("sourceText").value=t;lastText=t;if(t.trim())analyze();else msg("PDF sans texte : utilisez Forcer OCR.",true)});
