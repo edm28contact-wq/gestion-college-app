@@ -11,7 +11,7 @@ function catalogStatus(message,error=false){const el=$("catalogStatus")||$("stat
 function extractionStatus(message,error=false){const el=$("extractionStatus");if(!el)return;el.textContent=message;el.className="muted"+(error?" err":"")}
 async function loadCatalog(){
  for(const token of tokens()){
-  try{const res=await fetch(API,{headers:{authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;detectSupplier($("sourceText").value);catalogStatus("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
+  try{const res=await fetch(API,{headers:{"x-admin-session":token},cache:"no-store",signal:AbortSignal.timeout(12000)});if(!res.ok)continue;const data=await res.json();if(data.read_only===true&&Array.isArray(data.products)){catalog=data;detectSupplier($("sourceText").value);catalogStatus("Catalogue synchronisé : "+data.products.length+" produits. Aucun stock n'est modifié.");render();return;}}catch{}
  }
  catalogStatus("Catalogue non connecté. La transcription PDF fonctionne néanmoins. Connectez-vous à la comptabilité pour associer les produits.",true);
 }
