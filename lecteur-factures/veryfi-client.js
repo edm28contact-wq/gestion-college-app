@@ -3,12 +3,21 @@
 const $=id=>document.getElementById(id),btn=$("veryfiRead"),label=$("veryfiStatus");
 if(!btn||!label)return;
 const endpoint="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-veryfi-reader";
-const tokens=()=>[...new Set(["college_secretariat_token","college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"].map(k=>localStorage.getItem(k)).filter(Boolean))];
-let busy=false,selectedFile=null,seq=0,ready=false,activeToken=null,checking=false;
 const accountPage=location.pathname.includes("/lecteur-comptabilite/");
+const authKeys=accountPage?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
+function tokenStillValid(token){
+ try{
+  const part=token.split(".")[0],normalized=part.replace(/-/g,"+").replace(/_/g,"/");
+  const body=atob(normalized+"=".repeat((4-normalized.length%4)%4));
+  const claims=JSON.parse(new TextDecoder().decode(Uint8Array.from(body,c=>c.charCodeAt(0))));
+  return !!claims.u&&Number.isFinite(Number(claims.exp))&&Date.now()+30000<Number(claims.exp);
+ }catch{return false}
+}
+const tokens=()=>[...new Set(authKeys.map(k=>localStorage.getItem(k)).filter(x=>x&&tokenStillValid(x)))];
+let busy=false,selectedFile=null,seq=0,ready=false,activeToken=null,checking=false,needsLogin=false;
 const loginLink=document.createElement("a");
-loginLink.href=accountPage?"../comptabilite/?return=veryfi":"../secretariat/?return=veryfi";
-loginLink.target="_blank";
+loginLink.href=accountPage?"../comptabilite/?return=veryfi&reauth=1":"../secretariat/?return=veryfi&reauth=1";
+loginLink.target="_self";
 loginLink.rel="noopener";
 loginLink.textContent=accountPage?"Se connecter à la Comptabilité":"Se connecter au Secrétariat";
 loginLink.className="btn";
@@ -42,16 +51,26 @@ async function configured(){
   if(!tokens().length)throw Error("Connectez-vous au collège pour utiliser Veryfi.");
   const v=await request("GET");
   ready=!!v.configured;
+  needsLogin=false;
   btn.disabled=false;
+  btn.textContent="Lire avec Veryfi";
   loginLink.style.display="none";
   status(ready?"Veryfi prêt. Cliquez pour lire le PDF après contrôle.":"Identifiants API Veryfi manquants dans les secrets Supabase.",!ready);
  }catch(e){
   ready=false;activeToken=null;btn.disabled=false;
-  loginLink.style.display="inline-block";
-  status("Connexion collège requise : "+(e?.message||String(e)),true);
+  const message=e?.message||String(e);
+  needsLogin=/session|connexion au collège/i.test(message);
+  loginLink.style.display=needsLogin?"inline-block":"none";
+  btn.textContent=needsLogin?"Se connecter pour utiliser Veryfi":"Lire avec Veryfi";
+  status(needsLogin?"Session collège expirée : reconnectez-vous pour utiliser Veryfi.":"Veryfi indisponible : "+message,true);
  }finally{checking=false}
 }
 btn.onclick=async()=>{
+ if(needsLogin){
+  if($("invoicePdf")?.files?.[0]&&!confirm("La connexion va recharger ce lecteur. Il faudra sélectionner de nouveau le PDF. Continuer ?"))return;
+  location.assign(loginLink.href);
+  return;
+ }
  const file=$("invoicePdf")?.files?.[0];
  if(!file)return status("Importez d’abord un PDF.",true);
  if(file.size>6*1024*1024)return status("Veryfi accepte ici les PDF de 6 Mo maximum. L’OCR local reste disponible.",true);
@@ -68,7 +87,7 @@ btn.onclick=async()=>{
   status("Lecture Veryfi terminée : "+(data.result?.item_count||0)+" ligne(s) structurée(s). Vérifiez les références, quantités et montants avant validation.");
  }catch(e){
   const message=e?.message||String(e),auth=/session|connexion au collège/i.test(message);
-  if(auth){ready=false;activeToken=null;loginLink.style.display="inline-block"}
+  if(auth){ready=false;activeToken=null;needsLogin=true;loginLink.style.display="inline-block";btn.textContent="Se connecter pour utiliser Veryfi"}
   status((auth?"Connexion requise : ":"Veryfi indisponible : ")+message+". L’OCR local et la saisie manuelle restent accessibles.",true)
  }
  finally{busy=false;btn.disabled=false}
