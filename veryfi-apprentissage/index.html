@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store"><title>Dépôt de factures Veryfi — Collège</title>
+<style>
+:root{font-family:system-ui,Arial,sans-serif;color:#172d40;background:#f4f6f9}*{box-sizing:border-box}
+body{margin:0}.shell{max-width:1320px;margin:auto;padding:24px}.head,.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}
+h1{margin:0;font-size:26px}h2{margin:0 0 10px;font-size:19px}p{line-height:1.5}
+.panel{background:white;border:1px solid #dce3eb;border-radius:12px;padding:20px;margin:15px 0}
+.muted{font-size:13px;color:#597082}.btn{border:0;border-radius:8px;padding:10px 13px;background:#e8eff6;color:#14334b;cursor:pointer;text-decoration:none;font-weight:650}
+.btn.primary{background:#203e58;color:#fff}.btn.danger{background:#fdecec;color:#912727}.btn:disabled{opacity:.5;cursor:not-allowed}
+input{font:inherit;border:1px solid #b4c4d3;border-radius:7px;padding:9px;max-width:100%}
+input[type=file]{width:100%}.drop{padding:34px;text-align:center;border:2px dashed #94a9bd;border-radius:12px;background:#f8fbfe;cursor:pointer}
+.drop.drag{background:#e5f2fc;border-color:#256595}.status{font-size:14px;white-space:pre-wrap}.err{color:#a12a2a}.ok{color:#176b41}
+.table{overflow:auto}table{border-collapse:collapse;width:100%}th,td{padding:9px;text-align:left;border-bottom:1px solid #e5eaf0;vertical-align:middle}th{background:#f4f7fa}tbody tr:hover{background:#f8fafc}
+.line-table{min-width:1000px}.line-table input{width:100%;min-width:70px}.line-table input[data-k=description]{min-width:220px}
+.rowbuttons{display:flex;gap:6px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.grid label{display:block;font-size:13px}
+.grid input{width:100%;margin-top:5px}.details{display:none}.details.active{display:block}
+@media(max-width:800px){.shell{padding:12px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}h1{font-size:22px}}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}
+</style></head>
+<body><main class="shell">
+<header class="head"><div><h1>Factures d'exemple — Veryfi</h1><p class="muted">Administration Collège · Dépôt privé, analyse et corrections vérifiées</p></div><a class="btn" href="../college/admin/">Retour Administration</a></header>
+<section class="panel"><h2>1. Déposer des factures</h2><p class="muted">Ajoutez plusieurs PDF (6 Mo maximum chacun). Les documents sont conservés dans un stockage privé Supabase. Les dépôts n'activent aucun traitement externe ni modification de stock.</p>
+<div id="drop" class="drop" role="button" tabindex="0">Déposer les fichiers PDF ici ou cliquer pour les sélectionner
+<input id="files" type="file" accept=".pdf,application/pdf" multiple style="display:none"></div>
+<div class="actions" style="margin-top:12px;justify-content:flex-start"><label>Fournisseur (facultatif) <input id="supplier" placeholder="Nom du fournisseur" style="width:270px"></label><button class="btn primary" id="upload">Déposer les PDF</button><button class="btn" id="refresh">Actualiser</button></div>
+<p id="queue" class="muted">Aucun fichier sélectionné.</p><div id="status" class="status" role="status" aria-live="polite">Vérification de la session...</div>
+</section>
+<section class="panel"><h2>2. Documents déposés</h2><p class="muted">Cliquez sur « Analyser avec Veryfi » pour envoyer explicitement un PDF au service externe. Cela peut générer des frais de lecture suivant votre abonnement. Un document déjà analysé peut être relu uniquement sur demande.</p>
+<div class="table"><table><thead><tr><th>Facture</th><th>Fournisseur</th><th>Date de dépôt</th><th>Statut</th><th>Actions</th></tr></thead><tbody id="docs"><tr><td colspan="5">Chargement...</td></tr></tbody></table></div></section>
+<section id="review" class="panel details"><div class="actions"><h2>3. Contrôle et correction</h2><button class="btn" id="close">Fermer</button></div>
+<p id="reviewName" class="muted"></p><p class="muted">Les champs corrigés sont enregistrés comme jeu d'exemples interne au collège. Cela ne réentraîne pas automatiquement les modèles Veryfi. Tous les calculs HT sont vérifiés avant validation.</p>
+<div class="grid"><label>Fournisseur<input data-field="vendor"></label><label>N° de facture<input data-field="invoice_number"></label><label>Date<input data-field="date" placeholder="AAAA-MM-JJ"></label><label>Total HT<input data-field="subtotal" inputmode="decimal"></label><label>TVA<input data-field="tax" inputmode="decimal"></label><label>Total TTC<input data-field="total" inputmode="decimal"></label></div>
+<div class="table" style="margin-top:18px"><table class="line-table"><thead><tr><th>Référence</th><th>Désignation</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>Total HT</th><th>TVA %</th><th></th></tr></thead><tbody id="lines"></tbody></table></div>
+<div class="actions" style="margin-top:12px;justify-content:flex-start"><button class="btn" id="addRow">Ajouter une ligne</button><button class="btn primary" id="save">Valider les corrections</button></div><p id="reviewStatus" class="status" role="status"></p></section>
+<section class="panel"><h2>Principe de fonctionnement</h2><p class="muted">Le dépôt et les corrections sont privés et réservés aux comptes d'administration autorisés. Une facture validée alimente un référentiel de corrections interne. Elle n'est ni validée en comptabilité, ni intégrée aux achats, ni ajoutée au stock. L'entraînement à distance de Veryfi nécessiterait une intégration distincte à son flux de feedback et les autorisations appropriées.</p></section>
+</main>
+<script src="./veryfi-deposit.js?v=1"></script></body></html>
