@@ -42,11 +42,11 @@ async function configured(){
   if(!tokens().length)throw Error("Connectez-vous au collège pour utiliser Veryfi.");
   const v=await request("GET");
   ready=!!v.configured;
-  btn.disabled=!ready;
+  btn.disabled=false;
   loginLink.style.display="none";
   status(ready?"Veryfi prêt. Cliquez pour lire le PDF après contrôle.":"Identifiants API Veryfi manquants dans les secrets Supabase.",!ready);
  }catch(e){
-  ready=false;activeToken=null;btn.disabled=true;
+  ready=false;activeToken=null;btn.disabled=false;
   loginLink.style.display="inline-block";
   status("Connexion collège requise : "+(e?.message||String(e)),true);
  }finally{checking=false}
@@ -71,7 +71,7 @@ btn.onclick=async()=>{
   if(auth){ready=false;activeToken=null;loginLink.style.display="inline-block"}
   status((auth?"Connexion requise : ":"Veryfi indisponible : ")+message+". L’OCR local et la saisie manuelle restent accessibles.",true)
  }
- finally{busy=false;btn.disabled=!ready}
+ finally{busy=false;btn.disabled=false}
 };
 document.addEventListener("invoice-pdf:replace",()=>{seq++;selectedFile=null;status("PDF chargé. Vous pouvez lancer Veryfi ou conserver l’OCR local.")});
 document.addEventListener("invoice-pdf:reset-after-success",()=>{seq++;status("Facture suivante : importez le nouveau PDF.")});
