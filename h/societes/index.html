@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,follow">
+<meta http-equiv="refresh" content="0;url=../../admin/holding/societes/">
+<title>Gestion des sociétés — EDM28</title>
+</head>
+<body>
+<script>
+(() => {
+  const target = new URL("../../admin/holding/societes/", location.href);
+  const params = new URLSearchParams(location.search);
+  
+  target.search = params.toString();
+  target.hash = location.hash;
+  location.replace(target.href);
+})();
+</script>
+<noscript><a href="../../admin/holding/societes/">Ouvrir Gestion des sociétés</a></noscript>
+</body>
+</html>
