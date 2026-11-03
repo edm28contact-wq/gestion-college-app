@@ -7,7 +7,7 @@ const tokens=()=>[...new Set(["college_secretariat_token","college_accounting_to
 let busy=false,selectedFile=null,seq=0,ready=false,activeToken=null,checking=false;
 const accountPage=location.pathname.includes("/lecteur-comptabilite/");
 const loginLink=document.createElement("a");
-loginLink.href=accountPage?"../comptabilite/":"../secretariat/";
+loginLink.href=accountPage?"../comptabilite/?return=veryfi":"../secretariat/?return=veryfi";
 loginLink.target="_blank";
 loginLink.rel="noopener";
 loginLink.textContent=accountPage?"Se connecter à la Comptabilité":"Se connecter au Secrétariat";
