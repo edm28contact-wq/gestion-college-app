@@ -234,6 +234,7 @@ function applyVeryfiInvoice(data){
  if(data.date)$("finalInvoiceDate").value=data.date;
  if(data.subtotal!=null)$("finalInvoiceHT").value=Number(data.subtotal).toFixed(2);
  const normalizeNumber=x=>x==null||x===""?null:Number(x);
+ const inferredLayout=C.supplierKey(data.vendor||$("supplierMatch").value,catalog)==="passionfroid"?"pomona":"standard";
  const rows=[];
  for(const [i,x] of data.line_items.entries()){
   const q=normalizeNumber(x.quantity),price=normalizeNumber(x.unit_price),total=normalizeNumber(x.total);
@@ -241,7 +242,7 @@ function applyVeryfiInvoice(data){
   const pu=Number.isFinite(price)?price:(Number.isFinite(q)&&q>0&&amount!=null?Math.round(amount/q*10000)/10000:null);
   if(!x.description||!Number.isFinite(q)||q<=0||pu==null||amount==null)continue;
   rows.push({
-   layout:"veryfi",line_number:i+1,reference:x.reference||"",designation:x.description,
+   layout:inferredLayout,line_number:i+1,reference:x.reference||"",designation:x.description,
    delivered_quantity:q,delivered_unit:x.unit||"unité inconnue",quantity:q,unit:x.unit||"unité inconnue",
    vat_code:"",vat:x.tax_rate??"",unit_price_ht:pu,total_ht:amount,
    sourceLine:x.description,sourceLineNumber:i+1,product_id:"",verified:false,
