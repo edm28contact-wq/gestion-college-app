@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,follow">
+<meta http-equiv="refresh" content="0;url=../../admin/marne-invest/?page=properties">
+<title>Studios Marne Invest — EDM28</title>
+</head>
+<body>
+<script>
+(() => {
+  const target = new URL("../../admin/marne-invest/", location.href);
+  const params = new URLSearchParams(location.search);
+  params.set("page", "properties");
+  target.search = params.toString();
+  target.hash = location.hash;
+  location.replace(target.href);
+})();
+</script>
+<noscript><a href="../../admin/marne-invest/?page=properties">Ouvrir Studios Marne Invest</a></noscript>
+</body>
+</html>
