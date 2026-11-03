@@ -11,7 +11,7 @@ function normalizeDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(short(v))?short(v):"
 async function request(method,payload){
  let forbidden=false;
  for(const token of tokens()){
-  const res=await fetch(endpoint,{method,headers:{authorization:"Bearer "+token,...(method==="POST"?{"content-type":"application/json"}:{})},body:method==="POST"?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(70000),cache:"no-store"});
+  const res=await fetch(endpoint,{method,headers:{"x-admin-session":token,...(method==="POST"?{"content-type":"application/json"}:{})},body:method==="POST"?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(70000),cache:"no-store"});
   const data=await res.json().catch(()=>({error:"Réponse serveur invalide"}));
   if(res.status===401||res.status===403){forbidden=true;continue}
   if(!res.ok||data.ok!==true)throw Error(data.error||"Échec de Veryfi");
