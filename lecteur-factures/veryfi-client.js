@@ -47,6 +47,14 @@ function b64(bytes){
 async function configured(){
  if(checking||busy)return;
  checking=true;
+ if(!tokens().length){
+  activeToken=null;ready=false;needsLogin=true;btn.disabled=false;
+  btn.textContent="Se connecter pour utiliser Veryfi";
+  loginLink.style.display="inline-block";
+  status("Connectez-vous avec votre compte du collège pour activer Veryfi.",true);
+  checking=false;
+  return;
+ }
  try{
   if(!tokens().length)throw Error("Connectez-vous au collège pour utiliser Veryfi.");
   const v=await request("GET");
@@ -66,7 +74,7 @@ async function configured(){
  }finally{checking=false}
 }
 btn.onclick=async()=>{
- if(needsLogin){
+ if(needsLogin||!tokens().length||activeToken&&!tokenStillValid(activeToken)){
   if($("invoicePdf")?.files?.[0]&&!confirm("La connexion va recharger ce lecteur. Il faudra sélectionner de nouveau le PDF. Continuer ?"))return;
   location.assign(loginLink.href);
   return;
