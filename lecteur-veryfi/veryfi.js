@@ -13,6 +13,43 @@ const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x)
 const fmt=x=>x==null?"—":Number(x).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const round=x=>Math.round((x+Number.EPSILON)*100)/100;
 const timestamp=()=>new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+function supplierRule(){
+ const value=norm($("vendor").value);
+ const matches=(catalog?.supplier_rules||[]).filter(r=>{const k=norm(r.supplier_name||r.supplier_key);return k&&(value===k||value===k+k)});
+ return matches.length===1?matches[0]:null;
+}
+function supplierNorm(){const r=supplierRule();return norm(r?.supplier_name||r?.supplier_key||$("vendor").value)}
+function canonicalSupplier(raw){
+ const value=String(raw||"").trim().replace(/\s+/g," "),key=norm(value);
+ const matches=(catalog?.supplier_rules||[]).filter(r=>{const k=norm(r.supplier_name||r.supplier_key);return k&&key===k+k});
+ return matches.length===1?String(matches[0].supplier_name||matches[0].supplier_key):value;
+}
+function accountFor(row){
+ const supplier=supplierNorm(),ref=norm(row.reference),name=norm(row.description);
+ const valid=new Set((catalog?.accounts||[]).map(a=>String(a.account||"")));
+ const hits=(catalog?.keywords||[]).filter(k=>{
+  const word=norm(k.keyword),key=norm(k.supplier_key);
+  return valid.has(String(k.expense_account))&&(!key||key===supplier)&&word&&(word===ref||(word.length>=7&&name.includes(word)));
+ }).sort((a,b)=>Number(b.weight||0)-Number(a.weight||0));
+ if(hits.length){
+  const top=hits.filter(h=>Number(h.weight||0)===Number(hits[0].weight||0));
+  if(new Set(top.map(h=>h.expense_account)).size===1)return {account:String(top[0].expense_account),source:"Règle de charge par référence : à confirmer"};
+ }
+ const r=supplierRule();
+ return r&&valid.has(String(r.expense_account||""))?{account:String(r.expense_account),source:"Compte fournisseur par défaut : à confirmer"}:{account:"",source:"Compte à identifier"};
+}
+function stockSuggestion(row,product){
+ const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor)||1;
+ if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler"};
+ const unit=norm(row.unit),stockUnit=norm(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ if(unit===stockUnit||(factor===1&&["piece","unite"].includes(unit)&&["piece","unite"].includes(stockUnit)))
+  return {quantity,note:"Quantité proposée : vérifier"};
+ if(["piece","unite"].includes(unit)&&factor>1){
+  const result=Math.round(quantity*factor*1000)/1000;
+  return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
+ }
+ return {quantity:"",note:"Conversion inconnue : renseigner manuellement"};
+}
 function notice(message,type=""){const e=$("notice");e.textContent=message;e.className="notice"+(type?" "+type:"")}
 function setScope(){
  $("scope").textContent=accounting?"Comptabilité":"Secrétariat";
@@ -68,8 +105,8 @@ async function loadCatalog(){
  try{
   const v=await request(API.catalog,{token:authToken,timeout:20000});
   if(!Array.isArray(v.products))throw new Error("Réponse catalogue incompatible");
-  catalog=v;$("catalogState").textContent=v.products.length+" produits référencés";
-  populateDatalists();if(rows.length)refreshMatches();
+  catalog=v;$("catalogState").textContent=v.products.length+" produits actifs · "+(v.inactive_products||[]).length+" inactifs";
+  populateDatalists();if(rows.length){refreshMatches();renderRows()}
  }catch(e){
   catalog=null;$("catalogState").textContent="Catalogue indisponible";
   notice("Veryfi est accessible, mais le catalogue collège est indisponible : "+e.message,"error");
@@ -131,10 +168,11 @@ function makeRow(x,index){
   quantity:x.quantity??"",unit:String(x.unit||""),unit_price:x.unit_price??"",total:x.total??"",
   tax_rate:x.tax_rate??"",score:typeof x.boxes?.description?.score==="number"?x.boxes.description.score:typeof x.boxes?.total?.score==="number"?x.boxes.total.score:null,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
-  matched:false,verified:false,excluded:false,changed:false,reason:""};
+  matched:false,verified:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
 function bindDocument(){
  const d=documentData;
+ d.vendor=canonicalSupplier(d.vendor);
  for(const [id,k] of [["vendor","vendor"],["invoiceNumber","invoice_number"],["invoiceDate","date"],["subtotal","subtotal"],["tax","tax"],["total","total"]]){
   $(id).value=d[k]??"";
  }
