@@ -299,7 +299,7 @@ function applyMatch(row,match,keepManual=false){
  if(!keepManual||!row.stock_manual)row.stock_quantity=stock.quantity;
  row.stock_note=stock.note;
  row.stock_needs_review=stock.needsReview===true;
- if(stock.needsReview)row.stock_confirmed=false;
+ if(stock.needsReview&&!row.stock_manual)row.stock_confirmed=false;
  const specific=match?.record?.account&&(catalog.accounts||[]).some(a=>String(a.account)===String(match.record.account))?
   {account:String(match.record.account),source:"Compte du lien fournisseur à vérifier"}:null;
  const charge=specific||accountFor(row);
@@ -344,30 +344,40 @@ function reviewReason(row){
 }
 function stockProposal(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
- const q=amount(row.quantity);
- if(!product||!Number.isInteger(q)||q<=0||q>1000000)return null;
- const invoiceUnit=canonicalUnit(row.unit),unit=canonicalUnit(product.unit),factor=amount(product.purchase_to_stock_factor);
- const countable=["pot","barquette","piece","unite","sachet","bouteille","boite","flacon","rouleau"];
- if(invoiceUnit!=="piece"||!countable.includes(unit)||factor!==1||product.stock_count_mode!=="unit"||unit==="piece")return null;
- return {quantity:q,unit:product.unit};
+ const q=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor);
+ if(!product||!(q>0)||q>1000000||!(factor>0))return null;
+ const invoiceUnit=canonicalUnit(row.unit),saleUnit=canonicalUnit(product.unit);
+ const stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ if(!invoiceUnit)return null;
+ const label=product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||"unités";
+ if(invoiceUnit===stockUnit&&invoiceUnit!==saleUnit)
+  return {quantity:q,unit:label,note:"Facture déjà exprimée en unités de stock",fromCatalog:true};
+ if(invoiceUnit!==saleUnit)return null;
+ const inferred=/à confirmer/i.test(String(product.conditionnement||""))||/à confirmer/i.test(String(product.inventory_unit_label||""));
+ if(factor!==1&&inferred)return null;
+ const suggested=stockSuggestion(row,product);
+ if(!(amount(suggested.quantity)>0))return null;
+ return {quantity:amount(suggested.quantity),unit:label,note:factor===1?"Conversion 1 pour 1":"Coefficient ×"+factor+" du catalogue",fromCatalog:factor===1};
 }
 function confirmStockProposal(row){
  const suggested=stockProposal(row);
  if(!suggested)return false;
- const question="La facture indique "+suggested.quantity+" unité(s), le catalogue utilise « "+suggested.unit+" ». Après contrôle du conditionnement sur le PDF, confirmez "+suggested.quantity+" "+suggested.unit+"(s) en stock ?";
+ const question="La facture indique "+row.quantity+" "+(row.unit||"unité(s)")+". "+
+  "La fiche propose "+suggested.quantity+" "+suggested.unit+" en stock ("+suggested.note+"). "+
+  "Confirmez cette réception après vérification sur le PDF et le conditionnement physique ?";
  if(!confirm(question))return false;
- row.stock_quantity=suggested.quantity;row.stock_manual=true;
- row.stock_note="Quantité de stock "+suggested.quantity+" "+suggested.unit+" confirmée manuellement.";
- row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;
- return true;
+ row.stock_quantity=suggested.quantity;row.stock_manual=true;row.stock_confirmed=true;
+ row.stock_note="Conversion confirmée par l'utilisateur : "+suggested.quantity+" "+suggested.unit;
+ row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;
+ row.confirmedOnPdf=false;return true;
 }
 function quickFixOptions(row){
  const fixes=[],arithmetic=invoiceArithmetic(row);
- if(!accounting&&!(amount(row.stock_quantity)>0)&&stockProposal(row))
-  fixes.push({kind:"stock",label:"Confirmer la quantité de stock"});
+ if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed))&&stockProposal(row))
+  fixes.push({kind:"stock",label:"Confirmer le conditionnement"});
  if(!arithmetic.incomplete&&!arithmetic.valid)
   fixes.push({kind:"amount",label:"Corriger le total HT"});
- if(eligible(row)&&(accounting||amount(row.stock_quantity)>0)&&productColor(row)==="warn")
+ if(eligible(row)&&(accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed)))&&productColor(row)==="warn")
   fixes.push({kind:"approve",label:"Vérifier et passer au vert"});
  return fixes;
 }
@@ -393,10 +403,16 @@ function applyQuickFix(row,kind){
 function confirmRowManually(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product||row.excluded)return {ok:false,message:"Choisissez un produit actif et non écarté avant de confirmer la ligne."};
- if(!accounting&&!(amount(row.stock_quantity)>0)&&!confirmStockProposal(row))
+ if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed))&&!row.stock_manual&&!confirmStockProposal(row))
   return {ok:false,message:stockProposal(row)?
    "Quantité en stock non confirmée. Vérifiez le conditionnement ou indiquez le nombre réel à réceptionner.":
    "Renseignez l'entrée en stock manuellement : impossible de déduire une conversion fiable de cette facture."};
+ if(!accounting&&row.stock_manual&&row.stock_needs_review&&!row.stock_confirmed){
+  if(!(amount(row.stock_quantity)>0))return {ok:false,message:"Renseignez une quantité de stock positive."};
+  if(!confirm("Confirmer la quantité de stock saisie manuellement : "+row.stock_quantity+" pour "+row.product_label+" après vérification du conditionnement ?"))
+   return {ok:false,quiet:true};
+  row.stock_confirmed=true;
+ }
  const a=invoiceArithmetic(row);
  if(a.incomplete||!String(row.description||"").trim()||!String(row.unit||"").trim())
   return {ok:false,message:"Désignation, unité, quantité, prix unitaire et total HT doivent être renseignés."};
@@ -559,10 +575,14 @@ function changeRow(index,key,value){
   row.product_manual=!!p;row.stock_manual=false;
   applyMatch(row,p?{product:p,source:"Produit actif choisi manuellement"}:{product:null,source:"Produit absent ou désactivé : validation du stock bloquée"});
  }else if(key==="quantity"||key==="unit"){
-  row.stock_manual=false;
+  row.stock_manual=false;row.stock_confirmed=false;
+  if(key==="unit")row.unit_inferred=false;
   const proposed=stockSuggestion(row,(catalog?.products||[]).find(p=>p.id===row.product_id));
-  row.stock_quantity=proposed.quantity;row.stock_note=proposed.note;
- }else if(key==="stock_quantity"){row.stock_manual=true;row.stock_note="Quantité saisie manuellement : contrôler le conditionnement"}
+  row.stock_quantity=proposed.quantity;row.stock_note=proposed.note;row.stock_needs_review=proposed.needsReview===true;
+ }else if(key==="stock_quantity"){
+  row.stock_manual=true;row.stock_needs_review=true;row.stock_confirmed=false;
+  row.stock_note="Quantité renseignée manuellement : confirmer la ligne après vérification du conditionnement";
+ }
  else if(key==="account"){row.account_manual=true;row.account_source="Compte saisi manuellement : à vérifier"}
  renderRows();
 }
