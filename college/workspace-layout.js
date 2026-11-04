@@ -58,6 +58,15 @@
    section("Holding",holding)]},
   readiness:{label:"Contrôles Collège",sections:[
    section("Administration",[link("Tableau de bord Collège","college/admin/"),link("Contrôles pré-lancement","college/readiness/"),link("Applications","college/admin/?page=apps"),link("Centre de supervision","admin/holding/controle/")]),
+   section("Autres espaces",common)]},
+  "admin-access":{label:"Accès et applications",sections:[
+   section("Administration",[link("Accès et liens","admin/acces.html"),link("Gestion utilisateurs","admin/holding/utilisateurs/"),link("Gestion sociétés","admin/holding/societes/"),link("Gestion applications","college/admin/?page=apps")]),
+   section("Autres espaces",common)]},
+  "admin-accounting-setup":{label:"Configuration comptable",sections:[
+   section("Administration",[link("Administration Collège","college/admin/"),link("Compte Comptabilité","admin/comptabilite/"),link("Comptabilité Collège","comptabilite/")]),
+   section("Autres espaces",common)]},
+  "windows-agent":{label:"Agent Comptabilité",sections:[
+   section("Administration",[link("Comptabilité Collège","comptabilite/"),link("Agent Windows","admin/windows-agent/"),link("Gestion des accès","admin/holding/utilisateurs/")]),
    section("Autres espaces",common)]}
  };
  function mount(){
