@@ -470,16 +470,17 @@ function buildLine(row,index){
   card.append(approved);
  }
  const foot=document.createElement("div");foot.className="row-foot";
- foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?"Validée automatiquement":row.manualVerified?"Validée manuellement":"Confirmer le produit et le montant")+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
+ foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?"Validée automatiquement":row.manualVerified?"Validée manuellement":row.confirmedOnPdf?"Lecture confirmée — corriger l’écart":"Confirmer après vérification du PDF")+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
  foot.querySelector('[data-choice="verified"]').addEventListener("change",e=>{
-  if(e.target.checked&&(!row.product_id||!eligible(row)||!(amount(row.stock_quantity)>0)||row.excluded)){
-   notice("Impossible de confirmer : choisissez un produit actif et vérifiez quantité, prix, total HT et entrée en stock.","error");renderRows();return;
+  if(e.target.checked){
+   const result=confirmRowManually(row);
+   if(!result.quiet)notice(result.message,result.ok&&!result.partial?"success":result.ok?"":"error");
+  }else{
+   row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;
   }
-  row.verified=e.target.checked;row.autoVerified=false;row.manualVerified=e.target.checked;
-  if(e.target.checked)row.changed=false;
   $("confirmReview").checked=false;renderRows();
  });
- foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
+ foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Supprimer cette ligne ? Son montant ne sera plus inclus dans le contrôle HT."))return;rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.append(keywordNotebook(row,index));card.classList.toggle("excluded",row.excluded);
  card.classList.add(productColor(row));
@@ -487,7 +488,7 @@ function buildLine(row,index){
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
- row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;$("confirmReview").checked=false;
+ row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   row.product_manual=false;row.stock_manual=false;row.account_manual=false;
   applyMatch(row,findProduct(row));
@@ -639,7 +640,7 @@ function setup(){
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
-  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
+  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.confirmedOnPdf=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
  window.addEventListener("focus",()=>{if(!loading&&!saved&&file)resolveSession()});
