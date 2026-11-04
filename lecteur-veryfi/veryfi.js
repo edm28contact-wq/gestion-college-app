@@ -15,7 +15,7 @@ const round=x=>Math.round((x+Number.EPSILON)*100)/100;
 const timestamp=()=>new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
 // Factures fournisseurs vérifiées : ne jamais accepter une modification de facteur par simple correspondance de nom.
 const verifiedConversions=Object.freeze({
- RV40:20,TH49:10,VN19:4,VW27:4,VW58:2,VX38:8,XV90:5
+ RV40:20,TH49:10,VN19:4,VW27:4,VX38:8,XV90:5
 });
 const canonicalUnit=x=>{
  const u=norm(x);
@@ -76,10 +76,11 @@ function invoiceSaleUnit(row,product){
  if(invoice==="piece"&&factor===1&&discrete.has(sale)&&sale===stock)
   return {ok:true,why:"Pièce / Unité sur la facture = "+product.unit+" du catalogue"};
  const packaging=String(product.conditionnement||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
- if(sale==="piece"&&invoice==="carton"&&/^carton\b/.test(packaging))
-  return {ok:true,why:"Colis facturé = carton fournisseur"};
- if(sale==="piece"&&invoice==="lot"&&/^lot\b/.test(packaging))
-  return {ok:true,why:"Lot facturé = lot fournisseur"};
+ const trustedMultiplier=factor>1&&Object.hasOwn(verifiedConversions,String(product.code))&&verifiedConversions[String(product.code)]===factor;
+ if(sale==="piece"&&invoice==="carton"&&/^carton\b/.test(packaging)&&trustedMultiplier)
+  return {ok:true,why:"Carton fournisseur et coefficient de stock vérifié"};
+ if(sale==="piece"&&invoice==="lot"&&/^lot\b/.test(packaging)&&trustedMultiplier)
+  return {ok:true,why:"Lot fournisseur et coefficient de stock vérifié"};
  return {ok:false,why:"Unité fournisseur « "+row.unit+" » différente de l'unité d'achat « "+product.unit+" »"};
 }
 function stockSuggestion(row,product){
