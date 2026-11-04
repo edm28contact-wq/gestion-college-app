@@ -84,7 +84,7 @@ btn.onclick=async()=>{
  }
  const file=$("invoicePdf")?.files?.[0];
  if(!file)return status("Importez d’abord un PDF.",true);
- if(file.size>6*1024*1024)return status("Veryfi accepte ici les PDF de 6 Mo maximum. L’OCR local reste disponible.",true);
+ if(file.size>6*1024*1024)return status("Veryfi accepte ici les PDF de 6 Mo maximum. Réduisez la taille du fichier sans modifier son contenu.",true);
  if(busy)return;
  busy=true;const current=++seq,source=file;btn.disabled=true;status("Vérification de la session collège…");
  try{
@@ -99,11 +99,11 @@ btn.onclick=async()=>{
  }catch(e){
   const message=e?.message||String(e),auth=/session|connexion au collège/i.test(message);
   if(auth){ready=false;activeToken=null;needsLogin=true;loginLink.style.display="inline-block";btn.textContent="Lire avec Veryfi"}
-  status((auth?"Connexion requise : ":"Veryfi indisponible : ")+message+". L’OCR local et la saisie manuelle restent accessibles.",true)
+  status((auth?"Connexion requise : ":"Veryfi indisponible : ")+message+". Aucune validation n’a été enregistrée.",true)
  }
  finally{busy=false;btn.disabled=false}
 };
-document.addEventListener("invoice-pdf:replace",()=>{seq++;selectedFile=null;status("PDF chargé. Vous pouvez lancer Veryfi ou conserver l’OCR local.")});
+document.addEventListener("invoice-pdf:replace",()=>{seq++;selectedFile=null;status("PDF chargé. Cliquez sur « Lire avec Veryfi » pour commencer.")});
 document.addEventListener("invoice-pdf:reset-after-success",()=>{seq++;status("Facture suivante : importez le nouveau PDF.")});
 window.addEventListener("focus",()=>{void configured()});
 configured();
