@@ -1,0 +1,49 @@
+/* Shared Collège workspace layout. Scoped to loaded workspace only. */
+.school-workspace-host.wrap,.school-workspace-host.shell{max-width:none!important;width:100%;margin:0 auto;padding:18px 22px}
+.school-workspace{display:grid;grid-template-columns:232px minmax(0,1fr);align-items:start;gap:20px;min-height:calc(100vh - 38px)}
+.school-workspace.hide{display:none!important}
+.school-workspace-main{min-width:0;width:100%}
+.school-workspace-main > :first-child{margin-top:0}
+.school-nav-aside{position:sticky;top:18px;max-height:calc(100vh - 36px);overflow-y:auto;min-width:0;border-radius:13px;background:#1f2b38;color:#ebf0f5;padding:18px 14px;box-shadow:0 3px 12px rgba(20,35,50,.09)}
+.school-nav-brand{display:block;text-decoration:none;color:#fff!important;padding:2px 8px 12px;border-bottom:1px solid rgba(255,255,255,.14);margin-bottom:12px}
+.school-nav-brand strong{display:block;font-size:17px;line-height:1.3;font-weight:800}
+.school-nav-brand small{display:block;color:#b5c8d7;margin-top:4px;font-size:11px;line-height:1.4}
+.school-nav-context{font-size:12px;color:#d5e4ef;font-weight:700;padding:8px 8px 10px;line-height:1.45}
+.school-nav-section{margin:7px 0 17px}
+.school-nav-section h2{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:800;color:#a7bacb;margin:0 0 7px;padding:0 9px}
+.school-nav-links{display:grid;gap:3px}
+.school-nav-links > a,.school-nav-links > button{display:block;min-width:0;width:100%;padding:10px 11px;border:0;border-radius:8px;background:transparent;color:#dae5ed;text-align:left;text-decoration:none;font:inherit;font-size:13px;font-weight:600;line-height:1.35;white-space:normal;cursor:pointer}
+.school-nav-links > :is(a,button):hover,.school-nav-links > :is(a,button):focus-visible{background:#35495b;color:#fff;outline:2px solid transparent}
+.school-nav-links > :is(a,button).is-current,.school-nav-links > :is(a,button)[aria-current="page"]{background:#3b5267;color:#fff;box-shadow:inset 3px 0 #9dd2f1}
+.school-nav-footer{font-size:10px;color:#a5b8c8;line-height:1.5;padding:12px 9px 0;border-top:1px solid rgba(255,255,255,.14)}
+.school-workspace.school-tabs-in-sidebar > .school-workspace-main > .tabs{display:none!important}
+.school-workspace-main .card,.school-workspace-main .panel{min-width:0}
+.school-workspace-main .table,.school-workspace-main .table-wrap{max-width:100%;overflow-x:auto}
+@media(max-width:1430px){
+ .school-workspace[data-school-area="veryfi"]{grid-template-columns:minmax(0,1fr);gap:14px}
+ .school-workspace[data-school-area="veryfi"] > .school-nav-aside{position:static;max-height:none;padding:12px 14px}
+ .school-workspace[data-school-area="veryfi"] .school-nav-brand{display:none}
+ .school-workspace[data-school-area="veryfi"] .school-nav-context{padding:0 6px 7px}
+ .school-workspace[data-school-area="veryfi"] .school-nav-section{margin:0 0 6px}
+ .school-workspace[data-school-area="veryfi"] .school-nav-section h2{display:none}
+ .school-workspace[data-school-area="veryfi"] .school-nav-links{display:flex;overflow-x:auto;gap:5px}
+ .school-workspace[data-school-area="veryfi"] .school-nav-links > :is(a,button){width:auto;white-space:nowrap;flex-shrink:0;padding:9px 11px}
+ .school-workspace[data-school-area="veryfi"] .school-nav-footer{display:none}
+}
+@media(max-width:1060px){
+ .school-workspace{grid-template-columns:minmax(0,1fr);gap:14px;min-height:0}
+ .school-nav-aside{position:static;max-height:none;padding:12px 14px}
+ .school-nav-brand{display:none}
+ .school-nav-context{padding:0 6px 8px}
+ .school-nav-section{margin:0 0 7px}
+ .school-nav-section h2{display:none}
+ .school-nav-links{display:flex;gap:5px;overflow-x:auto;scrollbar-width:thin}
+ .school-nav-links > :is(a,button){width:auto;white-space:nowrap;flex-shrink:0;padding:10px 12px}
+ .school-nav-footer{display:none}
+}
+@media(max-width:650px){
+ .school-workspace-host.wrap,.school-workspace-host.shell{padding:10px}
+ .school-nav-aside{padding:9px;border-radius:10px}
+ .school-nav-context{font-size:11px}
+ .school-nav-links > :is(a,button){font-size:12px;padding:9px 10px}
+}
