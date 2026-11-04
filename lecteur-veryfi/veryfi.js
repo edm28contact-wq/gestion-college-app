@@ -258,6 +258,9 @@ function findProduct(row){
 }
 function applyMatch(row,match,keepManual=false){
  const product=match?.product;
+ if(row.product_id&&row.product_id!==product?.id){
+  row.verified=false;row.autoVerified=false;row.manualVerified=false;row.changed=true;
+ }
  row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";row.manualMatchRequired=match?.manualMatchRequired===true;
  row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
  const stock=stockSuggestion(row,product);
