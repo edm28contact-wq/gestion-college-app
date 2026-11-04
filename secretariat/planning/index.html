@@ -35,5 +35,5 @@ $('month').value=currentDate().slice(0,7);$('date').value=currentDate();$('month
 function openRow(e){const row=e.target.closest('tr[data-edit]');if(row){const entry=events.find(x=>x.id===row.dataset.edit);if(entry)openForm(entry)}}
 $('rows').addEventListener('click',openRow);$('rows').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRow(e)}});
 load();
-</script><script defer src="../../college/workspace-layout.js?v=1" data-area="planning" data-target="#main"></script>
+</script><script defer src="../../college/workspace-layout.js?v=2" data-area="planning" data-target="#main"></script>
 </body></html>
