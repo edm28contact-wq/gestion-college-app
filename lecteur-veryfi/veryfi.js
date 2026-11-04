@@ -13,6 +13,10 @@ const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x)
 const fmt=x=>x==null?"—":Number(x).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const round=x=>Math.round((x+Number.EPSILON)*100)/100;
 const timestamp=()=>new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+// Factures fournisseurs vérifiées : ne jamais accepter une modification de facteur par simple correspondance de nom.
+const verifiedConversions=Object.freeze({
+ RV40:20,TH49:10,VN19:4,VW27:4,VW58:2,VX38:8,XV90:5
+});
 const canonicalUnit=x=>{
  const u=norm(x);
  const groups={
@@ -72,7 +76,8 @@ function stockSuggestion(row,product){
  if(!sale||!stock||/à confirmer/i.test(sale)||/à confirmer/i.test(stock))
   return {quantity:"",note:"Conversion ×"+factor+" à confirmer dans la fiche produit",needsReview:true};
  const converted=Math.round(quantity*factor*1000)/1000;
- return {quantity:converted,note:"Proposition à confirmer : "+quantity+" × "+factor+" = "+converted+" "+stockLabel,needsReview:true};
+ const factorVerified=Object.hasOwn(verifiedConversions,String(product.code))&&verifiedConversions[String(product.code)]===factor;
+ return {quantity:converted,note:(factorVerified?"Conversion fournisseur vérifiée : ":"Proposition à confirmer : ")+quantity+" × "+factor+" = "+converted+" "+stockLabel,needsReview:!factorVerified};
 }
 function showUsage(u){
  const title=$("usageMonth"),used=$("usageUsed"),limit=$("usageLimit"),left=$("usageRemaining");
