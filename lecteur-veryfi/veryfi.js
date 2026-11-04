@@ -181,38 +181,45 @@ function bindDocument(){
  $("confirmReview").checked=false;
 }
 function findProduct(row){
- if(!catalog||!row.description&&!row.reference)return null;
- const supplier=norm($("vendor").value);
- const ref=norm(row.reference),label=norm(row.description);
- const products=(catalog.products||[]).filter(x=>x.active!==false);
- const candidates=(catalog.supplier_product_catalog||[]).filter(x=>x.supplier_key&&norm(x.supplier_key)===supplier&&ref&&norm(x.supplier_reference)===ref);
- const ids=[...new Set(candidates.map(x=>x.product_id).filter(Boolean))];
- if(ids.length===1){const product=products.find(x=>x.id===ids[0]);if(product)return {product,source:"Référence fournisseur reconnue",record:candidates.find(x=>x.product_id===product.id)}}
- if(ids.length>1)return {product:null,source:"Plusieurs produits correspondent à cette référence"};
+ if(!catalog||(!row.reference&&!row.description))return null;
+ const supplier=supplierNorm(),ref=norm(row.reference),label=norm(row.description);
+ const active=(catalog.products||[]).filter(p=>p.active!==false);
+ const links=(catalog.supplier_product_catalog||[]).filter(x=>norm(x.supplier_key||x.supplier_name)===supplier&&ref&&norm(x.supplier_reference)===ref);
+ const ids=[...new Set(links.map(x=>x.product_id).filter(Boolean))];
+ if(ids.length>1)return {product:null,source:"Référence fournisseur ambiguë"};
+ if(ids.length===1){
+  const p=active.find(x=>x.id===ids[0]);
+  if(p)return {product:p,record:links.find(x=>x.product_id===p.id),source:"Association fournisseur : à vérifier"};
+ }
  if(ref){
-  const found=products.filter(x=>norm(x.code)===ref);
-  if(found.length===1)return {product:found[0],source:"Référence catalogue exacte"};
-  if(found.length>1)return {product:null,source:"Référence catalogue ambiguë"};
+  const exact=active.filter(x=>norm(x.code)===ref);
+  if(exact.length===1)return {product:exact[0],source:"Référence exacte du catalogue"};
+  if(exact.length>1)return {product:null,source:"Référence catalogue ambiguë"};
+  const inactive=(catalog.inactive_products||[]).filter(x=>norm(x.code)===ref);
+  if(inactive.length===1)return {product:null,source:"Produit DÉSACTIVÉ : "+inactive[0].code+" — "+inactive[0].name};
+  if(inactive.length>1)return {product:null,source:"Plusieurs produits désactivés correspondent"};
  }
- if(label&&label.length>=7){
-  const found=products.filter(x=>norm(x.name)===label);
-  if(found.length===1)return {product:found[0],source:"Désignation catalogue exacte"};
+ if(label.length>=7){
+  const exact=active.filter(x=>norm(x.name)===label);
+  if(exact.length===1)return {product:exact[0],source:"Désignation catalogue exacte"};
  }
- return {product:null,source:"Produit absent du catalogue actif"};
+ return {product:null,source:"Produit ABSENT du catalogue actif — à ajouter ou rapprocher"};
+}
+function applyMatch(row,match,keepManual=false){
+ const product=match?.product;
+ row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";
+ row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
+ const stock=stockSuggestion(row,product);
+ if(!keepManual||!row.stock_manual)row.stock_quantity=stock.quantity;
+ row.stock_note=stock.note;
+ const specific=match?.record?.account&&(catalog.accounts||[]).some(a=>String(a.account)===String(match.record.account))?
+  {account:String(match.record.account),source:"Compte du lien fournisseur à vérifier"}:null;
+ const charge=specific||accountFor(row);
+ if(!keepManual||!row.account_manual)row.account=charge.account;
+ row.account_source=charge.source;
 }
 function refreshMatches(){
- for(const row of rows){
-  if(row.changed&&row.product_id)continue;
-  const match=findProduct(row);row.matched=!!match?.product;row.reason=match?.source||"Catalogue non chargé";
-  row.product_id=match?.product?.id||"";row.product_label=match?.product?match.product.code+" — "+match.product.name:"";
-  if(match?.product){
-   const q=amount(row.quantity),product=match.product;
-   const sameUnit=norm(row.unit)&&norm(row.unit)===norm(product.stock_count_mode==="litre"?"litre":product.unit);
-   row.stock_quantity=sameUnit&&q>0?q:"";
-   const accountRow=match.record||null;
-   row.account=String(accountRow?.account||"");row.account_source=String(accountRow?.account_source||"");
-  }else{row.stock_quantity="";row.account="";row.account_source=""}
- }
+ for(const row of rows)if(!row.product_manual)applyMatch(row,findProduct(row),true);
 }
 function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
@@ -235,7 +242,7 @@ function buildLine(row,index){
  }
  card.append(fields);
  const meta=document.createElement("div");meta.className="mapping";
- meta.textContent=row.reason+(row.account_source?" · Charge : "+row.account_source:"");
+ meta.textContent=row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:"");
  card.append(meta);
  const foot=document.createElement("div");foot.className="row-foot";
  foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> Vérifiée sur PDF</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
