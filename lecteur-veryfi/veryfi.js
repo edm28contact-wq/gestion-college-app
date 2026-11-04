@@ -30,8 +30,7 @@ function isUnexpired(token){
 }
 function availableTokens(){return [...new Set(authKeys.map(k=>localStorage.getItem(k)).filter(isUnexpired))]}
 async function request(url,{method="GET",payload,token,timeout=20000}={}){
- const headers={"x-admin-session":token||authToken};
- if(method==="POST"){headers["content-type"]="application/json";headers.authorization="Bearer "+(token||authToken)}
+ const headers=method==="POST"?{"content-type":"application/json",authorization:"Bearer "+(token||authToken)}:{"x-admin-session":token||authToken};
  const r=await fetch(url,{method,headers,body:method==="POST"?JSON.stringify(payload):undefined,cache:"no-store",signal:AbortSignal.timeout(timeout)});
  const data=await r.json().catch(()=>({error:"Réponse serveur invalide"}));
  if(!r.ok)throw Object.assign(new Error(data.error||"Erreur HTTP "+r.status),{code:r.status});
@@ -329,7 +328,7 @@ function setup(){
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
-  $(key).addEventListener("change",()=>{if(key==="vendor")refreshMatches();renderRows();$("confirmReview").checked=false;updateTotals()});
+  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.changed=false;r.product_id="";r.verified=false});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
  window.addEventListener("focus",()=>{if(!loading&&!saved&&file)resolveSession()});
