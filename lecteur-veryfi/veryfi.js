@@ -326,9 +326,32 @@ function changeRow(index,key,value){
  else if(key==="account"){row.account_manual=true;row.account_source="Compte saisi manuellement : à vérifier"}
  renderRows();
 }
+function groupedRows(){
+ const groups=[
+  {status:"bad",label:"Produits rouges — À traiter",items:[]},
+  {status:"warn",label:"Produits orange — À vérifier",items:[]},
+  {status:"good",label:"Produits verts — Validés automatiquement",items:[]}
+ ];
+ rows.forEach((row,index)=>{
+  const group=groups.find(g=>g.status===productColor(row));
+  if(group)group.items.push({row,index});
+ });
+ return groups;
+}
 function renderRows(){
  const box=$("lines");box.replaceChildren();
- rows.forEach((r,i)=>box.append(buildLine(r,i)));
+ for(const group of groupedRows()){
+  if(!group.items.length)continue;
+  const section=document.createElement("section");section.className="status-group "+group.status;
+  const header=document.createElement("div");header.className="status-group-header";
+  const title=document.createElement("h4");title.textContent=group.label;
+  const count=document.createElement("span");count.className="status-group-count";
+  count.textContent=group.items.length+" produit"+(group.items.length>1?"s":"");
+  header.append(title,count);section.append(header);
+  const cards=document.createElement("div");cards.className="status-group-rows";
+  group.items.forEach(({row,index})=>cards.append(buildLine(row,index)));
+  section.append(cards);box.append(section);
+ }
  updateTotals();
 }
 function addLine(){
