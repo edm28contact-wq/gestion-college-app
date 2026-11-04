@@ -13,6 +13,7 @@ const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x)
 const fmt=x=>x==null?"—":Number(x).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const round=x=>Math.round((x+Number.EPSILON)*100)/100;
 const timestamp=()=>new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+const canonicalUnit=x=>{const u=norm(x);if(["piece","pieces","pce","pces","pc","pcs","unite","unites","u","unit"].includes(u))return "piece";if(["kg","kgs","kilogramme","kilogrammes"].includes(u))return "kg";if(["l","lt","litre","litres"].includes(u))return "litre";return u};
 function supplierRule(){
  const value=norm($("vendor").value);
  const matches=(catalog?.supplier_rules||[]).filter(r=>{const k=norm(r.supplier_name||r.supplier_key);return k&&(value===k||value===k+k)});
@@ -41,19 +42,18 @@ function accountFor(row){
 function stockSuggestion(row,product){
  const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor)||1;
  if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler"};
- const unit=norm(row.unit),stockUnit=norm(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ const unit=canonicalUnit(row.unit),stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
  const packageIsLot=/\blot\s+de\s+\d+/i.test(String(product.colisage||""));
- if(["piece","unite"].includes(unit)&&factor>1&&(product.stock_count_mode==="litre"||packageIsLot)){
+ if(unit==="piece"&&factor>1&&(product.stock_count_mode==="litre"||packageIsLot)){
   const result=Math.round(quantity*factor*1000)/1000;
   return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
  }
  if(unit===stockUnit)
   return {quantity,note:"Quantité de stock identique à la quantité facturée : à vérifier"};
- const purchaseUnit=norm(product.unit);
- if(factor===1&&product.stock_count_mode!=="litre"&&
-  (unit===purchaseUnit||(["piece","unite"].includes(unit)&&["piece","unite"].includes(purchaseUnit))))
+ const purchaseUnit=canonicalUnit(product.unit);
+ if(factor===1&&product.stock_count_mode!=="litre"&&unit===purchaseUnit)
   return {quantity,note:"Conditionnement ×1 : "+quantity+" "+(product.inventory_unit_label||product.unit||"unité(s)")+" proposé(s) en stock"};
- if(["piece","unite"].includes(unit)&&factor>1){
+ if(unit==="piece"&&factor>1){
   const result=Math.round(quantity*factor*1000)/1000;
   return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
  }
@@ -344,9 +344,9 @@ function stockProposal(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  const q=amount(row.quantity);
  if(!product||!Number.isInteger(q)||q<=0||q>1000000)return null;
- const invoiceUnit=norm(row.unit),unit=norm(product.unit),factor=amount(product.purchase_to_stock_factor);
+ const invoiceUnit=canonicalUnit(row.unit),unit=canonicalUnit(product.unit),factor=amount(product.purchase_to_stock_factor);
  const countable=["pot","barquette","piece","unite","sachet","bouteille","boite","flacon","rouleau"];
- if(!["piece","unite"].includes(invoiceUnit)||!countable.includes(unit)||factor!==1||product.stock_count_mode!=="unit")return null;
+ if(invoiceUnit!=="piece"||!countable.includes(unit)||factor!==1||product.stock_count_mode!=="unit"||unit==="piece")return null;
  return {quantity:q,unit:product.unit};
 }
 function confirmStockProposal(row){
