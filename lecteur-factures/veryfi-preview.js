@@ -27,5 +27,8 @@ function changed(){
 }
 input.addEventListener("change",changed);
 remove.addEventListener("click",()=>{input.value="";changed()});
+document.addEventListener("invoice-pdf:reset-after-success",()=>{
+ input.value="";clear();status.textContent="Facture enregistrée. Importez un nouveau PDF.";
+});
 window.addEventListener("pagehide",()=>{if(url)URL.revokeObjectURL(url)});
 })();
