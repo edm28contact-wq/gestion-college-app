@@ -94,7 +94,12 @@ function stockSuggestion(row,product){
  if(invoice===stock&&invoice!==purchase)return {quantity,note:"Facture déjà exprimée en "+stockLabel+" : pas de conversion",needsReview:false};
  const compatible=invoiceSaleUnit(row,product);
  if(!compatible.ok)return {quantity:"",note:compatible.why,needsReview:true};
- if(factor===1)return {quantity,note:compatible.why==="unités identiques"?"1 unité achetée = 1 "+stockLabel+" en stock":compatible.why+" ; quantité "+quantity+" "+stockLabel,needsReview:false};
+ if(factor===1){
+  // Do not treat one individual unit as one carton when the catalogue's stock unit is larger.
+  if(purchase!=="piece"&&purchase!==stock)
+   return {quantity:"",note:"Conversion incohérente : 1 "+product.unit+" facturée ne correspond pas automatiquement à 1 "+stockLabel+". Vérifiez la fiche produit.",needsReview:true};
+  return {quantity,note:compatible.why==="unités identiques"?"1 unité achetée = 1 "+stockLabel+" en stock":compatible.why+" ; quantité "+quantity+" "+stockLabel,needsReview:false};
+ }
  const sale=String(product.conditionnement||"").trim(),stockLabelRaw=String(product.inventory_unit_label||"").trim();
  if(!sale||!stockLabelRaw||/à confirmer/i.test(sale)||/à confirmer/i.test(stockLabelRaw))
   return {quantity:"",note:"Conversion ×"+factor+" à confirmer dans la fiche produit",needsReview:true};
