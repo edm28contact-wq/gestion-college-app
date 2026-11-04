@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=6">
-<script defer src="./veryfi.js?v=7"></script>
+<link rel="stylesheet" href="./veryfi.css?v=7">
+<script defer src="./veryfi.js?v=8"></script>
 </head>
 <body>
 <main class="shell">
@@ -25,6 +25,25 @@
   <div class="session-details"><span id="sessionDot" class="dot"></span><strong id="sessionState">Vérification de la session…</strong><span id="catalogState" class="subtle"></span></div>
   <a class="btn secondary small" id="loginLink" href="../secretariat/?return=veryfi&reauth=1&reader=dedicated" hidden>Se reconnecter</a>
   <button class="btn secondary small" id="refreshSession" type="button">Vérifier la connexion</button>
+</section>
+<section class="usage-panel" aria-label="Suivi des lectures Veryfi du mois">
+  <div class="usage-top">
+    <div><div class="step">QUOTA DE LECTURE · SUIVI INTERNE</div><strong id="usageMonth">Mois en cours</strong></div>
+    <div class="usage-figures">
+      <div><span>Lectures comptées</span><strong id="usageUsed">—</strong></div>
+      <div><span>Quota local</span><strong id="usageLimit">Non renseigné</strong></div>
+      <div><span>Restantes</span><strong id="usageRemaining">—</strong></div>
+    </div>
+  </div>
+  <div class="usage-track" role="progressbar" aria-label="Progression du quota Veryfi" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="usageTrack"><span id="usageBar"></span></div>
+  <p class="subtle" id="usageExplanation">Compteur du collège depuis son activation, pas le relevé officiel du compte Veryfi.</p>
+  <div id="quotaSettings" class="quota-settings" hidden>
+    <label for="quotaInput">Quota mensuel local</label>
+    <input id="quotaInput" type="number" min="1" max="1000000" step="1" placeholder="Ex. 100">
+    <button id="quotaSave" type="button" class="btn secondary small">Enregistrer</button>
+    <button id="quotaClear" type="button" class="btn secondary small">Effacer le quota</button>
+    <span class="subtle">Réservé à l'administration · ne modifie pas l'abonnement Veryfi</span>
+  </div>
 </section>
 <div id="notice" class="notice" role="status" aria-live="polite">Déposez une facture PDF pour commencer.</div>
 <div class="workspace">
