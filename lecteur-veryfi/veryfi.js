@@ -13,6 +13,7 @@ const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x)
 const fmt=x=>x==null?"—":Number(x).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const round=x=>Math.round((x+Number.EPSILON)*100)/100;
 const timestamp=()=>new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+const AUTO_APPROVE_SCORE=0.90;
 // Factures fournisseurs vérifiées : ne jamais accepter une modification de facteur par simple correspondance de nom.
 const verifiedConversions=Object.freeze({
  RV40:20,TH49:10,VN19:4,VW27:4,VX38:8,XV90:5
@@ -366,7 +367,7 @@ function productColor(row){
  if(!catalog)return "warn";
  const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)return "bad";
- const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95;
+ const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE;
  const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&
@@ -390,7 +391,7 @@ function reviewReason(row){
  if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance par mot-clé partiel à confirmer.");
- if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95))problems.push("Confiance Veryfi inférieure à 95 % : contrôle du PDF requis.");
+ if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance Veryfi inférieure à 90 % : contrôle du PDF requis.");
  if(row.changed&&!row.verified)problems.push("Modification manuelle non confirmée.");
  if(row.confirmedOnPdf)problems.unshift("Lecture vérifiée, correction de montant encore requise.");
  return problems.join(" ")||"Contrôle complémentaire nécessaire.";
@@ -529,7 +530,7 @@ function keywordNotebook(row,index){
 function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
  const heading=document.createElement("div");heading.className="row-head";
- const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.round(row.score*100):null;
+ const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=productColor(row);
  const label=color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":"Validée automatiquement"):"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
@@ -581,7 +582,7 @@ function buildLine(row,index){
  if(color==="good"){
   const approved=document.createElement("div");
   approved.className="row-approved";
-  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (score ≥ 95 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
+  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (score ≥ 90 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
   card.append(approved);
  }
  if(color==="warn"&&!row.excluded&&!saved){
