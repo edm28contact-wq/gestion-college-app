@@ -16,6 +16,14 @@
 .school-nav-links > :is(a,button):hover,.school-nav-links > :is(a,button):focus-visible{background:#35495b;color:#fff;outline:2px solid transparent}
 .school-nav-links > :is(a,button).is-current,.school-nav-links > :is(a,button)[aria-current="page"]{background:#3b5267;color:#fff;box-shadow:inset 3px 0 #9dd2f1}
 .school-nav-footer{font-size:10px;color:#a5b8c8;line-height:1.5;padding:12px 9px 0;border-top:1px solid rgba(255,255,255,.14)}
+/* Secrétariat: a single clean menu, without its own nested scrolling area. */
+.school-workspace[data-school-area="secretariat"]>.school-nav-aside{max-height:none;overflow:visible;top:12px;padding:16px 13px}
+.school-workspace[data-school-area="secretariat"] .school-nav-brand{padding-bottom:11px}
+.school-workspace[data-school-area="secretariat"] .school-nav-context{padding:7px 8px}
+.school-workspace[data-school-area="secretariat"] .school-nav-section{margin:7px 0 12px}
+.school-workspace[data-school-area="secretariat"] .school-nav-links>a,.school-workspace[data-school-area="secretariat"] .school-nav-links>button{padding:9px 10px}
+.school-workspace[data-school-area="secretariat"] .school-nav-footer{margin-top:4px}
+
 .school-workspace.school-tabs-in-sidebar > .school-workspace-main > .tabs{display:none!important}
 .school-workspace-main .card,.school-workspace-main .panel{min-width:0}
 .school-workspace-main .table,.school-workspace-main .table-wrap{max-width:100%;overflow-x:auto}
