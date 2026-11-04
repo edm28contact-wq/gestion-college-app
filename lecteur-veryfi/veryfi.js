@@ -47,8 +47,12 @@ function stockSuggestion(row,product){
   const result=Math.round(quantity*factor*1000)/1000;
   return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
  }
- if(unit===stockUnit||(factor===1&&["piece","unite"].includes(unit)&&["piece","unite"].includes(stockUnit)))
-  return {quantity,note:"Quantité proposée : vérifier"};
+ if(unit===stockUnit)
+  return {quantity,note:"Quantité de stock identique à la quantité facturée : à vérifier"};
+ const purchaseUnit=norm(product.unit);
+ if(factor===1&&product.stock_count_mode!=="litre"&&
+  (unit===purchaseUnit||(["piece","unite"].includes(unit)&&["piece","unite"].includes(purchaseUnit))))
+  return {quantity,note:"Conditionnement ×1 : "+quantity+" "+(product.inventory_unit_label||product.unit||"unité(s)")+" proposé(s) en stock"};
  if(["piece","unite"].includes(unit)&&factor>1){
   const result=Math.round(quantity*factor*1000)/1000;
   return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
@@ -232,9 +236,18 @@ function productColor(row){
  if(!product)return "bad";
  const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95;
  const amountsOk=eligible(row),stockOk=amount(row.stock_quantity)>0&&!!String(row.unit||"").trim();
- const checkedFields=["quantity","unit_price","total"].map(k=>row.boxes?.[k]?.score).filter(x=>typeof x==="number");
- const scoreOk=checkedFields.every(x=>x>=0.95);
- return confidenceOk&&scoreOk&&amountsOk&&stockOk&&!row.changed&&!row.excluded?"good":"warn";
+ return confidenceOk&&amountsOk&&stockOk&&!row.changed&&!row.excluded?"good":"warn";
+}
+function reviewReason(row){
+ if(!catalog)return "Catalogue non chargé.";
+ if(!row.product_id)return row.reason||"Aucun produit actif trouvé.";
+ if(row.excluded)return "Ligne écartée de la réception.";
+ if(row.changed)return "Données modifiées manuellement : contrôle nécessaire.";
+ if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95))return "Confiance du produit inférieure à 95 % ou non fournie.";
+ if(!eligible(row))return "Montant incohérent : quantité × prix unitaire ne correspond pas au total HT.";
+ if(!(amount(row.stock_quantity)>0))return "Quantité de stock manquante ou conversion du conditionnement à vérifier.";
+ if(!String(row.unit||"").trim())return "Unité facturée manquante.";
+ return "Contrôle complémentaire nécessaire.";
 }
 function autoVerifyGreenRows(){
  for(const row of rows){
@@ -271,7 +284,13 @@ function buildLine(row,index){
  if(color==="bad"){
   const reason=document.createElement("div");
   reason.className="row-error";
-  reason.textContent="Cause du blocage : "+(row.reason||"Aucun produit actif associé dans le catalogue.");
+  reason.textContent="Cause du blocage : "+reviewReason(row);
+  card.append(reason);
+ }
+ if(color==="warn"){
+  const reason=document.createElement("div");
+  reason.className="row-warning";
+  reason.textContent="À contrôler : "+reviewReason(row);
   card.append(reason);
  }
  if(color==="good"){
