@@ -41,25 +41,20 @@ function accountFor(row){
 }
 function stockSuggestion(row,product){
  const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor);
- if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler"};
+ if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler",needsReview:true};
  const unit=canonicalUnit(row.unit),purchaseUnit=canonicalUnit(product.unit);
  const stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
- const hasSale=!!String(product.conditionnement||"").trim();
- const hasStock=!!String(product.inventory_unit_label||"").trim();
  const stockLabel=product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||"unités";
- if(!unit)return {quantity:"",note:"Unité facturée absente : vérifier sur le PDF et renseigner l'unité de vente"};
- if(!(factor>0))return {quantity:"",note:"Coefficient achat → stock invalide dans la fiche produit"};
- if(unit===stockUnit){
-  if(factor!==1&&unit===purchaseUnit)return {quantity:"",note:"Unités de vente et de stock identiques mais coefficient ×"+factor+" : clarifier le conditionnement dans la fiche"};
-  return {quantity,note:"Quantité conservée : facture déjà exprimée en "+stockLabel+" (pas de multiplication)"};
- }
- if(unit!==purchaseUnit)return {quantity:"",note:"L'unité facturée ne correspond ni à la vente (« "+(product.unit||"—")+" ») ni au stock (« "+stockLabel+" ») : à contrôler"};
- if(factor===1&&product.stock_count_mode!=="litre")
-  return {quantity,note:"1 unité vendue = 1 "+stockLabel+" en stock, suivant la fiche"};
- if(!hasSale||!hasStock)
-  return {quantity:"",note:"Conversion ×"+factor+" non confirmable : renseigner les conditionnements de vente et de stock dans la fiche produit"};
- const result=Math.round(quantity*factor*1000)/1000;
- return {quantity:result,note:"Conversion depuis la fiche produit : "+quantity+" × "+factor+" = "+result+" "+stockLabel+" · vérifier sur le PDF"};
+ if(!unit)return {quantity:"",note:"Unité absente sur la facture : confirmer l’unité de vente du catalogue",needsReview:true};
+ if(!(factor>0))return {quantity:"",note:"Coefficient achat → stock invalide",needsReview:true};
+ if(unit===stockUnit&&unit!==purchaseUnit)return {quantity,note:"Facture déjà en "+stockLabel+" : aucune conversion",needsReview:false};
+ if(unit!==purchaseUnit)return {quantity:"",note:"Unité facturée « "+row.unit+" » distincte des unités de vente et de stock",needsReview:true};
+ if(factor===1)return {quantity,note:"1 unité achetée = 1 "+stockLabel+" en stock",needsReview:false};
+ const sale=String(product.conditionnement||"").trim(),stock=String(product.inventory_unit_label||"").trim();
+ if(!sale||!stock||/à confirmer/i.test(sale)||/à confirmer/i.test(stock))
+  return {quantity:"",note:"Conversion ×"+factor+" à confirmer dans la fiche produit",needsReview:true};
+ const converted=Math.round(quantity*factor*1000)/1000;
+ return {quantity:converted,note:"Proposition à confirmer : "+quantity+" × "+factor+" = "+converted+" "+stockLabel,needsReview:true};
 }
 function showUsage(u){
  const title=$("usageMonth"),used=$("usageUsed"),limit=$("usageLimit"),left=$("usageRemaining");
@@ -238,7 +233,7 @@ function makeRow(x,index){
   quantity:x.quantity??"",unit:String(x.unit||""),unit_price:x.unit_price??"",total:x.total??"",
   tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:typeof x.boxes?.description?.score==="number"?x.boxes.description.score:typeof x.boxes?.total?.score==="number"?x.boxes.total.score:null,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
-  matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
+  matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
 function bindDocument(){
  const d=documentData;
@@ -299,9 +294,12 @@ function applyMatch(row,match,keepManual=false){
  }
  row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";row.manualMatchRequired=match?.manualMatchRequired===true;
  row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
+ if(product&&!String(row.unit||"").trim()&&canonicalUnit(product.unit)){row.unit=product.unit;row.unit_inferred=true}
  const stock=stockSuggestion(row,product);
  if(!keepManual||!row.stock_manual)row.stock_quantity=stock.quantity;
  row.stock_note=stock.note;
+ row.stock_needs_review=stock.needsReview===true;
+ if(stock.needsReview)row.stock_confirmed=false;
  const specific=match?.record?.account&&(catalog.accounts||[]).some(a=>String(a.account)===String(match.record.account))?
   {account:String(match.record.account),source:"Compte du lien fournisseur à vérifier"}:null;
  const charge=specific||accountFor(row);
@@ -316,10 +314,10 @@ function productColor(row){
  const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)return "bad";
  const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95;
- const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim());
+ const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&
-  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired))?"good":"warn";
+  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred))?"good":"warn";
 }
 function invoiceArithmetic(row){
  const q=amount(row.quantity),price=amount(row.unit_price),total=amount(row.total);
@@ -335,6 +333,8 @@ function reviewReason(row){
  if(arithmetic.incomplete)problems.push("Quantité, prix unitaire ou total HT incomplet.");
  else if(!arithmetic.valid)problems.push("Écart HT : quantité × prix = "+fmt(arithmetic.calculated)+" ; montant de la ligne = "+fmt(arithmetic.total)+". Vérifiez le PDF.");
  if(!accounting&&!(amount(row.stock_quantity)>0))problems.push("Quantité de stock absente : confirmez le conditionnement ou renseignez la quantité exacte.");
+ else if(!accounting&&row.stock_needs_review&&!row.stock_confirmed)problems.push("Conversion du stock à confirmer.");
+ if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance par mot-clé partiel à confirmer.");
  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95))problems.push("Confiance Veryfi inférieure à 95 % : contrôle du PDF requis.");
@@ -608,7 +608,7 @@ function calc(){
  const sum=round(included.reduce((n,r)=>n+(amount(r.total)||0),0));
  const ht=amount($("subtotal").value),vat=amount($("tax").value),ttc=amount($("total").value);
  const missing=included.filter(r=>!eligible(r));
- const unmatched=accounting?[]:included.filter(r=>!r.product_id||!(amount(r.stock_quantity)>0));
+ const unmatched=accounting?[]:included.filter(r=>!r.product_id||!(amount(r.stock_quantity)>0)||(r.stock_needs_review&&!r.stock_confirmed));
  const unverified=included.filter(r=>!r.verified);
  const discrepancy=ht==null||Math.abs(sum-ht)>.02;
  const grossMismatch=ht!=null&&vat!=null&&ttc!=null&&Math.abs(round(ht+vat)-ttc)>.02;
