@@ -127,7 +127,7 @@ function showUsage(u){
  track.className="usage-track"+(quota!==null&&count>=quota?" exceeded":quota!==null&&count>=quota*.8?" warning":"");
  hint.textContent="Suivi interne depuis le "+new Date(u.tracking_started_at).toLocaleDateString("fr-FR",{timeZone:"Europe/Paris"})+
   ". "+(quota===null?"Configurez le quota local pour estimer le restant.":count>=quota?"Quota local atteint ou dépassé. Vérifiez le quota officiel avant de poursuivre.":"Reste estimé sur le quota local.")+
-  " Ne comprend pas les autres lectures du compte Veryfi et ne remplace pas son relevé officiel.";
+  " Le compteur repart automatiquement au début de chaque mois (heure de Paris), tout en conservant les mois précédents. Ne comprend pas les lectures effectuées hors de cette application et ne remplace pas le relevé officiel Veryfi.";
  settings.hidden=!u.can_manage;
  if(u.can_manage){$("quotaInput").value=quota??""}
 }
