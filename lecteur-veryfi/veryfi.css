@@ -29,3 +29,5 @@
 .quota-settings label{font-size:12px;font-weight:700}
 .quota-settings input{width:115px;border-radius:7px;padding:8px;border:1px solid #b7cbd9}
 @media(max-width:620px){.usage-figures{gap:13px}.usage-figures strong{font-size:15px}}
+
+.product-packaging{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:9px 0 5px;padding:9px 11px;border:1px solid #d4e0ea;background:#f6f9fc;border-radius:8px;font-size:12px;line-height:1.45}.product-packaging a{color:#175e8c;font-weight:700;text-decoration:underline}
