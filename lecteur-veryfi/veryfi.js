@@ -690,6 +690,16 @@ function setup(){
  $("clearFile").addEventListener("click",()=>{input.value="";setFile(null)});
  $("analyze").addEventListener("click",analyze);
  $("refreshSession").addEventListener("click",resolveSession);
+ $("reloadCatalog").addEventListener("click",async()=>{
+  const button=$("reloadCatalog");button.disabled=true;
+  try{
+   if(!authToken)throw Error("Session expirée : reconnectez-vous avant d'actualiser les conditionnements.");
+   await loadCatalog();
+   if(!catalog)throw Error("Impossible de récupérer le catalogue.");
+   notice("Conditionnements actualisés depuis l'administration. Aucune lecture Veryfi supplémentaire.","success");
+  }catch(e){notice(e.message,"error")}
+  finally{button.disabled=false}
+ });
  $("quotaSave").addEventListener("click",()=>{
   const raw=$("quotaInput").value.trim(),q=Number(raw);
   if(!raw||!Number.isInteger(q)||q<1||q>1000000)return notice("Saisissez un quota mensuel entier positif.","error");
