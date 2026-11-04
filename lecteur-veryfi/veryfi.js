@@ -59,6 +59,37 @@ function stockSuggestion(row,product){
  }
  return {quantity:"",note:"Conversion inconnue : renseigner manuellement"};
 }
+function showUsage(u){
+ const title=$("usageMonth"),used=$("usageUsed"),limit=$("usageLimit"),left=$("usageRemaining");
+ const bar=$("usageBar"),track=$("usageTrack"),hint=$("usageExplanation"),settings=$("quotaSettings");
+ if(!u||u.kind!=="internal"){
+  title.textContent="Mois en cours";used.textContent="—";limit.textContent="Indisponible";left.textContent="—";
+  track.className="usage-track";track.setAttribute("aria-valuenow","0");bar.style.width="0%";
+  hint.textContent="Suivi interne indisponible. Consultez le tableau de bord Veryfi pour le quota officiel.";
+  settings.hidden=true;return;
+ }
+ const quota=Number.isInteger(u.monthly_quota)&&u.monthly_quota>0?u.monthly_quota:null;
+ const count=Math.max(0,Number(u.used)||0);
+ const percent=quota===null?0:Math.min(100,Math.round(count/quota*100));
+ title.textContent=new Date(u.month+"-01T12:00:00Z").toLocaleDateString("fr-FR",{month:"long",year:"numeric",timeZone:"Europe/Paris"});
+ used.textContent=String(count);limit.textContent=quota===null?"Non renseigné":String(quota);
+ left.textContent=quota===null?"—":String(Math.max(0,quota-count));
+ bar.style.width=percent+"%";track.setAttribute("aria-valuenow",String(percent));
+ track.className="usage-track"+(quota!==null&&count>=quota?" exceeded":quota!==null&&count>=quota*.8?" warning":"");
+ hint.textContent="Suivi interne depuis le "+new Date(u.tracking_started_at).toLocaleDateString("fr-FR",{timeZone:"Europe/Paris"})+
+  ". "+(quota===null?"Configurez le quota local pour estimer le restant.":count>=quota?"Quota local atteint ou dépassé. Vérifiez le quota officiel avant de poursuivre.":"Reste estimé sur le quota local.")+
+  " Ne comprend pas les autres lectures du compte Veryfi et ne remplace pas son relevé officiel.";
+ settings.hidden=!u.can_manage;
+ if(u.can_manage){$("quotaInput").value=quota??""}
+}
+async function configureQuota(q){
+ const buttons=[$("quotaSave"),$("quotaClear")];buttons.forEach(b=>b.disabled=true);
+ try{
+  const v=await request(API.veryfi,{method:"POST",payload:{action:"configure_quota",monthly_quota:q},timeout:15000});
+  showUsage(v.usage);notice("Quota local enregistré. Le contrat Veryfi n'a pas été modifié.","success");
+ }catch(e){notice("Échec de l'enregistrement du quota : "+e.message,"error")}
+ finally{buttons.forEach(b=>b.disabled=false)}
+}
 function notice(message,type=""){const e=$("notice");e.textContent=message;e.className="notice"+(type?" "+type:"")}
 function setScope(){
  $("scope").textContent=accounting?"Comptabilité":"Secrétariat";
@@ -94,6 +125,7 @@ async function resolveSession(){
     const config=await request(API.veryfi,{token,timeout:15000});
     if(!config.ok)throw new Error("Le lecteur Veryfi ne répond pas correctement.");
     authToken=token;serverReady=!!config.configured;
+    showUsage(config.usage);
     $("sessionDot").className="dot "+(serverReady?"ok":"bad");
     $("sessionState").textContent=serverReady?"Veryfi prêt · "+timestamp():"Veryfi non configuré dans Supabase";
     $("loginLink").hidden=true;
@@ -105,7 +137,7 @@ async function resolveSession(){
   }
   throw last||new Error("Aucune session autorisée.");
  }catch(e){
-  serverReady=false;authToken="";$("sessionDot").className="dot bad";
+  serverReady=false;authToken="";showUsage(null);$("sessionDot").className="dot bad";
   $("sessionState").textContent=e.message;$("loginLink").hidden=false;$("analyze").disabled=true;
   $("catalogState").textContent="";notice(e.message,"error");
  }finally{$("refreshSession").disabled=false}
@@ -187,6 +219,8 @@ async function analyze(){
   const result=await request(API.veryfi,{method:"POST",payload:{file_name:file.name,file_data:encode(new Uint8Array(await file.arrayBuffer()))},timeout:75000});
   if(source!==file||version!==revision)return;
   if(!result.ok||!result.result||!Array.isArray(result.result.line_items))throw Error("Résultat Veryfi inexploitable.");
+  showUsage(result.usage);
+  if(result.usage_warning)notice(result.usage_warning,"error");
   documentData=result.result;saved=false;rows=documentData.line_items.map((x,i)=>makeRow(x,i));
   bindDocument();refreshMatches();autoVerifyGreenRows();renderRows();
   $("resultsEmpty").hidden=true;$("results").hidden=false;
@@ -546,6 +580,14 @@ function setup(){
  $("clearFile").addEventListener("click",()=>{input.value="";setFile(null)});
  $("analyze").addEventListener("click",analyze);
  $("refreshSession").addEventListener("click",resolveSession);
+ $("quotaSave").addEventListener("click",()=>{
+  const raw=$("quotaInput").value.trim(),q=Number(raw);
+  if(!raw||!Number.isInteger(q)||q<1||q>1000000)return notice("Saisissez un quota mensuel entier positif.","error");
+  if(confirm("Enregistrer "+q+" lectures comme quota mensuel local ? Cela ne change pas l’abonnement Veryfi."))configureQuota(q);
+ });
+ $("quotaClear").addEventListener("click",()=>{
+  if(confirm("Effacer le quota mensuel local ? Le compteur d'utilisation sera conservé."))configureQuota(null);
+ });
  $("addLine").addEventListener("click",addLine);
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
