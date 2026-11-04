@@ -42,6 +42,11 @@ function stockSuggestion(row,product){
  const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor)||1;
  if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler"};
  const unit=norm(row.unit),stockUnit=norm(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ const packageIsLot=/\blot\s+de\s+\d+/i.test(String(product.colisage||""));
+ if(["piece","unite"].includes(unit)&&factor>1&&(product.stock_count_mode==="litre"||packageIsLot)){
+  const result=Math.round(quantity*factor*1000)/1000;
+  return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
+ }
  if(unit===stockUnit||(factor===1&&["piece","unite"].includes(unit)&&["piece","unite"].includes(stockUnit)))
   return {quantity,note:"Quantité proposée : vérifier"};
  if(["piece","unite"].includes(unit)&&factor>1){
