@@ -13,7 +13,25 @@ const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x)
 const fmt=x=>x==null?"—":Number(x).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const round=x=>Math.round((x+Number.EPSILON)*100)/100;
 const timestamp=()=>new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
-const canonicalUnit=x=>{const u=norm(x);if(["piece","pieces","pce","pces","pc","pcs","unite","unites","u","unit"].includes(u))return "piece";if(["kg","kgs","kilogramme","kilogrammes"].includes(u))return "kg";if(["l","lt","litre","litres"].includes(u))return "litre";return u};
+const canonicalUnit=x=>{
+ const u=norm(x);
+ const groups={
+  piece:["piece","pieces","pce","pces","pc","pcs","pu","unite","unites","u","unit","units"],
+  kg:["kg","kgs","kilogramme","kilogrammes"],
+  litre:["l","lt","ltr","litre","litres"],
+  pot:["pot","pots"],
+  bouteille:["bouteille","bouteilles","bt","btl","bteille"],
+  barquette:["barquette","barquettes","bqt","bqts"],
+  seau:["seau","seaux","sea"],
+  carton:["carton","cartons","col","colis","ctn","ctns"],
+  boite:["boite","boites","bte","btes"],
+  rouleau:["rouleau","rouleaux","roul"],
+  sachet:["sachet","sachets","sac"],
+  ramette:["ramette","ramettes"]
+ };
+ for(const [key,aliases] of Object.entries(groups))if(aliases.includes(u))return key;
+ return u;
+};
 function supplierRule(){
  const value=norm($("vendor").value);
  const matches=(catalog?.supplier_rules||[]).filter(r=>{const k=norm(r.supplier_name||r.supplier_key);return k&&(value===k||value===k+k)});
