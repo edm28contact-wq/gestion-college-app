@@ -111,7 +111,7 @@ async function loadCatalog(){
   const v=await request(API.catalog,{token:authToken,timeout:20000});
   if(!Array.isArray(v.products))throw new Error("Réponse catalogue incompatible");
   catalog=v;$("catalogState").textContent=v.products.length+" produits actifs · "+(v.inactive_products||[]).length+" inactifs";
-  populateDatalists();if(rows.length){refreshMatches();renderRows()}
+  populateDatalists();if(rows.length){refreshMatches();autoVerifyGreenRows();renderRows()}
  }catch(e){
   catalog=null;$("catalogState").textContent="Catalogue indisponible";
   notice("Veryfi est accessible, mais le catalogue collège est indisponible : "+e.message,"error");
@@ -159,7 +159,7 @@ async function analyze(){
   if(source!==file||version!==revision)return;
   if(!result.ok||!result.result||!Array.isArray(result.result.line_items))throw Error("Résultat Veryfi inexploitable.");
   documentData=result.result;saved=false;rows=documentData.line_items.map((x,i)=>makeRow(x,i));
-  bindDocument();refreshMatches();renderRows();
+  bindDocument();refreshMatches();autoVerifyGreenRows();renderRows();
   $("resultsEmpty").hidden=true;$("results").hidden=false;
   $("readingState").textContent="Lecture terminée";notice("Veryfi a identifié "+rows.length+" ligne(s). Vérifiez les données avant validation.","success");
  }catch(e){
@@ -171,9 +171,9 @@ async function analyze(){
 function makeRow(x,index){
  return {id:index,reference:String(x.reference||""),description:String(x.description||""),
   quantity:x.quantity??"",unit:String(x.unit||""),unit_price:x.unit_price??"",total:x.total??"",
-  tax_rate:x.tax_rate??"",score:typeof x.boxes?.description?.score==="number"?x.boxes.description.score:typeof x.boxes?.total?.score==="number"?x.boxes.total.score:null,
+  tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:typeof x.boxes?.description?.score==="number"?x.boxes.description.score:typeof x.boxes?.total?.score==="number"?x.boxes.total.score:null,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
-  matched:false,verified:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
+  matched:false,verified:false,autoVerified:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
 function bindDocument(){
  const d=documentData;
@@ -228,15 +228,27 @@ function refreshMatches(){
 }
 function productColor(row){
  if(!catalog)return "warn";
- if(!row.product_id)return "bad";
- return typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95?"good":"warn";
+ const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ if(!product)return "bad";
+ const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95;
+ const amountsOk=eligible(row),stockOk=amount(row.stock_quantity)>0&&!!String(row.unit||"").trim();
+ const checkedFields=["quantity","unit_price","total"].map(k=>row.boxes?.[k]?.score).filter(x=>typeof x==="number");
+ const scoreOk=checkedFields.every(x=>x>=0.95);
+ return confidenceOk&&scoreOk&&amountsOk&&stockOk&&!row.changed&&!row.excluded?"good":"warn";
+}
+function autoVerifyGreenRows(){
+ for(const row of rows){
+  const green=productColor(row)==="good";
+  if(row.autoVerified&&!green){row.autoVerified=false;row.verified=false}
+  if(green&&!row.verified){row.verified=true;row.autoVerified=true}
+ }
 }
 function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.round(row.score*100):null;
  const color=productColor(row);
- const label=color==="bad"?"Hors catalogue":color==="good"?"Reconnu":"À contrôler";
+ const label=color==="bad"?"Hors catalogue":color==="good"?"Validée automatiquement":"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
@@ -254,12 +266,24 @@ function buildLine(row,index){
  }
  card.append(fields);
  const meta=document.createElement("div");meta.className="mapping";
- meta.textContent=row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:"");
+ meta.textContent=color==="bad"?(row.stock_note||"Aucune réception automatique autorisée"):(row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:""));
  card.append(meta);
+ if(color==="bad"){
+  const reason=document.createElement("div");
+  reason.className="row-error";
+  reason.textContent="Cause du blocage : "+(row.reason||"Aucun produit actif associé dans le catalogue.");
+  card.append(reason);
+ }
+ if(color==="good"){
+  const approved=document.createElement("div");
+  approved.className="row-approved";
+  approved.textContent="Ligne contrôlée automatiquement (score ≥ 95 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
+  card.append(approved);
+ }
  const foot=document.createElement("div");foot.className="row-foot";
- foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> Vérifiée sur PDF</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
- foot.querySelector('[data-choice="verified"]').addEventListener("change",e=>{row.verified=e.target.checked;row.changed=true;$("confirmReview").checked=false;updateTotals()});
- foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
+ foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?'Validée automatiquement — modifiable':'Vérifiée sur PDF')+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
+ foot.querySelector('[data-choice="verified"]').addEventListener("change",e=>{row.verified=e.target.checked;row.autoVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
+ foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Supprimer cette ligne ? Son montant ne sera plus inclus dans le contrôle HT."))return;rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.classList.toggle("excluded",row.excluded);
  card.classList.add(productColor(row));
@@ -267,7 +291,7 @@ function buildLine(row,index){
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
- row[key]=value;row.changed=true;row.verified=false;$("confirmReview").checked=false;
+ row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   row.product_manual=false;row.stock_manual=false;row.account_manual=false;
   applyMatch(row,findProduct(row));
@@ -312,7 +336,8 @@ function calc(){
 function updateTotals(){
  if(!documentData)return;
  const c=calc(),ignored=rows.filter(r=>r.excluded).length;
- $("metrics").innerHTML='<div class="metric"><span>Lignes détectées</span><strong>'+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+(c.unverified.length+c.missing.length)+'</strong></div><div class="metric"><span>Écart HT</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>';
+ const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
+ $("metrics").innerHTML='<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>';
  const errors=[];
  if(!c.included.length)errors.push("Aucune ligne retenue");
  if(c.discrepancy)errors.push("Total des lignes différent du total HT de la facture");
@@ -387,7 +412,7 @@ function setup(){
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
-  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
+  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
  window.addEventListener("focus",()=>{if(!loading&&!saved&&file)resolveSession()});
