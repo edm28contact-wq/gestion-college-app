@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=8">
-<script defer src="./veryfi.js?v=10"></script>
+<link rel="stylesheet" href="./veryfi.css?v=9">
+<script defer src="./veryfi.js?v=11"></script>
 </head>
 <body>
 <main class="shell">
@@ -24,6 +24,7 @@
 <section class="sessionbar" aria-live="polite">
   <div class="session-details"><span id="sessionDot" class="dot"></span><strong id="sessionState">Vérification de la session…</strong><span id="catalogState" class="subtle"></span></div>
   <a class="btn secondary small" id="loginLink" href="../secretariat/?return=veryfi&reauth=1&reader=dedicated" hidden>Se reconnecter</a>
+  <button class="btn secondary small" id="reloadCatalog" type="button">Actualiser les conditionnements</button>
   <button class="btn secondary small" id="refreshSession" type="button">Vérifier la connexion</button>
 </section>
 <section class="usage-panel" aria-label="Suivi des lectures Veryfi du mois">
