@@ -1,12 +1,12 @@
 (()=>{
 "use strict";
 const ROOT="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/";
-const API={veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-catalog",finalize:ROOT+"secretariat-tableur-finalize",accounting:ROOT+"accounting-api"};
+const API={veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-catalog",finalize:ROOT+"secretariat-tableur-finalize",accounting:ROOT+"accounting-api",aliases:ROOT+"product-alias-keywords"};
 const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
-let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],loading=false,saved=false,revision=0,serverReady=false;
+let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
 const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x).replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");return /^-?\d+(?:\.\d+)?$/.test(t)&&Number.isFinite(Number(t))?Number(t):null};
@@ -76,8 +76,9 @@ function isUnexpired(token){
 }
 function availableTokens(){return [...new Set(authKeys.map(k=>localStorage.getItem(k)).filter(isUnexpired))]}
 async function request(url,{method="GET",payload,token,timeout=20000}={}){
- const headers=method==="POST"?{"content-type":"application/json",authorization:"Bearer "+(token||authToken)}:{"x-admin-session":token||authToken};
- const r=await fetch(url,{method,headers,body:method==="POST"?JSON.stringify(payload):undefined,cache:"no-store",signal:AbortSignal.timeout(timeout)});
+ const writes=method==="POST"||method==="DELETE";
+ const headers=writes?{"content-type":"application/json",authorization:"Bearer "+(token||authToken)}:{"x-admin-session":token||authToken};
+ const r=await fetch(url,{method,headers,body:writes?JSON.stringify(payload):undefined,cache:"no-store",signal:AbortSignal.timeout(timeout)});
  const data=await r.json().catch(()=>({error:"Réponse serveur invalide"}));
  if(!r.ok)throw Object.assign(new Error(data.error||"Erreur HTTP "+r.status),{code:r.status});
  return data;
@@ -115,11 +116,35 @@ async function loadCatalog(){
   const v=await request(API.catalog,{token:authToken,timeout:20000});
   if(!Array.isArray(v.products))throw new Error("Réponse catalogue incompatible");
   catalog=v;$("catalogState").textContent=v.products.length+" produits actifs · "+(v.inactive_products||[]).length+" inactifs";
-  populateDatalists();if(rows.length){refreshMatches();autoVerifyGreenRows();renderRows()}
+  populateDatalists();await loadAliases();if(rows.length){refreshMatches();autoVerifyGreenRows();renderRows()}
  }catch(e){
   catalog=null;$("catalogState").textContent="Catalogue indisponible";
   notice("Veryfi est accessible, mais le catalogue collège est indisponible : "+e.message,"error");
  }
+}
+async function loadAliases(){
+ try{
+  const data=await request(API.aliases,{token:authToken,timeout:18000});
+  if(!data.ok||!Array.isArray(data.aliases))throw Error("Réponse du carnet invalide");
+  aliases=data.aliases;
+ }catch(error){
+  aliases=[];
+  notice("Carnet des mots-clés indisponible : "+error.message,"error");
+ }
+}
+async function saveKeyword(row,keyword,global=false){
+ const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ if(!product)throw Error("Sélectionnez un produit actif.");
+ if(norm(keyword).length<3)throw Error("Mot-clé trop court.");
+ const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm()},timeout:20000});
+ if(!result.ok)throw Error(result.error||"Enregistrement refusé");
+ await loadAliases();
+ return result.alias;
+}
+async function deleteKeyword(id){
+ const result=await request(API.aliases,{method:"DELETE",token:authToken,payload:{id},timeout:20000});
+ if(!result.ok)throw Error(result.error||"Suppression refusée");
+ await loadAliases();
 }
 function populateDatalists(){
  const p=$("productOptions");p.replaceChildren();
@@ -177,7 +202,7 @@ function makeRow(x,index){
   quantity:x.quantity??"",unit:String(x.unit||""),unit_price:x.unit_price??"",total:x.total??"",
   tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:typeof x.boxes?.description?.score==="number"?x.boxes.description.score:typeof x.boxes?.total?.score==="number"?x.boxes.total.score:null,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
-  matched:false,verified:false,autoVerified:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
+  matched:false,verified:false,autoVerified:false,manualVerified:false,manualMatchRequired:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
 function bindDocument(){
  const d=documentData;
@@ -208,6 +233,23 @@ function findProduct(row){
   if(inactive.length===1)return {product:null,source:"Produit DÉSACTIVÉ : "+inactive[0].code+" — "+inactive[0].name};
   if(inactive.length>1)return {product:null,source:"Plusieurs produits désactivés correspondent"};
  }
+ const matches=aliases.filter(a=>(!a.supplier_key||norm(a.supplier_key)===supplier)&&
+  ((ref&&norm(a.keyword_norm)===ref)||(label&&norm(a.keyword_norm)===label)));
+ if(matches.length){
+  const ids=[...new Set(matches.map(x=>x.product_id))];
+  if(ids.length>1)return {product:null,source:"Mot-clé ambigu : sélection manuelle nécessaire"};
+  const p=active.find(x=>x.id===ids[0]);
+  if(p)return {product:p,source:"Appellation confirmée dans le carnet"};
+ }
+ const partial=aliases.filter(a=>(!a.supplier_key||norm(a.supplier_key)===supplier)&&
+  norm(a.keyword_norm).length>=7&&label.includes(norm(a.keyword_norm)));
+ if(partial.length){
+  const ids=[...new Set(partial.map(a=>a.product_id))];
+  if(ids.length===1){
+   const p=active.find(x=>x.id===ids[0]);
+   if(p)return {product:p,source:"Mot-clé partiel : valider manuellement",manualMatchRequired:true};
+  }else return {product:null,source:"Mots-clés partiels ambigus"};
+ }
  if(label.length>=7){
   const exact=active.filter(x=>norm(x.name)===label);
   if(exact.length===1)return {product:exact[0],source:"Désignation catalogue exacte"};
@@ -216,7 +258,7 @@ function findProduct(row){
 }
 function applyMatch(row,match,keepManual=false){
  const product=match?.product;
- row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";
+ row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";row.manualMatchRequired=match?.manualMatchRequired===true;
  row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
  const stock=stockSuggestion(row,product);
  if(!keepManual||!row.stock_manual)row.stock_quantity=stock.quantity;
