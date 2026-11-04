@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Lecteur Veryfi | Gestion Collège</title>
+<link rel="stylesheet" href="./veryfi.css?v=1">
+<script defer src="./veryfi.js?v=1"></script>
+</head>
+<body>
+<main class="shell">
+<header class="header">
+  <div><div class="eyebrow">COURS CHAMBERTIN · FACTURES FOURNISSEURS</div>
+    <h1>Lecteur <span>Veryfi</span></h1>
+    <p class="subtitle">Lecture structurée des PDF · contrôle visuel · rapprochement au catalogue</p>
+  </div>
+  <div class="header-actions">
+    <span id="scope" class="scope">Secrétariat</span>
+    <a id="backLink" class="btn secondary" href="../secretariat/">Retour à l'application</a>
+  </div>
+</header>
+<section class="sessionbar" aria-live="polite">
+  <div class="session-details"><span id="sessionDot" class="dot"></span><strong id="sessionState">Vérification de la session…</strong><span id="catalogState" class="subtle"></span></div>
+  <a class="btn secondary small" id="loginLink" href="../secretariat/?return=veryfi&reauth=1&reader=dedicated" hidden>Se reconnecter</a>
+  <button class="btn secondary small" id="refreshSession" type="button">Vérifier la connexion</button>
+</section>
+<div id="notice" class="notice" role="status" aria-live="polite">Déposez une facture PDF pour commencer.</div>
+<div class="workspace">
+  <section class="panel document-panel" aria-labelledby="pdfTitle">
+    <div class="panel-title">
+      <div><div class="step">01 / ORIGINAL</div><h2 id="pdfTitle">Document à analyser</h2></div>
+      <span class="cap">PDF · 6 Mo max.</span>
+    </div>
+    <div class="drop" id="drop" role="button" tabindex="0" aria-label="Déposer ou choisir une facture PDF">
+      <div class="drop-symbol">PDF</div>
+      <div><strong>Déposez votre facture ici</strong><div class="subtle">ou cliquez pour sélectionner un fichier</div></div>
+    </div>
+    <input id="file" type="file" accept=".pdf,application/pdf" hidden>
+    <div class="filebar"><span id="fileName">Aucun document sélectionné</span><button type="button" id="clearFile" class="btn secondary small" disabled>Retirer</button></div>
+    <div class="buttons">
+      <button type="button" id="analyze" class="btn primary" disabled>Lire avec Veryfi</button>
+      <button type="button" id="newDocument" class="btn secondary" hidden>Nouvelle facture</button>
+    </div>
+    <p class="hint">L’envoi à Veryfi nécessite votre confirmation. Aucun stock ni compte comptable n’est modifié par la lecture.</p>
+    <div class="viewerbar"><strong>Facture originale</strong><a id="openPdf" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans un autre onglet</a></div>
+    <div id="viewerEmpty" class="viewer-empty">L’aperçu du PDF s’affichera ici.</div>
+    <iframe id="viewer" title="Facture PDF originale" hidden></iframe>
+  </section>
+  <section class="panel results-panel" aria-labelledby="resultTitle">
+    <div class="panel-title">
+      <div><div class="step">02 / LECTURE VERYFI</div><h2 id="resultTitle">Vérification des données</h2></div>
+      <span id="readingState" class="cap">En attente du document</span>
+    </div>
+    <div id="resultsEmpty" class="results-empty"><div class="results-icon">01 → 02</div><strong>Une lecture unique, sans transcription intermédiaire</strong><p>Le PDF reste visible pendant le contrôle des informations détectées par Veryfi.</p></div>
+    <div id="results" hidden>
+      <div id="metrics" class="metrics"></div>
+      <h3>Informations de la facture</h3>
+      <div class="fields">
+        <label class="field field-wide"><span>Fournisseur</span><input id="vendor" autocomplete="off"></label>
+        <label class="field"><span>N° facture</span><input id="invoiceNumber" autocomplete="off"></label>
+        <label class="field"><span>Date de facture</span><input id="invoiceDate" type="date"></label>
+        <label class="field"><span>Total HT</span><input id="subtotal" inputmode="decimal"></label>
+        <label class="field"><span>TVA</span><input id="tax" inputmode="decimal"></label>
+        <label class="field"><span>Total TTC</span><input id="total" inputmode="decimal"></label>
+      </div>
+      <div id="fieldScores" class="subtle" aria-live="polite"></div>
+      <div class="section-heading">
+        <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF.</p></div>
+        <button id="addLine" type="button" class="btn secondary small">Ajouter une ligne</button>
+      </div>
+      <div id="lines" class="lines"></div>
+      <datalist id="productOptions"></datalist>
+      <datalist id="accountOptions"></datalist>
+      <div id="reconciliation" class="reconciliation" aria-live="polite"></div>
+      <div class="validation">
+        <label class="confirm"><input type="checkbox" id="confirmReview"> J’ai contrôlé les informations et les lignes retenues sur la facture originale.</label>
+        <div class="buttons">
+          <button id="save" class="btn primary" type="button" disabled>Valider la facture</button>
+          <span id="saveHelp" class="subtle">Aucun enregistrement sans confirmation.</span>
+        </div>
+        <div id="saveResult" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+</div>
+<footer>Veryfi extrait les données. Le rapprochement et l’enregistrement restent soumis aux contrôles du collège.</footer>
+</main>
+</body>
+</html>
