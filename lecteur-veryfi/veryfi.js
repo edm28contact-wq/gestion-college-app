@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
-let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false;
+let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
 const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x).replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");return /^-?\d+(?:\.\d+)?$/.test(t)&&Number.isFinite(Number(t))?Number(t):null};
@@ -130,6 +130,22 @@ function showUsage(u){
   " Ne comprend pas les autres lectures du compte Veryfi et ne remplace pas son relevé officiel.";
  settings.hidden=!u.can_manage;
  if(u.can_manage){$("quotaInput").value=quota??""}
+}
+async function refreshUsage(){
+ if(!authToken||!serverReady||loading||document.hidden||usageRefreshPending)return;
+ usageRefreshPending=true;
+ try{
+  const data=await request(API.veryfi,{token:authToken,timeout:15000});
+  if(data?.usage)showUsage(data.usage);
+  else showUsage(null);
+ }catch(error){
+  if(error.code===401||error.code===403){
+   authToken="";serverReady=false;showUsage(null);
+   $("sessionDot").className="dot bad";
+   $("sessionState").textContent="Session expirée — reconnectez-vous";
+   $("loginLink").hidden=false;$("analyze").disabled=true;
+  }
+ }finally{usageRefreshPending=false}
 }
 async function configureQuota(q){
  const buttons=[$("quotaSave"),$("quotaClear")];buttons.forEach(b=>b.disabled=true);
@@ -791,7 +807,12 @@ function setup(){
   $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.confirmedOnPdf=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
- window.addEventListener("focus",()=>{if(!loading&&!saved&&file)resolveSession()});
+ window.addEventListener("focus",()=>{
+  if(!loading&&!saved&&file)resolveSession();
+  else refreshUsage();
+ });
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshUsage()});
+ setInterval(refreshUsage,300000);
  window.addEventListener("pagehide",()=>{if(objectUrl)URL.revokeObjectURL(objectUrl)});
  resolveSession();
 }
