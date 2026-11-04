@@ -301,6 +301,47 @@ function autoVerifyGreenRows(){
   if(green&&!row.verified){row.verified=true;row.autoVerified=true}
  }
 }
+function keywordNotebook(row,index){
+ const wrap=document.createElement("details");wrap.className="keyword-notebook";
+ const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ const title=document.createElement("summary");
+ title.textContent="Carnet de mots-clés"+(product?" — "+product.code:" — sélectionnez d'abord un produit");
+ wrap.append(title);
+ if(!product){
+  const hint=document.createElement("p");hint.textContent="Associez cette ligne à un produit actif pour enregistrer une nouvelle appellation.";wrap.append(hint);return wrap;
+ }
+ const known=aliases.filter(a=>a.product_id===product.id);
+ const list=document.createElement("div");list.className="keyword-list";
+ if(!known.length){const empty=document.createElement("span");empty.textContent="Aucun mot-clé enregistré pour ce produit.";empty.className="subtle";list.append(empty)}
+ for(const alias of known){
+  const item=document.createElement("div");item.className="keyword-entry";
+  const label=document.createElement("span");label.textContent=alias.keyword+(alias.supplier_key?" · fournisseur":" · global");
+  const remove=document.createElement("button");remove.type="button";remove.className="btn secondary small";remove.textContent="Supprimer";
+  remove.disabled=saved;
+  remove.addEventListener("click",async()=>{
+   if(!confirm("Supprimer définitivement ce mot-clé du carnet ?"))return;
+   remove.disabled=true;
+   try{await deleteKeyword(alias.id);notice("Mot-clé supprimé.","success");renderRows()}
+   catch(e){notice("Suppression impossible : "+e.message,"error");remove.disabled=false}
+  });
+  item.append(label,remove);list.append(item);
+ }
+ wrap.append(list);
+ const form=document.createElement("div");form.className="keyword-form";
+ const input=document.createElement("input");input.type="text";input.maxLength=160;input.value=row.description||"";
+ input.placeholder="Nouvelle appellation ou mot-clé";input.setAttribute("aria-label","Mot-clé du produit");
+ const button=document.createElement("button");button.type="button";button.className="btn secondary small";button.textContent="Mémoriser";
+ button.disabled=saved;
+ button.addEventListener("click",async()=>{
+  if(!input.value.trim())return notice("Renseignez le mot-clé à mémoriser.","error");
+  button.disabled=true;
+  try{await saveKeyword(row,input.value.trim());notice("Nouvelle appellation mémorisée pour "+product.code+".","success");renderRows()}
+  catch(e){notice("Mot-clé non enregistré : "+e.message,"error");button.disabled=false}
+ });
+ form.append(input,button);wrap.append(form);
+ const note=document.createElement("p");note.className="subtle";note.textContent="Par défaut, mot-clé lié au fournisseur de cette facture. Une correspondance complète sera réutilisée sur les prochaines factures.";wrap.append(note);
+ return wrap;
+}
 function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
  const heading=document.createElement("div");heading.className="row-head";
@@ -356,7 +397,7 @@ function buildLine(row,index){
  });
  foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Supprimer cette ligne ? Son montant ne sera plus inclus dans le contrôle HT."))return;rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
- card.append(foot);card.classList.toggle("excluded",row.excluded);
+ card.append(foot);card.append(keywordNotebook(row,index));card.classList.toggle("excluded",row.excluded);
  card.classList.add(productColor(row));
  return card;
 }
