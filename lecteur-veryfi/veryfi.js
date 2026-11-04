@@ -226,11 +226,18 @@ function applyMatch(row,match,keepManual=false){
 function refreshMatches(){
  for(const row of rows)if(!row.product_manual)applyMatch(row,findProduct(row),true);
 }
+function productColor(row){
+ if(!catalog)return "warn";
+ if(!row.product_id)return "bad";
+ return typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95?"good":"warn";
+}
 function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
  const heading=document.createElement("div");heading.className="row-head";
- const score=typeof row.score==="number"?Math.round(row.score*100):null;
- heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+(score==null?"unknown":score<80?"low":"")+'">'+(score==null?"Confiance inconnue":score+" %")+'</span>';
+ const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.round(row.score*100):null;
+ const color=productColor(row);
+ const label=color==="bad"?"Hors catalogue":color==="good"?"Reconnu":"À contrôler";
+ heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
  const definitions=[["reference","Référence fournisseur","text"],["description","Désignation","text","wide"],["quantity","Quantité facturée","number"],["unit","Unité","text"],["unit_price","Prix unitaire HT","number"],["total","Total HT","number"],["tax_rate","TVA (%)","number"],["product_label","Produit du catalogue","text","wide"],["stock_quantity","Entrée en stock","number"],["account","Compte de charge proposé","text"]];
@@ -255,8 +262,7 @@ function buildLine(row,index){
  foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Supprimer cette ligne ? Son montant ne sera plus inclus dans le contrôle HT."))return;rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.classList.toggle("excluded",row.excluded);
- const matched=!!row.product_id&&!row.excluded;
- card.classList.toggle("bad",!matched&&!row.excluded||row.excluded);card.classList.toggle("warn",!row.verified&&matched);
+ card.classList.add(productColor(row));
  return card;
 }
 function changeRow(index,key,value){
