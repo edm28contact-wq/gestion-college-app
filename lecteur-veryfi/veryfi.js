@@ -278,13 +278,16 @@ function productColor(row){
  if(!product)return "bad";
  const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95;
  const amountsOk=eligible(row),stockOk=amount(row.stock_quantity)>0&&!!String(row.unit||"").trim();
- return confidenceOk&&amountsOk&&stockOk&&!row.changed&&!row.excluded?"good":"warn";
+ const manuallyApproved=row.manualVerified===true&&row.verified===true;
+ return amountsOk&&stockOk&&!row.excluded&&
+  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired))?"good":"warn";
 }
 function reviewReason(row){
  if(!catalog)return "Catalogue non chargé.";
  if(!row.product_id)return row.reason||"Aucun produit actif trouvé.";
  if(row.excluded)return "Ligne écartée de la réception.";
  if(row.changed)return "Données modifiées manuellement : contrôle nécessaire.";
+ if(row.manualMatchRequired)return "Mot-clé partiel : confirmer le produit et la quantité.";
  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=0.95))return "Confiance du produit inférieure à 95 % ou non fournie.";
  if(!eligible(row))return "Montant incohérent : quantité × prix unitaire ne correspond pas au total HT.";
  if(!(amount(row.stock_quantity)>0))return "Quantité de stock manquante ou conversion du conditionnement à vérifier.";
@@ -303,7 +306,7 @@ function buildLine(row,index){
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.round(row.score*100):null;
  const color=productColor(row);
- const label=color==="bad"?"Hors catalogue":color==="good"?"Validée automatiquement":"À contrôler";
+ const label=color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":"Validée automatiquement"):"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
@@ -338,13 +341,20 @@ function buildLine(row,index){
  if(color==="good"){
   const approved=document.createElement("div");
   approved.className="row-approved";
-  approved.textContent="Ligne contrôlée automatiquement (score ≥ 95 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
+  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (score ≥ 95 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
   card.append(approved);
  }
  const foot=document.createElement("div");foot.className="row-foot";
- foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?'Validée automatiquement — modifiable':'Vérifiée sur PDF')+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
- foot.querySelector('[data-choice="verified"]').addEventListener("change",e=>{row.verified=e.target.checked;row.autoVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
- foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
+ foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?"Validée automatiquement":row.manualVerified?"Validée manuellement":"Confirmer le produit et le montant")+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
+ foot.querySelector('[data-choice="verified"]').addEventListener("change",e=>{
+  if(e.target.checked&&(!row.product_id||!eligible(row)||!(amount(row.stock_quantity)>0)||row.excluded)){
+   notice("Impossible de confirmer : choisissez un produit actif et vérifiez quantité, prix, total HT et entrée en stock.","error");renderRows();return;
+  }
+  row.verified=e.target.checked;row.autoVerified=false;row.manualVerified=e.target.checked;
+  if(e.target.checked)row.changed=false;
+  $("confirmReview").checked=false;renderRows();
+ });
+ foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Supprimer cette ligne ? Son montant ne sera plus inclus dans le contrôle HT."))return;rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.classList.toggle("excluded",row.excluded);
  card.classList.add(productColor(row));
@@ -352,7 +362,7 @@ function buildLine(row,index){
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
- row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;$("confirmReview").checked=false;
+ row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   row.product_manual=false;row.stock_manual=false;row.account_manual=false;
   applyMatch(row,findProduct(row));
@@ -496,7 +506,7 @@ function setup(){
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
-  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
+  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
  window.addEventListener("focus",()=>{if(!loading&&!saved&&file)resolveSession()});
