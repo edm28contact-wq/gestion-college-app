@@ -28,9 +28,18 @@
  ];
  const areas={
   secretariat:{label:"Secrétariat",hideTabs:true,sections:[
-   section("Travail quotidien",[tab("Produits et stocks","#tStocks"),tab("Commandes","#tOrders"),link("Lecteur de factures Veryfi","lecteur-veryfi/?origine=secretariat"),link("Absences et incidents","secretariat/planning/")]),
-   section("Gestion de l'espace",[tab("Paramètres","#tSettings"),tab("Mot de passe","#tPassword")]),
-   section("Autres espaces",common)]},
+   section("Gestion quotidienne",[
+    tab("Stocks et produits","#tStocks"),
+    tab("Commandes fournisseurs","#tOrders"),
+    link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat"),
+    link("Planning des incidents","secretariat/planning/")
+   ]),
+   section("Réglages",[tab("Paramètres","#tSettings"),tab("Mot de passe","#tPassword")]),
+   section("Autres espaces",[
+    link("Admin Collège","college/admin/"),
+    link("Comptabilité","comptabilite/"),
+    link("Holding","admin/holding/")
+   ])]},
   comptabilite:{label:"Comptabilité",hideTabs:true,sections:[
    section("Comptabilité",[tab("Tableau de bord","#td"),tab("Recettes","#trc"),tab("Factures fournisseurs","#tde"),tab("Import de factures","#ti"),link("Lecteur Veryfi","lecteur-veryfi/?origine=comptabilite"),tab("Livres et documents","#tdoc"),tab("Outils avancés","#tadv")]),
    section("Autres espaces",common)]},
