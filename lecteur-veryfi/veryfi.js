@@ -258,15 +258,18 @@ function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
  row[key]=value;row.changed=true;row.verified=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
-  row.product_id="";row.product_label="";row.stock_quantity="";row.account="";
-  const m=findProduct(row);
-  if(m?.product){row.product_id=m.product.id;row.product_label=m.product.code+" — "+m.product.name;row.matched=true;row.reason=m.source}
-  else{row.matched=false;row.reason=m?.source||"Produit à associer"}
+  row.product_manual=false;row.stock_manual=false;row.account_manual=false;
+  applyMatch(row,findProduct(row));
  }else if(key==="product_label"){
   const p=(catalog?.products||[]).filter(x=>x.active!==false).find(x=>x.code+" — "+x.name===value);
-  row.product_id=p?.id||"";row.matched=!!p;row.reason=p?"Produit sélectionné manuellement":"Produit catalogue non identifié";
-  row.stock_quantity="";
- }else if(key==="unit"||key==="quantity"){row.stock_quantity=""}
+  row.product_manual=!!p;row.stock_manual=false;
+  applyMatch(row,p?{product:p,source:"Produit actif choisi manuellement"}:{product:null,source:"Produit absent ou désactivé : validation du stock bloquée"});
+ }else if(key==="quantity"||key==="unit"){
+  row.stock_manual=false;
+  const proposed=stockSuggestion(row,(catalog?.products||[]).find(p=>p.id===row.product_id));
+  row.stock_quantity=proposed.quantity;row.stock_note=proposed.note;
+ }else if(key==="stock_quantity"){row.stock_manual=true;row.stock_note="Quantité saisie manuellement : contrôler le conditionnement"}
+ else if(key==="account"){row.account_manual=true;row.account_source="Compte saisi manuellement : à vérifier"}
  renderRows();
 }
 function renderRows(){
@@ -304,7 +307,7 @@ function updateTotals(){
  if(c.discrepancy)errors.push("Total des lignes différent du total HT de la facture");
  if(c.grossMismatch)errors.push("HT + TVA différent du TTC");
  if(c.missing.length)errors.push(c.missing.length+" ligne(s) incompletes ou incohérentes");
- if(c.unmatched.length)errors.push(c.unmatched.length+" ligne(s) sans produit/quantité de stock");
+ if(c.unmatched.length)errors.push(c.unmatched.length+" ligne(s) sans produit actif ou quantité de stock confirmée");
  if(c.unverified.length)errors.push(c.unverified.length+" ligne(s) non vérifiées");
  if(ignored)errors.push(ignored+" ligne(s) écartées, non incluses dans le total");
  $("reconciliation").className="reconciliation "+(errors.length?"bad":"good");
@@ -344,7 +347,7 @@ async function save(){
    });
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:file.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
-    supplier_key:norm($("vendor").value),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.ht,
+    supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.ht,
     raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id}),items},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
    saved=true;notice("Facture validée. Commandes, achats et stocks synchronisés.","success");
@@ -373,7 +376,7 @@ function setup(){
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
-  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.changed=false;r.product_id="";r.verified=false});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
+  $(key).addEventListener("change",()=>{if(key==="vendor"){rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
  window.addEventListener("focus",()=>{if(!loading&&!saved&&file)resolveSession()});
