@@ -359,6 +359,35 @@ function confirmStockProposal(row){
  row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;
  return true;
 }
+function quickFixOptions(row){
+ const fixes=[],arithmetic=invoiceArithmetic(row);
+ if(!accounting&&!(amount(row.stock_quantity)>0)&&stockProposal(row))
+  fixes.push({kind:"stock",label:"Confirmer la quantité de stock"});
+ if(!arithmetic.incomplete&&!arithmetic.valid)
+  fixes.push({kind:"amount",label:"Corriger le total HT"});
+ if(eligible(row)&&(accounting||amount(row.stock_quantity)>0)&&productColor(row)==="warn")
+  fixes.push({kind:"approve",label:"Vérifier et passer au vert"});
+ return fixes;
+}
+function applyQuickFix(row,kind){
+ if(saved||loading||row.excluded||!row.product_id)return {ok:false,message:"Cette ligne n'est pas modifiable."};
+ if(kind==="stock"){
+  if(!stockProposal(row))return {ok:false,message:"Aucune conversion vérifiable disponible."};
+  if(!confirmStockProposal(row))return {ok:false,quiet:true};
+  return {ok:true,message:"Quantité de stock confirmée. Vous pouvez maintenant vérifier et valider la ligne."};
+ }
+ if(kind==="amount"){
+  const calculation=invoiceArithmetic(row);
+  if(calculation.incomplete||calculation.valid)return {ok:false,message:"Aucune correction de montant nécessaire."};
+  if(!confirm("Le lecteur propose "+fmt(calculation.calculated)+" à la place de "+fmt(calculation.total)+". Vérifiez le montant de la ligne sur le PDF ORIGINAL avant de confirmer. Appliquer cette correction ?"))
+   return {ok:false,quiet:true};
+  row.total=calculation.calculated;row.verified=false;row.autoVerified=false;
+  row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;
+  return {ok:true,message:"Total HT corrigé. Confirmez la ligne après vérification sur la facture."};
+ }
+ if(kind==="approve")return confirmRowManually(row);
+ return {ok:false,message:"Action inconnue."};
+}
 function confirmRowManually(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product||row.excluded)return {ok:false,message:"Choisissez un produit actif et non écarté avant de confirmer la ligne."};
@@ -468,6 +497,24 @@ function buildLine(row,index){
   approved.className="row-approved";
   approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (score ≥ 95 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
   card.append(approved);
+ }
+ if(color==="warn"&&!row.excluded&&!saved){
+  const actions=quickFixOptions(row);
+  if(actions.length){
+   const fixes=document.createElement("div");fixes.className="quick-fixes";
+   for(const action of actions){
+    const btn=document.createElement("button");btn.type="button";
+    btn.className="btn secondary small";btn.textContent=action.label;
+    btn.addEventListener("click",()=>{
+     const result=applyQuickFix(row,action.kind);
+     if(!result.quiet)notice(result.message,result.ok&&!result.partial?"success":result.ok?"":"error");
+     if(result.ok)$("confirmReview").checked=false;
+     renderRows();
+    });
+    fixes.append(btn);
+   }
+   card.append(fixes);
+  }
  }
  const foot=document.createElement("div");foot.className="row-foot";
  foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?"Validée automatiquement":row.manualVerified?"Validée manuellement":row.confirmedOnPdf?"Lecture confirmée — corriger l’écart":"Confirmer après vérification du PDF")+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
