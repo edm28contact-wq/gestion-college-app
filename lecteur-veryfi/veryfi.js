@@ -61,23 +61,45 @@ function accountFor(row){
  const r=supplierRule();
  return r&&valid.has(String(r.expense_account||""))?{account:String(r.expense_account),source:"Compte fournisseur par défaut : à confirmer"}:{account:"",source:"Compte à identifier"};
 }
+function stockUnitKind(label){
+ const unit=canonicalUnit(label);
+ const words=String(label||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+ const prefix=words.replace(/^\d+\s*/,"").match(/^(rouleau|sachet|lot|bidon|boite|carton|paquet|pot|seau|bouteille|barquette|ramette|flacon|bobine)s?(?:\b|\s)/);
+ if(!prefix)return unit;
+ return prefix[1]==="bobine"?"rouleau":prefix[1];
+}
+function invoiceSaleUnit(row,product){
+ const invoice=canonicalUnit(row.unit),sale=canonicalUnit(product.unit),stock=stockUnitKind(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ if(invoice===sale)return {ok:true,why:"unités identiques"};
+ const factor=amount(product.purchase_to_stock_factor);
+ const discrete=new Set(["pot","bouteille","barquette","sachet","dosette","portion","repas","seau","boite","rouleau","bidon","paquet","flacon"]);
+ if(invoice==="piece"&&factor===1&&discrete.has(sale)&&sale===stock)
+  return {ok:true,why:"Pièce / Unité sur la facture = "+product.unit+" du catalogue"};
+ const packaging=String(product.conditionnement||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+ if(sale==="piece"&&invoice==="carton"&&/^carton\b/.test(packaging))
+  return {ok:true,why:"Colis facturé = carton fournisseur"};
+ if(sale==="piece"&&invoice==="lot"&&/^lot\b/.test(packaging))
+  return {ok:true,why:"Lot facturé = lot fournisseur"};
+ return {ok:false,why:"Unité fournisseur « "+row.unit+" » différente de l'unité d'achat « "+product.unit+" »"};
+}
 function stockSuggestion(row,product){
  const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor);
  if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler",needsReview:true};
- const unit=canonicalUnit(row.unit),purchaseUnit=canonicalUnit(product.unit);
- const stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ const invoice=canonicalUnit(row.unit),purchase=canonicalUnit(product.unit);
+ const stock=stockUnitKind(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
  const stockLabel=product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||"unités";
- if(!unit)return {quantity:"",note:"Unité absente sur la facture : confirmer l’unité de vente du catalogue",needsReview:true};
+ if(!invoice)return {quantity:"",note:"Unité absente sur la facture : vérifier l'unité de vente du catalogue",needsReview:true};
  if(!(factor>0))return {quantity:"",note:"Coefficient achat → stock invalide",needsReview:true};
- if(unit===stockUnit&&unit!==purchaseUnit)return {quantity,note:"Facture déjà en "+stockLabel+" : aucune conversion",needsReview:false};
- if(unit!==purchaseUnit)return {quantity:"",note:"Unité facturée « "+row.unit+" » distincte des unités de vente et de stock",needsReview:true};
- if(factor===1)return {quantity,note:"1 unité achetée = 1 "+stockLabel+" en stock",needsReview:false};
- const sale=String(product.conditionnement||"").trim(),stock=String(product.inventory_unit_label||"").trim();
- if(!sale||!stock||/à confirmer/i.test(sale)||/à confirmer/i.test(stock))
+ if(invoice===stock&&invoice!==purchase)return {quantity,note:"Facture déjà exprimée en "+stockLabel+" : pas de conversion",needsReview:false};
+ const compatible=invoiceSaleUnit(row,product);
+ if(!compatible.ok)return {quantity:"",note:compatible.why,needsReview:true};
+ if(factor===1)return {quantity,note:compatible.why==="unités identiques"?"1 unité achetée = 1 "+stockLabel+" en stock":compatible.why+" ; quantité "+quantity+" "+stockLabel,needsReview:false};
+ const sale=String(product.conditionnement||"").trim(),stockLabelRaw=String(product.inventory_unit_label||"").trim();
+ if(!sale||!stockLabelRaw||/à confirmer/i.test(sale)||/à confirmer/i.test(stockLabelRaw))
   return {quantity:"",note:"Conversion ×"+factor+" à confirmer dans la fiche produit",needsReview:true};
  const converted=Math.round(quantity*factor*1000)/1000;
- const factorVerified=Object.hasOwn(verifiedConversions,String(product.code))&&verifiedConversions[String(product.code)]===factor;
- return {quantity:converted,note:(factorVerified?"Conversion fournisseur vérifiée : ":"Proposition à confirmer : ")+quantity+" × "+factor+" = "+converted+" "+stockLabel,needsReview:!factorVerified};
+ const verified=Object.hasOwn(verifiedConversions,String(product.code))&&verifiedConversions[String(product.code)]===factor;
+ return {quantity:converted,note:(verified?"Conversion fournisseur vérifiée : ":"Conversion proposée à confirmer : ")+quantity+" × "+factor+" = "+converted+" "+stockLabel,needsReview:!verified};
 }
 function showUsage(u){
  const title=$("usageMonth"),used=$("usageUsed"),limit=$("usageLimit"),left=$("usageRemaining");
@@ -314,6 +336,8 @@ function applyMatch(row,match,keepManual=false){
  const product=match?.product;
  if(row.product_id&&row.product_id!==product?.id){
   row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;
+  if(row.unit_inferred){row.unit="";row.unit_inferred=false}
+  row.stock_manual=false;row.stock_confirmed=false;
  }
  row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";row.manualMatchRequired=match?.manualMatchRequired===true;
  row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
@@ -370,12 +394,12 @@ function stockProposal(row){
  const q=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor);
  if(!product||!(q>0)||q>1000000||!(factor>0))return null;
  const invoiceUnit=canonicalUnit(row.unit),saleUnit=canonicalUnit(product.unit);
- const stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ const stockUnit=stockUnitKind(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
  if(!invoiceUnit)return null;
  const label=product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||"unités";
  if(invoiceUnit===stockUnit&&invoiceUnit!==saleUnit)
   return {quantity:q,unit:label,note:"Facture déjà exprimée en unités de stock",fromCatalog:true};
- if(invoiceUnit!==saleUnit)return null;
+ if(!invoiceSaleUnit(row,product).ok)return null;
  const inferred=/à confirmer/i.test(String(product.conditionnement||""))||/à confirmer/i.test(String(product.inventory_unit_label||""));
  if(factor!==1&&inferred)return null;
  const suggested=stockSuggestion(row,product);
@@ -505,7 +529,9 @@ function buildLine(row,index){
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
- const definitions=[["reference","Référence fournisseur","text"],["description","Désignation","text","wide"],["quantity","Quantité facturée","number"],["unit","Unité","text"],["unit_price","Prix unitaire HT","number"],["total","Total HT","number"],["tax_rate","TVA (%)","number"],["product_label","Produit du catalogue","text","wide"],["stock_quantity","Entrée en stock","number"],["account","Compte de charge proposé","text"]];
+ const productForUnit=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ const storageLabel=productForUnit?(productForUnit.stock_count_mode==="litre"?"litres":productForUnit.inventory_unit_label||productForUnit.unit):"unité non définie";
+ const definitions=[["reference","Référence fournisseur","text"],["description","Désignation","text","wide"],["quantity","Quantité facturée","number"],["unit","Unité facturée","text"],["unit_price","Prix unitaire HT","number"],["total","Total HT","number"],["tax_rate","TVA (%)","number"],["product_label","Produit du catalogue","text","wide"],["stock_quantity","Entrée en stock ("+storageLabel+")","number"],["account","Compte de charge proposé","text"]];
  for(const [key,title,type,wide] of definitions){
   const label=document.createElement("label");label.className="field"+(wide?" "+wide:"");
   const span=document.createElement("span");span.textContent=title;label.append(span);
