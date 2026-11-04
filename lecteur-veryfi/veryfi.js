@@ -40,24 +40,26 @@ function accountFor(row){
  return r&&valid.has(String(r.expense_account||""))?{account:String(r.expense_account),source:"Compte fournisseur par défaut : à confirmer"}:{account:"",source:"Compte à identifier"};
 }
 function stockSuggestion(row,product){
- const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor)||1;
+ const quantity=amount(row.quantity),factor=amount(product?.purchase_to_stock_factor);
  if(!product||product.active===false||!(quantity>0))return {quantity:"",note:"Produit ou quantité à contrôler"};
- const unit=canonicalUnit(row.unit),stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
- const packageIsLot=/\blot\s+de\s+\d+/i.test(String(product.colisage||""));
- if(unit==="piece"&&factor>1&&(product.stock_count_mode==="litre"||packageIsLot)){
-  const result=Math.round(quantity*factor*1000)/1000;
-  return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
+ const unit=canonicalUnit(row.unit),purchaseUnit=canonicalUnit(product.unit);
+ const stockUnit=canonicalUnit(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ const hasSale=!!String(product.conditionnement||"").trim();
+ const hasStock=!!String(product.inventory_unit_label||"").trim();
+ const stockLabel=product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||"unités";
+ if(!unit)return {quantity:"",note:"Unité facturée absente : vérifier sur le PDF et renseigner l'unité de vente"};
+ if(!(factor>0))return {quantity:"",note:"Coefficient achat → stock invalide dans la fiche produit"};
+ if(unit===stockUnit){
+  if(factor!==1&&unit===purchaseUnit)return {quantity:"",note:"Unités de vente et de stock identiques mais coefficient ×"+factor+" : clarifier le conditionnement dans la fiche"};
+  return {quantity,note:"Quantité conservée : facture déjà exprimée en "+stockLabel+" (pas de multiplication)"};
  }
- if(unit===stockUnit)
-  return {quantity,note:"Quantité de stock identique à la quantité facturée : à vérifier"};
- const purchaseUnit=canonicalUnit(product.unit);
- if(factor===1&&product.stock_count_mode!=="litre"&&unit===purchaseUnit)
-  return {quantity,note:"Conditionnement ×1 : "+quantity+" "+(product.inventory_unit_label||product.unit||"unité(s)")+" proposé(s) en stock"};
- if(unit==="piece"&&factor>1){
-  const result=Math.round(quantity*factor*1000)/1000;
-  return {quantity:result,note:"Conversion proposée : "+quantity+" × "+factor+" = "+result+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||"unités")+" · à confirmer"};
- }
- return {quantity:"",note:"Conversion inconnue : renseigner manuellement"};
+ if(unit!==purchaseUnit)return {quantity:"",note:"L'unité facturée ne correspond ni à la vente (« "+(product.unit||"—")+" ») ni au stock (« "+stockLabel+" ») : à contrôler"};
+ if(factor===1&&product.stock_count_mode!=="litre")
+  return {quantity,note:"1 unité vendue = 1 "+stockLabel+" en stock, suivant la fiche"};
+ if(!hasSale||!hasStock)
+  return {quantity:"",note:"Conversion ×"+factor+" non confirmable : renseigner les conditionnements de vente et de stock dans la fiche produit"};
+ const result=Math.round(quantity*factor*1000)/1000;
+ return {quantity:result,note:"Conversion depuis la fiche produit : "+quantity+" × "+factor+" = "+result+" "+stockLabel+" · vérifier sur le PDF"};
 }
 function showUsage(u){
  const title=$("usageMonth"),used=$("usageUsed"),limit=$("usageLimit"),left=$("usageRemaining");
@@ -480,6 +482,19 @@ function buildLine(row,index){
  const meta=document.createElement("div");meta.className="mapping";
  meta.textContent=color==="bad"?(row.stock_note||"Aucune réception automatique autorisée"):(row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:""));
  card.append(meta);
+ const matchedProduct=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ if(matchedProduct){
+  const packaging=document.createElement("div");packaging.className="product-packaging";
+  const sale=String(matchedProduct.conditionnement||"").trim();
+  const stock=String(matchedProduct.inventory_unit_label||(matchedProduct.stock_count_mode==="litre"?"litre":matchedProduct.unit)||"").trim();
+  const info=document.createElement("span");
+  info.textContent="Vente : "+(sale||"non renseigné")+" · Stock : "+(stock||"non renseigné")+" · 1 acheté = "+(matchedProduct.purchase_to_stock_factor||1)+" en stock";
+  const link=document.createElement("a");
+  link.href="../college/admin/?page=products&product="+encodeURIComponent(matchedProduct.id);
+  link.target="_blank";link.rel="noopener noreferrer";link.textContent="Modifier les conditionnements";
+  packaging.append(info,link);
+  card.append(packaging);
+ }
  if(color==="bad"){
   const reason=document.createElement("div");
   reason.className="row-error";
