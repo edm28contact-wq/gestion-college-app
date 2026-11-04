@@ -281,7 +281,7 @@ function applyVeryfiInvoice(data){
   const result=C.parse(ocr);records=result.rows.map(r=>({...r,verified:false,product_id:""}));
   ignored=result.ignoredLines||[];unresolved=result.unresolvedLines||[];summary=result.meta||summary;
  }
- if(!records.length&&!unresolved.length)return status("Veryfi n’a retourné aucune ligne exploitable. Utilisez la transcription locale.",true);
+ if(!records.length&&!unresolved.length)return status("Veryfi n’a retourné aucune ligne exploitable. Vérifiez le PDF et relancez la lecture.",true);
  const sum=records.reduce((n,r)=>n+(numeric(r.total_ht)||0),0),delta=expected===null?null:Math.round((sum-expected)*100)/100;
  render();
  const problem=unresolved.length||delta!==null&&Math.abs(delta)>.02;
@@ -300,8 +300,8 @@ function boot(){
  document.addEventListener("invoice-veryfi:result",e=>applyVeryfiInvoice(e.detail));
  document.addEventListener("invoice-pdf:replace",()=>{
   $("sourceText").value="";records=[];ignored=[];unresolved=[];summary=null;currentProfile=null;$("supplierMatch").value="";delete $("supplierMatch").dataset.auto;["finalInvoiceNumber","finalInvoiceDate","finalInvoiceHT"].forEach(id=>$(id).value="");$("finalizeLinks").hidden=true;transferStatus("");render();
-  extractionStatus("Lecture du PDF lancée. Le texte doit apparaître automatiquement dans cette zone.");
-  status("Facture importée : extraction du texte en cours...");
+  extractionStatus("PDF chargé. L’analyse commencera après confirmation de Veryfi.");
+  status("Facture chargée. Cliquez sur « Lire avec Veryfi ».");
  });
  document.addEventListener("invoice-pdf:partial",e=>{
   const text=String(e.detail?.text||"");
