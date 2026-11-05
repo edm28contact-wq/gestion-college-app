@@ -79,7 +79,7 @@
 <div class="card"><div class="flex between"><h2>Registre des incidents</h2><div class="flex"><label>Filtrer</label><select id="filter" style="width:200px"><option value="all">Tous les incidents</option><option value="absence">Absences</option><option value="retard">Retards</option><option value="depart_anticipe">Départs anticipés</option><option value="incident">Incidents</option></select></div></div><div class="table"><table><thead><tr><th>Date</th><th>Personnel</th><th>Type d’incident</th><th>Durée</th><th>Justificatif</th><th>PDF</th><th>Observations</th></tr></thead><tbody id="rows"></tbody></table></div></div>
 <p id="message" class="status" role="status"></p>
 <p class="muted">Les absences, retards et incidents enregistrés ici sont repris dans la rubrique « Salaires » de l’Administration Collège. Cliquez sur une ligne pour corriger une saisie non encore validée.</p></section></main>
-<script src="./calendar.js?v=1"></script>
+<script src="./calendar.js?v=2"></script>
 <script>
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/',API=ROOT+'personnel-planning',LOGIN=ROOT+'admin-api?action=login';let token=localStorage.getItem('college_secretariat_token')||localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||'',events=[],admin=false,readonly=false,editing=null,loadVersion=0;
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));const labels={absence:'Absence',retard:'Retard',depart_anticipe:'Départ anticipé',incident:'Incident'};
