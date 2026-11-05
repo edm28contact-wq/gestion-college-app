@@ -50,8 +50,8 @@ function renderPlanningDay(list){
  document.getElementById("dayDetail").innerHTML='<div class="flex between"><h3>'+esc(planningDayLabel(date))+'</h3>'+
  (readonly?"":'<button class="btn" type="button" id="addForDay">+ Nouvel incident ce jour</button>')+'</div>'+
  (list.length?'<div class="day-detail-list">'+list.map(e=>{
-  const editable=!readonly&&e.review_status==="a_verifier";
-  return '<div class="day-detail-item cal-'+esc(e.event_type)+'"><div><strong>'+esc(e.personnel_name)+'</strong><small>'+esc(labels[e.event_type]||"Incident")+' · '+esc(planningHours(e))+'</small></div>'+(e.attachment_path?'<button type="button" data-pdf="'+esc(e.id)+'">PDF</button>':"")+(editable?'<button type="button" data-open="'+esc(e.id)+'">Modifier</button>':"")+"</div>";
+  const editable=!readonly&&e.review_status==="a_verifier",removable=!readonly&&(admin||e.review_status==="a_verifier");
+  return '<div class="day-detail-item cal-'+esc(e.event_type)+'"><div><strong>'+esc(e.personnel_name)+'</strong><small>'+esc(labels[e.event_type]||"Incident")+' · '+esc(planningHours(e))+'</small></div>'+(e.attachment_path?'<button type="button" data-pdf="'+esc(e.id)+'">PDF</button>':"")+(editable?'<button type="button" data-open="'+esc(e.id)+'">Modifier</button>':"")+(removable?'<button type="button" class="incident-delete" data-delete="'+esc(e.id)+'">Supprimer</button>':"")+"</div>";
  }).join("")+"</div>":'<p class="day-detail-empty">Aucun incident pour cette journée avec les filtres actuels.</p>');
  const create=document.getElementById("addForDay");if(create)create.addEventListener("click",()=>openForm(null,date));
 }
@@ -64,6 +64,7 @@ function choosePlanningDay(date){
  renderPlanningCalendar(filteredPlanningEvents());
 }
 function onPlanningCalendarClick(event){
+ const del=event.target.closest("[data-delete]");if(del){event.stopPropagation();deleteIncident(del.dataset.delete);return}
  const pdf=event.target.closest("[data-pdf]");if(pdf){event.stopPropagation();openIncidentPdf(pdf.dataset.pdf);return}
  const edit=event.target.closest("[data-open]");
  if(edit){
