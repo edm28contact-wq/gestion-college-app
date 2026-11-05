@@ -42,6 +42,7 @@
 <section id="passwordChange" class="login hide"><div class="box"><h1>Nouveau mot de passe requis</h1><p class="muted">Avant toute opération sensible, choisissez un mot de passe d’au moins 10 caractères. Une nouvelle connexion sera ensuite demandée.</p><label>Nouveau mot de passe</label><input id="newPass1" type="password" autocomplete="new-password"><br><br><label>Confirmer</label><input id="newPass2" type="password" autocomplete="new-password"><br><br><button class="btn primary" style="width:100%" onclick="changePassword()">Enregistrer le nouveau mot de passe</button><div id="passwordStatus" class="status"></div></div></section>
 <section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" href="../../admin/holding/">Holding</a><a class="btn secondary" href="../../secretariat/">Secrétariat</a><a class="btn secondary" href="../../secretariat/planning/">Planning du personnel / Paie</a><a class="btn secondary" href="../../comptabilite/">Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
 <div id="modal"></div>
+<script src="./site-designer.js?v=2"></script>
 <script>
 const UI_VERSION='2026.11.04-conditionnements-vente-stock';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
@@ -465,6 +466,6 @@ if(token)enterApp().catch(()=>logout());
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
 <script src="./salaires.js?v=20261024-tese-login-v2"></script>
-<script src="./site-designer.js?v=1"></script>
+
 </body>
 </html>
