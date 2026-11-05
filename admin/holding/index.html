@@ -32,6 +32,6 @@ async function enter(){saveUniversalToken(token);const j=await req(HOLDING,'acco
 function logoutHolding(){token='';clearUniversalTokens();location.reload()}
 if(token)enter().catch(()=>logoutHolding());
 </script>
-<script defer src="../../college/workspace-layout.js?v=4" data-area="holding" data-target="#app"></script>
+<script defer src="../../college/workspace-layout.js?v=5" data-area="holding" data-target="#app"></script>
 </body>
 </html>
