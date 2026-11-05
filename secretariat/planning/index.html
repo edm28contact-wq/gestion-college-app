@@ -83,6 +83,57 @@
 <script>
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/',API=ROOT+'personnel-planning',LOGIN=ROOT+'admin-api?action=login';let token=localStorage.getItem('college_secretariat_token')||localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||'',events=[],admin=false,readonly=false,editing=null,loadVersion=0;
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));const labels={absence:'Absence',retard:'Retard',depart_anticipe:'Départ anticipé',incident:'Incident'};
+
+function incidentMinutes(x){
+ if(Number.isInteger(x.duration_minutes)&&x.duration_minutes>0)return x.duration_minutes;
+ if(x.all_day)return 1440;
+ const a=String(x.start_time||'').slice(0,5),b=String(x.end_time||'').slice(0,5);
+ if(/^\d\d:\d\d$/.test(a)&&/^\d\d:\d\d$/.test(b)){
+  const m=t=>Number(t.slice(0,2))*60+Number(t.slice(3));
+  const diff=m(b)-m(a);return diff>0?diff:null;
+ }
+ return null;
+}
+function formatIncidentDuration(x){
+ if(x.all_day)return 'Journée entière';
+ const v=incidentMinutes(x);if(v==null)return 'Non renseignée';
+ return [Math.floor(v/60)?Math.floor(v/60)+' h':'',v%60?v%60+' min':''].filter(Boolean).join(' ')||'0 min';
+}
+async function validIncidentPdf(pdf){
+ if(pdf.size<5||pdf.size>6291456||pdf.type!=='application/pdf'){notice('PDF uniquement, 6 Mo maximum.');return false}
+ const bytes=new Uint8Array(await pdf.slice(0,5).arrayBuffer());
+ if(new TextDecoder().decode(bytes)!=='%PDF-'){notice('Fichier PDF invalide.');return false}
+ return true;
+}
+async function sendIncidentPdf(id,pdf){
+ const data=new FormData();data.append('id',id);data.append('pdf',pdf);
+ const r=await fetch(API+'?action=attachment-upload',{method:'POST',headers:{'x-admin-session':token},body:data,cache:'no-store'});
+ const j=await r.json().catch(()=>({error:'Réponse non valide'}));if(!r.ok)throw Error(j.error||'Impossible de joindre le PDF');return j;
+}
+async function openIncidentPdf(id){
+ const tab=window.open('','_blank');
+ try{
+  const r=await request('attachment-url','GET',null,'&id='+encodeURIComponent(id));
+  if(tab){tab.opener=null;tab.location.replace(r.url)}
+  else notice('Autorisez les fenêtres contextuelles pour ouvrir le PDF.');
+ }catch(e){if(tab)tab.close();notice('PDF inaccessible : '+e.message)}
+}
+function showExistingPdf(x){
+ const holder=$('existingPdf');holder.replaceChildren();
+ if(!x?.attachment_path)return;
+ const button=document.createElement('button');button.type='button';button.className='btn alt compact';
+ button.textContent='Ouvrir '+(x.attachment_name||'le PDF');
+ button.addEventListener('click',()=>openIncidentPdf(x.id));holder.append(button);
+ if(!readonly&&x.review_status==='a_verifier'){
+  const remove=document.createElement('button');remove.type='button';remove.className='btn alt compact';
+  remove.textContent='Retirer le PDF';
+  remove.addEventListener('click',async()=>{
+   if(!confirm('Retirer le PDF de cet incident ?'))return;
+   try{await request('attachment-remove','POST',{id:x.id});await load();notice('PDF retiré.',true)}catch(e){notice(e.message)}
+  });holder.append(remove);
+ }
+}
+
 function currentDate(){const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const part=k=>parts.find(x=>x.type===k)?.value;return part('year')+'-'+part('month')+'-'+part('day')}
 async function request(action,method='GET',body=null,query=''){const r=await fetch(API+'?action='+action+query,{method,headers:{'Content-Type':'application/json','x-admin-session':token},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json().catch(()=>({error:'Réponse invalide'}));if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
 function notice(s,good=false){$('message').textContent=s;$('message').className=good?'status good':'status'}
@@ -100,11 +151,11 @@ function render(){
    return '<tr'+row+'><td>'+esc(x.event_date)+'</td><td><b>'+esc(x.personnel_name)+'</b></td><td>'+esc(labels[x.event_type]||x.event_type)+'</td><td>'+esc(hours)+'</td><td>'+esc({non_requis:'Non requis',a_fournir:'À fournir',recu:'Reçu'}[x.justification_status]||'')+'</td><td>'+(x.attachment_path?'<button type="button" class="btn alt compact" data-pdf="'+esc(x.id)+'">PDF</button>':'—')+'</td><td>'+esc(x.details)+'</td></tr>';
  }).join(''):'<tr><td colspan="7">Aucun incident pour cette période.</td></tr>';
 }
-function openForm(x=null,date=null){if(readonly||x&&x.review_status!=='a_verifier')return;editing=x?.id||null;$('formTitle').textContent=x?'Modifier un incident':'Nouvel incident';$('entry').reset();$('date').value=x?.event_date||date||window.planningSelectedDay||currentDate();$('person').value=x?.personnel_name||'';$('kind').value=x?.event_type||'incident';$('start').value=x?.start_time?.slice(0,5)||'';$('end').value=x?.end_time?.slice(0,5)||'';$('allDay').checked=!!x?.all_day;$('justification').value=x?.justification_status||'non_requis';$('details').value=x?.details||'';toggleTimes();$('formCard').classList.remove('hide');$('formCard').scrollIntoView({behavior:'smooth'})}
-function toggleTimes(){$('start').disabled=$('allDay').checked;$('end').disabled=$('allDay').checked}
-async function save(e){e.preventDefault();const body={id:editing,event_date:$('date').value,personnel_name:$('person').value,event_type:$('kind').value,all_day:$('allDay').checked,start_time:$('start').value||null,end_time:$('end').value||null,justification_status:$('justification').value,details:$('details').value};try{await request('save','POST',body);window.planningSelectedDay=body.event_date;if(body.event_date.slice(0,7)!==$('month').value)$('month').value=body.event_date.slice(0,7);await load();notice('Incident enregistré.',true)}catch(e){notice(e.message)}}
+function openForm(x=null,date=null){if(readonly||x&&x.review_status!=='a_verifier')return;editing=x?.id||null;$('formTitle').textContent=x?'Modifier un incident':'Nouvel incident';$('entry').reset();$('date').value=x?.event_date||date||window.planningSelectedDay||currentDate();$('person').value=x?.personnel_name||'';$('kind').value=x?.event_type||'incident';$('duration').value=x?(incidentMinutes(x)??''):'';$('incidentPdf').value='';$('allDay').checked=!!x?.all_day;$('justification').value=x?.justification_status||'non_requis';$('details').value=x?.details||'';toggleTimes();showExistingPdf(x);$('formCard').classList.remove('hide');$('formCard').scrollIntoView({behavior:'smooth'})}
+function toggleTimes(){$('duration').disabled=$('allDay').checked;$('duration').required=!$('allDay').checked}
+async function save(e){e.preventDefault();const body={id:editing,event_date:$('date').value,personnel_name:$('person').value,event_type:$('kind').value,all_day:$('allDay').checked,duration_minutes:$('allDay').checked?1440:Number($('duration').value),justification_status:$('justification').value,details:$('details').value};try{const pdf=$('incidentPdf').files?.[0];if(pdf&&!(await validIncidentPdf(pdf)))return;const created=await request('save','POST',body);let pdfError='';if(pdf){try{await sendIncidentPdf(created.id,pdf)}catch(error){pdfError=error.message}}window.planningSelectedDay=body.event_date;if(body.event_date.slice(0,7)!==$('month').value)$('month').value=body.event_date.slice(0,7);await load();notice(pdfError?'Incident enregistré, mais PDF non joint : '+pdfError:'Incident enregistré'+(pdf?' avec PDF.':'.'),!pdfError)}catch(e){notice(e.message)}}
 $('month').value=currentDate().slice(0,7);$('date').value=currentDate();$('month').addEventListener('change',()=>{window.planningSelectedDay=null;load()});$('refresh').addEventListener('click',load);$('filter').addEventListener('change',render);$('loginBtn').addEventListener('click',connect);$('password').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});$('new').addEventListener('click',()=>openForm());$('cancel').addEventListener('click',()=>$('formCard').classList.add('hide'));$('allDay').addEventListener('change',toggleTimes);$('entry').addEventListener('submit',save);
-function openRow(e){const row=e.target.closest('tr[data-edit]');if(row){const entry=events.find(x=>x.id===row.dataset.edit);if(entry)openForm(entry)}}
+function openRow(e){const pdf=e.target.closest('[data-pdf]');if(pdf){e.stopPropagation();e.preventDefault();openIncidentPdf(pdf.dataset.pdf);return}const row=e.target.closest('tr[data-edit]');if(row){const entry=events.find(x=>x.id===row.dataset.edit);if(entry)openForm(entry)}}
 $('rows').addEventListener('click',openRow);$('rows').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRow(e)}});
 initPlanningCalendar();
 load();
