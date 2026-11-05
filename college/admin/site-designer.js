@@ -1,5 +1,5 @@
 /* Interface Admin Collège : éditeur de présentation des sites, sans modification des droits ni du code métier. */
-const SITE_CONFIG_API=ROOT+"/college-site-settings";
+const SITE_CONFIG_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/college-site-settings";
 const SITE_LABELS={
  "admin-college":"Administration Collège",
  secretariat:"Secrétariat",comptabilite:"Comptabilité",planning:"Planning du personnel",
@@ -35,7 +35,7 @@ function siteDesignerPage(){
   el.innerHTML='<div class="card"><h2>Configuration des sites</h2><p class="muted">Réservé à l’administrateur global. Les autres comptes conservent leur accès habituel.</p></div>';return;
  }
  el.innerHTML='<div class="card"><div class="top"><div><h2 style="margin:0">Configuration des sites</h2><p class="muted">Personnalisez les présentations, menus, raccourcis et informations de chaque espace. Les droits, données et traitements ne changent pas.</p></div><button class="btn secondary" type="button" onclick="show(\'advanced\')">Retour aux outils avancés</button></div></div>'+
-  '<div class="card"><label for="designerSite"><b>Site à paramétrer</b></label><select id="designerSite">'+Object.entries(SITE_LABELS).map(([key,label])=>'<option value="'+siteEditorEsc(key)+'" '+(key===siteEditorSite?'selected':'')+'>'+siteEditorEsc(label)+'</option>').join("")+'</select><p class="muted">Les noms sont modifiables sans changer les adresses, les autorisations ou les traitements.</p><div id="designerStatus" class="status" role="status" aria-live="polite"></div></div>'+
+  '<div class="card"><label for="designerSite"><b>Site à paramétrer</b></label><select id="designerSite">'+Object.entries(SITE_LABELS).map(([key,label])=>'<option value="'+siteEditorEsc(key)+'" '+(key===siteEditorSite?'selected':'')+'>'+siteEditorEsc(label)+'</option>').join("")+'</select><p class="muted">Les réglages modifient uniquement la présentation. Les informations saisies sont visibles sur les sites : ne renseignez aucun secret ni donnée confidentielle.</p><div id="designerStatus" class="status" role="status" aria-live="polite"></div></div>'+
   '<div id="designerEditor"></div>';
  document.getElementById("designerSite").addEventListener("change",e=>{siteEditorSite=e.target.value;siteDesignerLoad()});
  siteDesignerLoad();
