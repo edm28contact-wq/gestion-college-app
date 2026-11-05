@@ -154,7 +154,11 @@
   }).then(data=>{
    if(!data?.ok||!data.settings||typeof data.settings!=="object")return;
    const custom=data.settings;
-   if(typeof custom.title==="string"&&custom.title.trim()&&custom.title.length<=70)context.textContent=custom.title;
+   if(typeof custom.title==="string"&&custom.title.trim()&&custom.title.length<=70){
+    context.textContent=custom.title;
+    const heading=body.querySelector("h1");
+    if(heading&&heading.children.length===0)heading.textContent=custom.title;
+   }
    if(typeof custom.subtitle==="string"&&custom.subtitle.trim()&&custom.subtitle.length<=160){
     const note=document.createElement("small");note.className="school-nav-subtitle";note.textContent=custom.subtitle;
     context.after(note);
