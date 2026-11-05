@@ -44,7 +44,7 @@
    section("Comptabilité",[tab("Tableau de bord","#td"),tab("Recettes","#trc"),tab("Factures fournisseurs","#tde"),tab("Import de factures","#ti"),link("Lecteur Veryfi","lecteur-veryfi/?origine=comptabilite"),tab("Livres et documents","#tdoc"),tab("Outils avancés","#tadv")]),
    section("Autres espaces",common)]},
   planning:{label:"Planning du personnel",sections:[
-   section("Planning",[scroll("Événements du mois","#rows"),tab("Nouvel événement","#new"),scroll("Filtrer le mois","#month")]),
+   section("Planning",[scroll("Registre des incidents","#rows"),tab("Nouvel incident","#new"),scroll("Filtrer le mois","#month")]),
    section("Autres espaces",common)]},
   veryfi:{label:"Factures fournisseurs · Veryfi",sections:[
    section("Lecteur de factures",[scroll("Déposer un PDF","#drop"),scroll("Suivi du quota",".usage-panel"),scroll("Facture originale",".document-panel"),scroll("Contrôle des produits","#lines")]),
