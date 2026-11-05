@@ -35,6 +35,51 @@
 #nav button[hidden]{display:none!important}
 @media(min-width:901px){#nav{display:flex;flex-direction:column}}
 @media(max-width:700px){.designer-line-main{grid-template-columns:1fr;gap:5px}.designer-line{align-items:flex-start}.designer-order{margin-left:auto}}
+
+/* Gestion des applications : catégories, filtres et fiches homogènes. */
+.apps-page-header{display:flex;gap:15px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin:0 0 16px}
+.apps-page-header h2{margin:2px 0 6px;font-size:24px;letter-spacing:-.025em}
+.apps-page-header p{margin:0;max-width:740px;line-height:1.5}
+.apps-overline{font-size:11px;font-weight:800;letter-spacing:.1em;color:#50677d}
+.apps-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin-bottom:16px}
+.apps-stats>div{background:#fff;border:1px solid #dce2e8;border-radius:12px;padding:16px}
+.apps-stats small{display:block;font-size:12px;color:#617386}
+.apps-stats strong{display:block;margin-top:5px;font-size:28px;font-variant-numeric:tabular-nums}
+.apps-panel{padding:18px;margin-bottom:15px}
+.apps-panel h3{font-size:16px;margin:0 0 12px}
+.apps-panel-title{display:flex;gap:10px;justify-content:space-between;align-items:baseline;flex-wrap:wrap;margin-bottom:13px}
+.apps-panel-title h3{margin:0}
+.apps-categories{display:grid;grid-template-columns:repeat(auto-fit,minmax(164px,1fr));gap:10px}
+.apps-category{background:#f7f9fb;color:#263a4d;border:1px solid #d8e2eb;border-radius:10px;padding:15px;cursor:pointer;font:inherit;text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.apps-category span{font-size:13px;font-weight:800;overflow-wrap:anywhere}
+.apps-category strong{font-size:25px;line-height:1}
+.apps-category small{font-size:11px;color:#5c7184}
+.apps-category.selected{background:#e8f1fa;border:2px solid #37749c;padding:14px}
+.apps-category:hover,.apps-category:focus-visible{background:#edf4f9;outline:2px solid #a4bdce}
+.apps-filter-grid{display:grid;grid-template-columns:minmax(200px,1.35fr) repeat(3,minmax(130px,1fr));gap:12px}
+.apps-filter-grid label{font-size:12px;font-weight:700;color:#486076}
+.apps-filter-grid input,.apps-filter-grid select{display:block;margin-top:7px;width:100%;min-width:0}
+.apps-filter-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:15px;flex-wrap:wrap}
+#appResultsStatus{font-size:12px;color:#355571}
+.apps-results-title{padding:7px 2px}
+.apps-group-list{display:grid;gap:15px}
+.apps-group{background:#fff;padding:18px;border-radius:12px;border:1px solid #dce2e8;min-width:0}
+.apps-group-header{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #e5ebef;margin-bottom:14px}
+.apps-group-header h3{margin:0 0 4px;font-size:18px}
+.apps-group-header small{color:#63788c}
+.apps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
+.apps-entry{display:flex;flex-direction:column;gap:10px;padding:15px;background:#fcfdfe;border:1px solid #dce5eb;border-radius:10px;min-width:0}
+.apps-entry-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.apps-entry-heading h4{margin:0 0 5px;font-size:15px;overflow-wrap:anywhere}
+.apps-entry-heading small{color:#627588;font-size:11px}
+.apps-description{margin:0;color:#5a6c7b;font-size:12px;line-height:1.5;flex:1}
+.apps-info{display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:#4f6576;font-size:12px}
+.apps-mode{background:#eaf1f7;border-radius:20px;padding:5px 8px;color:#376183;font-size:11px;font-weight:750}
+.apps-actions{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #e4ebf0;padding-top:11px}
+.apps-actions .btn{font-size:12px}
+.apps-group[hidden],.apps-entry[hidden],.apps-noresults[hidden]{display:none!important}
+@media(max-width:1050px){.apps-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.apps-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-categories{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-filter-grid{grid-template-columns:1fr}.apps-grid{grid-template-columns:minmax(0,1fr)}.apps-panel,.apps-group{padding:12px}}
 </style>
 </head>
 <body>
@@ -43,6 +88,7 @@
 <section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" href="../../admin/holding/">Holding</a><a class="btn secondary" href="../../secretariat/">Secrétariat</a><a class="btn secondary" href="../../secretariat/planning/">Planning du personnel / Paie</a><a class="btn secondary" href="../../comptabilite/">Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
 <div id="modal"></div>
 <script src="./site-designer.js?v=2"></script>
+<script src="./apps-organizer.js?v=1"></script>
 <script>
 const UI_VERSION='2026.11.04-conditionnements-vente-stock';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
@@ -323,45 +369,7 @@ window.deleteProduct=async id=>{const p=prod(id);if(!p)return;if(!confirm(`Suppr
 window.stock=id=>{const p=prod(id);if(!p)return showStatus('Produit introuvable.');const unit=p.stock_count_mode==='litre'?'litres':p.unit||'unités';const raw=prompt('Stock réel pour '+p.name+' ('+unit+')',bal(id));if(raw===null)return;const value=String(raw).trim().replace(',','.');if(!/^\d+(?:\.\d{1,3})?$/.test(value))return alert('Stock invalide : saisissez une quantité positive (max. 3 décimales).');const n=Number(value);if(!Number.isFinite(n)||n<0||n>1000000000)return alert('Stock hors limites.');if(p.stock_count_mode!=='litre'&&!/^(kg|g|gramme|grammes|m|mètre|mètres|ml|cl)$/i.test(String(p.unit||''))&&!Number.isInteger(n))return alert('Pour ce produit, saisissez un nombre entier de '+unit+'.');call(ADMIN,'set-stock','POST',{product_id:id,quantity:n}).then(async()=>{await refresh();showStatus('Stock de '+p.name+' mis à jour : '+n.toLocaleString('fr-FR')+' '+unit+'.',true)}).catch(e=>showStatus(frError(e.message)))}
 window.purchaseProduct=id=>{const p=prod(id);$('modal').innerHTML=`<div class="modal"><div class="box"><h2>Enregistrer un achat</h2><p><b>${esc(p.name)}</b></p><div class="fields"><div><label>Date d’achat</label><input id="buydate" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div><label>Quantité achetée</label><input id="buyqty" type="number" min="0.001" step="0.001" value="1"></div><div><label>Prix unitaire</label><input id="buyprice" type="number" min="0" step="0.01" value="${Number(p.unit_price||0)}"></div><div><label>Fournisseur</label><input id="buysupplier"></div><div class="full"><label>Note</label><textarea id="buynote"></textarea></div><div class="full muted">Coefficient achat → stock : ${Number(p.purchase_to_stock_factor||1)}. Le stock sera augmenté automatiquement.</div></div><br><div class="actions"><button class="btn primary" onclick="savePurchase('${id}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="mstatus" class="status"></div></div></div>`};
 window.savePurchase=async id=>{try{await call(ADMIN,'save-purchase','POST',{product_id:id,purchase_date:$('buydate').value,quantity:Number($('buyqty').value),unit_price:Number($('buyprice').value),supplier:$('buysupplier').value,note:$('buynote').value});closeModal();await refresh();page='purchases';render()}catch(e){modalError(e)}};
-const apps = function apps(){
-  const list=[...db.applications].sort((a,b)=>(a.active===b.active?String(a.name).localeCompare(String(b.name),'fr'):a.active?-1:1));
-  const activeCats=db.categories.filter(c=>list.some(a=>a.category_id===c.id));
-  $('content').innerHTML=`<div class="toolbar"><div class="actions"><button class="btn primary" onclick="editSite('','')">Créer une application</button><span class="muted">${list.filter(a=>a.active!==false).length} application(s) active(s)</span></div></div>
-  <div class="card" style="margin-top:12px"><b>Applications par catégorie</b><div class="actions" style="margin-top:10px;flex-wrap:wrap"><button class="btn primary" data-app-cat="" aria-pressed="true" onclick="openAppCategory('')">Toutes <span class="pill">${list.filter(a=>a.active!==false).length}</span></button>${activeCats.map(c=>{const n=list.filter(a=>a.category_id===c.id&&a.active!==false).length;return `<button class="btn secondary" data-app-cat="${c.id}" aria-pressed="false" onclick="openAppCategory('${c.id}')">${esc(c.name)} <span class="pill">${n}</span></button>`}).join('')||'<span class="muted">Aucune catégorie.</span>'}</div></div>
-  <div class="actions" style="margin-top:12px;flex-wrap:wrap">
-    <input id="appSearch" class="search" placeholder="Rechercher une application…" oninput="filterApps()">
-    <select id="appCategoryFilter" onchange="filterApps()"><option value="">Toutes les catégories</option>${db.categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
-    <select id="appStatusFilter" onchange="filterApps()"><option value="active" selected>Applications actives</option><option value="inactive">Applications désactivées (archives)</option><option value="">Toutes les applications</option></select>
-    <select id="appModeFilter" onchange="filterApps()"><option value="">Tous les modes</option><option value="inventory">Inventaire</option><option value="outgoing">Sorties</option><option value="both">Inventaire + sorties</option></select>
-  </div><div id="appResultsStatus" class="muted" style="margin:12px 0">${list.filter(a=>a.active!==false).length} application(s) active(s) affichée(s).</div><div id="appCards">${list.map(a=>{const ct=cat(a.category_id),url='https://edm28contact-wq.github.io/gestion-college-app/college/?id='+encodeURIComponent(a.public_id),count=db.application_products.filter(m=>m.application_id===a.id&&m.active).length,o=a.site_options||{},mode=o.inventory&&o.outgoing?'both':o.inventory?'inventory':o.outgoing?'outgoing':'other',search=norm([a.name,a.code,ct?.name,a.description].filter(Boolean).join(' '));return `<div class="card" data-search="${esc(search)}" data-category="${esc(a.category_id||'')}" data-status="${a.active!==false?'active':'inactive'}" data-mode="${mode}"><div class="top"><div><b>${esc(a.name)}</b> ${statusPill(a.active)} ${o.internal?'<span class="pill">Système</span>':''}<div class="muted">${esc(ct?.name||'Sans catégorie')} · ${count} produit(s) · code ${esc(a.code)}</div></div><div class="actions">${a.active?`<a class="btn primary compact" target="_blank" rel="noopener" href="${url}">Ouvrir</a><button class="btn success compact" type="button" onclick="openAppQr('${a.id}')">QR</button>`:''}<button class="btn secondary compact" onclick="editSite('${a.id}','${a.category_id||''}')">Configurer</button>${a.active?`<button class="btn danger compact" onclick="disableSite('${a.id}')">Désactiver</button>`:''}</div></div></div>`}).join('')||'<div class="card">Aucune application.</div>'}</div><div id="pageStatus" class="status"></div>`;
-;
-  filterApps();
-};
-window.openAppCategory=id=>{
-  if($('appSearch'))$('appSearch').value='';
-  if($('appStatusFilter'))$('appStatusFilter').value='active';
-  if($('appModeFilter'))$('appModeFilter').value='';
-  if($('appCategoryFilter'))$('appCategoryFilter').value=id;
-  filterApps();
-  $('appCards')?.scrollIntoView({behavior:'smooth',block:'start'});
-};
-window.filterApps=()=>{
-  const q=norm($('appSearch')?.value||''),category=$('appCategoryFilter')?.value||'',status=$('appStatusFilter')?.value||'',mode=$('appModeFilter')?.value||'';
-  let visible=0;
-  document.querySelectorAll('#appCards .card[data-search]').forEach(r=>{
-    const ok=(!q||norm(r.dataset.search).includes(q))&&(!category||r.dataset.category===category)&&(!status||r.dataset.status===status)&&(!mode||r.dataset.mode===mode);
-    r.style.display=ok?'':'none';
-    if(ok)visible++;
-  });
-  document.querySelectorAll('[data-app-cat]').forEach(b=>{
-    const selected=b.dataset.appCat===category;
-    b.classList.toggle('primary',selected);
-    b.classList.toggle('secondary',!selected);
-    b.setAttribute('aria-pressed',String(selected));
-  });
-  const label=category?cat(category)?.name||'Catégorie inconnue':'Toutes les catégories';
-  if($('appResultsStatus'))$('appResultsStatus').textContent=label+' : '+visible+' application(s) affichée(s)'+(status==='inactive'?' (archives)':status===''?' (actives et désactivées)':'')+'.';
-};
+const apps = function apps(){return renderStructuredApps()}
 window.editSite=(id,cid)=>{const a=id?appById(id):null,cid2=cid||a?.category_id||db.categories.find(c=>c.active)?.id||'',selected=new Set(db.application_products.filter(m=>m.application_id===id&&m.active).map(m=>m.product_id)),o={inventory:true,outgoing:false,purchases:true,unit_price:false,current_stock:false,supplier:true,service:true,note:true,purchase_history:true,...(a?.site_options||{})};$('modal').innerHTML=`<div class="modal"><div class="box"><h2>${id?'Configurer':'Créer'} une application</h2><div class="fields"><div><label>Nom</label><input id="sname" value="${esc(a?.name||'')}"></div><div><label>Code</label><input id="scode" value="${esc(a?.code||'')}"></div><div><label>Catégorie</label><select id="scat" onchange="renderSiteProducts()">${db.categories.filter(c=>c.active!==false).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div><div><label>Couleur</label><input id="scolor" value="${esc(a?.color||'#243447')}"></div><div class="full"><label>Services séparés par des virgules</label><input id="sservices" value="${esc((a?.services||['Général']).join(', '))}"></div><div class="full"><label>Description</label><textarea id="sdesc">${esc(a?.description||'')}</textarea></div><div class="full"><b>Fonctions disponibles</b><div class="checkgrid" style="margin-top:8px">${[['inventory','Inventaire'],['outgoing','Sorties de stock'],['purchases','Achats'],['purchase_history','Historique des achats'],['unit_price','Prix unitaires'],['current_stock','Stock actuel'],['supplier','Fournisseur'],['service','Service'],['note','Notes']].map(([k,n])=>`<label><input type="checkbox" id="opt_${k}" ${o[k]?'checked':''}> ${n}</label>`).join('')}</div></div><div class="full"><b>Produits visibles</b><div id="siteProducts" class="checkgrid" style="margin-top:8px"></div></div></div><br><div class="actions"><button class="btn primary" onclick="saveSite('${id||''}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="mstatus" class="status"></div></div></div>`;$('scat').value=cid2;window._siteSelected=selected;renderSiteProducts()};
 window.renderSiteProducts=()=>{const cid=$('scat').value,selected=window._siteSelected||new Set();$('siteProducts').innerHTML=db.products.filter(p=>p.category_id===cid&&p.active!==false).map(p=>`<label><input class="siteprod" type="checkbox" value="${p.id}" ${selected.has(p.id)?'checked':''}> ${esc(p.name)}</label>`).join('')||'<span class="muted">Aucun produit actif dans cette catégorie.</span>'};
 window.saveSite=async id=>{try{const opts={};['inventory','outgoing','purchases','purchase_history','unit_price','current_stock','supplier','service','note'].forEach(k=>opts[k]=$('opt_'+k).checked);const pids=[...document.querySelectorAll('.siteprod:checked')].map(x=>x.value);await call(SITE,'save','POST',{id:id||null,name:$('sname').value,code:$('scode').value,category_id:$('scat').value,color:$('scolor').value,services:$('sservices').value.split(',').map(x=>x.trim()).filter(Boolean),description:$('sdesc').value,site_options:opts,product_ids:pids});closeModal();await refresh()}catch(e){modalError(e)}};
