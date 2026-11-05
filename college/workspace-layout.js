@@ -93,6 +93,9 @@
   const context=document.createElement("div");context.className="school-nav-context";context.textContent=config.label;
   aside.append(context);
   const bindings=[];
+  const menuControls=new Map();
+  const idFor=item=>item.path?"link:"+item.path:item.selector?"tab:"+item.selector:"scroll:"+item.scrollTo;
+
   for(const block of config.sections){
    const group=document.createElement("section");group.className="school-nav-section";
    const heading=document.createElement("h2");heading.textContent=block.title;
@@ -100,6 +103,8 @@
    for(const item of block.items){
     const control=item.path?document.createElement("a"):document.createElement("button");
     control.textContent=item.label;
+    control.dataset.configId=idFor(item);
+    menuControls.set(idFor(item),control);
     if(item.path){
      const href=url(item.path);control.href=href;
      const current=new URL(href);
@@ -142,6 +147,58 @@
   if(config.hideTabs)target.classList.add("school-tabs-in-sidebar");
   const host=target.closest("main")||target;
   host.classList.add("school-workspace-host");
+  // Display-only settings are public; mutations require server-verified administrator sessions.
+  const configURL="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/college-site-settings?site="+encodeURIComponent(area);
+  fetch(configURL,{cache:"no-store",signal:AbortSignal.timeout(12000)}).then(r=>{
+   if(!r.ok)throw Error("Config unavailable");return r.json();
+  }).then(data=>{
+   if(!data?.ok||!data.settings||typeof data.settings!=="object")return;
+   const custom=data.settings;
+   if(typeof custom.title==="string"&&custom.title.trim()&&custom.title.length<=70)context.textContent=custom.title;
+   if(typeof custom.subtitle==="string"&&custom.subtitle.trim()&&custom.subtitle.length<=160){
+    const note=document.createElement("small");note.className="school-nav-subtitle";note.textContent=custom.subtitle;
+    context.after(note);
+   }
+   if(typeof custom.accent==="string"&&/^#[0-9a-f]{6}$/i.test(custom.accent))
+    target.style.setProperty("--school-nav-accent",custom.accent);
+   if(custom.menu&&typeof custom.menu==="object"){
+    for(const [id,options] of Object.entries(custom.menu)){
+     const control=menuControls.get(id);
+     if(!control||!options||typeof options!=="object")continue;
+     if(typeof options.label==="string"&&options.label.trim()&&options.label.length<=65)control.textContent=options.label;
+     if(options.hidden===true)control.hidden=true;
+     if(Number.isInteger(options.order)&&options.order>=0&&options.order<=1000)control.dataset.order=String(options.order);
+    }
+    for(const section of aside.querySelectorAll(".school-nav-links")){
+     [...section.children].sort((a,b)=>{
+      const aa=a.dataset.order==null?Number.MAX_SAFE_INTEGER:Number(a.dataset.order);
+      const bb=b.dataset.order==null?Number.MAX_SAFE_INTEGER:Number(b.dataset.order);
+      return aa-bb;
+     }).forEach(el=>section.append(el));
+    }
+   }
+   if(Array.isArray(custom.shortcuts)&&custom.shortcuts.length){
+    const sec=document.createElement("section");sec.className="school-nav-section";
+    const title=document.createElement("h2");title.textContent="Raccourcis personnalisés";
+    const nav=document.createElement("nav");nav.className="school-nav-links";nav.setAttribute("aria-label","Raccourcis personnalisés");
+    for(const item of custom.shortcuts.slice(0,10)){
+     if(typeof item?.label!=="string"||typeof item.path!=="string"||!item.label.trim()||!/^[a-zA-Z0-9._/-]+$/.test(item.path)||item.path.includes("..")||item.path.startsWith("/"))continue;
+     const a=document.createElement("a");a.textContent=item.label.slice(0,65);a.href=url(item.path);nav.append(a);
+    }
+    if(nav.children.length){sec.append(title,nav);footer.before(sec)}
+   }
+   if(Array.isArray(custom.blocks)&&custom.blocks.length){
+    const panel=document.createElement("section");panel.className="school-custom-blocks";panel.setAttribute("aria-label","Informations personnalisées");
+    for(const block of custom.blocks.slice(0,8)){
+     if(typeof block?.title!=="string"||typeof block?.text!=="string")continue;
+     const div=document.createElement("article");div.className="school-custom-card";
+     const heading=document.createElement("strong");heading.textContent=block.title.slice(0,85);
+     const desc=document.createElement("p");desc.textContent=block.text.slice(0,500);
+     div.append(heading,desc);panel.append(div);
+    }
+    if(panel.children.length)body.prepend(panel);
+   }
+  }).catch(()=>{});
   if(bindings.length&&typeof MutationObserver==="function"){
    const observer=new MutationObserver(()=>bindings.forEach(({update})=>update()));
    for(const {original} of bindings)observer.observe(original,{attributes:true,attributeFilter:["class"]});
