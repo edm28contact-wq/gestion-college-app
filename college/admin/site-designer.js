@@ -53,7 +53,6 @@ async function siteDesignerApi(method="GET",body){
 }
 async function siteDesignerLoad(){
  const site=siteEditorSite;
- if(siteEditorLoading)return;
  siteEditorLoading=true;
  siteDesignerMessage("Chargement...");
  const area=document.getElementById("designerEditor");if(area)area.innerHTML="<div class='card'>Chargement des réglages…</div>";
@@ -61,13 +60,13 @@ async function siteDesignerLoad(){
   const data=await siteDesignerApi();
   if(site!==siteEditorSite||page!=="siteDesigner")return;
   siteEditorRevision=data.revision||0;
-  siteEditorDraft=structuredClone(data.settings||{});
+  siteEditorDraft=JSON.parse(JSON.stringify(data.settings||{}));
   siteEditorDraft.menu=siteEditorDraft.menu||{};
   siteEditorDraft.shortcuts=siteEditorDraft.shortcuts||[];
   siteEditorDraft.blocks=siteEditorDraft.blocks||[];
   siteDesignerMessage(data.updated_at?"Dernière modification : "+new Date(data.updated_at).toLocaleString("fr-FR"):"Réglages d’origine");
   siteDesignerRender();
- }catch(e){siteDesignerMessage(e.message,true);if(area)area.innerHTML='<div class="card err">Chargement impossible.</div>'}
+ }catch(e){if(site!==siteEditorSite)return;siteDesignerMessage(e.message,true);if(area)area.innerHTML='<div class="card err">Chargement impossible.</div>'}
  finally{siteEditorLoading=false}
 }
 function siteDesignerEntries(){
@@ -143,7 +142,7 @@ async function siteDesignerSave(reset){
   const data=await siteDesignerApi("POST",{action:reset?"reset":"save",revision:siteEditorRevision,settings:reset?{}:siteEditorDraft});
   if(site!==siteEditorSite)return;
   siteEditorRevision=data.revision;
-  siteEditorDraft=structuredClone(data.settings);
+  siteEditorDraft=JSON.parse(JSON.stringify(data.settings));
   siteEditorDraft.menu=siteEditorDraft.menu||{};siteEditorDraft.shortcuts=siteEditorDraft.shortcuts||[];siteEditorDraft.blocks=siteEditorDraft.blocks||[];
   siteDesignerMessage(reset?"Valeurs d’origine restaurées.":"Configuration enregistrée.");
   siteDesignerRender();
