@@ -27,7 +27,7 @@ function planningDayLabel(date){
  return new Intl.DateTimeFormat("fr-FR",{timeZone:"UTC",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date(Date.UTC(year,month-1,day)));
 }
 function planningHours(e){
- return e.all_day?"Journée entière":[e.start_time?.slice(0,5),e.end_time?.slice(0,5)].filter(Boolean).join(" – ")||"Horaire non précisé";
+ return formatIncidentDuration(e);
 }
 function renderPlanningCalendar(filtered){
  const month=document.getElementById("month").value,days=planningDays(month),today=currentDate();
@@ -51,7 +51,7 @@ function renderPlanningDay(list){
  (readonly?"":'<button class="btn" type="button" id="addForDay">+ Nouvel incident ce jour</button>')+'</div>'+
  (list.length?'<div class="day-detail-list">'+list.map(e=>{
   const editable=!readonly&&e.review_status==="a_verifier";
-  return '<div class="day-detail-item cal-'+esc(e.event_type)+'"><div><strong>'+esc(e.personnel_name)+'</strong><small>'+esc(labels[e.event_type]||"Incident")+' · '+esc(planningHours(e))+'</small></div>'+(editable?'<button type="button" data-open="'+esc(e.id)+'">Modifier</button>':"")+"</div>";
+  return '<div class="day-detail-item cal-'+esc(e.event_type)+'"><div><strong>'+esc(e.personnel_name)+'</strong><small>'+esc(labels[e.event_type]||"Incident")+' · '+esc(planningHours(e))+'</small></div>'+(e.attachment_path?'<button type="button" data-pdf="'+esc(e.id)+'">PDF</button>':"")+(editable?'<button type="button" data-open="'+esc(e.id)+'">Modifier</button>':"")+"</div>";
  }).join("")+"</div>":'<p class="day-detail-empty">Aucun incident pour cette journée avec les filtres actuels.</p>');
  const create=document.getElementById("addForDay");if(create)create.addEventListener("click",()=>openForm(null,date));
 }
@@ -64,6 +64,7 @@ function choosePlanningDay(date){
  renderPlanningCalendar(filteredPlanningEvents());
 }
 function onPlanningCalendarClick(event){
+ const pdf=event.target.closest("[data-pdf]");if(pdf){event.stopPropagation();openIncidentPdf(pdf.dataset.pdf);return}
  const edit=event.target.closest("[data-open]");
  if(edit){
   event.stopPropagation();
