@@ -11,5 +11,5 @@ async function createDevice(){const name=$('deviceName').value.trim();if(!name)r
 async function revoke(id){if(!confirm('Révoquer cet agent Windows ?'))return;await api('revoke-device','POST',{id});loadDevices()}
 async function loadDevices(){try{const j=await api('list-devices');$('devices').innerHTML=`<table><thead><tr><th>Poste</th><th>État</th><th>Dernier contact</th><th>Dernier import</th><th></th></tr></thead><tbody>${(j.devices||[]).map(d=>`<tr><td>${esc(d.device_name)}</td><td>${d.active?'<span class="ok">Actif</span>':'Révoqué'}</td><td>${d.last_seen_at?new Date(d.last_seen_at).toLocaleString('fr-FR'):'—'}</td><td>${d.last_upload_at?new Date(d.last_upload_at).toLocaleString('fr-FR'):'—'}</td><td>${d.active?`<button class="btn danger" onclick="revoke('${d.id}')">Révoquer</button>`:''}</td></tr>`).join('')}</tbody></table>`}catch(e){$('devices').innerHTML='<span class="err">'+esc(e.message)+'</span>'}}
 if(token)loadDevices();else $('msg').textContent='Connecte-toi d’abord au compte Administrateur.';
-</script><script defer src="../../college/workspace-layout.js?v=4" data-area="windows-agent" data-target="main.wrap"></script>
+</script><script defer src="../../college/workspace-layout.js?v=5" data-area="windows-agent" data-target="main.wrap"></script>
 </body></html>
