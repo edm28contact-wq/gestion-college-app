@@ -55,3 +55,11 @@
  .school-nav-context{font-size:11px}
  .school-nav-links > :is(a,button){font-size:12px;padding:9px 10px}
 }
+/* Configurable labels, shortcuts and content notes. */
+.school-nav-links > [hidden]{display:none!important}
+.school-nav-aside .school-nav-subtitle{display:block;padding:0 8px 10px;color:#b5c8d7;font-size:11px;line-height:1.4}
+.school-nav-links > .is-current{border-left:3px solid var(--school-nav-accent,#9dd2f1)}
+.school-custom-blocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:16px}
+.school-custom-card{border:1px solid #d8e1ea;border-radius:11px;background:#fff;padding:14px 16px;min-width:0}
+.school-custom-card strong{display:block;font-size:14px;margin-bottom:5px}
+.school-custom-card p{font-size:13px;color:#566676;white-space:pre-wrap;margin:0}
