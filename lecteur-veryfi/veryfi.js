@@ -102,6 +102,8 @@ function stockSuggestion(row,product){
  const stockLabel=product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||"unités";
  if(!invoice)return {quantity:"",note:"Unité absente sur la facture : vérifier l'unité de vente du catalogue",needsReview:true};
  if(!(factor>0))return {quantity:"",note:"Coefficient achat → stock invalide",needsReview:true};
+ const documented=documentedCartonContents(row,product);
+ if(documented)return {quantity:documented.quantity,note:row.unit_label_pair.outerQty+" colis × "+documented.ratio+" = "+documented.quantity+" "+stockLabel+" ; "+(documented.mode==="carton"?"prix HT cohérent":"prix à l'unité, quantité facturée à vérifier"),needsReview:documented.mode!=="carton"||row.manualMatchRequired===true};
  if(invoice===stock&&invoice!==purchase)return {quantity,note:"Facture déjà exprimée en "+stockLabel+" : pas de conversion",needsReview:false};
  const compatible=invoiceSaleUnit(row,product);
  if(!compatible.ok)return {quantity:"",note:compatible.why,needsReview:true};
@@ -332,7 +334,37 @@ async function analyze(){
   notice("Échec de la lecture : "+e.message,"error");
  }finally{loading=false;$("analyze").disabled=!serverReady||!file;$("clearFile").disabled=!file}
 }
+function invoicePackPair(label){
+ const m=String(label||"").match(/(?:^|\s)(\d{1,8}(?:[.,]\d{1,3})?)\s+(COL|COLIS|CARTONS?|CTNS?)\.?\s+(\d{1,8}(?:[.,]\d{1,3})?)\s+(POTS?|BT|BOUTEILLES?|PU|PCE|PCS|PIÈCES?|PIECES?|BARQUETTES?|KG|KGS|LITRES?|LTR)\.?\s*$/i);
+ if(!m)return null;
+ const outerQty=amount(m[1]),innerQty=amount(m[3]);
+ return outerQty>0&&innerQty>outerQty?{outerQty,outerUnit:canonicalUnit(m[2]),outerRaw:m[2],innerQty,innerUnit:canonicalUnit(m[4]),innerRaw:m[4]}:null;
+}
+function documentedCartonContents(row,product){
+ const pair=row.unit_label_pair;
+ if(!pair||!product||pair.outerUnit!=="carton"||canonicalUnit(row.unit)!=="carton"||Math.abs((amount(row.quantity)||0)-pair.outerQty)>0.001)return null;
+ const stock=stockUnitKind(product.stock_count_mode==="litre"?"litre":product.inventory_unit_label||product.unit);
+ if(pair.innerUnit!==stock||pair.innerUnit!==canonicalUnit(product.unit))return null;
+ const condition=String(product.conditionnement||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+ const m=condition.match(/\bcartons?\s+de\s+(\d+(?:[.,]\d{1,3})?)\s+(pots?|bouteilles?|pieces?|barquettes?|kg|litres?)\b/);
+ if(!m||canonicalUnit(m[2])!==pair.innerUnit||Math.abs(pair.outerQty*amount(m[1])-pair.innerQty)>0.001)return null;
+ const price=amount(row.unit_price),total=amount(row.total);
+ if(!(price>0)||total===null)return null;
+ const carton=Math.abs(round(price*pair.outerQty)-total)<=0.02,piece=Math.abs(round(price*pair.innerQty)-total)<=0.02;
+ if(carton===piece)return null;
+ return {quantity:pair.innerQty,unit:pair.innerRaw,ratio:amount(m[1]),mode:piece?"piece":"carton"};
+}
 function explicitInvoiceUnit(row){
+ const pair=invoicePackPair(row.description);
+ if(pair){
+  const q=amount(row.quantity),u=canonicalUnit(row.unit);
+  if(q!==null&&Math.abs(q-pair.outerQty)<=0.001&&["",pair.outerUnit,"piece"].includes(u))
+   return {unit:u===pair.outerUnit?row.unit:pair.outerRaw,note:pair.outerQty+" colis contenant "+pair.innerQty+" "+pair.innerRaw+" selon la facture.",fromLabel:true,conflict:false,pair};
+  if(q!==null&&Math.abs(q-pair.innerQty)<=0.001&&["",pair.innerUnit,"piece"].includes(u))
+   return {unit:u===pair.innerUnit?row.unit:pair.innerRaw,note:pair.innerQty+" "+pair.innerRaw+" pour "+pair.outerQty+" colis selon la facture.",fromLabel:true,conflict:false,pair};
+  return {unit:row.unit||"",note:"Incohérence des quantités ou unités avec "+pair.outerQty+" colis / "+pair.innerQty+" "+pair.innerRaw+" : vérifier le PDF.",fromLabel:false,conflict:true,pair:null};
+ }
+
  const original=String(row.unit||"").trim(),label=String(row.description||"");
  // The final number + unit is a supplier's priced quantity, not a package multiplier.
  const match=label.match(/(?:^|\s)(\d{1,8}(?:[.,]\d{1,3})?)\s*(POTS?|SEA(?:U|UX)?|BT|BOUTEILLES?|PU|PCE|PCS|PIECES?|PIÈCES?|KG|KGS|LITRES?|LTR)\.?\s*$/i);
@@ -348,7 +380,7 @@ function explicitInvoiceUnit(row){
 function makeRow(x,index){
  const evidence=explicitInvoiceUnit(x);
  return {id:index,reference:String(x.reference||""),description:String(x.description||""),
-  quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,
+  quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,unit_label_pair:evidence.pair||null,autoQuantityReconciled:false,
   tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
@@ -500,6 +532,14 @@ function applyMatch(row,match,keepManual=false){
  }
  row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";row.manualMatchRequired=match?.manualMatchRequired===true;
  row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
+ if(product&&!row.changed&&!row.product_manual&&!row.manualMatchRequired&&!row.autoQuantityReconciled){
+  const evidence=documentedCartonContents(row,product);
+  if(evidence?.mode==="piece"){
+   row.quantity=evidence.quantity;row.unit=evidence.unit;row.autoQuantityReconciled=true;
+   row.unit_label_note="Quantité corrigée : "+evidence.quantity+" "+evidence.unit+" d'après le conditionnement et le total HT.";
+   row.unit_label_source=true;row.unit_label_pair=null;
+  }
+ }
  if(product&&!row.unit_label_conflict&&!String(row.unit||"").trim()&&canonicalUnit(product.unit)){row.unit=product.unit;row.unit_inferred=true}
  const stock=stockSuggestion(row,product);
  if(!keepManual||!row.stock_manual)row.stock_quantity=stock.quantity;
@@ -543,7 +583,7 @@ function reviewReason(row){
  if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
  if(row.unit_label_conflict)problems.push(row.unit_label_note||"Quantité fournisseur et unité discordantes.");
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
- if(row.manualMatchRequired)problems.push("Correspondance par mot-clé partiel à confirmer.");
+ if(row.manualMatchRequired)problems.push("Correspondance fournisseur à confirmer sur le PDF.");
  if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance minimale des champs critiques inférieure à 90 % : vérifier sur le PDF.");
  if(row.changed&&!row.verified)problems.push("Modification manuelle non confirmée.");
@@ -708,7 +748,7 @@ function buildLine(row,index){
  card.append(fields);
  const meta=document.createElement("div");meta.className="mapping";
  meta.textContent=color==="bad"?(row.stock_note||"Aucune réception automatique autorisée"):(row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:""));
- if(row.unit_label_source&&row.unit_label_note)meta.textContent+=" · "+row.unit_label_note;
+ if((row.unit_label_source||row.unit_label_conflict)&&row.unit_label_note)meta.textContent+=" · "+row.unit_label_note;
  card.append(meta);
  const matchedProduct=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(matchedProduct){
@@ -782,7 +822,7 @@ function changeRow(index,key,value){
  row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   if(key==="description"&&row.unit_label_source)row.unit="";
-  if(key==="description"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel}
+  if(key==="description"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel;row.unit_label_pair=e.pair||null}
   row.product_manual=false;row.stock_manual=false;row.account_manual=false;
   applyMatch(row,findProduct(row));
  }else if(key==="product_label"){
@@ -794,8 +834,8 @@ function changeRow(index,key,value){
  }else if(key==="quantity"||key==="unit"){
   row.stock_manual=false;row.stock_confirmed=false;
   if(key==="quantity"&&row.unit_label_source)row.unit="";
-  if(key==="quantity"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel}
-  if(key==="unit"){row.unit_inferred=false;row.unit_label_source=false;row.unit_label_conflict=false;row.unit_label_note=""}
+  if(key==="quantity"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel;row.unit_label_pair=e.pair||null}
+  if(key==="unit"){row.unit_inferred=false;row.unit_label_source=false;row.unit_label_conflict=false;row.unit_label_note="";row.unit_label_pair=null}
   const proposed=stockSuggestion(row,(catalog?.products||[]).find(p=>p.id===row.product_id));
   row.stock_quantity=proposed.quantity;row.stock_note=proposed.note;row.stock_needs_review=proposed.needsReview===true;
  }else if(key==="stock_quantity"){
