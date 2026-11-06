@@ -563,7 +563,7 @@ function productColor(row){
  const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&!row.unit_label_conflict&&
-  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred))?"good":"warn";
+  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled))?"good":"warn";
 }
 function invoiceArithmetic(row){
  const q=amount(row.quantity),price=amount(row.unit_price),total=amount(row.total);
@@ -584,6 +584,7 @@ function reviewReason(row){
  if(row.unit_label_conflict)problems.push(row.unit_label_note||"Quantité fournisseur et unité discordantes.");
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance fournisseur à confirmer sur le PDF.");
+ if(row.autoQuantityReconciled&&!row.manualVerified)problems.push("Quantité modifiée à partir du conditionnement et du total HT : contrôler le PDF original.");
  if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance minimale des champs critiques inférieure à 90 % : vérifier sur le PDF.");
  if(row.changed&&!row.verified)problems.push("Modification manuelle non confirmée.");
@@ -819,7 +820,7 @@ function buildLine(row,index){
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
- row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
+ row[key]=value;if(["quantity","unit","description","unit_price","total"].includes(key))row.autoQuantityReconciled=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   if(key==="description"&&row.unit_label_source)row.unit="";
   if(key==="description"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel;row.unit_label_pair=e.pair||null}
