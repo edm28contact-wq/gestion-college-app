@@ -243,7 +243,7 @@ async function saveKeyword(row,keyword,global=false){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)throw Error("Sélectionnez un produit actif.");
  if(norm(keyword).length<3)throw Error("Mot-clé trop court.");
- const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm()},timeout:20000});
+ const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm(),alias_kind:"designation"},timeout:20000});
  if(!result.ok)throw Error(result.error||"Enregistrement refusé");
  await loadAliases();
  return result.alias;
@@ -374,8 +374,10 @@ function findProduct(row){
  const supplier=supplierNorm(),ref=norm(row.reference),label=norm(row.description);
  const active=(catalog.products||[]).filter(p=>p.active!==false);
  const designation=invoiceDesignationKey(row.description);
- const strict=supplier&&designation.length>=8?aliases.filter(a=>a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation):[];
+ const strict=supplier&&designation.length>=8?aliases.filter(a=>a.alias_kind!=="reference"&&a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation):[];
  const strictIds=[...new Set(strict.map(a=>a.product_id).filter(Boolean))];
+ const referenceAliases=supplier&&ref?aliases.filter(a=>a.alias_kind==="reference"&&a.supplier_key&&norm(a.supplier_key)===supplier&&norm(a.keyword_norm||a.keyword)===ref):[];
+ const referenceIds=[...new Set(referenceAliases.map(a=>a.product_id).filter(Boolean))];
  const confirmedLabels=supplier&&designation.length>=8?(catalog.verified_mappings||[]).filter(x=>
   Number(x.verification_count||0)>0&&norm(x.supplier_key||x.supplier_name)===supplier&&
   x.supplier_label&&invoiceDesignationKey(x.supplier_label)===designation):[];
@@ -386,6 +388,8 @@ function findProduct(row){
   if(!match?.product)return match;
   if(strict.length&&(strictIds.length!==1||strictIds[0]!==match.product.id))
    return {product:null,source:"Référence fournisseur et désignation exacte contradictoires : vérification manuelle obligatoire",manualMatchRequired:true};
+  if(referenceAliases.length&&(referenceIds.length!==1||referenceIds[0]!==match.product.id))
+   return {product:null,source:"Référence fournisseur enregistrée contradictoire : sélection manuelle obligatoire",manualMatchRequired:true};
   if(confirmedLabels.length&&(labelIds.length!==1||labelIds[0]!==match.product.id))
    return {product:null,source:"Référence et libellé fournisseur vérifiés pour deux produits différents : sélection manuelle obligatoire",manualMatchRequired:true};
   return match;
@@ -398,6 +402,13 @@ function findProduct(row){
   if(candidate?.product&&verified.record?.supplier_label&&!sameLabel&&!sameAlias)
    return {...candidate,source:"Référence vérifiée mais désignation différente du libellé fournisseur connu : vérifier le PDF",manualMatchRequired:true};
   return candidate;
+ }
+ if(referenceAliases.length){
+  if(referenceIds.length!==1)return {product:null,source:"Référence fournisseur enregistrée ambiguë : sélection manuelle obligatoire",manualMatchRequired:true};
+  const product=active.find(p=>p.id===referenceIds[0]);
+  if(!product)return {product:null,source:"Référence fournisseur enregistrée liée à un produit inactif",manualMatchRequired:true};
+  const labelAgrees=(strictIds.length===1&&strictIds[0]===product.id)||(labelIds.length===1&&labelIds[0]===product.id);
+  return checkConflict({product,source:"Référence fournisseur enregistrée"+(labelAgrees?" et désignation confirmée":" : vérifier le PDF"),manualMatchRequired:!labelAgrees});
  }
  if(confirmedLabels.length){
   if(labelIds.length!==1)return {product:null,source:"Libellé fournisseur vérifié ambigu : sélectionner le produit manuellement",manualMatchRequired:true};
@@ -431,7 +442,7 @@ function findProduct(row){
    if(!p)return {product:null,source:"Désignation fournisseur liée à un produit inactif ou absent",manualMatchRequired:true};
    return {product:p,source:"Désignation exacte de la facture fournisseur"};
  }
- const matches=aliases.filter(a=>(!a.supplier_key||norm(a.supplier_key)===supplier)&&
+ const matches=aliases.filter(a=>a.alias_kind!=="reference"&&(!a.supplier_key||norm(a.supplier_key)===supplier)&&
   ((ref&&norm(a.keyword_norm)===ref)||(label&&norm(a.keyword_norm)===label)));
  if(matches.length){
   const ids=[...new Set(matches.map(x=>x.product_id))];
@@ -439,7 +450,7 @@ function findProduct(row){
   const p=active.find(x=>x.id===ids[0]);
   if(p)return {product:p,source:"Appellation confirmée dans le carnet"};
  }
- const partial=aliases.filter(a=>(!a.supplier_key||norm(a.supplier_key)===supplier)&&
+ const partial=aliases.filter(a=>a.alias_kind!=="reference"&&(!a.supplier_key||norm(a.supplier_key)===supplier)&&
   norm(a.keyword_norm).length>=7&&label.includes(norm(a.keyword_norm)));
  if(partial.length){
   const ids=[...new Set(partial.map(a=>a.product_id))];
@@ -618,7 +629,7 @@ function keywordNotebook(row,index){
  if(!known.length){const empty=document.createElement("span");empty.textContent="Aucun mot-clé enregistré pour ce produit.";empty.className="subtle";list.append(empty)}
  for(const alias of known){
   const item=document.createElement("div");item.className="keyword-entry";
-  const label=document.createElement("span");label.textContent=alias.keyword+(alias.supplier_key?" · fournisseur":" · global");
+  const label=document.createElement("span");label.textContent=(alias.alias_kind==="reference"?"Référence fournisseur : ":"Désignation : ")+alias.keyword+(alias.supplier_key?" · fournisseur":" · global");
   const remove=document.createElement("button");remove.type="button";remove.className="btn secondary small";remove.textContent="Supprimer";
   remove.disabled=saved;
   remove.addEventListener("click",async()=>{
