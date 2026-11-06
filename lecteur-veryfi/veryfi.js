@@ -348,6 +348,17 @@ function verifiedSupplierReference(row){
  const product=(catalog.products||[]).find(p=>p.id===ids[0]&&p.active!==false);
  return product?{product,source:"Référence fournisseur vérifiée"}:{product:null,source:"Référence fournisseur liée à un produit inactif",manualMatchRequired:true};
 }
+function invoiceDesignationKey(value){
+ // Remove only invoice quantity suffixes. Keep packaging in the product name.
+ let name=String(value??"").replace(/\s+/g," ").trim();
+ const qty="\\d{1,8}[.,]\\d{1,3}";
+ const unit="(?:COL|COLIS|CARTONS?|CTNS?|SACS?|SEA(?:U|UX)?|POTS?|BT|BOUTEILLES?|PU|PCE|PCS|PIÈCES?|KG|KGS|LITRES?|LTR|BIDONS?|PAQ(?:UETS?)?|LOTS?)";
+ const double=new RegExp("\\s+"+qty+"\\s+"+unit+"\\.?\\s+"+qty+"\\s+"+unit+"\\.?$","i");
+ const trailingNumber=new RegExp("\\s+"+qty+"\\s+"+unit+"\\.?\\s+"+qty+"$","i");
+ const single=new RegExp("\\s+"+qty+"\\s+"+unit+"\\.?$","i");
+ name=name.replace(double,"").replace(trailingNumber,"").replace(single,"");
+ return norm(name);
+}
 function findProduct(row){
  if(!catalog||(!row.reference&&!row.description))return null;
  const supplier=supplierNorm(),ref=norm(row.reference),label=norm(row.description);
@@ -368,6 +379,18 @@ function findProduct(row){
   const inactive=(catalog.inactive_products||[]).filter(x=>norm(x.code)===ref);
   if(inactive.length===1)return {product:null,source:"Produit DÉSACTIVÉ : "+inactive[0].code+" — "+inactive[0].name};
   if(inactive.length>1)return {product:null,source:"Plusieurs produits désactivés correspondent"};
+ }
+ // Exact supplier designation, stripping only invoice quantities and priced units.
+ const designation=invoiceDesignationKey(row.description);
+ if(supplier&&designation.length>=8){
+  const strict=aliases.filter(a=>a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation);
+  if(strict.length){
+   const found=[...new Set(strict.map(a=>a.product_id))];
+   if(found.length!==1)return {product:null,source:"Plusieurs produits pour cette désignation fournisseur : vérification manuelle obligatoire",manualMatchRequired:true};
+   const p=active.find(x=>x.id===found[0]);
+   if(!p)return {product:null,source:"Désignation fournisseur liée à un produit inactif ou absent",manualMatchRequired:true};
+   return {product:p,source:"Désignation exacte de la facture fournisseur"};
+  }
  }
  const matches=aliases.filter(a=>(!a.supplier_key||norm(a.supplier_key)===supplier)&&
   ((ref&&norm(a.keyword_norm)===ref)||(label&&norm(a.keyword_norm)===label)));
