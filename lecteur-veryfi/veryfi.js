@@ -296,9 +296,23 @@ async function analyze(){
   notice("Échec de la lecture : "+e.message,"error");
  }finally{loading=false;$("analyze").disabled=!serverReady||!file;$("clearFile").disabled=!file}
 }
+function explicitInvoiceUnit(row){
+ const original=String(row.unit||"").trim(),label=String(row.description||"");
+ // The final number + unit is a supplier's priced quantity, not a package multiplier.
+ const match=label.match(/(?:^|\s)(\d{1,8}(?:[.,]\d{1,3})?)\s*(POTS?|SEA(?:U|UX)?|BT|BOUTEILLES?|PU|PCE|PCS|PIECES?|PIÈCES?|KG|KGS|LITRES?|LTR)\.?\s*$/i);
+ if(!match)return {unit:original,note:"",fromLabel:false,conflict:false};
+ const observed=amount(match[1]),invoiced=amount(row.quantity),unit=canonicalUnit(match[2]);
+ if(!(observed>0)||!(invoiced>0))return {unit:original,note:"Unité "+match[2]+" détectée dans le libellé, mais quantité facturée à vérifier.",fromLabel:false,conflict:true};
+ if(Math.abs(observed-invoiced)>0.001)return {unit:original,note:"Le libellé indique "+observed+" "+match[2]+" mais Veryfi a lu "+invoiced+" en quantité facturée. Ne pas convertir automatiquement : vérifier le PDF.",fromLabel:false,conflict:true};
+ const current=canonicalUnit(original);
+ const generic=new Set(["","carton","piece"]);
+ if(current&&!generic.has(current)&&current!==unit)return {unit:original,note:"Unité OCR « "+original+" » et unité finale « "+match[2]+" » contradictoires : vérifier le PDF.",fromLabel:false,conflict:true};
+ return {unit:match[2],note:"Unité facturée "+match[2]+" lue dans le libellé fournisseur pour "+observed+" unité(s).",fromLabel:true,conflict:false};
+}
 function makeRow(x,index){
+ const evidence=explicitInvoiceUnit(x);
  return {id:index,reference:String(x.reference||""),description:String(x.description||""),
-  quantity:x.quantity??"",unit:String(x.unit||""),unit_price:x.unit_price??"",total:x.total??"",
+  quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,
   tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
@@ -410,7 +424,7 @@ function productColor(row){
  const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&
-  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred))?"good":"warn";
+  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.unit_label_conflict))?"good":"warn";
 }
 function invoiceArithmetic(row){
  const q=amount(row.quantity),price=amount(row.unit_price),total=amount(row.total);
@@ -428,6 +442,7 @@ function reviewReason(row){
  if(!accounting&&!(amount(row.stock_quantity)>0))problems.push("Quantité de stock absente : confirmez le conditionnement ou renseignez la quantité exacte.");
  else if(!accounting&&row.stock_needs_review&&!row.stock_confirmed)problems.push("Conversion du stock à confirmer.");
  if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
+ if(row.unit_label_conflict)problems.push(row.unit_label_note||"Quantité fournisseur et unité discordantes.");
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance par mot-clé partiel à confirmer.");
  if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
@@ -593,6 +608,7 @@ function buildLine(row,index){
  card.append(fields);
  const meta=document.createElement("div");meta.className="mapping";
  meta.textContent=color==="bad"?(row.stock_note||"Aucune réception automatique autorisée"):(row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:""));
+ if(row.unit_label_source&&row.unit_label_note)meta.textContent+=" · "+row.unit_label_note;
  card.append(meta);
  const matchedProduct=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(matchedProduct){
@@ -612,6 +628,7 @@ function buildLine(row,index){
   reason.className="row-error";
   reason.textContent="Cause du blocage : "+reviewReason(row);
   card.append(reason);
+  const open=document.createElement("a");open.className="btn secondary small";open.href="../college/admin/?page=products";open.target="_blank";open.rel="noopener noreferrer";open.textContent="Ouvrir le catalogue pour créer ou retrouver le produit";card.append(open);
  }
  if(color==="warn"){
   const reason=document.createElement("div");
@@ -664,6 +681,8 @@ function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
  row[key]=value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
+  if(key==="description"&&row.unit_label_source)row.unit="";
+  if(key==="description"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel}
   row.product_manual=false;row.stock_manual=false;row.account_manual=false;
   applyMatch(row,findProduct(row));
  }else if(key==="product_label"){
@@ -672,7 +691,9 @@ function changeRow(index,key,value){
   applyMatch(row,p?{product:p,source:"Produit actif choisi manuellement"}:{product:null,source:"Produit absent ou désactivé : validation du stock bloquée"});
  }else if(key==="quantity"||key==="unit"){
   row.stock_manual=false;row.stock_confirmed=false;
-  if(key==="unit")row.unit_inferred=false;
+  if(key==="quantity"&&row.unit_label_source)row.unit="";
+  if(key==="quantity"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel}
+  if(key==="unit"){row.unit_inferred=false;row.unit_label_source=false;row.unit_label_conflict=false;row.unit_label_note=""}
   const proposed=stockSuggestion(row,(catalog?.products||[]).find(p=>p.id===row.product_id));
   row.stock_quantity=proposed.quantity;row.stock_note=proposed.note;row.stock_needs_review=proposed.needsReview===true;
  }else if(key==="stock_quantity"){
