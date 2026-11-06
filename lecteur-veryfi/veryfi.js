@@ -299,7 +299,7 @@ async function analyze(){
 function makeRow(x,index){
  return {id:index,reference:String(x.reference||""),description:String(x.description||""),
   quantity:x.quantity??"",unit:String(x.unit||""),unit_price:x.unit_price??"",total:x.total??"",
-  tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:typeof x.boxes?.description?.score==="number"?x.boxes.description.score:typeof x.boxes?.total?.score==="number"?x.boxes.total.score:null,
+  tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
@@ -313,16 +313,39 @@ function bindDocument(){
  $("fieldScores").textContent=scores.length?"Confiance fournie par Veryfi : "+scores.map(([k,v])=>k+" "+Math.round(v.score*100)+" %").join(" · "):"Scores détaillés non fournis par Veryfi pour ces champs.";
  $("confirmReview").checked=false;
 }
+function lineOcrConfidence(item){
+ const fields=item?.boxes||{},required=["description","quantity","unit_price","total"],scores=[],missing=[];
+ for(const key of required){
+  const m=fields[key],values=[m?.score,m?.ocr_score].filter(v=>typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=1);
+  if(values.length)scores.push(Math.min(...values));else missing.push(key);
+ }
+ return {score:scores.length?Math.min(...scores):null,missing};
+}
+function verifiedSupplierReference(row){
+ const supplier=supplierNorm(),reference=norm(row.reference);
+ if(!catalog||!supplier||!reference)return null;
+ const verified=(catalog.verified_mappings||[]).filter(x=>
+  norm(x.supplier_key||x.supplier_name)===supplier&&
+  norm(x.supplier_reference_norm||x.supplier_reference)===reference&&
+  x.product_id&&Number(x.verification_count||0)>0);
+ if(!verified.length)return null;
+ const ids=[...new Set(verified.map(x=>x.product_id))];
+ if(ids.length!==1)return {product:null,source:"Référence fournisseur vérifiée contradictoire : vérification manuelle",manualMatchRequired:true};
+ const product=(catalog.products||[]).find(p=>p.id===ids[0]&&p.active!==false);
+ return product?{product,source:"Référence fournisseur vérifiée"}:{product:null,source:"Référence fournisseur liée à un produit inactif",manualMatchRequired:true};
+}
 function findProduct(row){
  if(!catalog||(!row.reference&&!row.description))return null;
  const supplier=supplierNorm(),ref=norm(row.reference),label=norm(row.description);
  const active=(catalog.products||[]).filter(p=>p.active!==false);
+ const verified=verifiedSupplierReference(row);
+ if(verified)return verified;
  const links=(catalog.supplier_product_catalog||[]).filter(x=>norm(x.supplier_key||x.supplier_name)===supplier&&ref&&norm(x.supplier_reference)===ref);
  const ids=[...new Set(links.map(x=>x.product_id).filter(Boolean))];
  if(ids.length>1)return {product:null,source:"Référence fournisseur ambiguë"};
  if(ids.length===1){
   const p=active.find(x=>x.id===ids[0]);
-  if(p)return {product:p,record:links.find(x=>x.product_id===p.id),source:"Association fournisseur : à vérifier"};
+  if(p)return {product:p,record:links.find(x=>x.product_id===p.id),source:"Association fournisseur apprise : vérification requise",manualMatchRequired:true};
  }
  if(ref){
   const exact=active.filter(x=>norm(x.code)===ref);
@@ -383,7 +406,7 @@ function productColor(row){
  if(!catalog)return "warn";
  const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)return "bad";
- const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE;
+ const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE&&(!Array.isArray(row.confidenceMissing)||row.confidenceMissing.length===0);
  const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&
@@ -407,7 +430,8 @@ function reviewReason(row){
  if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance par mot-clé partiel à confirmer.");
- if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance Veryfi inférieure à 90 % : contrôle du PDF requis.");
+ if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
+ if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance minimale des champs critiques inférieure à 90 % : vérifier sur le PDF.");
  if(row.changed&&!row.verified)problems.push("Modification manuelle non confirmée.");
  if(row.confirmedOnPdf)problems.unshift("Lecture vérifiée, correction de montant encore requise.");
  return problems.join(" ")||"Contrôle complémentaire nécessaire.";
@@ -598,7 +622,7 @@ function buildLine(row,index){
  if(color==="good"){
   const approved=document.createElement("div");
   approved.className="row-approved";
-  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (score ≥ 90 %, produit actif, quantités et prix cohérents). Aucune action requise sur cette ligne.";
+  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
   card.append(approved);
  }
  if(color==="warn"&&!row.excluded&&!saved){
