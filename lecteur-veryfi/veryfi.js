@@ -401,7 +401,7 @@ function applyMatch(row,match,keepManual=false){
  }
  row.matched=!!product;row.reason=match?.source||"Catalogue indisponible";row.manualMatchRequired=match?.manualMatchRequired===true;
  row.product_id=product?.id||"";row.product_label=product?product.code+" — "+product.name:"";
- if(product&&!String(row.unit||"").trim()&&canonicalUnit(product.unit)){row.unit=product.unit;row.unit_inferred=true}
+ if(product&&!row.unit_label_conflict&&!String(row.unit||"").trim()&&canonicalUnit(product.unit)){row.unit=product.unit;row.unit_inferred=true}
  const stock=stockSuggestion(row,product);
  if(!keepManual||!row.stock_manual)row.stock_quantity=stock.quantity;
  row.stock_note=stock.note;
@@ -423,8 +423,8 @@ function productColor(row){
  const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE&&(!Array.isArray(row.confidenceMissing)||row.confidenceMissing.length===0);
  const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
- return amountsOk&&stockOk&&!row.excluded&&
-  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.unit_label_conflict))?"good":"warn";
+ return amountsOk&&stockOk&&!row.excluded&&!row.unit_label_conflict&&
+  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred))?"good":"warn";
 }
 function invoiceArithmetic(row){
  const q=amount(row.quantity),price=amount(row.unit_price),total=amount(row.total);
@@ -512,6 +512,7 @@ function applyQuickFix(row,kind){
 function confirmRowManually(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product||row.excluded)return {ok:false,message:"Choisissez un produit actif et non écarté avant de confirmer la ligne."};
+ if(row.unit_label_conflict)return {ok:false,message:row.unit_label_note+" Corrigez la quantité ou l’unité d’après le PDF avant validation."};
  if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed))&&!row.stock_manual&&!confirmStockProposal(row))
   return {ok:false,message:stockProposal(row)?
    "Quantité en stock non confirmée. Vérifiez le conditionnement ou indiquez le nombre réel à réceptionner.":
