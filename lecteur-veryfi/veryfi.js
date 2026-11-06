@@ -42,7 +42,17 @@ function supplierRule(){
  const matches=(catalog?.supplier_rules||[]).filter(r=>{const k=norm(r.supplier_name||r.supplier_key);return k&&(value===k||value===k+k)});
  return matches.length===1?matches[0]:null;
 }
-function supplierNorm(){const r=supplierRule();return norm(r?.supplier_name||r?.supplier_key||$("vendor").value)}
+function supplierNorm(){
+ const r=supplierRule(),raw=norm(r?.supplier_name||r?.supplier_key||$("vendor").value);
+ if(!raw||!catalog)return raw;
+ const known=new Set([
+  ...(catalog.supplier_rules||[]).map(x=>norm(x.supplier_key||x.supplier_name)),
+  ...(catalog.verified_mappings||[]).filter(x=>Number(x.verification_count||0)>0).map(x=>norm(x.supplier_key||x.supplier_name))
+ ]);
+ if(known.has(raw))return raw;
+ const base=raw.replace(/(?:parisnord|parissud|iledefrance|idf)$/,"");
+ return base!==raw&&known.has(base)?base:raw;
+}
 function canonicalSupplier(raw){
  const value=String(raw||"").trim().replace(/\s+/g," "),key=norm(value);
  const matches=(catalog?.supplier_rules||[]).filter(r=>{const k=norm(r.supplier_name||r.supplier_key);return k&&key===k+k});
@@ -346,7 +356,7 @@ function verifiedSupplierReference(row){
  const ids=[...new Set(verified.map(x=>x.product_id))];
  if(ids.length!==1)return {product:null,source:"Référence fournisseur vérifiée contradictoire : vérification manuelle",manualMatchRequired:true};
  const product=(catalog.products||[]).find(p=>p.id===ids[0]&&p.active!==false);
- return product?{product,source:"Référence fournisseur vérifiée"}:{product:null,source:"Référence fournisseur liée à un produit inactif",manualMatchRequired:true};
+ return product?{product,record:verified.find(x=>x.product_id===product.id),source:"Référence fournisseur vérifiée"}:{product:null,source:"Référence fournisseur liée à un produit inactif",manualMatchRequired:true};
 }
 function invoiceDesignationKey(value){
  // Remove only invoice quantity suffixes. Keep packaging in the product name.
@@ -366,11 +376,38 @@ function findProduct(row){
  const designation=invoiceDesignationKey(row.description);
  const strict=supplier&&designation.length>=8?aliases.filter(a=>a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation):[];
  const strictIds=[...new Set(strict.map(a=>a.product_id).filter(Boolean))];
- const checkConflict=match=>match?.product&&strict.length&&(strictIds.length!==1||strictIds[0]!==match.product.id)
-  ?{product:null,source:"Référence fournisseur et désignation exacte contradictoires : vérification manuelle obligatoire",manualMatchRequired:true}
-  :match;
+ const confirmedLabels=supplier&&designation.length>=8?(catalog.verified_mappings||[]).filter(x=>
+  Number(x.verification_count||0)>0&&norm(x.supplier_key||x.supplier_name)===supplier&&
+  x.supplier_label&&invoiceDesignationKey(x.supplier_label)===designation):[];
+ const labelIds=[...new Set(confirmedLabels.map(x=>x.product_id).filter(Boolean))];
+ if(strict.length&&confirmedLabels.length&&(strictIds.length!==1||labelIds.length!==1||strictIds[0]!==labelIds[0]))
+  return {product:null,source:"Désignations fournisseur vérifiées contradictoires : sélection manuelle obligatoire",manualMatchRequired:true};
+ const checkConflict=match=>{
+  if(!match?.product)return match;
+  if(strict.length&&(strictIds.length!==1||strictIds[0]!==match.product.id))
+   return {product:null,source:"Référence fournisseur et désignation exacte contradictoires : vérification manuelle obligatoire",manualMatchRequired:true};
+  if(confirmedLabels.length&&(labelIds.length!==1||labelIds[0]!==match.product.id))
+   return {product:null,source:"Référence et libellé fournisseur vérifiés pour deux produits différents : sélection manuelle obligatoire",manualMatchRequired:true};
+  return match;
+ };
  const verified=verifiedSupplierReference(row);
- if(verified)return checkConflict(verified);
+ if(verified){
+  const candidate=checkConflict(verified);
+  const sameLabel=labelIds.length===1&&labelIds[0]===candidate?.product?.id;
+  const sameAlias=strictIds.length===1&&strictIds[0]===candidate?.product?.id;
+  if(candidate?.product&&verified.record?.supplier_label&&!sameLabel&&!sameAlias)
+   return {...candidate,source:"Référence vérifiée mais désignation différente du libellé fournisseur connu : vérifier le PDF",manualMatchRequired:true};
+  return candidate;
+ }
+ if(confirmedLabels.length){
+  if(labelIds.length!==1)return {product:null,source:"Libellé fournisseur vérifié ambigu : sélectionner le produit manuellement",manualMatchRequired:true};
+  const product=active.find(p=>p.id===labelIds[0]);
+  if(!product)return {product:null,source:"Libellé fournisseur vérifié lié à un produit absent ou inactif",manualMatchRequired:true};
+  const codeMatches=ref?active.filter(p=>norm(p.code)===ref):[];
+  if(codeMatches.length&&(codeMatches.length!==1||codeMatches[0].id!==product.id))
+   return {product:null,source:"Référence OCR et libellé fournisseur vérifié contradictoires : sélection manuelle obligatoire",manualMatchRequired:true};
+  return checkConflict({product,source:ref?"Désignation fournisseur vérifiée ; référence OCR à contrôler":"Désignation fournisseur vérifiée",manualMatchRequired:!!ref});
+ }
  const links=(catalog.supplier_product_catalog||[]).filter(x=>norm(x.supplier_key||x.supplier_name)===supplier&&ref&&norm(x.supplier_reference)===ref);
  const ids=[...new Set(links.map(x=>x.product_id).filter(Boolean))];
  if(ids.length>1)return {product:null,source:"Référence fournisseur ambiguë"};
