@@ -351,11 +351,11 @@ function verifiedSupplierReference(row){
 function invoiceDesignationKey(value){
  // Remove only invoice quantity suffixes. Keep packaging in the product name.
  let name=String(value??"").replace(/\s+/g," ").trim();
- const qty="\\d{1,8}[.,]\\d{1,3}";
+ const qty="\\d{1,8}(?:[.,]\\d{1,3})?";
  const unit="(?:COL|COLIS|CARTONS?|CTNS?|SACS?|SEA(?:U|UX)?|POTS?|BT|BOUTEILLES?|PU|PCE|PCS|PIÈCES?|KG|KGS|LITRES?|LTR|BIDONS?|PAQ(?:UETS?)?|LOTS?)";
  const double=new RegExp("\\s+"+qty+"\\s+"+unit+"\\.?\\s+"+qty+"\\s+"+unit+"\\.?$","i");
  const trailingNumber=new RegExp("\\s+"+qty+"\\s+"+unit+"\\.?\\s+"+qty+"$","i");
- const single=new RegExp("\\s+"+qty+"\\s+"+unit+"\\.?$","i");
+ const single=new RegExp("\\s+\\d{1,8}[.,]\\d{1,3}\\s+"+unit+"\\.?$","i");
  name=name.replace(double,"").replace(trailingNumber,"").replace(single,"");
  return norm(name);
 }
@@ -363,34 +363,36 @@ function findProduct(row){
  if(!catalog||(!row.reference&&!row.description))return null;
  const supplier=supplierNorm(),ref=norm(row.reference),label=norm(row.description);
  const active=(catalog.products||[]).filter(p=>p.active!==false);
+ const designation=invoiceDesignationKey(row.description);
+ const strict=supplier&&designation.length>=8?aliases.filter(a=>a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation):[];
+ const strictIds=[...new Set(strict.map(a=>a.product_id).filter(Boolean))];
+ const checkConflict=match=>match?.product&&strict.length&&(strictIds.length!==1||strictIds[0]!==match.product.id)
+  ?{product:null,source:"Référence fournisseur et désignation exacte contradictoires : vérification manuelle obligatoire",manualMatchRequired:true}
+  :match;
  const verified=verifiedSupplierReference(row);
- if(verified)return verified;
+ if(verified)return checkConflict(verified);
  const links=(catalog.supplier_product_catalog||[]).filter(x=>norm(x.supplier_key||x.supplier_name)===supplier&&ref&&norm(x.supplier_reference)===ref);
  const ids=[...new Set(links.map(x=>x.product_id).filter(Boolean))];
  if(ids.length>1)return {product:null,source:"Référence fournisseur ambiguë"};
  if(ids.length===1){
   const p=active.find(x=>x.id===ids[0]);
-  if(p)return {product:p,record:links.find(x=>x.product_id===p.id),source:"Association fournisseur apprise : vérification requise",manualMatchRequired:true};
+  if(p)return checkConflict({product:p,record:links.find(x=>x.product_id===p.id),source:"Association fournisseur apprise : vérification requise",manualMatchRequired:true});
  }
  if(ref){
   const exact=active.filter(x=>norm(x.code)===ref);
-  if(exact.length===1)return {product:exact[0],source:"Référence exacte du catalogue"};
+  if(exact.length===1)return checkConflict({product:exact[0],source:"Référence exacte du catalogue"});
   if(exact.length>1)return {product:null,source:"Référence catalogue ambiguë"};
   const inactive=(catalog.inactive_products||[]).filter(x=>norm(x.code)===ref);
   if(inactive.length===1)return {product:null,source:"Produit DÉSACTIVÉ : "+inactive[0].code+" — "+inactive[0].name};
   if(inactive.length>1)return {product:null,source:"Plusieurs produits désactivés correspondent"};
  }
  // Exact supplier designation, stripping only invoice quantities and priced units.
- const designation=invoiceDesignationKey(row.description);
- if(supplier&&designation.length>=8){
-  const strict=aliases.filter(a=>a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation);
-  if(strict.length){
-   const found=[...new Set(strict.map(a=>a.product_id))];
+ if(strict.length){
+   const found=strictIds;
    if(found.length!==1)return {product:null,source:"Plusieurs produits pour cette désignation fournisseur : vérification manuelle obligatoire",manualMatchRequired:true};
    const p=active.find(x=>x.id===found[0]);
    if(!p)return {product:null,source:"Désignation fournisseur liée à un produit inactif ou absent",manualMatchRequired:true};
    return {product:p,source:"Désignation exacte de la facture fournisseur"};
-  }
  }
  const matches=aliases.filter(a=>(!a.supplier_key||norm(a.supplier_key)===supplier)&&
   ((ref&&norm(a.keyword_norm)===ref)||(label&&norm(a.keyword_norm)===label)));
