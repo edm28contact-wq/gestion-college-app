@@ -6,6 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
+const READER_VERSION="V40";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -170,6 +171,7 @@ async function configureQuota(q){
 }
 function notice(message,type=""){const e=$("notice");e.textContent=message;e.className="notice"+(type?" "+type:"")}
 function setScope(){
+ const stamp=$("readerVersion");if(stamp)stamp.textContent=READER_VERSION;
  $("scope").textContent=accounting?"Comptabilité":"Secrétariat";
  $("backLink").href=accounting?"../comptabilite/":"../secretariat/";
  $("loginLink").href=accounting?"../comptabilite/?return=veryfi&reauth=1&reader=dedicated":"../secretariat/?return=veryfi&reauth=1&reader=dedicated";
