@@ -1,4 +1,4 @@
-/* Planning mensuel des incidents — fonctions de présentation uniquement. */
+/* Planning mensuel des événements — fonctions de présentation uniquement. */
 function filteredPlanningEvents(){
  const type=document.getElementById("filter").value;
  const text=document.getElementById("personFilter").value.trim().toLocaleLowerCase("fr-FR");
@@ -40,19 +40,19 @@ function renderPlanningCalendar(filtered){
  document.getElementById("calendarDays").innerHTML=days.map(d=>{
   const list=groups.get(d.date)||[];
   const classes=["calendar-day",d.outside?"outside":"",d.date===today?"today":"",d.date===window.planningSelectedDay?"selected":""].filter(Boolean).join(" ");
-  const chips=list.slice(0,3).map(e=>'<button class="calendar-chip cal-'+esc(e.event_type)+'" type="button" data-open="'+esc(e.id)+'" title="'+esc((labels[e.event_type]||"Incident")+" — "+e.personnel_name)+'">'+esc(e.personnel_name)+'</button>').join("");
-  return '<div role="gridcell" class="'+classes+'" tabindex="'+(d.outside?"-1":"0")+'" data-day="'+d.date+'" aria-label="'+esc(planningDayLabel(d.date)+" : "+list.length+" incident(s)")+'"><span class="day-number">'+d.day+'</span>'+chips+(list.length>3?'<span class="calendar-more">+'+(list.length-3)+' autres</span>':"")+(list.length?'<span class="day-count">'+list.length+' incident(s)</span>':"")+"</div>";
+  const chips=list.slice(0,3).map(e=>'<button class="calendar-chip cal-'+esc(e.event_type)+'" type="button" data-open="'+esc(e.id)+'" title="'+esc((labels[e.event_type]||"Événement")+" — "+e.personnel_name)+'">'+esc(e.personnel_name)+'</button>').join("");
+  return '<div role="gridcell" class="'+classes+'" tabindex="'+(d.outside?"-1":"0")+'" data-day="'+d.date+'" aria-label="'+esc(planningDayLabel(d.date)+" : "+list.length+" événement(s)")+'"><span class="day-number">'+d.day+'</span>'+chips+(list.length>3?'<span class="calendar-more">+'+(list.length-3)+' autres</span>':"")+(list.length?'<span class="day-count">'+list.length+' événement(s)</span>':"")+"</div>";
  }).join("");
  renderPlanningDay(groups.get(window.planningSelectedDay)||[]);
 }
 function renderPlanningDay(list){
  const date=window.planningSelectedDay;
  document.getElementById("dayDetail").innerHTML='<div class="flex between"><h3>'+esc(planningDayLabel(date))+'</h3>'+
- (readonly?"":'<button class="btn" type="button" id="addForDay">+ Nouvel incident ce jour</button>')+'</div>'+
+ (readonly?"":'<button class="btn" type="button" id="addForDay">+ Nouvel événement ce jour</button>')+'</div>'+
  (list.length?'<div class="day-detail-list">'+list.map(e=>{
   const editable=!readonly&&e.review_status==="a_verifier",removable=!readonly&&(admin||e.review_status==="a_verifier");
-  return '<div class="day-detail-item cal-'+esc(e.event_type)+'"><div><strong>'+esc(e.personnel_name)+'</strong><small>'+esc(labels[e.event_type]||"Incident")+' · '+esc(planningHours(e))+'</small></div>'+(e.attachment_path?'<button type="button" data-pdf="'+esc(e.id)+'">PDF</button>':"")+(editable?'<button type="button" data-open="'+esc(e.id)+'">Modifier</button>':"")+(removable?'<button type="button" class="incident-delete" data-delete="'+esc(e.id)+'">Supprimer</button>':"")+"</div>";
- }).join("")+"</div>":'<p class="day-detail-empty">Aucun incident pour cette journée avec les filtres actuels.</p>');
+  return '<div class="day-detail-item cal-'+esc(e.event_type)+'"><div><strong>'+esc(e.personnel_name)+'</strong><small>'+esc(labels[e.event_type]||"Événement")+' · '+esc(planningHours(e))+'</small></div>'+(e.attachment_path?'<button type="button" data-pdf="'+esc(e.id)+'">PDF</button>':"")+(editable?'<button type="button" data-open="'+esc(e.id)+'">Modifier</button>':"")+(removable?'<button type="button" class="incident-delete" data-delete="'+esc(e.id)+'">Supprimer</button>':"")+"</div>";
+ }).join("")+"</div>":'<p class="day-detail-empty">Aucun événement pour cette journée avec les filtres actuels.</p>');
  const create=document.getElementById("addForDay");if(create)create.addEventListener("click",()=>openForm(null,date));
 }
 function choosePlanningDay(date){

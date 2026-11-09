@@ -39,7 +39,7 @@
   const year=Number(month.slice(0,4)),m=Number(month.slice(5,7));
   return new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(year,m-1,1)));
  }
- const typeNames={absence:"Absence",retard:"Retard",depart_anticipe:"Départ anticipé",incident:"Incident"};
+ const typeNames={absence:"Absence",retard:"Retard",depart_anticipe:"Départ anticipé",incident:"Événement"};
  const reviewNames={a_verifier:"À vérifier",valide:"Validé",sans_suite:"Sans suite"};
  const justNames={non_requis:"Non requis",a_fournir:"À fournir",recu:"Reçu"};
  const shortName=name=>name.length>22?name.slice(0,21)+"...":name;
@@ -52,7 +52,7 @@
    if(day<1||day>count)return "";
    const date=month+"-"+String(day).padStart(2,"0"),
     list=events.filter(e=>e.event_date===date);
-   const entries=list.slice(0,2).map(e=>shortName(printable(e.personnel_name))+" - "+(typeNames[e.event_type]||"Incident"));
+   const entries=list.slice(0,2).map(e=>shortName(printable(e.personnel_name))+" - "+(typeNames[e.event_type]||"Événement"));
    if(list.length>2)entries.push("+"+(list.length-2)+" autres - voir le détail");
    return String(day)+(entries.length?"\n"+entries.join("\n"):"");
   });
@@ -74,9 +74,9 @@
    depart_anticipe:events.filter(e=>e.event_type==="depart_anticipe").length,
    incident:events.filter(e=>e.event_type==="incident").length
   };
-  header(pdf,"Planning des incidents - "+monthLabel(month),"Synthèse complète du mois, établie à partir des événements enregistrés.");
+  header(pdf,"Planning des événements - "+monthLabel(month),"Synthèse complète du mois, établie à partir des événements enregistrés.");
   pdf.setFontSize(9);pdf.setTextColor(47,67,83);
-  pdf.text(printable(events.length+" événement(s)  |  "+counts.absence+" absence(s)  |  "+counts.retard+" retard(s)  |  "+counts.depart_anticipe+" départ(s)  |  "+counts.incident+" incident(s)"),12,43);
+  pdf.text(printable(events.length+" événement(s)  |  "+counts.absence+" absence(s)  |  "+counts.retard+" retard(s)  |  "+counts.depart_anticipe+" départ(s)  |  "+counts.incident+" autre(s) événement(s)"),12,43);
   pdf.autoTable({
    startY:49,margin:{left:12,right:12,top:21,bottom:18},tableWidth:273,
    head:[["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"]],
@@ -92,7 +92,7 @@
   pdf.text("Les cases présentent au maximum deux événements par jour. La liste complète figure dans les pages suivantes.",12,bottom);
   if(!events.length){
    pdf.setFont("helvetica","bold");pdf.setFontSize(10);pdf.setTextColor(31,44,60);
-   pdf.text("Aucun incident enregistré pour ce mois.",12,Math.min(195,bottom+8));
+   pdf.text("Aucun événement enregistré pour ce mois.",12,Math.min(195,bottom+8));
   }
  }
  function register(pdf,month,events,duration){
@@ -105,10 +105,10 @@
    groups.get(key).items.push(e);
   }
   pdf.addPage("a4","landscape");
-  header(pdf,"Détail des incidents - "+monthLabel(month),events.length+" événement(s) classé(s) par salarié, puis par date.");
+  header(pdf,"Détail des événements - "+monthLabel(month),events.length+" événement(s) classé(s) par salarié, puis par date.");
   let y=45;
   for(const {name,items} of [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,"fr"))){
-   if(y>170){pdf.addPage("a4","landscape");header(pdf,"Détail des incidents - "+monthLabel(month),"Suite du registre mensuel.");y=45}
+   if(y>170){pdf.addPage("a4","landscape");header(pdf,"Détail des événements - "+monthLabel(month),"Suite du registre mensuel.");y=45}
    pdf.setFont("helvetica","bold");pdf.setFontSize(11);pdf.setTextColor(31,51,72);
    pdf.text(printable(name+" - "+items.length+" événement(s)"),12,y);
    const sorted=items.slice().sort((a,b)=>String(a.event_date).localeCompare(String(b.event_date)));
@@ -141,7 +141,7 @@
   const pdf=new Constructor({orientation:"landscape",unit:"mm",format:"a4",compress:true});
   const selected=events.filter(e=>String(e.event_date||"").slice(0,7)===month);
   const sorted=selected.slice().sort((a,b)=>String(a.event_date).localeCompare(String(b.event_date))||String(a.personnel_name).localeCompare(String(b.personnel_name),"fr"));
-  pdf.setProperties({title:"Planning des incidents - "+month,subject:"Suivi mensuel du personnel",author:"Cours Chambertin",creator:"Secrétariat"});
+  pdf.setProperties({title:"Planning des événements - "+month,subject:"Suivi mensuel du personnel",author:"Cours Chambertin",creator:"Secrétariat"});
   calendar(pdf,month,sorted);
   register(pdf,month,sorted,duration);
   const pages=pdf.getNumberOfPages();
@@ -151,7 +151,7 @@
    pdf.text("Document interne - classement mensuel. Les justificatifs PDF restent séparés.",12,202);
    pdf.text("Page "+page+" / "+pages,285,202,{align:"right"});
   }
-  pdf.save("planning-incidents-"+month+".pdf");
+  pdf.save("planning-evenements-"+month+".pdf");
   return {month,events:sorted.length,pages};
  }
  window.generatePlanningMonthPdf=generate;
