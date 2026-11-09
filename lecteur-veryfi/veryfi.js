@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
-let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false;
+let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,headerEdited=false,headerAutoCorrection=null;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
 const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x).replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");return /^-?\d+(?:\.\d+)?$/.test(t)&&Number.isFinite(Number(t))?Number(t):null};
@@ -294,7 +294,7 @@ function setFile(newFile){
  clearPdf();
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
- file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;
+ file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];headerEdited=false;headerAutoCorrection=null;revision++;
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
  $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady;
@@ -386,6 +386,7 @@ function makeRow(x,index){
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
 function bindDocument(){
+ headerEdited=false;headerAutoCorrection=null;
  const d=documentData;
  d.vendor=canonicalSupplier(d.vendor);
  for(const [id,k] of [["vendor","vendor"],["invoiceNumber","invoice_number"],["invoiceDate","date"],["subtotal","subtotal"],["tax","tax"],["total","total"]]){
@@ -927,6 +928,25 @@ function eligible(row){
 function isRetainedGreen(row){
  return !row.excluded&&row.verified===true&&productColor(row)==="good";
 }
+function detectHeaderHtCorrection(ocrHt,vat,ttc,totals){
+ if(ocrHt===null||vat===null||ttc===null||vat<0||ttc<=0||!totals.length)return null;
+ const values=totals.map(amount);
+ if(values.some(v=>v===null||v<0))return null;
+ const fromGross=round(ttc-vat),fromLines=round(values.reduce((sum,value)=>sum+value,0));
+ if(fromGross<=0||Math.abs(fromGross-fromLines)>.02||Math.abs(ocrHt-fromGross)<=.02)return null;
+ return {before:ocrHt,after:fromGross,fromLines};
+}
+function repairHeaderFromTotals(){
+ if(accounting||saved||headerEdited||headerAutoCorrection||!documentData)return;
+ const correction=detectHeaderHtCorrection(
+  amount($("subtotal").value),amount($("tax").value),amount($("total").value),
+  [...rows,...removedRows].map(row=>row.total)
+ );
+ if(!correction)return;
+ $("subtotal").value=String(correction.after);
+ headerAutoCorrection=correction;
+ $("confirmReview").checked=false;
+}
 function calc(){
  const included=rows.filter(r=>!r.excluded&&(accounting||isRetainedGreen(r)));
  const pending=accounting?[]:rows.filter(r=>!r.excluded&&!isRetainedGreen(r));
@@ -952,6 +972,12 @@ function calc(){
 }
 function updateTotals(){
  if(!documentData)return;
+ repairHeaderFromTotals();
+ const correctionNote=$("headerRepairNote");
+ correctionNote.hidden=!headerAutoCorrection||accounting;
+ if(headerAutoCorrection&&!accounting){
+  correctionNote.textContent="Correction de lecture HT : Veryfi a détecté "+fmt(headerAutoCorrection.before)+", mais le total des lignes et le calcul TTC − TVA donnent tous deux "+fmt(headerAutoCorrection.after)+". Le HT a été rectifié automatiquement ; vérifiez ce montant sur le PDF original avant de valider.";
+ }
  const c=calc();
  const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
  $("metrics").innerHTML=accounting?
@@ -1011,7 +1037,7 @@ async function save(){
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:file.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
     supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
-    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},retained_ht:c.sum,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,pending_lines:c.pending.length,partial_reception:c.adjusted}),items},timeout:80000});
+    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),auto_corrected_subtotal:headerAutoCorrection!==null,retained_ht:c.sum,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,pending_lines:c.pending.length,partial_reception:c.adjusted}),items},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
    saved=true;notice(c.adjusted?"Réception partielle enregistrée. Seuls les produits verts ont été ajoutés au stock ; PDF original archivé.":"Facture validée. Commandes, achats et stocks synchronisés.","success");
    $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s) · HT retenu "+fmt(c.sum)+(c.adjusted?" (réception partielle)":"")+".";
@@ -1059,7 +1085,7 @@ function setup(){
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
-  $(key).addEventListener("change",()=>{if(key==="vendor"){populateDatalists();rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.confirmedOnPdf=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
+  $(key).addEventListener("change",()=>{if(key==="subtotal"){headerEdited=true;headerAutoCorrection=null}if(key==="vendor"){populateDatalists();rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.confirmedOnPdf=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
  $("loginLink").addEventListener("click",e=>{if(file&&!confirm("La reconnexion rechargera la page. Le PDF devra être sélectionné de nouveau. Continuer ?"))e.preventDefault()});
  window.addEventListener("focus",()=>{
