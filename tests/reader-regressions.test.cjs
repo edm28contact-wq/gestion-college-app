@@ -108,6 +108,18 @@ test("la réparation des montants refuse les écarts non justifiés",()=>{
  assert.equal(h.api.proposeHeaderAmounts([1294.94],294.94,258.99,600),null);
  assert.equal(h.api.proposeHeaderAmounts([1294.94],null,258.99,553.93),null);
 });
+test("la correction d'en-tête reste une suggestion OCR à vérifier sur le PDF",()=>{
+ assert.ok(source.includes("En-tête OCR à contrôler"));
+ assert.ok(source.includes("Suggestion calculée à partir de la somme des lignes OCR"));
+ assert.ok(source.includes("vérifiez obligatoirement ces montants sur le PDF original"));
+ assert.ok(!source.includes("Correction proposée APRÈS comparaison avec le PDF"));
+});
+test("le tri explicite les TVA manquantes et les produits désactivés sans les valider",()=>{
+ assert.ok(source.includes("const missingTaxes=active.filter(r=>!validLineVat(r)).length"));
+ assert.ok(source.includes('startsWith("Produit DÉSACTIVÉ")'));
+ assert.ok(source.includes("Le filtre ne modifie ni les données ni les montants."));
+ assert.ok(source.includes("row.verified=false;row.autoVerified=false;row.manualVerified=false"));
+});
 test("mode entraînement : aucune facture ne peut être enregistrée",()=>{
  const html=file("lecteur-veryfi/index.html");
  assert.ok(source.includes("const trainingMode=parameters.get("));

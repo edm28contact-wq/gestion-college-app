@@ -941,7 +941,10 @@ function groupedRows(){
 function renderRows(){
  autoVerifyGreenRows();
  const active=rows.filter(r=>!r.excluded),red=active.filter(r=>productColor(r)==="bad").length,orange=active.filter(r=>productColor(r)==="warn").length,green=active.filter(r=>productColor(r)==="good").length;
- $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s). Les erreurs financières et doublons sont triés en priorité ; le filtre ne change pas les montants.";
+ const missingTaxes=active.filter(r=>!validLineVat(r)).length;
+ const inactive=active.filter(r=>productColor(r)==="bad"&&String(r.reason||"").startsWith("Produit DÉSACTIVÉ")).length;
+ const missingProducts=active.filter(r=>productColor(r)==="bad").length-inactive;
+ $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) · TVA à compléter : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
  const box=$("lines");box.replaceChildren();
  for(const group of groupedRows()){
   if(!group.items.length)continue;
@@ -1072,7 +1075,7 @@ function updateTotals(){
   if(c.discrepancy)info.push("HT détecté par Veryfi : "+fmt(c.ht)+" ; somme des lignes lues : "+(c.discardedInvalid?"indéterminée":fmt(c.reconciledSum))+(derived!==null?" ; TTC − TVA : "+fmt(derived):""));
   if(c.grossMismatch)info.push("HT + TVA du PDF différent du TTC");
   correctionNote.className="notice";
-  correctionNote.textContent="Montants du PDF à vérifier : "+info.join(". ")+(suggestion?". Correction proposée APRÈS comparaison avec le PDF : HT "+fmt(suggestion.ht)+" et TTC "+fmt(suggestion.ttc)+".":"")+". La réception reste calculée uniquement depuis les produits verts validés.";
+  correctionNote.textContent="En-tête OCR à contrôler : "+info.join(". ")+(suggestion?". Suggestion calculée à partir de la somme des lignes OCR : HT "+fmt(suggestion.ht)+" et TTC "+fmt(suggestion.ttc)+" — vérifiez obligatoirement ces montants sur le PDF original.":"")+(suggestion?"":" Vérifiez les montants sur le PDF original.")+" La réception reste calculée uniquement depuis les produits verts validés.";
  }
  const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
  $("metrics").innerHTML=accounting?
