@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","suggestInvoiceVatRate","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -27,7 +27,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,suggestInvoiceVatRate};",ctx);
  return {ctx,api:ctx.reader};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -128,6 +128,43 @@ test("mode entraînement : aucune facture ne peut être enregistrée",()=>{
  assert.ok(html.includes('id="trainingBanner"'));
  assert.ok(html.includes('id="applyBulkVat"'));
  assert.ok(html.includes('id="repairHeader"'));
+});
+test("facture Henri Julien : les lignes fiables passent au vert après une confirmation groupée de TVA",()=>{
+ const amounts=[53.4,36.4,11.4,147,69.6,39.6,22.2,27.5,10.2,50.4,30,84,4.2,63,15,36,9.8,181.44,181.44,88.2,25.68,45.6,21,16.2,25.68];
+ const h=harness();
+ h.ctx.documentData.line_items=amounts.map((total,i)=>({total,index:i}));
+ h.values.tax="258.99";
+ h.ctx.rows=amounts.map((total,i)=>row({id:i,reference:"H"+i,description:"Ligne "+i,total,quantity:1,unit_price:total,tax_rate:i===0?20:"",
+ product_id:[0,12,20,21,23,24,22].includes(i)?"":"p-1",stock_quantity:1,score:i===13?.85:.97}));
+ const proposed=h.api.suggestInvoiceVatRate();
+ assert.equal(proposed.rate,20);assert.equal(proposed.missing,24);
+ assert.equal(h.api.groupedVatAmount(h.ctx.rows),null);
+ const added=h.api.applyVerifiedVat(h.ctx.rows,20);
+ assert.equal(added.count,24);
+ h.api.autoVerifyGreenRows();
+ const statuses=Array.from(h.ctx.rows,r=>h.api.productColor(r));
+ assert.equal(statuses.filter(s=>s==="good").length,17);
+ assert.equal(statuses.filter(s=>s==="warn").length,1);
+ assert.equal(statuses.filter(s=>s==="bad").length,7);
+ assert.equal(h.ctx.rows[13].verified,false,"Confiance OCR 85 % : validation manuelle obligatoire.");
+ assert.equal(h.api.groupedVatAmount(h.ctx.rows),258.99);
+});
+test("la TVA groupée ne neutralise pas une correction de quantité ou une référence ambiguë",()=>{
+ const h=harness();
+ const existingCorrection=row({changed:true,tax_rate:""}),manualMatch=row({reference:"autre",manualMatchRequired:true,tax_rate:""});
+ h.ctx.rows=[existingCorrection,manualMatch];
+ h.api.applyVerifiedVat(h.ctx.rows,20);
+ h.api.autoVerifyGreenRows();
+ assert.equal(h.api.productColor(existingCorrection),"warn");
+ assert.equal(h.api.productColor(manualMatch),"warn");
+ assert.ok(h.ctx.rows.every(r=>!r.verified));
+});
+test("le bouton de correction d'en-tête reste disponible si seul le HT est tronqué",()=>{
+ const h=harness();
+ assert.equal(h.api.proposeHeaderAmounts([1294.94],294.94,258.99,1553.93).ht,1294.94);
+ assert.equal(h.api.proposeHeaderAmounts([1294.94],1294.94,258.99,553.93).ttc,1553.93);
+ assert.equal(h.api.proposeHeaderAmounts([1294.94],294.94,258.99,553.93).ttc,1553.93);
+ assert.equal(h.api.proposeHeaderAmounts([1294.94],1294.94,258.99,1553.93),null);
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");

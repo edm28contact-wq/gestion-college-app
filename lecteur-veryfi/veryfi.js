@@ -396,6 +396,8 @@ function bindDocument(){
  const scores=Object.entries(d.fields||{}).filter(([k,v])=>v&&typeof v.score==="number");
  $("fieldScores").textContent=scores.length?"Confiance fournie par Veryfi : "+scores.map(([k,v])=>k+" "+Math.round(v.score*100)+" %").join(" · "):"Scores détaillés non fournis par Veryfi pour ces champs.";
  $("confirmReview").checked=false;populateDatalists();
+ const vatHint=suggestInvoiceVatRate();
+ if(vatHint?.missing&&String($("bulkVatRate").value||"").trim()==="")$("bulkVatRate").value=String(vatHint.rate);
 }
 function lineOcrConfidence(item){
  const fields=item?.boxes||{},required=["description","quantity","unit_price","total"],scores=[],missing=[];
@@ -1011,11 +1013,10 @@ function proposeHeaderAmounts(originalLineTotals,ht,vat,ttc){
  if(lines.some(v=>v===null||v<0))return null;
  const sum=round(lines.reduce((a,b)=>a+b,0)),oldHt=amount(ht),tax=amount(vat),oldTtc=amount(ttc);
  if(!(sum>0)||oldHt===null||oldHt<0||tax===null||tax<0||oldTtc===null||oldTtc<0)return null;
- if(Math.abs(round(oldHt+tax)-oldTtc)>.02)return null;
- const gap=round(sum-oldHt),suggestedTtc=round(sum+tax);
- if(gap<999.99||Math.abs(gap/1000-Math.round(gap/1000))>0.00003)return null;
- if(Math.abs(round(suggestedTtc-oldTtc)-gap)>.02)return null;
- return {ht:sum,tax,ttc:suggestedTtc,gap};
+ const gap=round(sum-oldHt),suggestedTtc=round(sum+tax),ttcGap=round(suggestedTtc-oldTtc);
+ const thousandsMissing=value=>value===0||(value>=999.99&&Math.abs(value/1000-Math.round(value/1000))<0.00003);
+ if(!thousandsMissing(gap)||!thousandsMissing(ttcGap)||(gap===0&&ttcGap===0))return null;
+ return {ht:sum,tax,ttc:suggestedTtc,gap,ttcGap};
 }
 function missingVatRows(rowsToCheck){
  return rowsToCheck.filter(r=>!r.excluded&&!String(r.tax_rate??"").trim());
@@ -1028,10 +1029,27 @@ function applyVerifiedVat(rowsToFix,rate){
   return {ok:false,count:0,reason:"Le document comporte des taux renseignés différents ou invalides : corrigez chaque ligne sur le PDF."};
  const empty=missingVatRows(active);
  for(const row of empty){
-  row.tax_rate=target;row.changed=true;
+  row.tax_rate=target;
+  // A verified invoice-wide VAT rate is not a manual correction to quantity, price or product.
+  // Preserve changed=true for any earlier field correction: it must still be reviewed.
+  row.vatConfirmedFromPdf=true;
   row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;
  }
  return {ok:true,count:empty.length};
+}
+function suggestInvoiceVatRate(){
+ if(!documentData||!rows.length||rows.length!==documentData.line_items?.length||rows.some(r=>r.userAdded||r.excluded)||removedRows.length)return null;
+ const known=rows.filter(r=>String(r.tax_rate??"").trim()!=="");
+ if(!known.length||known.some(r=>!validLineVat(r)))return null;
+ const rate=amount(known[0].tax_rate);
+ if(known.some(r=>Math.abs(amount(r.tax_rate)-rate)>0.00001))return null;
+ const lineTotals=rows.map(r=>amount(r.total));
+ if(lineTotals.some(n=>n===null||n<0))return null;
+ const missing=missingVatRows(rows).length,tax=amount($("tax").value);
+ if(!missing||tax===null||tax<0)return null;
+ const ht=round(lineTotals.reduce((sum,n)=>sum+n,0));
+ if(Math.abs(round(ht*rate/100)-tax)>.01)return null;
+ return {rate,missing,ht,tax};
 }
 function applyVatFromPdf(){
  if(!documentData||saved||loading)return;
@@ -1042,11 +1060,12 @@ function applyVatFromPdf(){
   return notice("Plusieurs taux ou des taux invalides ont été relevés. Corrigez les lignes individuellement : aucune propagation automatique.","error");
  const toFix=missingVatRows(available);
  if(!toFix.length)return notice("Toutes les lignes non écartées possèdent déjà un taux de TVA.","success");
- if(!confirm("Confirmez-vous que le taux de TVA de "+rate+" % apparaît sur le PDF original POUR CHACUNE des "+toFix.length+" ligne(s) concernée(s) ? Le taux sera renseigné, mais ces lignes resteront à vérifier individuellement et ne passeront pas automatiquement au vert."))return;
+ if(!confirm("Confirmez-vous que le taux de TVA de "+rate+" % s’applique à TOUTES les "+toFix.length+" ligne(s) concernée(s), après vérification de la facture originale ? Les lignes avec référence active, montants et conditionnement fiables pourront passer au vert automatiquement. Toute ligne incertaine restera rouge ou orange."))return;
  const result=applyVerifiedVat(rows,rate);
  if(!result.ok)return notice(result.reason,"error");
  $("confirmReview").checked=false;
- renderRows();notice(result.count+" taux de TVA renseigné(s) après votre confirmation. Vérifiez chaque ligne sur le PDF avant de la valider.","success");
+ renderRows();const green=rows.filter(r=>!r.excluded&&productColor(r)==="good").length;
+ notice(result.count+" taux de TVA renseigné(s) après votre confirmation : "+green+" ligne(s) verte(s) grâce aux contrôles existants. Les autres restent à vérifier sur le PDF.","success");
 }
 function suggestHeaderFromOcr(){
  if(!documentData||rows.length!==documentData.line_items?.length||rows.some(r=>r.userAdded)||removedRows.length)return null;
@@ -1066,6 +1085,9 @@ function updateTotals(){
  if(!documentData)return;
  const c=calc();
  const correctionNote=$("headerRepairNote");
+ const vatHint=suggestInvoiceVatRate(),vatHintElement=$("vatSuggestion");
+ vatHintElement.hidden=!vatHint;
+ if(vatHint)vatHintElement.textContent="Proposition : "+vatHint.rate+" % pour "+vatHint.missing+" ligne(s) sans TVA. Contrôle de cohérence : "+fmt(vatHint.ht)+" HT × "+vatHint.rate+" % = "+fmt(vatHint.tax)+" de TVA. Confirmez ce taux sur le PDF original avant de l'appliquer.";
  const suggestion=suggestHeaderFromOcr(),repairButton=$("repairHeader");
  repairButton.hidden=!suggestion;repairButton.disabled=loading||saved;
  correctionNote.hidden=accounting||(!c.discrepancy&&!c.grossMismatch);

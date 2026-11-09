@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=14">
-<script defer src="./veryfi.js?v=37"></script>
+<link rel="stylesheet" href="./veryfi.css?v=15">
+<script defer src="./veryfi.js?v=38"></script>
 <script defer src="./ocr-secours.js?v=2"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=4">
 <style>
@@ -120,7 +120,7 @@ html.secretariat-embedded{background:transparent}
       <option value="warn">Lignes orange</option>
       <option value="good">Lignes vertes</option>
       <option value="excluded">Lignes écartées</option>
-      </select></label><div class="bulk-vat-tools"><label for="bulkVatRate">TVA vérifiée sur le PDF (%)</label><input id="bulkVatRate" type="number" min="0" max="100" step="0.01" placeholder="Ex. 20" inputmode="decimal"><button id="applyBulkVat" type="button" class="btn secondary small">Renseigner les TVA manquantes</button></div><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
+      </select></label><div class="bulk-vat-tools"><label for="bulkVatRate">TVA vérifiée sur le PDF (%)</label><input id="bulkVatRate" type="number" min="0" max="100" step="0.01" placeholder="Ex. 20" inputmode="decimal"><button id="applyBulkVat" type="button" class="btn secondary small">Renseigner les TVA manquantes</button></div><p id="vatSuggestion" class="subtle vat-suggestion" aria-live="polite" hidden></p><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
       <div id="lines" class="lines"></div>
       <datalist id="productOptions"></datalist>
       <datalist id="accountOptions"></datalist>
