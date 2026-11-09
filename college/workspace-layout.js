@@ -134,6 +134,22 @@
    if(!menu.children.length)continue;
    group.append(heading,menu);aside.append(group);
   }
+  const applySecretaryRestriction=(role)=>{
+    if(area!=="secretariat")return;
+    const restricted=role==="secretariat";
+    for(const group of aside.querySelectorAll(".school-nav-section")){
+     const heading=group.querySelector("h2")?.textContent;
+     if(heading==="Réglages"||heading==="Autres espaces")group.hidden=restricted;
+    }
+    if(restricted)for(const control of aside.querySelectorAll(".school-nav-links a")){
+     try{const destination=new URL(control.href);if(!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/"))control.hidden=true}catch{}
+    }
+    brand.href=restricted?url("secretariat/"):url("college/admin/");
+  };
+  if(area==="secretariat"){
+   document.addEventListener("college:secretariat-role",event=>applySecretaryRestriction(event.detail?.role));
+   applySecretaryRestriction(target.dataset.schoolRole||"");
+  }
   const footer=document.createElement("div");
   footer.className="school-nav-footer";
   footer.textContent="Accès conservés selon les droits de chaque compte.";
@@ -189,7 +205,7 @@
      if(typeof item?.label!=="string"||typeof item.path!=="string"||!item.label.trim()||!/^[a-zA-Z0-9._/-]+$/.test(item.path)||item.path.includes("..")||item.path.startsWith("/"))continue;
      const a=document.createElement("a");a.textContent=item.label.slice(0,65);a.href=url(item.path);nav.append(a);
     }
-    if(nav.children.length){sec.append(title,nav);footer.before(sec)}
+    if(nav.children.length){sec.append(title,nav);footer.before(sec);if(area==="secretariat"){const roleEvent=target.dataset.schoolRole;if(roleEvent==="secretariat"){sec.hidden=true}}}
    }
    if(Array.isArray(custom.blocks)&&custom.blocks.length){
     const panel=document.createElement("section");panel.className="school-custom-blocks";panel.setAttribute("aria-label","Informations personnalisées");
