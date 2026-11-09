@@ -906,7 +906,7 @@ function calc(){
  const vatKnown=included.length>0&&included.every(r=>taxFor(r)!==null);
  const selectedVat=vatKnown?round(included.reduce((n,r)=>n+taxFor(r),0)):null;
  const selectedTtc=selectedVat===null?null:round(sum+selectedVat);
- const ok=!!documentData&&!!file&&!saved&&included.length>0&&!missing.length&&!unmatched.length&&!unverified.length&&!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
+ const ok=!!documentData&&!!file&&!saved&&included.length>0&&(accounting||pending.length===0)&&!missing.length&&!unmatched.length&&!unverified.length&&!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
  return {ok,included,pending,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,removedCount:removedRows.length};
 }
 function updateTotals(){
@@ -918,7 +918,7 @@ function updateTotals(){
    '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Rouges / orange en attente</span><strong>'+c.pending.length+'</strong></div><div class="metric"><span>Total HT vert</span><strong>'+fmt(c.sum)+'</strong></div>';
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
-    retained.className="reconciliation "+(c.discrepancy?"bad":"good");
+    retained.className="reconciliation good";
     retained.textContent="Lignes vertes uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+(c.selectedVat===null?" (taux de TVA d’une ligne verte à vérifier)":"")+" · "+c.pending.length+" ligne(s) rouge(s)/orange(s) non comptée(s). Chaque ligne passée au vert s’ajoute immédiatement. Les montants du PDF original restent inchangés.";
   }
  const errors=[];
@@ -929,12 +929,13 @@ function updateTotals(){
  if(c.missing.length)errors.push(c.missing.length+" ligne(s) incompletes ou incohérentes");
  if(c.unmatched.length)errors.push(c.unmatched.length+" ligne(s) sans produit actif ou quantité de stock confirmée");
  if(c.unverified.length)errors.push(c.unverified.length+" ligne(s) non vérifiées");
+ if(c.pending.length&&!accounting)errors.push(c.pending.length+" ligne(s) rouge(s)/orange(s) encore à traiter avant validation finale.");
  // Les lignes écartées ou supprimées sont informatives si le total original est reconstitué.
- $("reconciliation").className="reconciliation "+(errors.length?"bad":"good");
+ $("reconciliation").className="reconciliation "+(!accounting&&c.pending.length?"":errors.length?"bad":"good");
  const explanation=c.adjusted?" Réception partielle : "+c.pending.length+" ligne(s) encore à vérifier, "+c.removedCount+" supprimée(s), "+c.excludedCount+" écartée(s).":"";
   $("reconciliation").textContent="HT du PDF : "+fmt(c.ht)+" · HT retenu : "+fmt(c.sum)+" · HT écarté : "+fmt(c.discarded)+" · HT rapproché : "+fmt(c.reconciledSum)+"."+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Totaux rapprochés. Contrôle des lignes terminé.");
  $("save").disabled=!c.ok||!$("confirmReview").checked||loading;
- $("saveHelp").textContent=saved?"Facture enregistrée.":c.ok?(c.pending.length?"Seules les lignes vertes seront enregistrées. Corrigez les autres avant de finaliser si elles doivent rejoindre le stock.":c.adjusted?"Réception partielle : seuls les produits verts seront ajoutés au stock.":"Cochez la confirmation pour autoriser la validation."):"Seules les lignes vertes comptent. Vérifiez le PDF et les contrôles restants avant l’enregistrement.";
+ $("saveHelp").textContent=saved?"Facture enregistrée.":c.pending.length&&!accounting?"Total vert actualisé. Passez les autres lignes au vert ou écartez-les avant validation définitive (anti-doublon PDF).":c.ok?(c.adjusted?"Réception partielle : seuls les produits verts seront ajoutés au stock.":"Cochez la confirmation pour autoriser la validation."):"Vérifiez les lignes vertes et rapprochez le PDF avant l’enregistrement.";
 }
 async function digest(bytes){
  const hash=await crypto.subtle.digest("SHA-256",bytes);
