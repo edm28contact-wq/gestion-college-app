@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -27,7 +27,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat};",ctx);
  return {ctx,api:ctx.reader};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -83,6 +83,39 @@ test("syntaxe des scripts intégrés du site",()=>{
   assert.ok(scripts.length>0,"Pas de script intégré à vérifier : "+page);
   for(const script of scripts)new vm.Script(script[2],{filename:page});
  }
+});
+test("facture d'entraînement : base TVA globale et arrondis corrects",()=>{
+ const totals=[53.4,36.4,11.4,147,69.6,39.6,22.2,27.5,10.2,50.4,30,84,4.2,63,15,36,9.8,181.44,181.44,88.2,25.68,45.6,21,16.2,25.68];
+ const h=harness(),lines=totals.map((total,i)=>row({id:i,reference:"R"+i,total,tax_rate:i===0?20:"",verified:false,autoVerified:false}));
+ assert.equal(totals.length,25);
+ assert.equal(h.api.groupedVatAmount(lines),null,"La TVA est inconnue tant que 24 taux manquent.");
+ const guess=h.api.proposeHeaderAmounts(totals,294.94,258.99,553.93);
+ assert.equal(guess.ht,1294.94);assert.equal(guess.tax,258.99);assert.equal(guess.ttc,1553.93);assert.equal(guess.gap,1000);
+ const filled=h.api.applyVerifiedVat(lines,20);
+ assert.equal(filled.ok,true);assert.equal(filled.count,24);
+ assert.equal(h.api.groupedVatAmount(lines),258.99);
+ assert.ok(lines.slice(1).every(x=>x.changed&&!x.verified&&!x.autoVerified));
+ assert.equal(lines[0].tax_rate,20);
+});
+test("TVA multiple ou incohérente : propagation refusée",()=>{
+ const h=harness(),items=[row({tax_rate:20}),row({tax_rate:5}),row({tax_rate:""})];
+ const result=h.api.applyVerifiedVat(items,20);
+ assert.equal(result.ok,false);assert.equal(result.count,0);assert.equal(items[2].tax_rate,"");
+});
+test("la réparation des montants refuse les écarts non justifiés",()=>{
+ const h=harness();
+ assert.equal(h.api.proposeHeaderAmounts([300,700],294.94,258.99,553.93),null);
+ assert.equal(h.api.proposeHeaderAmounts([1294.94],294.94,258.99,600),null);
+ assert.equal(h.api.proposeHeaderAmounts([1294.94],null,258.99,553.93),null);
+});
+test("mode entraînement : aucune facture ne peut être enregistrée",()=>{
+ const html=file("lecteur-veryfi/index.html");
+ assert.ok(source.includes("const trainingMode=parameters.get("));
+ assert.ok(source.includes("$(\"save\").disabled=trainingMode||"));
+ assert.ok(source.includes('if(trainingMode)return notice("Mode entraînement'));
+ assert.ok(html.includes('id="trainingBanner"'));
+ assert.ok(html.includes('id="applyBulkVat"'));
+ assert.ok(html.includes('id="repairHeader"'));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
