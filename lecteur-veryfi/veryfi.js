@@ -381,7 +381,7 @@ function makeRow(x,index){
  const evidence=explicitInvoiceUnit(x);
  return {id:index,reference:String(x.reference||""),description:String(x.description||""),
   quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,unit_label_pair:evidence.pair||null,autoQuantityReconciled:false,
-  tax_rate:x.tax_rate??"",boxes:x.boxes||{},score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
+  tax_rate:x.tax_rate??"",boxes:x.boxes||{},sourceBox:Array.isArray(x.box)?x.box:null,score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
@@ -723,6 +723,42 @@ function keywordNotebook(row,index){
  const note=document.createElement("p");note.className="subtle";note.textContent="Par défaut, mot-clé lié au fournisseur de cette facture. Une correspondance complète sera réutilisée sur les prochaines factures.";wrap.append(note);
  return wrap;
 }
+function pdfPageForRow(row){
+ const candidates=[row.sourceBox,row.boxes?.description?.box,row.boxes?.reference?.box,row.boxes?.quantity?.box,row.boxes?.unit_price?.box,row.boxes?.total?.box];
+ const found=candidates.find(box=>Array.isArray(box)&&box.length===5&&Number.isInteger(Number(box[0]))&&Number(box[0])>=0);
+ if(!found)return null;
+ const raw=Number(found[0]),page=raw===0?1:raw;
+ const count=Number(documentData?.page_count);
+ return page>=1&&(!Number.isInteger(count)||count<=0||page<=count)?page:null;
+}
+function viewPdfLine(row,index){
+ if(!objectUrl||!file)return notice("Le PDF original n’est plus disponible.","error");
+ const dialog=$("pdfCompare");
+ if(!dialog||typeof dialog.showModal!=="function")return notice("La fenêtre de comparaison n’est pas disponible sur ce navigateur.","error");
+ const page=pdfPageForRow(row);
+ $("pdfCompareTitle").textContent="Comparer la ligne "+(index+1)+" avec la facture";
+ $("pdfComparePage").textContent=page?"Page "+page+" suggérée par Veryfi (si le lecteur PDF le permet)":"Page non localisée automatiquement : recherchez la ligne dans le PDF.";
+ const fields=$("pdfCompareFields");fields.replaceChildren();
+ const values=[
+  ["Désignation",row.description],
+  ["Référence fournisseur",row.reference],
+  ["Quantité facturée",row.quantity],
+  ["Unité facturée",row.unit],
+  ["Prix unitaire HT",row.unit_price],
+  ["Total HT",row.total],
+  ["Produit associé",row.product_label],
+  ["État de la ligne","Orange — vérification requise"]
+ ];
+ for(const [name,value] of values){
+  const pair=document.createElement("div");pair.className="pdf-compare-field";
+  const key=document.createElement("dt");key.textContent=name;
+  const val=document.createElement("dd");val.textContent=String(value??"")||"Non renseigné";
+  pair.append(key,val);fields.append(pair);
+ }
+ $("pdfCompareReason").textContent=reviewReason(row);
+ $("pdfCompareViewer").src=objectUrl+(page?"#page="+page:"");
+ dialog.showModal();
+}
 function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
  const heading=document.createElement("div");heading.className="row-head";
@@ -776,6 +812,11 @@ function buildLine(row,index){
   reason.className="row-warning";
   reason.textContent="À contrôler : "+reviewReason(row);
   card.append(reason);
+  const view=document.createElement("button");view.type="button";view.className="btn secondary small pdf-line-button";
+  view.dataset.action="view-pdf";view.textContent="Voir PDF";
+  view.setAttribute("aria-label","Voir le PDF original pour comparer la ligne "+(index+1));
+  view.addEventListener("click",()=>viewPdfLine(row,index));
+  card.append(view);
  }
  if(color==="good"){
   const approved=document.createElement("div");
@@ -980,10 +1021,12 @@ async function save(){
  finally{loading=false;updateTotals()}
 }
 function lockFields(){
- $("results").querySelectorAll("input,button").forEach(el=>{if(el.id!=="newDocument")el.disabled=true});
+ $("results").querySelectorAll("input,button").forEach(el=>{if(el.id!=="newDocument"&&el.dataset.action!=="view-pdf")el.disabled=true});
 }
 function setup(){
  setScope();
+ $("pdfCompareClose").addEventListener("click",()=>$("pdfCompare").close());
+ $("pdfCompare").addEventListener("close",()=>$("pdfCompareViewer").removeAttribute("src"));
  const drop=$("drop"),input=$("file");
  drop.addEventListener("click",()=>{if(!loading)input.click()});
  drop.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();if(!loading)input.click()}});

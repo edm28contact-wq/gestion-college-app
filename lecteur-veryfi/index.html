@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=9">
-<script defer src="./veryfi.js?v=28"></script>
+<link rel="stylesheet" href="./veryfi.css?v=10">
+<script defer src="./veryfi.js?v=29"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=3">
 </head>
 <body>
@@ -110,6 +110,22 @@
 </div>
 <footer>Veryfi extrait les données. Le rapprochement et l’enregistrement restent soumis aux contrôles du collège.</footer>
 </main>
+<dialog id="pdfCompare" class="pdf-compare" aria-labelledby="pdfCompareTitle">
+ <div class="pdf-compare-header">
+  <div><h2 id="pdfCompareTitle">Comparer avec la facture</h2><p id="pdfComparePage" class="subtle"></p></div>
+  <button type="button" class="btn secondary" id="pdfCompareClose">Fermer</button>
+ </div>
+ <div class="pdf-compare-grid">
+  <iframe id="pdfCompareViewer" title="Facture PDF originale pour vérification"></iframe>
+  <section class="pdf-compare-side" aria-label="Valeurs à vérifier">
+   <h3>Valeurs relevées par Veryfi</h3>
+   <dl id="pdfCompareFields" class="pdf-compare-fields"></dl>
+   <h3>Contrôle requis</h3>
+   <p id="pdfCompareReason" class="row-warning"></p>
+   <p class="subtle">Aucune valeur n’est modifiée dans cette fenêtre. Fermez-la pour corriger ou valider la ligne.</p>
+  </section>
+ </div>
+</dialog>
 <script defer src="../college/workspace-layout.js?v=5" data-area="veryfi" data-target="main.shell"></script>
 </body>
 </html>

@@ -31,3 +31,20 @@
 @media(max-width:620px){.usage-figures{gap:13px}.usage-figures strong{font-size:15px}}
 
 .product-packaging{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:9px 0 5px;padding:9px 11px;border:1px solid #d4e0ea;background:#f6f9fc;border-radius:8px;font-size:12px;line-height:1.45}.product-packaging a{color:#175e8c;font-weight:700;text-decoration:underline}
+
+/* Consultation du PDF original pour une ligne orange. */
+.pdf-line-button{margin-top:10px}
+.pdf-compare{width:min(1320px,96vw);max-width:none;max-height:96dvh;padding:14px;border:1px solid var(--line);border-radius:13px;background:#fff;color:var(--ink);box-shadow:0 18px 80px #142c4260}
+.pdf-compare::backdrop{background:#112637b8}
+.pdf-compare-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.pdf-compare-header h2{font-size:19px;margin:0 0 4px}
+.pdf-compare-header p{margin:0}
+.pdf-compare-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr);gap:14px;align-items:start}
+#pdfCompareViewer{width:100%;height:min(79dvh,820px);border:1px solid var(--line);border-radius:8px;background:#fff}
+.pdf-compare-side{min-width:0;max-height:min(79dvh,820px);overflow:auto;padding:4px 5px}
+.pdf-compare-side h3{font-size:14px;margin:8px 0 10px}
+.pdf-compare-fields{margin:0;display:grid;gap:8px}
+.pdf-compare-field{padding:8px 10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
+.pdf-compare-field dt{font-size:11px;font-weight:700;color:var(--muted)}
+.pdf-compare-field dd{font-size:13px;font-weight:600;margin:5px 0 0}
+@media(max-width:850px){.pdf-compare{width:98vw;max-height:95dvh;overflow:auto;padding:10px}.pdf-compare-grid{grid-template-columns:minmax(0,1fr)}#pdfCompareViewer{height:47dvh;min-height:250px}.pdf-compare-side{max-height:none}}
