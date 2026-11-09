@@ -7,7 +7,7 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
 <link rel="stylesheet" href="./veryfi.css?v=9">
-<script defer src="./veryfi.js?v=25"></script>
+<script defer src="./veryfi.js?v=26"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=3">
 </head>
 <body>
@@ -82,11 +82,12 @@
         <label class="field field-wide"><span>Fournisseur</span><input id="vendor" autocomplete="off"></label>
         <label class="field"><span>N° facture</span><input id="invoiceNumber" autocomplete="off"></label>
         <label class="field"><span>Date de facture</span><input id="invoiceDate" type="date"></label>
-        <label class="field"><span>Total HT</span><input id="subtotal" inputmode="decimal"></label>
-        <label class="field"><span>TVA</span><input id="tax" inputmode="decimal"></label>
-        <label class="field"><span>Total TTC</span><input id="total" inputmode="decimal"></label>
+        <label class="field"><span>Total HT du PDF</span><input id="subtotal" inputmode="decimal"></label>
+        <label class="field"><span>TVA du PDF</span><input id="tax" inputmode="decimal"></label>
+        <label class="field"><span>Total TTC du PDF</span><input id="total" inputmode="decimal"></label>
       </div>
       <div id="fieldScores" class="subtle" aria-live="polite"></div>
+      <div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>
       <div class="section-heading">
         <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF.</p></div>
         <button id="addLine" type="button" class="btn secondary small">Ajouter une ligne</button>

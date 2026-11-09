@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
-let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false;
+let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
 const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x).replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");return /^-?\d+(?:\.\d+)?$/.test(t)&&Number.isFinite(Number(t))?Number(t):null};
@@ -294,7 +294,7 @@ function setFile(newFile){
  clearPdf();
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
- file=newFile||null;saved=false;documentData=null;rows=[];revision++;
+ file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
  $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady;
@@ -324,7 +324,7 @@ async function analyze(){
   if(!result.ok||!result.result||!Array.isArray(result.result.line_items))throw Error("Résultat Veryfi inexploitable.");
   showUsage(result.usage);
   if(result.usage_warning)notice(result.usage_warning,"error");
-  documentData=result.result;saved=false;rows=documentData.line_items.map((x,i)=>makeRow(x,i));
+  documentData=result.result;saved=false;removedRows=[];rows=documentData.line_items.map((x,i)=>makeRow(x,i));
   bindDocument();refreshMatches();autoVerifyGreenRows();renderRows();
   $("resultsEmpty").hidden=true;$("results").hidden=false;
   $("readingState").textContent="Lecture terminée";notice("Veryfi a identifié "+rows.length+" ligne(s). Vérifiez les données avant validation.","success");
@@ -813,7 +813,7 @@ function buildLine(row,index){
   $("confirmReview").checked=false;renderRows();
  });
  foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
- foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Supprimer cette ligne ? Son montant ne sera plus inclus dans le contrôle HT."))return;rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
+ foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Retirer cette ligne de la réception ? Le montant reste compté dans le rapprochement avec le PDF original."))return;if(!row.userAdded)removedRows.push({total:row.total,tax_rate:row.tax_rate});rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.append(keywordNotebook(row,index));card.classList.toggle("excluded",row.excluded);
  card.classList.add(productColor(row));
  return card;
@@ -876,7 +876,7 @@ function renderRows(){
 }
 function addLine(){
  if(!documentData||saved)return;
- rows.push(makeRow({},rows.length));$("confirmReview").checked=false;renderRows();
+ rows.push({...makeRow({},rows.length),userAdded:true});$("confirmReview").checked=false;renderRows();
 }
 function eligible(row){
  if(row.excluded)return false;
@@ -884,34 +884,51 @@ function eligible(row){
  return !!row.description&&q!=null&&q>0&&p!=null&&p>=0&&t!=null&&t>=0&&Math.abs(round(q*p)-t)<=.02;
 }
 function calc(){
- const included=rows.filter(r=>!r.excluded);
+ const included=rows.filter(r=>!r.excluded),excluded=rows.filter(r=>r.excluded);
  const sum=round(included.reduce((n,r)=>n+(amount(r.total)||0),0));
+ const discardedRows=[...excluded,...removedRows];
+ const discarded=round(discardedRows.reduce((n,r)=>n+(amount(r.total)||0),0));
+ const discardedInvalid=discardedRows.some(r=>amount(r.total)===null||amount(r.total)<0);
+ const reconciledSum=round(sum+discarded);
+ const adjusted=!accounting&&discardedRows.length>0;
  const ht=amount($("subtotal").value),vat=amount($("tax").value),ttc=amount($("total").value);
  const missing=included.filter(r=>!eligible(r));
  const unmatched=accounting?[]:included.filter(r=>!r.product_id||!(amount(r.stock_quantity)>0)||(r.stock_needs_review&&!r.stock_confirmed));
  const unverified=included.filter(r=>!r.verified);
- const discrepancy=ht==null||Math.abs(sum-ht)>.02;
+ const discrepancy=ht==null||(!accounting&&discardedInvalid)||Math.abs((accounting?sum:reconciledSum)-ht)>.02;
  const grossMismatch=ht!=null&&vat!=null&&ttc!=null&&Math.abs(round(ht+vat)-ttc)>.02;
+ const taxFor=r=>{const net=amount(r.total),rate=amount(r.tax_rate);return net===null||rate===null||rate<0||rate>100?null:round(net*rate/100)};
+ const allRows=[...rows,...removedRows];
+ const vatKnown=vat===0||(vat!=null&&allRows.length>0&&allRows.every(r=>taxFor(r)!==null)&&Math.abs(round(allRows.reduce((n,r)=>n+taxFor(r),0))-vat)<=.02);
+ const selectedVat=vatKnown?(vat===0?0:round(included.reduce((n,r)=>n+taxFor(r),0))):null;
+ const selectedTtc=selectedVat===null?null:round(sum+selectedVat);
  const ok=!!documentData&&!!file&&!saved&&included.length>0&&!missing.length&&!unmatched.length&&!unverified.length&&!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
- return {ok,included,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified};
+ return {ok,included,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,removedCount:removedRows.length};
 }
 function updateTotals(){
  if(!documentData)return;
- const c=calc(),ignored=rows.filter(r=>r.excluded).length;
+ const c=calc();
  const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
- $("metrics").innerHTML='<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>';
+ $("metrics").innerHTML='<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT du PDF</span><strong>'+(c.ht==null?"—":fmt(round((accounting?c.sum:c.reconciledSum)-c.ht)))+'</strong></div>';
+  const retained=$("retainedAmounts");retained.hidden=accounting;
+  if(!accounting){
+    retained.className="reconciliation "+(c.discrepancy?"bad":"good");
+    retained.textContent="Montants des produits retenus : HT "+fmt(c.sum)+" · TVA "+fmt(c.selectedVat)+" · TTC "+fmt(c.selectedTtc)+(c.selectedVat===null?" (TVA/TTC retenus non déterminables avec les taux vérifiés)":"")+(c.adjusted?" · HT retiré de la réception : "+fmt(c.discarded):"")+". Les totaux du PDF restent inchangés.";
+  }
  const errors=[];
  if(!c.included.length)errors.push("Aucune ligne retenue");
- if(c.discrepancy)errors.push("Total des lignes différent du total HT de la facture");
+ if(c.discardedInvalid&&!accounting)errors.push("Montant d’une ligne supprimée ou écartée introuvable : rapprochement impossible");
+  if(c.discrepancy)errors.push("Les lignes retenues et retirées ne correspondent pas au HT du PDF");
  if(c.grossMismatch)errors.push("HT + TVA différent du TTC");
  if(c.missing.length)errors.push(c.missing.length+" ligne(s) incompletes ou incohérentes");
  if(c.unmatched.length)errors.push(c.unmatched.length+" ligne(s) sans produit actif ou quantité de stock confirmée");
  if(c.unverified.length)errors.push(c.unverified.length+" ligne(s) non vérifiées");
- if(ignored)errors.push(ignored+" ligne(s) écartées, non incluses dans le total");
+ // Les lignes écartées ou supprimées sont informatives si le total original est reconstitué.
  $("reconciliation").className="reconciliation "+(errors.length?"bad":"good");
- $("reconciliation").textContent="Somme HT des lignes retenues : "+fmt(c.sum)+" · HT facture : "+fmt(c.ht)+" · TTC : "+fmt(c.ttc)+"."+(errors.length?" Contrôles : "+errors.join(" ; "):" Totaux cohérents. Contrôle des lignes terminé.");
+ const explanation=c.adjusted?" Réception partielle : "+c.removedCount+" ligne(s) supprimée(s), "+c.excludedCount+" écartée(s).":"";
+  $("reconciliation").textContent="HT du PDF : "+fmt(c.ht)+" · HT retenu : "+fmt(c.sum)+" · HT écarté : "+fmt(c.discarded)+" · HT rapproché : "+fmt(c.reconciledSum)+"."+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Totaux rapprochés. Contrôle des lignes terminé.");
  $("save").disabled=!c.ok||!$("confirmReview").checked||loading;
- $("saveHelp").textContent=saved?"Facture enregistrée.":c.ok?"Cochez la confirmation pour autoriser la validation.":"Vérifiez les lignes et corrigez les écarts avant l’enregistrement.";
+ $("saveHelp").textContent=saved?"Facture enregistrée.":c.ok?(c.adjusted?"Réception partielle : seuls les produits retenus seront ajoutés au stock. Confirmez pour valider.":"Cochez la confirmation pour autoriser la validation."):"Vérifiez les lignes et corrigez les écarts avant l’enregistrement.";
 }
 async function digest(bytes){
  const hash=await crypto.subtle.digest("SHA-256",bytes);
@@ -920,7 +937,7 @@ async function digest(bytes){
 async function save(){
  const c=calc();
  if(!c.ok||!$("confirmReview").checked)return notice("La facture n’est pas prête : contrôles incomplets.","error");
- if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":"Valider cette facture ? Les produits vérifiés seront ajoutés au stock et transmis à Commandes et Achats."))return;
+ if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":c.adjusted?"Valider cette réception partielle ? Seuls les produits retenus seront ajoutés au stock. Les montants et le PDF d’origine restent conservés.":"Valider cette facture ? Les produits vérifiés seront ajoutés au stock et transmis à Commandes et Achats."))return;
  const bytes=new Uint8Array(await file.arrayBuffer());loading=true;$("save").disabled=true;notice("Enregistrement sécurisé en cours…");
  try{
   if(accounting){
@@ -945,11 +962,11 @@ async function save(){
    });
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:file.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
-    supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.ht,
-    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id}),items},timeout:80000});
+    supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
+    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},retained_ht:c.sum,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,partial_reception:c.adjusted}),items},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
-   saved=true;notice("Facture validée. Commandes, achats et stocks synchronisés.","success");
-   $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s).";
+   saved=true;notice(c.adjusted?"Réception partielle enregistrée. Seuls les produits retenus ont été ajoutés au stock ; PDF original archivé.":"Facture validée. Commandes, achats et stocks synchronisés.","success");
+   $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s) · HT retenu "+fmt(c.sum)+(c.adjusted?" (réception partielle)":"")+".";
   }
   lockFields();$("newDocument").hidden=false;
  }catch(e){notice("Enregistrement refusé : "+e.message,"error");$("saveResult").textContent=e.message}
