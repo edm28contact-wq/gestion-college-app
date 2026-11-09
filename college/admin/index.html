@@ -92,6 +92,17 @@
 .invoice-alias-row strong{font-size:12px;color:#3c546a}
 .invoice-alias-row p{margin:4px 0 0;overflow-wrap:anywhere;font-size:12px}
 @media(max-width:680px){.invoice-designation-fields{grid-template-columns:1fr}}
+/* Récapitulatif mensuel des éléments variables de paie. */
+.salary-overview h2{margin:0 0 7px}
+.salary-overview h3{font-size:15px;margin:18px 0 9px}
+.salary-month-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+.salary-month-tile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;min-width:0;padding:13px 14px;background:#f8fafc;border:1px solid #dbe4ec;border-radius:10px;color:#253a4c;cursor:pointer}
+.salary-month-tile strong{font-size:15px;text-transform:capitalize}
+.salary-month-tile span{font-size:13px;font-weight:700}
+.salary-month-tile small{font-size:11px;color:#5c6f80;line-height:1.45}
+.salary-month-tile.selected{border:2px solid #306b98;background:#edf5fc;padding:12px 13px}
+.salary-month-tile:hover,.salary-month-tile:focus-visible{outline:2px solid #94b8d0;background:#f0f6fa}
+@media(max-width:650px){.salary-month-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -487,7 +498,7 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 if(token)enterApp().catch(()=>logout());
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261105-duration-pdf-v1"></script>
+<script src="./salaires.js?v=20261109-monthly-summary-v2"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 
 </body>
