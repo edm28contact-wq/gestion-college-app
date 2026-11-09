@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
-let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false;
+let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
 const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x).replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");return /^-?\d+(?:\.\d+)?$/.test(t)&&Number.isFinite(Number(t))?Number(t):null};
@@ -294,7 +294,7 @@ function setFile(newFile){
  clearPdf();
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
- file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;
+ file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";
  document.dispatchEvent(new CustomEvent("veryfi:source-file",{detail:{file}}));
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
@@ -556,15 +556,25 @@ function applyMatch(row,match,keepManual=false){
 function refreshMatches(){
  for(const row of rows)if(!row.product_manual)applyMatch(row,findProduct(row),true);
 }
+function validLineVat(r){const n=amount(r.tax_rate);return n!==null&&n>=0&&n<=100}
+function duplicateFingerprint(r){
+ const ref=norm(r.reference),label=invoiceDesignationKey(r.description),q=amount(r.quantity),p=amount(r.unit_price),t=amount(r.total);
+ if((!ref&&!label)||q===null||p===null||t===null)return "";
+ return [ref,label,canonicalUnit(r.unit),q,p,t].join("|");
+}
+function possibleDuplicate(r){
+ const key=duplicateFingerprint(r);
+ return !r.excluded&&!!key&&rows.filter(other=>!other.excluded&&duplicateFingerprint(other)===key).length>1;
+}
 function productColor(row){
  if(!catalog)return "warn";
  const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)return "bad";
  const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE&&(!Array.isArray(row.confidenceMissing)||row.confidenceMissing.length===0);
- const amountsOk=eligible(row),stockOk=accounting||(amount(row.stock_quantity)>0&&!!String(row.unit||"").trim()&&(!row.stock_needs_review||row.stock_confirmed));
+ const amountsOk=eligible(row)&&validLineVat(row)&&!!String(row.unit||"").trim(),stockOk=accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&!row.unit_label_conflict&&
-  (manuallyApproved||(confidenceOk&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled))?"good":"warn";
+  (manuallyApproved||(confidenceOk&&!possibleDuplicate(row)&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled))?"good":"warn";
 }
 function invoiceArithmetic(row){
  const q=amount(row.quantity),price=amount(row.unit_price),total=amount(row.total);
@@ -573,12 +583,14 @@ function invoiceArithmetic(row){
  return {valid:Math.abs(calculated-total)<=.02,incomplete:false,calculated,total};
 }
 function reviewReason(row){
- if(!catalog)return "Catalogue non chargé.";
- if(!row.product_id)return row.reason||"Aucun produit actif trouvé.";
  if(row.excluded)return "Ligne écartée de la réception.";
+ if(!catalog)return "Catalogue non chargé.";
  const problems=[],arithmetic=invoiceArithmetic(row);
+ if(!row.product_id)problems.push(row.reason||"Aucun produit actif trouvé.");
  if(arithmetic.incomplete)problems.push("Quantité, prix unitaire ou total HT incomplet.");
  else if(!arithmetic.valid)problems.push("Écart HT : quantité × prix = "+fmt(arithmetic.calculated)+" ; montant de la ligne = "+fmt(arithmetic.total)+". Vérifiez le PDF.");
+ if(!validLineVat(row))problems.push("TVA absente ou invalide : vérifiez le taux réel sur le PDF.");
+ if(possibleDuplicate(row)&&!row.manualVerified)problems.push("Doublon potentiel : référence, désignation, quantité, prix et total identiques. Vérifiez deux achats distincts.");
  if(!accounting&&!(amount(row.stock_quantity)>0))problems.push("Quantité de stock absente : confirmez le conditionnement ou renseignez la quantité exacte.");
  else if(!accounting&&row.stock_needs_review&&!row.stock_confirmed)problems.push("Conversion du stock à confirmer.");
  if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
@@ -627,7 +639,7 @@ function quickFixOptions(row){
   fixes.push({kind:"stock",label:"Confirmer le conditionnement"});
  if(!arithmetic.incomplete&&!arithmetic.valid)
   fixes.push({kind:"amount",label:"Corriger le total HT"});
- if(eligible(row)&&(accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed)))&&productColor(row)==="warn")
+ if(eligible(row)&&validLineVat(row)&&(accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed)))&&productColor(row)==="warn")
   fixes.push({kind:"approve",label:"Vérifier et passer au vert"});
  return fixes;
 }
@@ -673,6 +685,8 @@ function confirmRowManually(row){
   row.verified=true;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=true;
   return {ok:true,partial:true,message:"Lecture du PDF confirmée. Corrigez l'écart de montant avant l'enregistrement de la facture."};
  }
+ if(!validLineVat(row))return {ok:false,message:"Vérifiez et renseignez la TVA sur le PDF avant de valider cette ligne."};
+ if(possibleDuplicate(row)&&!confirm("Doublon potentiel : ces lignes identiques correspondent-elles réellement à deux achats distincts ? Confirmez seulement après vérification du PDF."))return {ok:false,quiet:true};
  row.verified=true;row.autoVerified=false;row.manualVerified=true;row.confirmedOnPdf=false;row.changed=false;
  return {ok:true,partial:false,message:"Ligne validée manuellement. Elle passe au vert."};
 }
@@ -749,7 +763,7 @@ function viewPdfLine(row,index){
   ["Prix unitaire HT",row.unit_price],
   ["Total HT",row.total],
   ["Produit associé",row.product_label],
-  ["État de la ligne","Orange — vérification requise"]
+  ["État de la ligne",productColor(row)==="bad"?"Rouge — rapprochement requis":"Orange — vérification requise"]
  ];
  for(const [name,value] of values){
   const pair=document.createElement("div");pair.className="pdf-compare-field";
@@ -765,8 +779,8 @@ function buildLine(row,index){
  const card=document.createElement("article");card.className="row";card.dataset.index=String(index);
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
- const color=productColor(row);
- const label=color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":"Validée automatiquement"):"À contrôler";
+ const color=row.excluded?"excluded":productColor(row);
+ const label=color==="excluded"?"Écartée":color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":"Validée automatiquement"):"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
@@ -814,6 +828,8 @@ function buildLine(row,index){
   reason.className="row-warning";
   reason.textContent="À contrôler : "+reviewReason(row);
   card.append(reason);
+ }
+ if(color==="warn"||color==="bad"){
   const view=document.createElement("button");view.type="button";view.className="btn secondary small pdf-line-button";
   view.dataset.action="view-pdf";view.textContent="Voir PDF";
   view.setAttribute("aria-label","Voir le PDF original pour comparer la ligne "+(index+1));
@@ -858,7 +874,7 @@ function buildLine(row,index){
  foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Retirer cette ligne de la réception ? Le montant reste compté dans le rapprochement avec le PDF original."))return;if(!row.userAdded)removedRows.push({total:row.total,tax_rate:row.tax_rate});rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.append(keywordNotebook(row,index));card.classList.toggle("excluded",row.excluded);
- card.classList.add(productColor(row));
+ card.classList.add(color);
  return card;
 }
 function changeRow(index,key,value){
@@ -889,19 +905,42 @@ function changeRow(index,key,value){
  else if(key==="account"){row.account_manual=true;row.account_source="Compte saisi manuellement : à vérifier"}
  renderRows();
 }
+const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});
+function issueCategories(row){
+ if(row.excluded||productColor(row)==="good")return [];
+ const issues=[],a=invoiceArithmetic(row);
+ if(!catalog||!row.product_id)issues.push("catalogue");
+ if(a.incomplete||!a.valid)issues.push("montant");
+ if(possibleDuplicate(row)&&!row.manualVerified)issues.push("doublon");
+ if(!validLineVat(row))issues.push("tva");
+ if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed)))issues.push("stock");
+ if(!String(row.unit||"").trim()||row.unit_inferred||row.unit_label_conflict)issues.push("unite");
+ if(row.manualMatchRequired)issues.push("rapprochement");
+ if(row.confidenceMissing?.length||!(typeof row.score==="number"&&row.score>=AUTO_APPROVE_SCORE))issues.push("ocr");
+ if(row.changed&&!row.verified)issues.push("validation");
+ return issues;
+}
+function issueRank(row){const issues=issueCategories(row);return issues.length?Math.min(...issues.map(x=>issuePriority[x]??99)):99}
 function groupedRows(){
  const groups=[
   {status:"bad",label:"Produits rouges — À traiter",items:[]},
   {status:"warn",label:"Produits orange — À vérifier",items:[]},
-  {status:"good",label:"Produits verts — comptés dans la réception",items:[]}
+  {status:"good",label:"Produits verts — comptés dans la réception",items:[]},
+  {status:"excluded",label:"Lignes écartées — Non comptées dans la réception",items:[]}
  ];
  rows.forEach((row,index)=>{
-  const group=groups.find(g=>g.status===productColor(row));
+  const status=row.excluded?"excluded":productColor(row),issues=issueCategories(row);
+  if(issueFilter!=="all"&&issueFilter!==status&&!issues.includes(issueFilter))return;
+  const group=groups.find(g=>g.status===status);
   if(group)group.items.push({row,index});
  });
+ for(const group of groups)group.items.sort((a,b)=>issueRank(a.row)-issueRank(b.row)||a.index-b.index);
  return groups;
 }
 function renderRows(){
+ autoVerifyGreenRows();
+ const active=rows.filter(r=>!r.excluded),red=active.filter(r=>productColor(r)==="bad").length,orange=active.filter(r=>productColor(r)==="warn").length,green=active.filter(r=>productColor(r)==="good").length;
+ $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s). Les erreurs financières et doublons sont triés en priorité ; le filtre ne change pas les montants.";
  const box=$("lines");box.replaceChildren();
  for(const group of groupedRows()){
   if(!group.items.length)continue;
@@ -915,6 +954,7 @@ function renderRows(){
   group.items.forEach(({row,index})=>cards.append(buildLine(row,index)));
   section.append(cards);box.append(section);
  }
+ if(!box.childElementCount){const empty=document.createElement("p");empty.className="subtle triage-empty";empty.textContent="Aucune ligne ne correspond à ce filtre.";box.append(empty)}
  updateTotals();
 }
 function addLine(){
@@ -1078,6 +1118,7 @@ function setup(){
  $("quotaClear").addEventListener("click",()=>{
   if(confirm("Effacer le quota mensuel local ? Le compteur d'utilisation sera conservé."))configureQuota(null);
  });
+ $("issueFilter").addEventListener("change",e=>{issueFilter=e.target.value;renderRows()});
  $("addLine").addEventListener("click",addLine);
  $("save").addEventListener("click",save);
  $("confirmReview").addEventListener("change",updateTotals);

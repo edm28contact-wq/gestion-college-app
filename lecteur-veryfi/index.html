@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=12">
-<script defer src="./veryfi.js?v=34"></script>
+<link rel="stylesheet" href="./veryfi.css?v=13">
+<script defer src="./veryfi.js?v=35"></script>
 <script defer src="./ocr-secours.js?v=2"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=4">
 <style>
@@ -102,6 +102,23 @@ html.secretariat-embedded{background:transparent}
         <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF.</p></div>
         <button id="addLine" type="button" class="btn secondary small">Ajouter une ligne</button>
       </div>
+            <div class="triage-bar"><label for="issueFilter" class="triage-field"><span>Filtrer les lignes par cause</span>
+      <select id="issueFilter">
+      <option value="all">Toutes les lignes (rouges → orange → vertes)</option>
+      <option value="catalogue">Produit absent du catalogue</option>
+      <option value="montant">Quantité / prix / total HT incohérents</option>
+      <option value="doublon">Doublons potentiels</option>
+      <option value="tva">TVA manquante ou invalide</option>
+      <option value="stock">Entrée en stock / conditionnement</option>
+      <option value="unite">Unité à vérifier</option>
+      <option value="rapprochement">Correspondance fournisseur incertaine</option>
+      <option value="ocr">Confiance OCR faible ou absente</option>
+      <option value="validation">Corrections non confirmées</option>
+      <option value="bad">Lignes rouges</option>
+      <option value="warn">Lignes orange</option>
+      <option value="good">Lignes vertes</option>
+      <option value="excluded">Lignes écartées</option>
+      </select></label><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
       <div id="lines" class="lines"></div>
       <datalist id="productOptions"></datalist>
       <datalist id="accountOptions"></datalist>
