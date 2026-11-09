@@ -379,7 +379,7 @@ function explicitInvoiceUnit(row){
 }
 function makeRow(x,index){
  const evidence=explicitInvoiceUnit(x);
- return {id:index,reference:String(x.reference||""),description:String(x.description||""),
+ return {id:index,ocrOriginal:{reference:x.reference??null,description:x.description??null,quantity:x.quantity??null,unit:x.unit??null,unit_price:x.unit_price??null,total:x.total??null,tax_rate:x.tax_rate??null},reference:String(x.reference||""),description:String(x.description||""),
   quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,unit_label_pair:evidence.pair||null,autoQuantityReconciled:false,
   tax_rate:x.tax_rate??"",boxes:x.boxes||{},sourceBox:Array.isArray(x.box)?x.box:null,score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
@@ -993,6 +993,11 @@ async function digest(bytes){
  const hash=await crypto.subtle.digest("SHA-256",bytes);
  return Array.from(new Uint8Array(hash),n=>n.toString(16).padStart(2,"0")).join("");
 }
+function learningPayload(row){
+ return {source_index:Number.isInteger(row.id)?row.id:null,product_id:row.product_id,
+  manual_verified:row.manualVerified===true&&row.verified===true&&productColor(row)==="good",
+  user_added:row.userAdded===true,original:row.ocrOriginal||{}};
+}
 async function save(){
  const c=calc();
  if(!c.ok||!$("confirmReview").checked)return notice("La facture n’est pas prête : contrôles incomplets.","error");
@@ -1022,10 +1027,15 @@ async function save(){
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:file.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
     supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
-    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,pending_lines:c.pending.length,partial_reception:c.adjusted}),items},timeout:80000});
+    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
+     provider_document_id:documentData.id,learning_page_count:documentData.page_count,learning:c.included.map(learningPayload)},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
    saved=true;notice(c.adjusted?"Réception partielle enregistrée. Seuls les produits verts ont été ajoutés au stock ; PDF original archivé.":"Facture validée. Commandes, achats et stocks synchronisés.","success");
-   $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s) · HT retenu "+fmt(c.sum)+(c.adjusted?" (réception partielle)":"")+".";
+   const learned=data.learning||{status:"not_requested"};
+    const learningMessage=learned.status==="ok"?
+      " · Apprentissage : "+Number(learned.manual||0)+" ligne(s) vérifiée(s), "+Number(learned.aliases||0)+" appellation(s) et "+Number(learned.corrections||0)+" correction(s) mémorisée(s).":
+      learned.status==="partial"||learned.status==="error"?" · Stock validé ; apprentissage partiellement indisponible.":"";
+    $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s) · HT retenu "+fmt(c.sum)+(c.adjusted?" (réception partielle)":"")+"."+learningMessage;
   }
   lockFields();$("newDocument").hidden=false;
  }catch(e){notice("Enregistrement refusé : "+e.message,"error");$("saveResult").textContent=e.message}
