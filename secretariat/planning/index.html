@@ -53,7 +53,7 @@ html.secretariat-embedded{background:transparent}
 <script>try{if(window.self!==window.top&&window.parent.location.origin===location.origin&&new URLSearchParams(location.search).get('embed')==='secretariat')document.documentElement.classList.add('secretariat-embedded')}catch{}</script>
 </head><body><main class="shell"><div class="flex between"><div><h1>Planning des incidents du personnel</h1><div class="muted">Secrétariat · Absences, retards et incidents · Préparation des éléments de paie</div></div><div class="flex"><a class="btn alt" href="../">Secrétariat</a><a class="btn alt" href="../../college/admin/">Administration Collège</a></div></div>
 <section id="login" class="card login hide"><h2>Connexion requise</h2><div class="field"><label>Identifiant</label><input id="username" autocomplete="username"></div><br><div class="field"><label>Mot de passe</label><input id="password" type="password" autocomplete="current-password"></div><p><button class="btn" id="loginBtn">Se connecter</button></p><p id="loginMessage" class="status"></p></section>
-<section id="main" class="hide"><div class="card flex between"><div class="flex"><label for="month"><b>Mois</b></label><input id="month" type="month" style="width:175px"><button class="btn alt" id="refresh">Actualiser</button></div><div class="flex"><span id="identity" class="muted"></span><button class="btn alt" id="new">Nouvel incident</button></div></div><div class="stats"><div class="stat"><small>Incidents du mois</small><strong id="nAll">0</strong></div><div class="stat"><small>Absences</small><strong id="nAbs">0</strong></div><div class="stat"><small>Autres incidents</small><strong id="nInc">0</strong></div><div class="stat"><small>Retards</small><strong id="nRet">0</strong></div></div>
+<section id="main" class="hide"><div class="card flex between"><div class="flex"><label for="month"><b>Mois</b></label><input id="month" type="month" style="width:175px"><button class="btn alt" id="refresh">Actualiser</button><button class="btn alt" type="button" id="printMonth" title="Télécharger le récapitulatif complet du mois en PDF">Imprimer / Télécharger PDF</button></div><div class="flex"><span id="identity" class="muted"></span><button class="btn alt" id="new">Nouvel incident</button></div></div><div class="stats"><div class="stat"><small>Incidents du mois</small><strong id="nAll">0</strong></div><div class="stat"><small>Absences</small><strong id="nAbs">0</strong></div><div class="stat"><small>Autres incidents</small><strong id="nInc">0</strong></div><div class="stat"><small>Retards</small><strong id="nRet">0</strong></div></div>
 
 <section class="card calendar-card" aria-label="Planning mensuel des incidents et absences">
  <div class="calendar-toolbar">
@@ -86,6 +86,7 @@ html.secretariat-embedded{background:transparent}
 <p id="message" class="status" role="status"></p>
 <p class="muted">Les absences, retards et incidents enregistrés ici sont repris dans la rubrique « Salaires » de l’Administration Collège. Cliquez sur une ligne pour corriger une saisie non encore validée.</p></section></main>
 <script src="./calendar.js?v=3"></script>
+<script src="./print-month.js?v=1"></script>
 <script>
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/',API=ROOT+'personnel-planning',LOGIN=ROOT+'admin-api?action=login';let token=localStorage.getItem('college_secretariat_token')||localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||'',events=[],admin=false,readonly=false,editing=null,loadVersion=0,legacyPersonnelName="",planningStaff=[],planningStaffError="",planningStaffLoading=false;
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));const labels={absence:'Absence',retard:'Retard',depart_anticipe:'Départ anticipé',incident:'Incident'};
@@ -214,7 +215,29 @@ async function openForm(x=null,date=null){
  editing=x?.id||null;$('formTitle').textContent=x?'Modifier un incident':'Nouvel incident';$('entry').reset();$('date').value=x?.event_date||date||window.planningSelectedDay||currentDate();const selectedName=x?.personnel_name||'';selectPlanningPersonnel(selectedName,!!x);$('kind').value=x?.event_type||'incident';$('duration').value=x&&!x.all_day&&incidentMinutes(x)!=null?formatIncidentDuration(x):'';$('incidentPdf').value='';$('allDay').checked=!!x?.all_day;$('justification').value=x?.justification_status||'non_requis';$('details').value=x?.details||'';toggleTimes();showExistingPdf(x);$('deleteIncident').classList.toggle('hide',!x||readonly||!admin&&x.review_status!=='a_verifier');$('formCard').classList.remove('hide');$('formCard').scrollIntoView({behavior:'smooth'})}
 function toggleTimes(){$('duration').disabled=$('allDay').checked;$('duration').required=!$('allDay').checked;$('durationLabel').textContent=$('kind').value==='retard'?'Temps de retard':$('kind').value==='absence'?'Durée de l’absence':$('kind').value==='depart_anticipe'?'Durée du départ anticipé':'Durée de l’incident'}
 async function save(e){e.preventDefault();const parsed=$('allDay').checked?1440:parseIncidentDuration($('duration').value);if(parsed===null){notice('Durée invalide. Saisissez par exemple 1h30, 45min ou 2h (maximum 24h).');$('duration').focus();return}const body={id:editing,event_date:$('date').value,personnel_name:editing&&$('person').value==='__historical__'&&legacyPersonnelName?legacyPersonnelName:$('person').value,event_type:$('kind').value,all_day:$('allDay').checked,duration_minutes:parsed,justification_status:$('justification').value,details:$('details').value};try{const pdf=$('incidentPdf').files?.[0];if(pdf&&!(await validIncidentPdf(pdf)))return;const created=await request('save','POST',body);let pdfError='';if(pdf){try{await sendIncidentPdf(created.id,pdf)}catch(error){pdfError=error.message}}window.planningSelectedDay=body.event_date;if(body.event_date.slice(0,7)!==$('month').value)$('month').value=body.event_date.slice(0,7);await load();notice(pdfError?'Incident enregistré, mais PDF non joint : '+pdfError:'Incident enregistré'+(pdf?' avec PDF.':'.'),!pdfError)}catch(e){notice(e.message)}}
-$('month').value=currentDate().slice(0,7);$('date').value=currentDate();$('month').addEventListener('change',()=>{window.planningSelectedDay=null;load()});$('refresh').addEventListener('click',load);$('filter').addEventListener('change',render);$('loginBtn').addEventListener('click',connect);$('password').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});$('new').addEventListener('click',()=>openForm());$('cancel').addEventListener('click',()=>$('formCard').classList.add('hide'));$('allDay').addEventListener('change',toggleTimes);$('kind').addEventListener('change',toggleTimes);$('entry').addEventListener('submit',save);$('deleteIncident').addEventListener('click',()=>{if(editing)deleteIncident(editing)});
+$('month').value=currentDate().slice(0,7);$('date').value=currentDate();$('month').addEventListener('change',()=>{window.planningSelectedDay=null;load()});$('refresh').addEventListener('click',load);$('printMonth').addEventListener('click',downloadMonthPdf);$('filter').addEventListener('change',render);$('loginBtn').addEventListener('click',connect);$('password').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});$('new').addEventListener('click',()=>openForm());$('cancel').addEventListener('click',()=>$('formCard').classList.add('hide'));$('allDay').addEventListener('change',toggleTimes);$('kind').addEventListener('change',toggleTimes);$('entry').addEventListener('submit',save);$('deleteIncident').addEventListener('click',()=>{if(editing)deleteIncident(editing)});
+
+async function downloadMonthPdf(){
+ const month=$('month').value,button=$('printMonth');
+ if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)){notice('Choisissez un mois valide.');return}
+ if(button.disabled)return;
+ button.disabled=true;button.textContent='Préparation du PDF…';
+ try{
+  const result=await request('list','GET',null,'&month='+encodeURIComponent(month));
+  if(!Array.isArray(result.events))throw Error('Données du mois indisponibles.');
+  await window.generatePlanningMonthPdf({
+   month,
+   events:result.events.filter(item=>String(item.event_date||'').slice(0,7)===month),
+   duration:formatIncidentDuration
+  });
+  notice('PDF du mois '+month+' téléchargé. Les justificatifs restent des fichiers séparés.',true);
+ }catch(error){
+  notice('Téléchargement PDF impossible : '+(error?.message||'erreur inconnue'));
+ }finally{
+  button.disabled=false;button.textContent='Imprimer / Télécharger PDF';
+ }
+}
+
 async function deleteIncident(id){
  const record=events.find(e=>String(e.id)===String(id));
  if(!record){notice('Incident introuvable, actualisez le planning.');return}
