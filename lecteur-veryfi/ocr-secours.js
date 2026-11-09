@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id);
 const PDFJS="https://cdn.jsdelivr.net/npm/pdfjs-dist@6.5.438/build/";
 const TESSERACT="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
-let file=null,pdf=null,pdfFile=null,pdfLoading=null,pdfjsLoading=null,tesseractLoading=null,workerLoading=null,blobUrl=null,busy=false,pageHint=1;
+let file=null,pdf=null,pdfFile=null,pdfLoading=null,pdfjsLoading=null,tesseractLoading=null,workerLoading=null,blobUrl=null,busy=false,pageHint=1,authToken="",latestExtraction=null,hashCache=null;
 const status=message=>{$("freeOcrStatus").textContent=message};
 async function getPdfJs(){
  if(!pdfjsLoading)pdfjsLoading=import(PDFJS+"pdf.mjs").then(lib=>{
@@ -27,7 +27,7 @@ async function loadPdf(){
  return pdfLoading;
 }
 function resetFile(next){
- file=next||null;pageHint=1;
+ file=next||null;pageHint=1;latestExtraction=null;hashCache=null;$("freeOcrVerify").disabled=true;$("freeOcrReviewNote").textContent="";
  if(pdf){void pdf.destroy().catch(()=>{});pdf=null;pdfFile=null}
  if(blobUrl){URL.revokeObjectURL(blobUrl);blobUrl=null}
  $("freeOcr").disabled=!file;
@@ -80,7 +80,8 @@ async function read(pageNumber,forceScan=false){
  if(!modal.open)modal.showModal();
  const current=file;
  $("freeOcr").disabled=true;$("freeOcrRead").disabled=true;$("freeOcrScan").disabled=true;$("freeOcrCopy").disabled=true;
- $("freeOcrText").value="";status("Chargement de PDF.js pour une lecture locale…");
+ $("freeOcrText").value="";latestExtraction=null;$("freeOcrVerify").disabled=true;$("freeOcrReviewNote").textContent="";
+ status("Chargement de PDF.js pour une lecture locale…");
  try{
   const doc=await loadPdf();
   if(file!==current||!modal.open)return;
@@ -92,24 +93,81 @@ async function read(pageNumber,forceScan=false){
   if(!forceScan){
    status("Extraction du texte numérique intégré au PDF…");
    text=await textFromPdf(doc,page);
-   if(text.length>=30)method="Texte natif PDF.js";
+   if(text.length>=30)method="pdf-text";
   }
   if(!method){
    status("OCR Tesseract local : chargement des modèles français et anglais…");
    text=await textFromImage(doc,page,pct=>{
     if(file===current&&modal.open)status("OCR Tesseract : "+pct+" %");
    });
-   method="OCR Tesseract (page scannée)";
+   method="tesseract";
   }
   if(file!==current||!modal.open)return;
-  $("freeOcrText").value=text||"Aucun texte détecté sur cette page.";
-  status(method+" · page "+page+" / "+doc.numPages+". Aucune donnée Veryfi n’a été modifiée.");
+  const output=text.trim();
+  $("freeOcrText").value=output;
+  latestExtraction=output.length>=10?{file:current,page,method,text:output}:null;
+  $("freeOcrVerify").disabled=!latestExtraction||!authToken;
+  status((method==="pdf-text"?"Texte natif du PDF":"Tesseract local")+" · page "+page+" / "+doc.numPages+". Comparez et corrigez avant de valider.");
   $("freeOcrCopy").disabled=!text;
+  if(latestExtraction&&authToken){
+   try{
+    const hash=await currentHash();
+    const saved=await reviewRequest("GET",{file_hash:hash,page_number:page});
+    if(file!==current||!modal.open||!latestExtraction||latestExtraction.page!==page)return;
+    if(saved.verification){
+     $("freeOcrText").value=saved.verification.verified_text;
+     $("freeOcrReviewNote").textContent="Une vérification enregistrée existe pour cette page ("+new Date(saved.verification.verified_at).toLocaleString("fr-FR")+").";
+    }
+   }catch(e){$("freeOcrReviewNote").textContent="Historique OCR inaccessible : "+e.message}
+  }
  }catch(e){
   if(modal.open)status("Lecteur de secours indisponible : "+(e?.message||"erreur inconnue")+". La facture reste intacte.");
  }finally{
   busy=false;$("freeOcr").disabled=!file;$("freeOcrRead").disabled=false;$("freeOcrScan").disabled=false;
  }
+}
+async function currentHash(){
+ if(!file)throw Error("Aucun PDF sélectionné.");
+ if(hashCache?.file===file)return hashCache.value;
+ const current=file;
+ const data=await crypto.subtle.digest("SHA-256",await current.arrayBuffer());
+ if(file!==current)throw Error("Le PDF a changé.");
+ const value=[...new Uint8Array(data)].map(n=>n.toString(16).padStart(2,"0")).join("");
+ hashCache={file:current,value};
+ return value;
+}
+async function reviewRequest(method,payload){
+ if(!authToken)throw Error("Reconnectez-vous au Secrétariat pour enregistrer une validation.");
+ const url="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/invoice-free-ocr-review";
+ const data=method==="GET"?null:JSON.stringify(payload);
+ const query=method==="GET"?"?file_hash="+encodeURIComponent(payload.file_hash)+"&page_number="+payload.page_number:"";
+ const response=await fetch(url+query,{method,headers:{
+  authorization:"Bearer "+authToken,...(data?{"content-type":"application/json"}:{})
+ },body:data,cache:"no-store",signal:AbortSignal.timeout(20000)});
+ const json=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(json.error||"Erreur HTTP "+response.status);
+ return json;
+}
+async function confirmFreeReading(){
+ if(busy||!latestExtraction||!file)return;
+ const original=latestExtraction;
+ const corrected=$("freeOcrText").value.trim();
+ if(corrected.length<10||corrected.length>50000)return status("Le texte vérifié doit contenir entre 10 et 50 000 caractères.");
+ if(!confirm("Confirmer que le texte de cette page correspond au PDF original ? Cela enregistre un exemple vérifié, sans modifier la facture ni le stock."))return;
+ $("freeOcrVerify").disabled=true;
+ status("Enregistrement sécurisé de la lecture vérifiée…");
+ try{
+  if(file!==original.file)throw Error("Le PDF a été remplacé.");
+  const hash=await currentHash();
+  const data=await reviewRequest("POST",{
+   file_hash:hash,page_number:original.page,extraction_method:original.method,
+   extracted_text:original.text,verified_text:corrected
+  });
+  if(file!==original.file||latestExtraction!==original)return;
+  $("freeOcrReviewNote").textContent="Page "+original.page+" vérifiée et enregistrée le "+new Date(data.verification.verified_at).toLocaleString("fr-FR")+".";
+  status(data.changed?"Correction OCR confirmée et mémorisée dans Supabase.":"Lecture OCR confirmée et mémorisée dans Supabase.");
+ }catch(e){status("Validation OCR non enregistrée : "+(e?.message||"erreur inconnue"))}
+ finally{$("freeOcrVerify").disabled=!latestExtraction||!file}
 }
 function openOn(page){
  if(!file){status("Ajoutez d’abord un PDF.");return}
@@ -123,6 +181,11 @@ async function releaseWorker(){
 function setup(){
  $("freeOcr").addEventListener("click",()=>openOn(1));
  $("freeOcrRead").addEventListener("click",()=>void read($("freeOcrPage").value,false));
+ $("freeOcrVerify").addEventListener("click",()=>void confirmFreeReading());
+ document.addEventListener("veryfi:session",e=>{
+  authToken=String(e.detail?.token||"");
+  $("freeOcrVerify").disabled=!authToken||!latestExtraction;
+ });
  $("freeOcrScan").addEventListener("click",()=>void read($("freeOcrPage").value,true));
  $("freeOcrClose").addEventListener("click",()=>$("freeOcrModal").close());
  $("freeOcrModal").addEventListener("close",()=>{

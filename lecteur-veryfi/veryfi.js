@@ -201,7 +201,7 @@ async function resolveSession(){
    try{
     const config=await request(API.veryfi,{token,timeout:15000});
     if(!config.ok)throw new Error("Le lecteur Veryfi ne répond pas correctement.");
-    authToken=token;serverReady=!!config.configured;
+    authToken=token;document.dispatchEvent(new CustomEvent("veryfi:session",{detail:{token}}));serverReady=!!config.configured;
     showUsage(config.usage);
     $("sessionDot").className="dot "+(serverReady?"ok":"bad");
     $("sessionState").textContent=serverReady?"Veryfi prêt · "+timestamp():"Veryfi non configuré dans Supabase";
@@ -214,7 +214,7 @@ async function resolveSession(){
   }
   throw last||new Error("Aucune session autorisée.");
  }catch(e){
-  serverReady=false;authToken="";showUsage(null);$("sessionDot").className="dot bad";
+  serverReady=false;authToken="";document.dispatchEvent(new CustomEvent("veryfi:session",{detail:{token:""}}));showUsage(null);$("sessionDot").className="dot bad";
   $("sessionState").textContent=e.message;$("loginLink").hidden=false;$("analyze").disabled=true;
   $("catalogState").textContent="";notice(e.message,"error");
  }finally{$("refreshSession").disabled=false}

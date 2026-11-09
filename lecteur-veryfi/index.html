@@ -8,7 +8,7 @@
 <title>Lecteur Veryfi | Gestion Collège</title>
 <link rel="stylesheet" href="./veryfi.css?v=12">
 <script defer src="./veryfi.js?v=34"></script>
-<script defer src="./ocr-secours.js?v=1"></script>
+<script defer src="./ocr-secours.js?v=2"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=3">
 </head>
 <body>
@@ -139,14 +139,16 @@
   <button type="button" class="btn secondary small" id="freeOcrRead">Lire cette page</button>
   <button type="button" class="btn secondary small" id="freeOcrScan">Forcer l’OCR Tesseract</button>
   <button type="button" class="btn secondary small" id="freeOcrCopy" disabled>Copier le texte</button>
+  <button type="button" class="btn primary small" id="freeOcrVerify" disabled>Valider cette lecture OCR</button>
  </div>
  <p id="freeOcrStatus" class="notice" role="status" aria-live="polite">Sélectionnez la page à comparer.</p>
  <div class="pdf-compare-grid">
   <iframe id="freeOcrPdf" title="Page de la facture originale"></iframe>
   <section class="pdf-compare-side">
    <h3>Résultat à comparer avec Veryfi</h3>
-   <textarea id="freeOcrText" class="free-ocr-result" readonly aria-label="Texte obtenu par le lecteur de secours"></textarea>
-   <p class="subtle">Texte direct du PDF en priorité ; pour un scan, Tesseract fonctionne dans le navigateur. Aucun résultat n’est appliqué automatiquement. Vérifiez la ligne sur le PDF.</p>
+   <textarea id="freeOcrText" class="free-ocr-result" maxlength="50000" aria-label="Texte OCR à vérifier et corriger sur le PDF"></textarea>
+   <p id="freeOcrReviewNote" class="subtle" aria-live="polite"></p>
+   <p class="subtle">Texte direct du PDF en priorité ; pour un scan, Tesseract fonctionne dans le navigateur. Corrigez les erreurs dans cette zone, vérifiez sur le PDF, puis cliquez sur « Valider cette lecture OCR ». Le texte vérifié est mémorisé, sans modifier les lignes Veryfi ni le stock.</p>
   </section>
  </div>
 </dialog>
