@@ -66,6 +66,24 @@ test("la finalisation n'envoie que les lignes retenues",()=>{
  assert.ok(source.includes("expected_ht:c.sum"));
  assert.ok(source.includes('if(!c.ok||!$("confirmReview").checked)'));
 });
+test("les fiches incomplètes sont signalées sans inventer de conditionnement",()=>{
+ const html=file("college/admin/index.html");
+ assert.ok(html.includes("function productQualityIssues(p)"));
+ assert.ok(html.includes('id="productQualityFilter"'));
+ assert.ok(html.includes("showProductsToFix()"));
+ assert.ok(html.includes("productFilterState.productQualityFilter='missing'"));
+ assert.ok(html.includes("productFilterIds=['productSearch'"));
+ assert.ok(html.includes("'productQualityFilter'];"));
+ assert.ok(html.includes("window.resetProductFilters=()=>"));
+});
+test("syntaxe des scripts intégrés du site",()=>{
+ for(const page of ["college/admin/index.html","secretariat/index.html","secretariat/planning/index.html"]){
+  const html=file(page);
+  const scripts=[...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(m=>!/\bsrc\s*=/.test(m[1])&&m[2].trim());
+  assert.ok(scripts.length>0,"Pas de script intégré à vérifier : "+page);
+  for(const script of scripts)new vm.Script(script[2],{filename:page});
+ }
+});
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
  const secretariat=file("secretariat/index.html"),reader=file("lecteur-veryfi/index.html");
