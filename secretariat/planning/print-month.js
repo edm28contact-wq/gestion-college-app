@@ -1,7 +1,7 @@
 /* Export PDF mensuel du planning. Exécution locale, aucune écriture en base. */
 (()=>{
  "use strict";
- const PDF_JS="https://cdn.jsdelivr.net/npm/jspdf@3.0.4/dist/jspdf.umd.min.js";
+ const PDF_JS="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js";
  const TABLE_JS="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.9/dist/jspdf.plugin.autotable.min.js";
  let loader=null;
 
