@@ -98,6 +98,10 @@
 
   for(const block of config.sections){
    const group=document.createElement("section");group.className="school-nav-section";
+   if(area==="secretariat"&&(block.title==="Réglages"||block.title==="Autres espaces")){
+    group.dataset.restrictedSection="true";
+    group.hidden=true;
+   }
    const heading=document.createElement("h2");heading.textContent=block.title;
    const menu=document.createElement("nav");menu.className="school-nav-links";menu.setAttribute("aria-label",block.title);
    for(const item of block.items){
@@ -137,9 +141,11 @@
   const applySecretaryRestriction=(role)=>{
     if(area!=="secretariat")return;
     const restricted=role==="secretariat";
-    for(const group of aside.querySelectorAll(".school-nav-section")){
-     const heading=group.querySelector("h2")?.textContent;
-     if(heading==="Réglages"||heading==="Autres espaces")group.hidden=restricted;
+    for(const group of aside.querySelectorAll(".school-nav-section[data-restricted-section]")){
+     group.hidden=restricted||!role;
+    }
+    for(const group of aside.querySelectorAll(".school-nav-section[data-restricted-shortcuts]")){
+     group.hidden=restricted||!role;
     }
     if(restricted)for(const control of aside.querySelectorAll(".school-nav-links a")){
      try{const destination=new URL(control.href);if(!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/"))control.hidden=true}catch{}
@@ -205,7 +211,13 @@
      if(typeof item?.label!=="string"||typeof item.path!=="string"||!item.label.trim()||!/^[a-zA-Z0-9._/-]+$/.test(item.path)||item.path.includes("..")||item.path.startsWith("/"))continue;
      const a=document.createElement("a");a.textContent=item.label.slice(0,65);a.href=url(item.path);nav.append(a);
     }
-    if(nav.children.length){sec.append(title,nav);footer.before(sec);if(area==="secretariat"){const roleEvent=target.dataset.schoolRole;if(roleEvent==="secretariat"){sec.hidden=true}}}
+    if(nav.children.length){
+     sec.append(title,nav);footer.before(sec);
+     if(area==="secretariat"){
+      sec.dataset.restrictedShortcuts="true";
+      sec.hidden=target.dataset.schoolRole!=="admin";
+     }
+    }
    }
    if(Array.isArray(custom.blocks)&&custom.blocks.length){
     const panel=document.createElement("section");panel.className="school-custom-blocks";panel.setAttribute("aria-label","Informations personnalisées");

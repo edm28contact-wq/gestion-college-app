@@ -57,6 +57,10 @@
 }
 /* Configurable labels, shortcuts and content notes. */
 .school-nav-links > [hidden]{display:none!important}
+/* Un style explicite protege le menu si le navigateur ne masque pas [hidden] en presence des styles de navigation. */
+.school-workspace[data-school-area="secretariat"] .school-nav-section[hidden],
+.school-workspace[data-school-area="secretariat"][data-school-role="secretariat"] .school-nav-section[data-restricted-section],
+.school-workspace[data-school-area="secretariat"][data-school-role="secretariat"] .school-nav-section[data-restricted-shortcuts]{display:none!important}
 .school-nav-aside .school-nav-subtitle{display:block;padding:0 8px 10px;color:#b5c8d7;font-size:11px;line-height:1.4}
 .school-nav-links > .is-current{border-left:3px solid var(--school-nav-accent,#9dd2f1)}
 .school-custom-blocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:16px}
