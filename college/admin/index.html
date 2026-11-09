@@ -125,7 +125,7 @@
 <script src="./apps-organizer.js?v=1"></script>
 <script src="./product-invoice-aliases.js?v=2"></script>
 <script>
-const UI_VERSION='2026.11.09-persistent-product-filters-v1';
+const UI_VERSION='2026.11.09-product-quality-controls-v2';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
 const requestedProduct=new URLSearchParams(location.search).get('product'),requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',commandes:'Commandes',events:'Mouvements',historicalStock:'Inventaires historiques',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',siteDesigner:'Configuration des sites',manual:'Manuel d’utilisation',salaires:'Salaires'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
@@ -352,7 +352,7 @@ window.filterSubcategories=()=>{
 window.editSubcategory=id=>{const s=id?sub(id):{};$('modal').innerHTML=`<div class="modal"><div class="box"><h2>${id?'Modifier':'Ajouter'} une sous-catégorie</h2><div class="fields"><div><label>Nom</label><input id="sbn" value="${esc(s?.name||'')}"></div><div><label>Code</label><input id="sbc" value="${esc(s?.code||'')}"></div><div><label>Catégorie</label><select id="sbcat">${db.categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div><div><label>Ordre</label><input id="sbo" type="number" min="0" step="1" value="${Number(s?.sort_order||100)}"></div><div class="full"><label><input id="sba" style="width:auto" type="checkbox" ${s?.active!==false?'checked':''}> Sous-catégorie active</label></div></div><br><div class="actions"><button class="btn primary" onclick="saveSubcategory('${id||''}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="mstatus" class="status"></div></div></div>`;if(s?.category_id)$('sbcat').value=s.category_id};
 window.saveSubcategory=async id=>{try{await call(ADMIN,'save-subcategory','POST',{id:id||null,name:$('sbn').value,code:$('sbc').value,category_id:$('sbcat').value,sort_order:Number($('sbo').value||100),active:$('sba').checked});closeModal();await refresh()}catch(e){modalError(e)}};
 
-const productFilterIds=['productSearch','productCategoryFilter','productSubFilter','productStatusFilter','productStockFilter','productNfcFilter'];
+const productFilterIds=['productSearch','productCategoryFilter','productSubFilter','productStatusFilter','productStockFilter','productNfcFilter','productQualityFilter'];
 let productFilterState={productStatusFilter:'active'};
 function restoreProductFilters(){
  for(const id of productFilterIds){
@@ -365,9 +365,24 @@ function restoreProductFilters(){
  updateProductSubFilter();
  filterProducts();
 }
+function productQualityIssues(p){
+ if(p.active===false)return [];
+ const missing=[];
+ if(!String(p.conditionnement??"").trim())missing.push("Conditionnement d’achat manquant");
+ if(!String(p.inventory_unit_label??"").trim())missing.push("Unité de stock manquante");
+ const factor=Number(p.purchase_to_stock_factor);
+ if(!Number.isFinite(factor)||factor<=0)missing.push("Conversion achat / stock à vérifier");
+ return missing;
+}
+function productPriceNeedsReview(p){
+ const price=Number(p.unit_price);
+ return p.active!==false&&(!Number.isFinite(price)||price<=0);
+}
 function products(){
   const rows=db.products,subs=db.subcategories||[];
+  const qualityCount=rows.filter(p=>productQualityIssues(p).length).length,priceCount=rows.filter(productPriceNeedsReview).length;
   $('content').innerHTML=`<div class="toolbar"><div class="actions"><button class="btn primary" onclick="editProduct()">Ajouter un produit</button><button class="btn secondary" onclick="exportWorkbook('products')">Exporter Excel</button></div><div class="muted">Les produits actifs sont affichés par défaut. Le stock et les achats sont disponibles pour toutes les catégories. Filtrez les Inactifs pour retrouver les produits archivés.</div></div>
+  <div class="muted" style="margin-top:9px" id="productQualitySummary">${qualityCount} fiche(s) active(s) avec conditionnement ou conversion à compléter · ${priceCount} prix catalogue à vérifier (0 € peut être normal).</div>
   <div class="actions" style="margin-top:12px;flex-wrap:wrap">
     <input id="productSearch" class="search" placeholder="Nom, code, désignation ou référence fournisseur…" oninput="filterProducts()">
     <select id="productCategoryFilter" onchange="updateProductSubFilter();filterProducts()"><option value="">Toutes les catégories</option>${db.categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
@@ -375,6 +390,7 @@ function products(){
     <select id="productStatusFilter" onchange="filterProducts()"><option value="">Tous les états</option><option value="active" selected>Actifs</option><option value="inactive">Inactifs</option></select>
     <select id="productStockFilter" onchange="filterProducts()"><option value="">Tous les stocks</option><option value="out">Rupture</option><option value="low">Sous le minimum</option><option value="ok">Stock OK</option></select>
     <select id="productNfcFilter" onchange="filterProducts()"><option value="">NFC : tous</option><option value="yes">NFC programmé</option><option value="no">Sans NFC</option></select>
+    <select id="productQualityFilter" onchange="filterProducts()" aria-label="Contrôle qualité des fiches"><option value="">Qualité : toutes les fiches</option><option value="missing">Conditionnement / unité à compléter</option><option value="ready">Conditionnements renseignés</option><option value="price">Prix catalogue à vérifier</option></select>
     <button class="btn secondary compact" onclick="resetProductFilters()">Réinitialiser</button>
   </div><br><div class="table"><table><thead><tr><th>Produit</th><th>Catégorie</th><th>Sous-catégorie</th><th>Prix</th><th>Stock</th><th>Minimum</th><th>Conditionnement</th><th>État</th><th>Actions</th></tr></thead><tbody id="productRows">${rows.map(productRow).join('')}</tbody></table></div><div id="pageStatus" class="status"></div>`;
   restoreProductFilters();
@@ -382,8 +398,9 @@ function products(){
 }
 function productRow(p){
   const managed=stockManaged(p),q=bal(p.id),min=Number(p.min_stock||0),stockState=managed?(q<=0?'out':(q<min?'low':'ok')):'na',hasNfc=!!p.nfc_programmed_at;
+  const qualityIssues=productQualityIssues(p),qualityStatus=qualityIssues.length?'missing':'ready',priceReview=productPriceNeedsReview(p);
   const search=norm([p.name,p.code,p.unit,cat(p.category_id)?.name,sub(p.subcategory_id)?.name,p.conditionnement,p.colisage,p.garage_location].filter(Boolean).join(' '));
-  return `<tr data-product-id="${esc(p.id)}" data-base-search="${esc(search)}" data-search="${esc(search)}" data-category="${esc(p.category_id||'')}" data-subcategory="${esc(p.subcategory_id||'')}" data-status="${p.active!==false?'active':'inactive'}" data-stockstate="${stockState}" data-nfc="${hasNfc?'yes':'no'}"><td><b>${esc(p.name)}</b><div class="muted">${esc(p.code)} · ${esc(p.unit||'')}</div></td><td>${esc(cat(p.category_id)?.name||'—')}</td><td>${esc(sub(p.subcategory_id)?.name||'—')}</td><td>${Number(p.unit_price||0).toFixed(2)} €</td><td>${managed?`<b>${q.toLocaleString('fr-FR')} ${p.stock_count_mode==='litre'?'L':esc(p.unit||'u.')}</b>`:'<span class="muted">Non géré</span>'}</td><td>${managed?min:'—'}</td><td><div><b>Vente :</b> ${esc(p.conditionnement||'À renseigner')}</div><div class="muted"><b>Stock :</b> ${esc(p.inventory_unit_label||(p.stock_count_mode==='litre'?'litre':p.unit)||'À renseigner')}</div><div class="muted">1 achat = ${Number(p.purchase_to_stock_factor||1)} en stock</div></td><td>${statusPill(p.active)} ${p.qr_label_generated_at?'<span class="pill ok">QR</span>':''} ${p.nfc_programmed_at?'<span class="pill ok">NFC</span>':''}</td><td class="nowrap"><button class="btn secondary compact" onclick="editProduct('${p.id}')">Fiche</button> ${managed?`<button class="btn secondary compact" onclick="stock('${p.id}')">Stock</button> <button class="btn success compact" onclick="purchaseProduct('${p.id}')">Achat</button>`:''} <button class="btn danger compact" onclick="deleteProduct('${p.id}')">Supprimer</button></td></tr>`;
+  return `<tr data-product-id="${esc(p.id)}" data-base-search="${esc(search)}" data-search="${esc(search)}" data-category="${esc(p.category_id||'')}" data-subcategory="${esc(p.subcategory_id||'')}" data-status="${p.active!==false?'active':'inactive'}" data-stockstate="${stockState}" data-nfc="${hasNfc?'yes':'no'}" data-quality="${qualityStatus}" data-price-review="${priceReview?'yes':'no'}"><td><b>${esc(p.name)}</b><div class="muted">${esc(p.code)} · ${esc(p.unit||'')}</div>${qualityIssues.length?'<div class="muted" style="color:#9b4b12;font-weight:700">À compléter : '+esc(qualityIssues.join(' · '))+'</div>':''}</td><td>${esc(cat(p.category_id)?.name||'—')}</td><td>${esc(sub(p.subcategory_id)?.name||'—')}</td><td>${Number(p.unit_price||0).toFixed(2)} €</td><td>${managed?`<b>${q.toLocaleString('fr-FR')} ${p.stock_count_mode==='litre'?'L':esc(p.unit||'u.')}</b>`:'<span class="muted">Non géré</span>'}</td><td>${managed?min:'—'}</td><td><div><b>Vente :</b> ${esc(p.conditionnement||'À renseigner')}</div><div class="muted"><b>Stock :</b> ${esc(p.inventory_unit_label||(p.stock_count_mode==='litre'?'litre':p.unit)||'À renseigner')}</div><div class="muted">1 achat = ${Number(p.purchase_to_stock_factor||1)} en stock</div></td><td>${statusPill(p.active)} ${p.qr_label_generated_at?'<span class="pill ok">QR</span>':''} ${p.nfc_programmed_at?'<span class="pill ok">NFC</span>':''}</td><td class="nowrap"><button class="btn secondary compact" onclick="editProduct('${p.id}')">Fiche</button> ${managed?`<button class="btn secondary compact" onclick="stock('${p.id}')">Stock</button> <button class="btn success compact" onclick="purchaseProduct('${p.id}')">Achat</button>`:''} <button class="btn danger compact" onclick="deleteProduct('${p.id}')">Supprimer</button></td></tr>`;
 }
 window.updateProductSubFilter=()=>{
   const category=$('productCategoryFilter')?.value||'',select=$('productSubFilter');if(!select)return;
@@ -393,14 +410,14 @@ window.updateProductSubFilter=()=>{
 window.filterProducts=()=>{
   if(page!=='products'||!$('productRows'))return;
   for(const id of productFilterIds)productFilterState[id]=$(id)?.value??'';
-  const q=norm($('productSearch')?.value||''),category=$('productCategoryFilter')?.value||'',subcategory=$('productSubFilter')?.value||'',status=$('productStatusFilter')?.value||'',stock=$('productStockFilter')?.value||'',nfc=$('productNfcFilter')?.value||'';
+  const q=norm($('productSearch')?.value||''),category=$('productCategoryFilter')?.value||'',subcategory=$('productSubFilter')?.value||'',status=$('productStatusFilter')?.value||'',stock=$('productStockFilter')?.value||'',nfc=$('productNfcFilter')?.value||'',qualityFilter=$('productQualityFilter')?.value||'';
   document.querySelectorAll('#productRows tr').forEach(r=>{
-    const ok=(!q||norm(r.dataset.search).includes(q))&&(!category||r.dataset.category===category)&&(!subcategory||r.dataset.subcategory===subcategory)&&(!status||r.dataset.status===status)&&(!stock||r.dataset.stockstate===stock)&&(!nfc||r.dataset.nfc===nfc);
+    const ok=(!q||norm(r.dataset.search).includes(q))&&(!category||r.dataset.category===category)&&(!subcategory||r.dataset.subcategory===subcategory)&&(!status||r.dataset.status===status)&&(!stock||r.dataset.stockstate===stock)&&(!nfc||r.dataset.nfc===nfc)&&(!qualityFilter||(qualityFilter==='price'?r.dataset.priceReview==='yes':r.dataset.quality===qualityFilter));
     r.style.display=ok?'':'none';
   });
 };
 window.resetProductFilters=()=>{
-  ['productSearch','productCategoryFilter','productSubFilter','productStatusFilter','productStockFilter','productNfcFilter'].forEach(id=>{if($(id))$(id).value=''});
+  ['productSearch','productCategoryFilter','productSubFilter','productStatusFilter','productStockFilter','productNfcFilter','productQualityFilter'].forEach(id=>{if($(id))$(id).value=''});
   if($('productStatusFilter'))$('productStatusFilter').value='active';
   updateProductSubFilter();filterProducts();
 };
