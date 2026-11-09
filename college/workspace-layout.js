@@ -31,8 +31,8 @@
    section("Gestion quotidienne",[
     tab("Stocks et produits","#tStocks"),
     tab("Commandes fournisseurs","#tOrders"),
-    link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat"),
-    link("Planning des incidents","secretariat/planning/")
+    tab("Factures · Lecteur Veryfi","#tInvoices"),
+    tab("Planning des incidents","#tPlanning")
    ]),
    section("Réglages",[tab("Paramètres","#tSettings"),tab("Mot de passe","#tPassword")]),
    section("Autres espaces",[
@@ -79,6 +79,7 @@
    section("Autres espaces",common)]}
  };
  function mount(){
+  if((area==="planning"||area==="veryfi")&&document.documentElement.classList.contains("secretariat-embedded"))return;
   const target=document.querySelector(targetSelector);
   if(!target||target.classList.contains("school-workspace"))return;
   const config=areas[area]||areas.secretariat;

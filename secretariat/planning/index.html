@@ -45,7 +45,12 @@
 @media(max-width:760px){.calendar-day{min-height:104px}.calendar-card{padding:12px}.calendar-month-label{text-align:left;min-width:125px}.calendar-navigation .btn{padding:8px 10px}}
 #existingPdf{display:flex;gap:8px;align-items:center;flex-wrap:wrap}#incidentPdf{max-width:100%}
 .incident-delete{color:#922b36!important;border:1px solid #d6a1a7!important;background:#fff3f4!important}
-</style><link rel="stylesheet" href="../../college/workspace-layout.css?v=3">
+/* Secrétariat : panneau d'onglet, sans bandeau ni espace autonome. */
+html.secretariat-embedded{background:transparent}
+.secretariat-embedded .shell{max-width:none;margin:0;padding:0}
+.secretariat-embedded .shell>.flex.between:first-child{display:none!important}
+</style><link rel="stylesheet" href="../../college/workspace-layout.css?v=4">
+<script>try{if(window.self!==window.top&&window.parent.location.origin===location.origin&&new URLSearchParams(location.search).get('embed')==='secretariat')document.documentElement.classList.add('secretariat-embedded')}catch{}</script>
 </head><body><main class="shell"><div class="flex between"><div><h1>Planning des incidents du personnel</h1><div class="muted">Secrétariat · Absences, retards et incidents · Préparation des éléments de paie</div></div><div class="flex"><a class="btn alt" href="../">Secrétariat</a><a class="btn alt" href="../../college/admin/">Administration Collège</a></div></div>
 <section id="login" class="card login hide"><h2>Connexion requise</h2><div class="field"><label>Identifiant</label><input id="username" autocomplete="username"></div><br><div class="field"><label>Mot de passe</label><input id="password" type="password" autocomplete="current-password"></div><p><button class="btn" id="loginBtn">Se connecter</button></p><p id="loginMessage" class="status"></p></section>
 <section id="main" class="hide"><div class="card flex between"><div class="flex"><label for="month"><b>Mois</b></label><input id="month" type="month" style="width:175px"><button class="btn alt" id="refresh">Actualiser</button></div><div class="flex"><span id="identity" class="muted"></span><button class="btn alt" id="new">Nouvel incident</button></div></div><div class="stats"><div class="stat"><small>Incidents du mois</small><strong id="nAll">0</strong></div><div class="stat"><small>Absences</small><strong id="nAbs">0</strong></div><div class="stat"><small>Autres incidents</small><strong id="nInc">0</strong></div><div class="stat"><small>Retards</small><strong id="nRet">0</strong></div></div>
@@ -193,5 +198,5 @@ function openRow(e){const del=e.target.closest('[data-delete]');if(del){e.stopPr
 $('rows').addEventListener('click',openRow);$('rows').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRow(e)}});
 initPlanningCalendar();
 load();
-</script><script defer src="../../college/workspace-layout.js?v=5" data-area="planning" data-target="#main"></script>
+</script><script defer src="../../college/workspace-layout.js?v=8" data-area="planning" data-target="#main"></script>
 </body></html>
