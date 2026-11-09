@@ -6,8 +6,9 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=10">
-<script defer src="./veryfi.js?v=32"></script>
+<link rel="stylesheet" href="./veryfi.css?v=12">
+<script defer src="./veryfi.js?v=34"></script>
+<script defer src="./ocr-secours.js?v=1"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=3">
 </head>
 <body>
@@ -62,6 +63,7 @@
     <div class="filebar"><span id="fileName">Aucun document sélectionné</span><button type="button" id="clearFile" class="btn secondary small" disabled>Retirer</button></div>
     <div class="buttons">
       <button type="button" id="analyze" class="btn primary" disabled>Lire avec Veryfi</button>
+      <button type="button" id="freeOcr" class="btn secondary" disabled>OCR gratuit de secours</button>
       <button type="button" id="newDocument" class="btn secondary" hidden>Nouvelle facture</button>
     </div>
     <p class="hint">L’envoi à Veryfi nécessite votre confirmation. Aucun stock ni compte comptable n’est modifié par la lecture.</p>
@@ -114,7 +116,7 @@
 <dialog id="pdfCompare" class="pdf-compare" aria-labelledby="pdfCompareTitle">
  <div class="pdf-compare-header">
   <div><h2 id="pdfCompareTitle">Comparer avec la facture</h2><p id="pdfComparePage" class="subtle"></p></div>
-  <button type="button" class="btn secondary" id="pdfCompareClose">Fermer</button>
+  <div class="buttons"><button type="button" class="btn secondary" id="pdfCompareFreeOcr">OCR gratuit sur cette page</button><button type="button" class="btn secondary" id="pdfCompareClose">Fermer</button></div>
  </div>
  <div class="pdf-compare-grid">
   <iframe id="pdfCompareViewer" title="Facture PDF originale pour vérification"></iframe>
@@ -124,6 +126,27 @@
    <h3>Contrôle requis</h3>
    <p id="pdfCompareReason" class="row-warning"></p>
    <p class="subtle">Aucune valeur n’est modifiée dans cette fenêtre. Fermez-la pour corriger ou valider la ligne.</p>
+  </section>
+ </div>
+</dialog>
+<dialog id="freeOcrModal" class="pdf-compare free-ocr-modal" aria-labelledby="freeOcrTitle">
+ <div class="pdf-compare-header">
+  <div><h2 id="freeOcrTitle">OCR gratuit de secours</h2><p class="subtle">Comparaison indépendante : aucun envoi à Veryfi, aucune modification du stock.</p></div>
+  <button type="button" id="freeOcrClose" class="btn secondary">Fermer</button>
+ </div>
+ <div class="free-ocr-toolbar">
+  <label for="freeOcrPage">Page</label><input id="freeOcrPage" type="number" min="1" value="1" step="1">
+  <button type="button" class="btn secondary small" id="freeOcrRead">Lire cette page</button>
+  <button type="button" class="btn secondary small" id="freeOcrScan">Forcer l’OCR Tesseract</button>
+  <button type="button" class="btn secondary small" id="freeOcrCopy" disabled>Copier le texte</button>
+ </div>
+ <p id="freeOcrStatus" class="notice" role="status" aria-live="polite">Sélectionnez la page à comparer.</p>
+ <div class="pdf-compare-grid">
+  <iframe id="freeOcrPdf" title="Page de la facture originale"></iframe>
+  <section class="pdf-compare-side">
+   <h3>Résultat à comparer avec Veryfi</h3>
+   <textarea id="freeOcrText" class="free-ocr-result" readonly aria-label="Texte obtenu par le lecteur de secours"></textarea>
+   <p class="subtle">Texte direct du PDF en priorité ; pour un scan, Tesseract fonctionne dans le navigateur. Aucun résultat n’est appliqué automatiquement. Vérifiez la ligne sur le PDF.</p>
   </section>
  </div>
 </dialog>

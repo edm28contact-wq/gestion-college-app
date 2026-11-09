@@ -295,6 +295,7 @@ function setFile(newFile){
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
  file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;
+ document.dispatchEvent(new CustomEvent("veryfi:source-file",{detail:{file}}));
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
  $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady;
@@ -736,6 +737,7 @@ function viewPdfLine(row,index){
  const dialog=$("pdfCompare");
  if(!dialog||typeof dialog.showModal!=="function")return notice("La fenêtre de comparaison n’est pas disponible sur ce navigateur.","error");
  const page=pdfPageForRow(row);
+ document.dispatchEvent(new CustomEvent("veryfi:compare-page",{detail:{page:page||1}}));
  $("pdfCompareTitle").textContent="Comparer la ligne "+(index+1)+" avec la facture";
  $("pdfComparePage").textContent=page?"Page "+page+" suggérée par Veryfi (si le lecteur PDF le permet)":"Page non localisée automatiquement : recherchez la ligne dans le PDF.";
  const fields=$("pdfCompareFields");fields.replaceChildren();
