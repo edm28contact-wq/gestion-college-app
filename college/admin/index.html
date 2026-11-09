@@ -125,7 +125,7 @@
 <script src="./apps-organizer.js?v=1"></script>
 <script src="./product-invoice-aliases.js?v=2"></script>
 <script>
-const UI_VERSION='2026.11.06-supplier-search-reference-v1';
+const UI_VERSION='2026.11.09-persistent-product-filters-v1';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
 const requestedProduct=new URLSearchParams(location.search).get('product'),requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',commandes:'Commandes',events:'Mouvements',historicalStock:'Inventaires historiques',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',siteDesigner:'Configuration des sites',manual:'Manuel d’utilisation',salaires:'Salaires'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
@@ -351,6 +351,20 @@ window.filterSubcategories=()=>{
 };
 window.editSubcategory=id=>{const s=id?sub(id):{};$('modal').innerHTML=`<div class="modal"><div class="box"><h2>${id?'Modifier':'Ajouter'} une sous-catégorie</h2><div class="fields"><div><label>Nom</label><input id="sbn" value="${esc(s?.name||'')}"></div><div><label>Code</label><input id="sbc" value="${esc(s?.code||'')}"></div><div><label>Catégorie</label><select id="sbcat">${db.categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div><div><label>Ordre</label><input id="sbo" type="number" min="0" step="1" value="${Number(s?.sort_order||100)}"></div><div class="full"><label><input id="sba" style="width:auto" type="checkbox" ${s?.active!==false?'checked':''}> Sous-catégorie active</label></div></div><br><div class="actions"><button class="btn primary" onclick="saveSubcategory('${id||''}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="mstatus" class="status"></div></div></div>`;if(s?.category_id)$('sbcat').value=s.category_id};
 window.saveSubcategory=async id=>{try{await call(ADMIN,'save-subcategory','POST',{id:id||null,name:$('sbn').value,code:$('sbc').value,category_id:$('sbcat').value,sort_order:Number($('sbo').value||100),active:$('sba').checked});closeModal();await refresh()}catch(e){modalError(e)}};
+
+const productFilterIds=['productSearch','productCategoryFilter','productSubFilter','productStatusFilter','productStockFilter','productNfcFilter'];
+let productFilterState={productStatusFilter:'active'};
+function restoreProductFilters(){
+ for(const id of productFilterIds){
+  const field=$(id),saved=productFilterState[id];
+  if(!field||saved===undefined)continue;
+  if(field.tagName==='SELECT'){
+   field.value=[...field.options].some(option=>option.value===saved)?saved:(id==='productStatusFilter'?'active':'');
+  }else field.value=saved;
+ }
+ updateProductSubFilter();
+ filterProducts();
+}
 function products(){
   const rows=db.products,subs=db.subcategories||[];
   $('content').innerHTML=`<div class="toolbar"><div class="actions"><button class="btn primary" onclick="editProduct()">Ajouter un produit</button><button class="btn secondary" onclick="exportWorkbook('products')">Exporter Excel</button></div><div class="muted">Les produits actifs sont affichés par défaut. Le stock et les achats sont disponibles pour toutes les catégories. Filtrez les Inactifs pour retrouver les produits archivés.</div></div>
@@ -363,7 +377,7 @@ function products(){
     <select id="productNfcFilter" onchange="filterProducts()"><option value="">NFC : tous</option><option value="yes">NFC programmé</option><option value="no">Sans NFC</option></select>
     <button class="btn secondary compact" onclick="resetProductFilters()">Réinitialiser</button>
   </div><br><div class="table"><table><thead><tr><th>Produit</th><th>Catégorie</th><th>Sous-catégorie</th><th>Prix</th><th>Stock</th><th>Minimum</th><th>Conditionnement</th><th>État</th><th>Actions</th></tr></thead><tbody id="productRows">${rows.map(productRow).join('')}</tbody></table></div><div id="pageStatus" class="status"></div>`;
-  filterProducts();
+  restoreProductFilters();
   window.refreshSupplierProductSearch?.();
 }
 function productRow(p){
@@ -377,6 +391,8 @@ window.updateProductSubFilter=()=>{
   if(select.selectedOptions[0]?.hidden)select.value='';
 };
 window.filterProducts=()=>{
+  if(page!=='products'||!$('productRows'))return;
+  for(const id of productFilterIds)productFilterState[id]=$(id)?.value??'';
   const q=norm($('productSearch')?.value||''),category=$('productCategoryFilter')?.value||'',subcategory=$('productSubFilter')?.value||'',status=$('productStatusFilter')?.value||'',stock=$('productStockFilter')?.value||'',nfc=$('productNfcFilter')?.value||'';
   document.querySelectorAll('#productRows tr').forEach(r=>{
     const ok=(!q||norm(r.dataset.search).includes(q))&&(!category||r.dataset.category===category)&&(!subcategory||r.dataset.subcategory===subcategory)&&(!status||r.dataset.status===status)&&(!stock||r.dataset.stockstate===stock)&&(!nfc||r.dataset.nfc===nfc);
