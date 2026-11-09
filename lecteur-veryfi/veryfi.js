@@ -5,6 +5,7 @@ const API={veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-cat
 const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
+const trainingMode=parameters.get("entrainement")==="1";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -294,7 +295,7 @@ function setFile(newFile){
  clearPdf();
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
- file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";
+ file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";$("bulkVatRate").value="";$("repairHeader").hidden=true;
  document.dispatchEvent(new CustomEvent("veryfi:source-file",{detail:{file}}));
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
@@ -985,17 +986,85 @@ function calc(){
  const unverified=included.filter(r=>!r.verified);
  const discrepancy=ht==null||(!accounting&&discardedInvalid)||Math.abs((accounting?sum:reconciledSum)-ht)>.02;
  const grossMismatch=ht!=null&&vat!=null&&ttc!=null&&Math.abs(round(ht+vat)-ttc)>.02;
- const taxFor=r=>{const net=amount(r.total),rate=amount(r.tax_rate);return net===null||rate===null||rate<0||rate>100?null:round(net*rate/100)};
- const vatKnown=included.length>0&&included.every(r=>taxFor(r)!==null);
- const selectedVat=vatKnown?round(included.reduce((n,r)=>n+taxFor(r),0)):null;
+ const selectedVat=groupedVatAmount(included);
  const selectedTtc=selectedVat===null?null:round(sum+selectedVat);
  const ok=!!documentData&&!!file&&!saved&&included.length>0&&(accounting||pending.length===0)&&(accounting||sum>0)&&!missing.length&&!unmatched.length&&!unverified.length&&(accounting?(!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null):true)&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
  return {ok,included,pending,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,removedCount:removedRows.length};
 }
+function groupedVatAmount(included){
+ if(!Array.isArray(included)||!included.length)return null;
+ const bases=new Map();
+ for(const row of included){
+  const net=amount(row.total),rate=amount(row.tax_rate);
+  if(net===null||net<0||rate===null||rate<0||rate>100)return null;
+  const key=rate.toFixed(4);
+  bases.set(key,(bases.get(key)||0)+net);
+ }
+ return round([...bases].reduce((total,[rate,net])=>total+round(net*Number(rate)/100),0));
+}
+function proposeHeaderAmounts(originalLineTotals,ht,vat,ttc){
+ if(!Array.isArray(originalLineTotals)||!originalLineTotals.length)return null;
+ const lines=originalLineTotals.map(amount);
+ if(lines.some(v=>v===null||v<0))return null;
+ const sum=round(lines.reduce((a,b)=>a+b,0)),oldHt=amount(ht),tax=amount(vat),oldTtc=amount(ttc);
+ if(!(sum>0)||oldHt===null||oldHt<0||tax===null||tax<0||oldTtc===null||oldTtc<0)return null;
+ if(Math.abs(round(oldHt+tax)-oldTtc)>.02)return null;
+ const gap=round(sum-oldHt),suggestedTtc=round(sum+tax);
+ if(gap<999.99||Math.abs(gap/1000-Math.round(gap/1000))>0.00003)return null;
+ if(Math.abs(round(suggestedTtc-oldTtc)-gap)>.02)return null;
+ return {ht:sum,tax,ttc:suggestedTtc,gap};
+}
+function missingVatRows(rowsToCheck){
+ return rowsToCheck.filter(r=>!r.excluded&&!String(r.tax_rate??"").trim());
+}
+function applyVerifiedVat(rowsToFix,rate){
+ const target=Number(rate);
+ if(!Number.isFinite(target)||target<0||target>100)return {ok:false,count:0,reason:"Taux de TVA invalide"};
+ const active=rowsToFix.filter(r=>!r.excluded);
+ if(active.some(r=>String(r.tax_rate??"").trim()&&(!validLineVat(r)||Math.abs(amount(r.tax_rate)-target)>.00001)))
+  return {ok:false,count:0,reason:"Le document comporte des taux renseignés différents ou invalides : corrigez chaque ligne sur le PDF."};
+ const empty=missingVatRows(active);
+ for(const row of empty){
+  row.tax_rate=target;row.changed=true;
+  row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;
+ }
+ return {ok:true,count:empty.length};
+}
+function applyVatFromPdf(){
+ if(!documentData||saved||loading)return;
+ const raw=$("bulkVatRate").value.trim(),rate=amount(raw);
+ if(!raw||rate===null||rate<0||rate>100)return notice("Saisissez le taux de TVA vérifié sur le PDF (de 0 à 100 %).","error");
+ const available=rows.filter(r=>!r.excluded);
+ if(available.some(r=>String(r.tax_rate??"").trim()&&(!validLineVat(r)||Math.abs(amount(r.tax_rate)-rate)>.00001)))
+  return notice("Plusieurs taux ou des taux invalides ont été relevés. Corrigez les lignes individuellement : aucune propagation automatique.","error");
+ const toFix=missingVatRows(available);
+ if(!toFix.length)return notice("Toutes les lignes non écartées possèdent déjà un taux de TVA.","success");
+ if(!confirm("Confirmez-vous que le taux de TVA de "+rate+" % apparaît sur le PDF original POUR CHACUNE des "+toFix.length+" ligne(s) concernée(s) ? Le taux sera renseigné, mais ces lignes resteront à vérifier individuellement et ne passeront pas automatiquement au vert."))return;
+ const result=applyVerifiedVat(rows,rate);
+ if(!result.ok)return notice(result.reason,"error");
+ $("confirmReview").checked=false;
+ renderRows();notice(result.count+" taux de TVA renseigné(s) après votre confirmation. Vérifiez chaque ligne sur le PDF avant de la valider.","success");
+}
+function suggestHeaderFromOcr(){
+ if(!documentData||rows.length!==documentData.line_items?.length||rows.some(r=>r.userAdded)||removedRows.length)return null;
+ return proposeHeaderAmounts(rows.map(r=>r.ocrOriginal?.total),$("subtotal").value,$("tax").value,$("total").value);
+}
+function repairHeaderFromPdf(){
+ if(saved||loading)return;
+ const candidate=suggestHeaderFromOcr();
+ if(!candidate)return notice("Aucune correction fiable des montants HT / TTC n’est proposée.","error");
+ if(!confirm("Sur le PDF ORIGINAL, avez-vous vérifié que le total HT est "+fmt(candidate.ht)+" et le TTC "+fmt(candidate.ttc)+" (TVA "+fmt(candidate.tax)+") ? Corriger uniquement les deux champs de l’en-tête ?"))return;
+ $("subtotal").value=String(candidate.ht);$("total").value=String(candidate.ttc);
+ $("confirmReview").checked=false;updateTotals();
+ notice("En-tête corrigé après confirmation du PDF : "+fmt(candidate.ht)+" HT et "+fmt(candidate.ttc)+" TTC. Aucun stock modifié.","success");
+}
+
 function updateTotals(){
  if(!documentData)return;
  const c=calc();
  const correctionNote=$("headerRepairNote");
+ const suggestion=suggestHeaderFromOcr(),repairButton=$("repairHeader");
+ repairButton.hidden=!suggestion;repairButton.disabled=loading||saved;
  correctionNote.hidden=accounting||(!c.discrepancy&&!c.grossMismatch);
  if(!correctionNote.hidden){
   const derived=c.vat!==null&&c.ttc!==null?round(c.ttc-c.vat):null;
@@ -1003,7 +1072,7 @@ function updateTotals(){
   if(c.discrepancy)info.push("HT détecté par Veryfi : "+fmt(c.ht)+" ; somme des lignes lues : "+(c.discardedInvalid?"indéterminée":fmt(c.reconciledSum))+(derived!==null?" ; TTC − TVA : "+fmt(derived):""));
   if(c.grossMismatch)info.push("HT + TVA du PDF différent du TTC");
   correctionNote.className="notice";
-  correctionNote.textContent="Montants du PDF à vérifier : "+info.join(". ")+". La réception reste calculée uniquement depuis les produits verts validés.";
+  correctionNote.textContent="Montants du PDF à vérifier : "+info.join(". ")+(suggestion?". Correction proposée APRÈS comparaison avec le PDF : HT "+fmt(suggestion.ht)+" et TTC "+fmt(suggestion.ttc)+".":"")+". La réception reste calculée uniquement depuis les produits verts validés.";
  }
  const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
  $("metrics").innerHTML=accounting?
@@ -1028,8 +1097,8 @@ function updateTotals(){
  const explanation=c.adjusted?" Réception partielle : "+c.pending.length+" ligne(s) encore à vérifier, "+c.removedCount+" supprimée(s), "+c.excludedCount+" écartée(s).":"";
   $("reconciliation").textContent=(accounting?"HT du PDF : "+fmt(c.ht)+" · HT des lignes : "+fmt(c.sum)+".":
   "RÉCEPTION — Produits verts uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+". Le montant HT lu sur le PDF ("+fmt(c.ht)+") reste informatif et ne remplace pas le total des produits.")+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Lignes retenues contrôlées.");
- $("save").disabled=!c.ok||!$("confirmReview").checked||loading;
- $("saveHelp").textContent=saved?"Facture enregistrée.":c.pending.length&&!accounting?"Total vert actualisé. Passez les autres lignes au vert ou écartez-les avant validation définitive (anti-doublon PDF).":c.ok?(c.adjusted?"Réception partielle : seuls les produits verts seront enregistrés.":"Les lignes vertes sont prêtes ; confirmez après contrôle du PDF."):"Vérifiez les lignes vertes et les champs obligatoires avant l’enregistrement.";
+ $("save").disabled=trainingMode||!c.ok||!$("confirmReview").checked||loading;
+ $("saveHelp").textContent=trainingMode?"MODE ENTRAÎNEMENT : réception et mouvements de stock désactivés. Les corrections restent locales (sauf mots-clés mémorisés explicitement).":saved?"Facture enregistrée.":c.pending.length&&!accounting?"Total vert actualisé. Passez les autres lignes au vert ou écartez-les avant validation définitive (anti-doublon PDF).":c.ok?(c.adjusted?"Réception partielle : seuls les produits verts seront enregistrés.":"Les lignes vertes sont prêtes ; confirmez après contrôle du PDF."):"Vérifiez les lignes vertes et les champs obligatoires avant l’enregistrement.";
 }
 async function digest(bytes){
  const hash=await crypto.subtle.digest("SHA-256",bytes);
@@ -1041,6 +1110,7 @@ function learningPayload(row){
   user_added:row.userAdded===true,original:row.ocrOriginal||{}};
 }
 async function save(){
+ if(trainingMode)return notice("Mode entraînement : aucune réception et aucune facture enregistrée. Ouvrez le lecteur normal seulement pour une vraie réception.","error");
  const c=calc();
  if(!c.ok||!$("confirmReview").checked)return notice("La facture n’est pas prête : contrôles incomplets.","error");
  if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":c.pending.length?"Il reste "+c.pending.length+" ligne(s) rouge(s)/orange(s). Elles ne seront PAS ajoutées au stock. Après validation, elles ne pourront pas être ajoutées depuis le même PDF (protection anti-doublon). Si vous souhaitez les ajouter plus tard, annulez et passez-les au vert d’abord. Confirmer la réception partielle ?":c.adjusted?"Valider cette réception partielle ? Seuls les produits verts seront ajoutés au stock. Les montants et le PDF d’origine restent conservés.":"Valider cette facture ? Les produits verts seront ajoutés au stock et transmis à Commandes et Achats."))return;
@@ -1088,6 +1158,8 @@ function lockFields(){
 }
 function setup(){
  setScope();
+ $("trainingBanner").hidden=!trainingMode;
+ if(trainingMode)$("save").textContent="Réception désactivée — entraînement";
  $("pdfCompareClose").addEventListener("click",()=>$("pdfCompare").close());
  $("pdfCompare").addEventListener("close",()=>$("pdfCompareViewer").removeAttribute("src"));
  const drop=$("drop"),input=$("file");
@@ -1118,6 +1190,8 @@ function setup(){
  $("quotaClear").addEventListener("click",()=>{
   if(confirm("Effacer le quota mensuel local ? Le compteur d'utilisation sera conservé."))configureQuota(null);
  });
+ $("repairHeader").addEventListener("click",repairHeaderFromPdf);
+ $("applyBulkVat").addEventListener("click",applyVatFromPdf);
  $("issueFilter").addEventListener("change",e=>{issueFilter=e.target.value;renderRows()});
  $("addLine").addEventListener("click",addLine);
  $("save").addEventListener("click",save);

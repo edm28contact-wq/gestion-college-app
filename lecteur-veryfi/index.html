@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=13">
-<script defer src="./veryfi.js?v=35"></script>
+<link rel="stylesheet" href="./veryfi.css?v=14">
+<script defer src="./veryfi.js?v=36"></script>
 <script defer src="./ocr-secours.js?v=2"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=4">
 <style>
@@ -55,6 +55,7 @@ html.secretariat-embedded{background:transparent}
   </div>
 </section>
 <div id="notice" class="notice" role="status" aria-live="polite">Déposez une facture PDF pour commencer.</div>
+<p id="trainingBanner" class="training-banner" role="status" hidden><strong>MODE ENTRAÎNEMENT</strong> — La validation de la facture et les mouvements de stock sont désactivés. La lecture Veryfi peut consommer une lecture du quota. Seuls les mots-clés mémorisés volontairement sont enregistrés.</p>
 <div class="workspace">
   <section class="panel document-panel" aria-labelledby="pdfTitle">
     <div class="panel-title">
@@ -96,6 +97,7 @@ html.secretariat-embedded{background:transparent}
       </div>
       <div id="fieldScores" class="subtle" aria-live="polite"></div>
       <p id="headerRepairNote" class="hint" role="status" aria-live="polite" hidden></p>
+<button id="repairHeader" class="btn secondary small" type="button" hidden>Corriger HT et TTC après vérification du PDF</button>
       <div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>
       <p id="greenOnlyInfo" class="subtle">Les montants de réception proviennent uniquement des produits verts validés. Les montants du PDF sont conservés pour contrôle et ne remplacent jamais ceux des produits retenus. Les corrections confirmées après vérification du PDF enrichissent le carnet d’apprentissage interne pour les prochaines factures.</p>
       <div class="section-heading">
@@ -118,7 +120,7 @@ html.secretariat-embedded{background:transparent}
       <option value="warn">Lignes orange</option>
       <option value="good">Lignes vertes</option>
       <option value="excluded">Lignes écartées</option>
-      </select></label><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
+      </select></label><div class="bulk-vat-tools"><label for="bulkVatRate">TVA vérifiée sur le PDF (%)</label><input id="bulkVatRate" type="number" min="0" max="100" step="0.01" placeholder="Ex. 20" inputmode="decimal"><button id="applyBulkVat" type="button" class="btn secondary small">Renseigner les TVA manquantes</button></div><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
       <div id="lines" class="lines"></div>
       <datalist id="productOptions"></datalist>
       <datalist id="accountOptions"></datalist>

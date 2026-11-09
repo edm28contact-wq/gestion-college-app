@@ -67,3 +67,10 @@
 .status-group.excluded .status-group-header{background:#f0f3f7;color:#586778;border-color:#d9e1e8}
 .row.excluded{opacity:.8;border-color:#cbd4df;border-left:4px solid #8d9bac;background:#f2f5f8}
 .score.excluded{background:#e6ebf0;color:#526173}
+
+.training-banner{border:1px solid #bd9867;border-radius:9px;background:#fff8eb;color:#5f441d;padding:12px 15px;margin:12px 0}
+.bulk-vat-tools{display:flex;gap:9px;align-items:end;flex-wrap:wrap;flex:1 1 330px}
+.bulk-vat-tools label{font-size:12px;font-weight:700;color:#39566d;flex:1 1 150px}
+.bulk-vat-tools input{max-width:120px;padding:8px;border:1px solid #c5d4e1;border-radius:7px;background:#fff}
+.bulk-vat-tools button{flex:1 1 auto}
+#repairHeader{margin:0 0 10px}
