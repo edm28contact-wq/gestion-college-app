@@ -103,6 +103,17 @@
 .salary-month-tile.selected{border:2px solid #306b98;background:#edf5fc;padding:12px 13px}
 .salary-month-tile:hover,.salary-month-tile:focus-visible{outline:2px solid #94b8d0;background:#f0f6fa}
 @media(max-width:650px){.salary-month-grid{grid-template-columns:1fr}}
+/* Gestion des salariés autorisés dans le planning. */
+.salary-personnel h2{margin-top:0}
+.salary-staff-form{display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(160px,.8fr) auto;gap:8px;align-items:end;margin:12px 0 15px}
+.salary-staff-form>label[for]{grid-column:1}
+.salary-staff-form>input{grid-column:1}
+.salary-staff-form>label:not([for]){grid-column:2;grid-row:2;display:flex;align-items:center;gap:7px}
+.salary-staff-form>label input{width:auto}
+.salary-staff-form>button{grid-column:3;grid-row:2}
+.salary-personnel .table table{min-width:600px}
+.salary-personnel td input[type="checkbox"]{width:19px;height:19px}
+@media(max-width:700px){.salary-staff-form{display:flex;flex-direction:column;align-items:stretch}}
 </style>
 </head>
 <body>
@@ -498,7 +509,7 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 if(token)enterApp().catch(()=>logout());
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261109-monthly-summary-v2"></script>
+<script src="./salaires.js?v=20261109-staff-management-v1"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 
 </body>
