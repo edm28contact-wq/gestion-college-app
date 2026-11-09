@@ -1,0 +1,28 @@
+name: Contrôles Gestion Collège
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Récupérer les sources
+        uses: actions/checkout@v4
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Vérification de syntaxe
+        shell: bash
+        run: |
+          set -euo pipefail
+          for source in lecteur-veryfi/veryfi.js lecteur-veryfi/ocr-secours.js secretariat/planning/calendar.js secretariat/planning/print-month.js college/workspace-layout.js college/admin/salaires.js; do
+            node --check "$source"
+          done
+      - name: Tester les invariants métier
+        run: node --test tests/*.test.cjs
