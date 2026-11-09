@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","suggestInvoiceVatRate","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -27,7 +27,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,suggestInvoiceVatRate};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,suggestInvoiceVatRate,previewVatApproval};",ctx);
  return {ctx,api:ctx.reader};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -165,6 +165,24 @@ test("le bouton de correction d'en-tête reste disponible si seul le HT est tron
  assert.equal(h.api.proposeHeaderAmounts([1294.94],1294.94,258.99,553.93).ttc,1553.93);
  assert.equal(h.api.proposeHeaderAmounts([1294.94],294.94,258.99,553.93).ttc,1553.93);
  assert.equal(h.api.proposeHeaderAmounts([1294.94],1294.94,258.99,1553.93),null);
+});
+test("aperçu TVA sans écriture, puis classification après validation explicite",()=>{
+ const h=harness();
+ h.ctx.rows=[row({reference:"A",tax_rate:20}),row({reference:"B",tax_rate:""}),row({reference:"C",tax_rate:"",score:.85}),row({reference:"D",tax_rate:"",product_id:""})];
+ const previous=JSON.stringify(h.ctx.rows),preview=h.api.previewVatApproval(20);
+ assert.equal(preview.good,2);assert.equal(preview.warn,1);assert.equal(preview.bad,1);assert.equal(preview.missing,3);
+ assert.equal(JSON.stringify(h.ctx.rows),previous,"La prévisualisation ne modifie pas les produits.");
+ const changed=h.api.applyVerifiedVat(h.ctx.rows,20);h.api.autoVerifyGreenRows();
+ assert.equal(changed.count,3);
+ assert.deepEqual(Array.from(h.ctx.rows,r=>h.api.productColor(r)),["good","good","warn","bad"]);
+});
+test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
+ const page=file("lecteur-veryfi/index.html");
+ assert.ok(page.includes('id="vatActionRequired"')&&page.includes('id="applyVatBanner"'));
+ assert.ok(source.includes('banner.hidden=!projection||!projection.missing'));
+ assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
+ assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
+ assert.ok(page.includes("veryfi.js?v=39"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");

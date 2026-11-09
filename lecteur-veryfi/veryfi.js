@@ -295,7 +295,7 @@ function setFile(newFile){
  clearPdf();
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
- file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";$("bulkVatRate").value="";$("repairHeader").hidden=true;
+ file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";$("bulkVatRate").value="";$("repairHeader").hidden=true;$("vatActionRequired").hidden=true;
  document.dispatchEvent(new CustomEvent("veryfi:source-file",{detail:{file}}));
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
@@ -1051,6 +1051,18 @@ function suggestInvoiceVatRate(){
  if(Math.abs(round(ht*rate/100)-tax)>.01)return null;
  return {rate,missing,ht,tax};
 }
+function previewVatApproval(rate){
+ const target=amount(rate),active=rows.filter(r=>!r.excluded);
+ if(target===null||target<0||target>100||!active.length)return null;
+ if(active.some(r=>String(r.tax_rate??"").trim()!==""&&(!validLineVat(r)||Math.abs(amount(r.tax_rate)-target)>.00001)))return null;
+ const projected={good:0,warn:0,bad:0,missing:missingVatRows(active).length};
+ for(const row of active){
+  const next=String(row.tax_rate??"").trim()===""?
+   {...row,tax_rate:target,vatConfirmedFromPdf:true,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false}:row;
+  projected[productColor(next)]++;
+ }
+ return projected;
+}
 function applyVatFromPdf(){
  if(!documentData||saved||loading)return;
  const raw=$("bulkVatRate").value.trim(),rate=amount(raw);
@@ -1060,7 +1072,7 @@ function applyVatFromPdf(){
   return notice("Plusieurs taux ou des taux invalides ont été relevés. Corrigez les lignes individuellement : aucune propagation automatique.","error");
  const toFix=missingVatRows(available);
  if(!toFix.length)return notice("Toutes les lignes non écartées possèdent déjà un taux de TVA.","success");
- if(!confirm("Confirmez-vous que le taux de TVA de "+rate+" % s’applique à TOUTES les "+toFix.length+" ligne(s) concernée(s), après vérification de la facture originale ? Les lignes avec référence active, montants et conditionnement fiables pourront passer au vert automatiquement. Toute ligne incertaine restera rouge ou orange."))return;
+ if(!confirm("Confirmez-vous que le taux de TVA de "+rate+" % s’applique à TOUTES les "+toFix.length+" ligne(s) concernée(s), après vérification de la facture originale ? Les lignes avec référence active, montants et conditionnement fiables pourront passer au vert automatiquement. Toute ligne incertaine restera rouge ou orange."))return notice("TVA non appliquée : confirmation annulée. Les champs restent vides et les lignes orange.","error");
  const result=applyVerifiedVat(rows,rate);
  if(!result.ok)return notice(result.reason,"error");
  $("confirmReview").checked=false;
@@ -1085,9 +1097,19 @@ function updateTotals(){
  if(!documentData)return;
  const c=calc();
  const correctionNote=$("headerRepairNote");
- const vatHint=suggestInvoiceVatRate(),vatHintElement=$("vatSuggestion");
+ const vatHint=suggestInvoiceVatRate(),vatHintElement=$("vatSuggestion"),banner=$("vatActionRequired");
+ const projection=vatHint?previewVatApproval(vatHint.rate):null;
+ banner.hidden=!projection||!projection.missing;
+ const bannerButton=$("applyVatBanner");bannerButton.disabled=loading||saved;
+ if(projection?.missing){
+  $("vatActionText").textContent="TVA "+vatHint.rate+" % PROPOSÉE, NON APPLIQUÉE : "+projection.missing+" champs restent vides. Après vérification et confirmation sur le PDF, "+projection.good+" ligne(s) pourront passer au vert, "+projection.warn+" resteront orange et "+projection.bad+" rouges. Cette opération ne modifie aucun stock.";
+  bannerButton.textContent="Confirmer sur le PDF et appliquer "+vatHint.rate+" % aux "+projection.missing+" lignes";
+ }
+ const vatMissing=missingVatRows(rows).length,bulkButton=$("applyBulkVat");
+ bulkButton.disabled=loading||saved||!vatMissing;
+ bulkButton.textContent=vatMissing?"Appliquer la TVA aux "+vatMissing+" lignes et recalculer":"TVA déjà renseignée";
  vatHintElement.hidden=!vatHint;
- if(vatHint)vatHintElement.textContent="Proposition : "+vatHint.rate+" % pour "+vatHint.missing+" ligne(s) sans TVA. Contrôle de cohérence : "+fmt(vatHint.ht)+" HT × "+vatHint.rate+" % = "+fmt(vatHint.tax)+" de TVA. Confirmez ce taux sur le PDF original avant de l'appliquer.";
+ if(vatHint)vatHintElement.textContent="Le taux "+vatHint.rate+" % a été PRÉREMPLI mais PAS APPLIQUÉ. Vérifiez le PDF et cliquez sur le bouton d'application. Cohérence : "+fmt(vatHint.ht)+" HT × "+vatHint.rate+" % = "+fmt(vatHint.tax)+" de TVA.";
  const suggestion=suggestHeaderFromOcr(),repairButton=$("repairHeader");
  repairButton.hidden=!suggestion;repairButton.disabled=loading||saved;
  correctionNote.hidden=accounting||(!c.discrepancy&&!c.grossMismatch);
@@ -1217,6 +1239,8 @@ function setup(){
  });
  $("repairHeader").addEventListener("click",repairHeaderFromPdf);
  $("applyBulkVat").addEventListener("click",applyVatFromPdf);
+ $("applyVatBanner").addEventListener("click",()=>{const hint=suggestInvoiceVatRate();if(!hint)return notice("Le taux global ne peut plus être déduit de façon fiable. Vérifiez les lignes.","error");$("bulkVatRate").value=String(hint.rate);applyVatFromPdf()});
+ $("bulkVatRate").addEventListener("input",updateTotals);
  $("issueFilter").addEventListener("change",e=>{issueFilter=e.target.value;renderRows()});
  $("addLine").addEventListener("click",addLine);
  $("save").addEventListener("click",save);

@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
-<link rel="stylesheet" href="./veryfi.css?v=15">
-<script defer src="./veryfi.js?v=38"></script>
+<link rel="stylesheet" href="./veryfi.css?v=16">
+<script defer src="./veryfi.js?v=39"></script>
 <script defer src="./ocr-secours.js?v=2"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=4">
 <style>
@@ -96,6 +96,7 @@ html.secretariat-embedded{background:transparent}
         <label class="field"><span>Total TTC du PDF</span><input id="total" inputmode="decimal"></label>
       </div>
       <div id="fieldScores" class="subtle" aria-live="polite"></div>
+<div id="vatActionRequired" class="vat-action-required" role="region" aria-label="TVA manquante : action nécessaire" hidden><strong>Action nécessaire pour débloquer les lignes vertes</strong><p id="vatActionText"></p><button id="applyVatBanner" type="button" class="btn primary">Confirmer la TVA et recalculer les lignes</button></div>
       <p id="headerRepairNote" class="hint" role="status" aria-live="polite" hidden></p>
 <button id="repairHeader" class="btn secondary small" type="button" hidden>Corriger HT et TTC après vérification du PDF</button>
       <div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>

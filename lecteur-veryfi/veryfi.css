@@ -76,3 +76,7 @@
 .bulk-vat-tools input{max-width:120px;padding:8px;border:1px solid #c5d4e1;border-radius:7px;background:#fff}
 .bulk-vat-tools button{flex:1 1 auto}
 #repairHeader{margin:0 0 10px}
+
+.vat-action-required{background:#fff8eb;border:2px solid #d4a242;border-radius:10px;padding:13px;margin:12px 0;color:#513b16;line-height:1.5}
+.vat-action-required p{font-size:13px;margin:8px 0 12px}
+.vat-action-required .btn{white-space:normal;text-align:center}
