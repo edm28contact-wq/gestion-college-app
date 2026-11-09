@@ -783,7 +783,7 @@ function buildLine(row,index){
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=row.excluded?"excluded":productColor(row);
- const label=color==="excluded"?"Écartée":color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":"Validée automatiquement"):"À contrôler";
+ const label=color==="excluded"?"Écartée":color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
@@ -842,7 +842,7 @@ function buildLine(row,index){
  if(color==="good"){
   const approved=document.createElement("div");
   approved.className="row-approved";
-  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
+  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":row.vatConfirmedFromPdf?"TVA confirmée sur le PDF par l’utilisateur ; référence active, quantités, conditionnement, montants et confiance OCR contrôlés automatiquement.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
   card.append(approved);
  }
  if(color==="warn"&&!row.excluded&&!saved){

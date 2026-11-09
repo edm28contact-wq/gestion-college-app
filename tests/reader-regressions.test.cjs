@@ -94,7 +94,7 @@ test("facture d'entraînement : base TVA globale et arrondis corrects",()=>{
  const filled=h.api.applyVerifiedVat(lines,20);
  assert.equal(filled.ok,true);assert.equal(filled.count,24);
  assert.equal(h.api.groupedVatAmount(lines),258.99);
- assert.ok(lines.slice(1).every(x=>x.changed&&!x.verified&&!x.autoVerified));
+ assert.ok(lines.slice(1).every(x=>!x.changed&&!x.verified&&!x.autoVerified&&x.vatConfirmedFromPdf===true));
  assert.equal(lines[0].tax_rate,20);
 });
 test("TVA multiple ou incohérente : propagation refusée",()=>{
