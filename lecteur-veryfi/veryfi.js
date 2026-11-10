@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V41";
+const READER_VERSION="V42";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -331,7 +331,23 @@ async function analyze(){
   documentData=result.result;saved=false;removedRows=[];rows=documentData.line_items.map((x,i)=>makeRow(x,i));
   bindDocument();refreshMatches();autoVerifyGreenRows();renderRows();
   $("resultsEmpty").hidden=true;$("results").hidden=false;
-  $("readingState").textContent="Lecture terminée";notice("Veryfi a identifié "+rows.length+" ligne(s). Vérifiez les données avant validation.","success");
+  let nativeTaxCount=0;
+  if(typeof window.VeryfiNativePdfVat?.read==="function"){
+   $("readingState").textContent="Vérification des TVA du PDF original…";
+   try{
+    const nativeEvidence=await Promise.race([
+     window.VeryfiNativePdfVat.read(source,rows.map(r=>({reference:r.reference,quantity:r.quantity,unit_price:r.unit_price,total:r.total}))),
+     new Promise(resolve=>setTimeout(()=>resolve([]),12000))
+    ]);
+    if(source!==file||version!==revision)return;
+    nativeTaxCount=applyNativePdfVatEvidence(nativeEvidence);
+    if(nativeTaxCount)renderRows();
+   }catch(error){console.warn("Vérification locale des taux TVA indisponible :",error?.message||error)}
+  }
+  $("readingState").textContent="Lecture terminée";
+  notice(nativeTaxCount?
+   "Veryfi a identifié "+rows.length+" lignes. "+nativeTaxCount+" TVA ont été extraites et recoupées directement sur le PDF (référence, quantité, prix, total). Contrôlez les autres anomalies avant validation.":
+   "Veryfi a identifié "+rows.length+" ligne(s). Les TVA non prouvées ligne par ligne restent à confirmer sur le PDF.","success");
  }catch(e){
   if(e.code===401||e.code===403){serverReady=false;authToken="";$("loginLink").hidden=false;$("sessionDot").className="dot bad";$("sessionState").textContent="Session non autorisée";}
   $("readingState").textContent="Lecture interrompue";
@@ -394,6 +410,27 @@ function makeRow(x,index){
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
+function applyNativePdfVatEvidence(evidence){
+ if(!Array.isArray(evidence))return 0;
+ let applied=0;
+ const matches=(a,b,threshold=.02)=>{
+  const x=amount(a),y=amount(b);
+  return x!==null&&y!==null&&Math.abs(x-y)<=threshold;
+ };
+ for(const value of evidence){
+  if(!value||!Number.isInteger(value.index)||value.index<0||value.index>=rows.length)continue;
+  const row=rows[value.index],rate=amount(value.rate);
+  if(!row||row.excluded||row.changed||row.verified||rate===null||rate<0||rate>100||String(row.tax_rate??"").trim())continue;
+  if(norm(row.reference)!==norm(value.reference)||!matches(row.quantity,value.quantity,.001)||
+     !matches(row.unit_price,value.unit_price,.011)||!matches(row.total,value.total,.021))continue;
+  row.tax_rate=rate;
+  row.vatFromNativePdf=true;
+  row.verified=false;row.autoVerified=false;row.manualVerified=false;
+  applied++;
+ }
+ return applied;
+}
+
 function bindDocument(){
  const d=documentData;
  d.vendor=canonicalSupplier(d.vendor);
@@ -790,7 +827,7 @@ function buildLine(row,index){
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=row.excluded?"excluded":productColor(row);
- const label=color==="excluded"?"Écartée":color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
+ const label=color==="excluded"?"Écartée":color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
@@ -849,7 +886,7 @@ function buildLine(row,index){
  if(color==="good"){
   const approved=document.createElement("div");
   approved.className="row-approved";
-  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":row.vatConfirmedFromPdf?"TVA confirmée sur le PDF par l’utilisateur ; référence active, quantités, conditionnement, montants et confiance OCR contrôlés automatiquement.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
+  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":row.vatFromNativePdf?"TVA extraite de la colonne du PDF original : référence, quantité, prix unitaire et total HT recoupés. Les autres contrôles de validation sont conservés.":row.vatConfirmedFromPdf?"TVA confirmée sur le PDF par l’utilisateur ; référence active, quantités, conditionnement, montants et confiance OCR contrôlés automatiquement.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
   card.append(approved);
  }
  if(color==="warn"&&!row.excluded&&!saved){

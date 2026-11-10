@@ -44,6 +44,65 @@ async function loadTesseract(){
  }).catch(e=>{tesseractLoading=null;throw e});
  return tesseractLoading;
 }
+// Reconciliation des TVA depuis les valeurs imprimées dans le tableau du PDF, sans OCR distant.
+// Aucun taux n'est inféré depuis l'en-tête : référence, quantité, prix et total doivent tous concorder.
+function nativeVatEvidenceForPage(items,candidates,pageNumber){
+ const positions=(items||[]).filter(item=>typeof item.str==="string"&&item.str.trim()&&Array.isArray(item.transform)&&item.transform.length>=6)
+  .map(item=>({text:item.str.trim(),x:Number(item.transform[4]),y:Number(item.transform[5])}))
+  .filter(item=>Number.isFinite(item.x)&&Number.isFinite(item.y));
+ const key=value=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+ const number=value=>{
+  const raw=String(value||"").replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");
+  return /^\d+(?:\.\d{1,4})?$/.test(raw)?Number(raw):null;
+ };
+ const equal=(a,b,tolerance=.015)=>a!==null&&b!==null&&Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=tolerance;
+ const evidence=[];
+ const taxHeaders=positions.filter(item=>/\bTVA\b/i.test(item.text)&&item.text.length<=16);
+ for(const taxHead of taxHeaders){
+  const labels=positions.filter(item=>Math.abs(item.y-taxHead.y)<=2.5);
+  const quantity=labels.find(item=>/quantit/i.test(item.text));
+  const unit=labels.find(item=>/unit/i.test(item.text));
+  const price=labels.find(item=>/prix/i.test(item.text));
+  const total=labels.find(item=>/montant/i.test(item.text));
+  if(!quantity||!unit||!price||!total)continue;
+  if(!(quantity.x<unit.x&&unit.x<taxHead.x&&taxHead.x<price.x&&price.x<total.x))continue;
+  for(let index=0;index<candidates.length;index++){
+   const row=candidates[index],reference=key(row.reference);
+   if(reference.length<3||reference.length>35)continue;
+   const codes=positions.filter(item=>key(item.text)===reference&&item.x<quantity.x-15&&item.y<taxHead.y-7);
+   if(codes.length!==1)continue;
+   const sameLine=positions.filter(item=>Math.abs(item.y-codes[0].y)<=2.5);
+   const values=(xmin,xmax)=>sameLine.filter(item=>item.x>=xmin&&item.x<xmax).map(item=>number(item.text)).filter(value=>value!==null);
+   const exact=(min,max,target,tolerance)=>values(min,max).filter(value=>equal(value,number(target),tolerance)).length===1;
+   if(!exact(quantity.x-8,unit.x, row.quantity,.001))continue;
+   if(!exact(price.x-9,total.x-6,row.unit_price,.011))continue;
+   if(!exact(total.x-6,Number.POSITIVE_INFINITY,row.total,.021))continue;
+   const rates=values(taxHead.x-17,price.x-5).filter(value=>value>=0&&value<=100);
+   if(rates.length!==1)continue;
+   evidence.push({index,reference:row.reference,rate:rates[0],quantity:number(row.quantity),
+    unit_price:number(row.unit_price),total:number(row.total),page:pageNumber});
+  }
+  break; // Un tableau, identifié par ses cinq en-têtes et leur ordre spatial.
+ }
+ return evidence;
+}
+async function readNativePdfVatEvidence(sourceFile,candidates){
+ if(!sourceFile||sourceFile!==file||!Array.isArray(candidates)||!candidates.length)return [];
+ const doc=await loadPdf(),results=[];
+ for(let pageNumber=1;pageNumber<=Math.min(doc.numPages,20);pageNumber++){
+  if(sourceFile!==file)return [];
+  const page=await doc.getPage(pageNumber);
+  try{
+   const content=await page.getTextContent();
+   results.push(...nativeVatEvidenceForPage(content.items,candidates,pageNumber));
+  }finally{page.cleanup()}
+ }
+ const count=new Map();
+ for(const item of results)count.set(item.index,(count.get(item.index)||0)+1);
+ return results.filter(item=>count.get(item.index)===1);
+}
+window.VeryfiNativePdfVat=Object.freeze({read:readNativePdfVatEvidence});
+
 async function textFromPdf(doc,pageNumber){
  const p=await doc.getPage(pageNumber);
  try{
