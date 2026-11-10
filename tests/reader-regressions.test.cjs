@@ -230,6 +230,7 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
   renderRows:()=>{controls.applyBulkVat.disabled=h.loading;controls.repairHeader.disabled=h.loading;controls.results.hidden=false},
   updateTotals:()=>{controls.applyBulkVat.disabled=h.loading;controls.repairHeader.disabled=h.loading}
  };
+ h.$=id=>h.document.getElementById(id);
  const ctx=vm.createContext(h);
  vm.runInContext(analyzeSource+";this.runAnalyze=analyze",ctx);
  await ctx.runAnalyze();
