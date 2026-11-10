@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V42";
+const READER_VERSION="V43";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -420,7 +420,7 @@ function applyNativePdfVatEvidence(evidence){
  for(const value of evidence){
   if(!value||!Number.isInteger(value.index)||value.index<0||value.index>=rows.length)continue;
   const row=rows[value.index],rate=amount(value.rate);
-  if(!row||row.excluded||row.changed||row.verified||rate===null||rate<0||rate>100||String(row.tax_rate??"").trim())continue;
+  if(!row||(row.excluded&&!row.autoExcluded)||row.changed||row.verified||rate===null||rate<0||rate>100||String(row.tax_rate??"").trim())continue;
   if(norm(row.reference)!==norm(value.reference)||!matches(row.quantity,value.quantity,.001)||
      !matches(row.unit_price,value.unit_price,.011)||!matches(row.total,value.total,.021))continue;
   row.tax_rate=rate;
@@ -603,6 +603,38 @@ function applyMatch(row,match,keepManual=false){
 function refreshMatches(){
  for(const row of rows)if(!row.product_manual)applyMatch(row,findProduct(row),true);
 }
+function automaticExclusionReason(row){
+ // Un produit réellement absent ou désactivé est exclu uniquement du stock.
+ // Les ambiguïtés ne sont jamais considérées comme des absences certaines.
+ if(accounting||!catalog||!Array.isArray(catalog.products)||!catalog.products.length||
+    row.product_manual||row.manualMatchRequired)return "";
+ if(catalog.products.some(p=>p.id===row.product_id&&p.active!==false))return "";
+ const cause=String(row.reason||"");
+ if(cause.startsWith("Produit ABSENT du catalogue actif"))return "Produit absent du catalogue actif";
+ if(cause.startsWith("Produit DÉSACTIVÉ :"))return "Produit désactivé dans le catalogue";
+ return "";
+}
+function synchronizeExcludedRows(){
+ if(saved)return;
+ for(const row of rows){
+  const reason=automaticExclusionReason(row);
+  if(reason&&!row.exclusionOverride&&!row.excluded){
+   row.excluded=true;row.autoExcluded=true;row.autoExclusionReason=reason;
+   row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;
+  }else if(reason&&row.autoExcluded){
+   row.autoExclusionReason=reason;
+  }else if(!reason&&row.autoExcluded){
+   row.excluded=false;row.autoExcluded=false;row.autoExclusionReason="";
+   row.exclusionOverride=false;
+  }else if(!reason&&row.exclusionOverride)row.exclusionOverride=false;
+ }
+}
+function setRowExclusion(row,excluded){
+ row.excluded=!!excluded;row.autoExcluded=false;row.autoExclusionReason="";
+ row.exclusionOverride=!excluded&&!!automaticExclusionReason(row);
+ row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;
+ row.changed=true;
+}
 function validLineVat(r){const n=amount(r.tax_rate);return n!==null&&n>=0&&n<=100}
 function duplicateFingerprint(r){
  const ref=norm(r.reference),label=invoiceDesignationKey(r.description),q=amount(r.quantity),p=amount(r.unit_price),t=amount(r.total);
@@ -630,7 +662,7 @@ function invoiceArithmetic(row){
  return {valid:Math.abs(calculated-total)<=.02,incomplete:false,calculated,total};
 }
 function reviewReason(row){
- if(row.excluded)return "Ligne écartée de la réception.";
+ if(row.excluded)return row.autoExcluded?"Écartée automatiquement de la réception : "+row.autoExclusionReason+". Réintégration possible après vérification.":"Ligne écartée manuellement de la réception.";
  if(!catalog)return "Catalogue non chargé.";
  const problems=[],arithmetic=invoiceArithmetic(row);
  if(!row.product_id)problems.push(row.reason||"Aucun produit actif trouvé.");
@@ -827,7 +859,7 @@ function buildLine(row,index){
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=row.excluded?"excluded":productColor(row);
- const label=color==="excluded"?"Écartée":color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
+ const label=color==="excluded"?(row.autoExcluded?"Écartée automatiquement":"Écartée manuellement"):color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
  card.append(heading);
  const fields=document.createElement("div");fields.className="row-grid";
@@ -863,6 +895,10 @@ function buildLine(row,index){
   packaging.append(info,link);
   card.append(packaging);
  }
+ if(row.excluded){
+  const note=document.createElement("div");note.className="row-warning";
+  note.textContent=reviewReason(row);card.append(note);
+ }
  if(color==="bad"){
   const reason=document.createElement("div");
   reason.className="row-error";
@@ -876,7 +912,7 @@ function buildLine(row,index){
   reason.textContent="À contrôler : "+reviewReason(row);
   card.append(reason);
  }
- if(color==="warn"||color==="bad"){
+ if(color==="warn"||color==="bad"||color==="excluded"){
   const view=document.createElement("button");view.type="button";view.className="btn secondary small pdf-line-button";
   view.dataset.action="view-pdf";view.textContent="Voir PDF";
   view.setAttribute("aria-label","Voir le PDF original pour comparer la ligne "+(index+1));
@@ -908,7 +944,7 @@ function buildLine(row,index){
   }
  }
  const foot=document.createElement("div");foot.className="row-foot";
- foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?"Validée automatiquement":row.manualVerified?"Validée manuellement":row.confirmedOnPdf?"Lecture confirmée — corriger l’écart":"Confirmer après vérification du PDF")+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> Écarter de la réception</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
+ foot.innerHTML='<label><input type="checkbox" data-choice="verified" '+(row.verified?"checked":"")+'> '+(row.autoVerified?"Validée automatiquement":row.manualVerified?"Validée manuellement":row.confirmedOnPdf?"Lecture confirmée — corriger l’écart":"Confirmer après vérification du PDF")+'</label><label><input type="checkbox" data-choice="excluded" '+(row.excluded?"checked":"")+'> '+(row.autoExcluded?'Écartée automatiquement — décocher pour réintégrer':'Écarter de la réception')+'</label><button class="btn secondary" type="button" data-choice="remove">Supprimer la ligne</button>';
  foot.querySelector('[data-choice="verified"]').addEventListener("change",e=>{
   if(e.target.checked){
    const result=confirmRowManually(row);
@@ -918,7 +954,7 @@ function buildLine(row,index){
   }
   $("confirmReview").checked=false;renderRows();
  });
- foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{row.excluded=e.target.checked;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;$("confirmReview").checked=false;renderRows()});
+ foot.querySelector('[data-choice="excluded"]').addEventListener("change",e=>{setRowExclusion(row,e.target.checked);$("confirmReview").checked=false;renderRows()});
  foot.querySelector('[data-choice="remove"]').addEventListener("click",()=>{if(!confirm("Retirer cette ligne de la réception ? Le montant reste compté dans le rapprochement avec le PDF original."))return;if(!row.userAdded)removedRows.push({total:row.total,tax_rate:row.tax_rate});rows.splice(index,1);$("confirmReview").checked=false;renderRows()});
  card.append(foot);card.append(keywordNotebook(row,index));card.classList.toggle("excluded",row.excluded);
  card.classList.add(color);
@@ -985,12 +1021,15 @@ function groupedRows(){
  return groups;
 }
 function renderRows(){
+ synchronizeExcludedRows();
  autoVerifyGreenRows();
  const active=rows.filter(r=>!r.excluded),red=active.filter(r=>productColor(r)==="bad").length,orange=active.filter(r=>productColor(r)==="warn").length,green=active.filter(r=>productColor(r)==="good").length;
  const missingTaxes=active.filter(r=>!validLineVat(r)).length;
  const inactive=active.filter(r=>productColor(r)==="bad"&&String(r.reason||"").startsWith("Produit DÉSACTIVÉ")).length;
  const missingProducts=active.filter(r=>productColor(r)==="bad").length-inactive;
- $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) · TVA à compléter : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
+ const autoExcluded=rows.filter(r=>r.excluded&&r.autoExcluded),absent=autoExcluded.filter(r=>r.autoExclusionReason==="Produit absent du catalogue actif").length;
+ const inactiveExcluded=autoExcluded.filter(r=>r.autoExclusionReason==="Produit désactivé dans le catalogue").length;
+ $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) dont "+autoExcluded.length+" automatiquement (absents : "+absent+", désactivés : "+inactiveExcluded+") · TVA à compléter : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
  const box=$("lines");box.replaceChildren();
  for(const group of groupedRows()){
   if(!group.items.length)continue;
@@ -1038,7 +1077,7 @@ function calc(){
  const selectedVat=groupedVatAmount(included);
  const selectedTtc=selectedVat===null?null:round(sum+selectedVat);
  const ok=!!documentData&&!!file&&!saved&&included.length>0&&(accounting||pending.length===0)&&(accounting||sum>0)&&!missing.length&&!unmatched.length&&!unverified.length&&(accounting?(!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null):true)&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
- return {ok,included,pending,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,removedCount:removedRows.length};
+ return {ok,included,pending,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,autoExcludedCount:excluded.filter(r=>r.autoExcluded).length,autoExcludedHt:round(excluded.filter(r=>r.autoExcluded).reduce((n,r)=>n+(amount(r.total)||0),0)),removedCount:removedRows.length};
 }
 function groupedVatAmount(included){
  if(!Array.isArray(included)||!included.length)return null;
@@ -1172,7 +1211,7 @@ function updateTotals(){
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
-    retained.textContent="Lignes vertes uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+(c.selectedVat===null?" (taux de TVA d’une ligne verte à vérifier)":"")+" · "+c.pending.length+" ligne(s) rouge(s)/orange(s) non comptée(s). Chaque ligne passée au vert s’ajoute immédiatement. Les montants du PDF original restent inchangés.";
+    retained.textContent="Lignes vertes uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+(c.selectedVat===null?" (taux de TVA d’une ligne verte à vérifier)":"")+" · "+c.pending.length+" ligne(s) rouge(s)/orange(s) non comptée(s) · "+c.autoExcludedCount+" écartée(s) automatiquement de la réception. Les lignes restent consultables et réintégrables. Les montants du PDF original restent inchangés.";
   }
  const errors=[];
  if(!c.included.length)errors.push(accounting?"Aucune ligne retenue":"Aucune ligne verte validée pour la réception");
@@ -1204,7 +1243,7 @@ async function save(){
  if(trainingMode)return notice("Mode entraînement : aucune réception et aucune facture enregistrée. Ouvrez le lecteur normal seulement pour une vraie réception.","error");
  const c=calc();
  if(!c.ok||!$("confirmReview").checked)return notice("La facture n’est pas prête : contrôles incomplets.","error");
- if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":c.pending.length?"Il reste "+c.pending.length+" ligne(s) rouge(s)/orange(s). Elles ne seront PAS ajoutées au stock. Après validation, elles ne pourront pas être ajoutées depuis le même PDF (protection anti-doublon). Si vous souhaitez les ajouter plus tard, annulez et passez-les au vert d’abord. Confirmer la réception partielle ?":c.adjusted?"Valider cette réception partielle ? Seuls les produits verts seront ajoutés au stock. Les montants et le PDF d’origine restent conservés.":"Valider cette facture ? Les produits verts seront ajoutés au stock et transmis à Commandes et Achats."))return;
+ if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":c.autoExcludedCount?"ATTENTION : "+c.autoExcludedCount+" produit(s) écarté(s) automatiquement ("+fmt(c.autoExcludedHt)+" HT). Ces produits ne seront PAS ajoutés au stock et ne pourront pas être réceptionnés plus tard à partir du même PDF (anti-doublon). Réintégrez d’abord les lignes à réceptionner. Confirmer la réception partielle ?":c.pending.length?"Il reste "+c.pending.length+" ligne(s) rouge(s)/orange(s). Elles ne seront PAS ajoutées au stock. Après validation, elles ne pourront pas être ajoutées depuis le même PDF (protection anti-doublon). Si vous souhaitez les ajouter plus tard, annulez et passez-les au vert d’abord. Confirmer la réception partielle ?":c.adjusted?"Valider cette réception partielle ? Seuls les produits verts seront ajoutés au stock. Les montants et le PDF d’origine restent conservés.":"Valider cette facture ? Les produits verts seront ajoutés au stock et transmis à Commandes et Achats."))return;
  const bytes=new Uint8Array(await file.arrayBuffer());loading=true;$("save").disabled=true;notice("Enregistrement sécurisé en cours…");
  try{
   if(accounting){
@@ -1230,7 +1269,7 @@ async function save(){
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:file.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
     supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
-    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
+    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,auto_excluded_lines:c.autoExcludedCount,auto_excluded_details:rows.filter(r=>r.excluded&&r.autoExcluded).map(r=>({source_index:r.id,reference:r.reference,description:r.description,total_ht:amount(r.total),reason:r.autoExclusionReason})),pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
      provider_document_id:documentData.id,learning_page_count:documentData.page_count,learning:c.included.map(learningPayload)},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
    saved=true;notice(c.adjusted?"Réception partielle enregistrée. Seuls les produits verts ont été ajoutés au stock ; PDF original archivé.":"Facture validée. Commandes, achats et stocks synchronisés.","success");
