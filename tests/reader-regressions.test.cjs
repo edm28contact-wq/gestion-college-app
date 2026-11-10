@@ -15,7 +15,7 @@ function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quant
  autoQuantityReconciled:false,unit_label_conflict:false,excluded:false,...extra}}
 function harness(){
  const values={subtotal:"6",tax:"1.2",total:"7.2",vendor:"Fournisseur",invoiceNumber:"123",invoiceDate:"2026-11-09",bulkVatRate:"20"};
- const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
+ const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,loading:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
   AUTO_APPROVE_SCORE:.90,document:{getElementById:id=>({value:values[id]??""})}};
  const helpers=[
   'const $=id=>document.getElementById(id);',
@@ -27,8 +27,8 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
- return {ctx,api:ctx.reader};
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ return {ctx,api:ctx.reader,values};
 }
 test("ligne fiable: verte et réception permise",()=>{
  const h=harness();h.ctx.rows=[row()];h.api.autoVerifyGreenRows();
@@ -182,7 +182,7 @@ test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  assert.ok(source.includes('banner.hidden=!projection||!projection.missing'));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=39"));
+ assert.ok(page.includes("veryfi.js?v=44"));
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -209,10 +209,10 @@ test("Secrétariat : la version du lecteur et de son iframe est explicitement in
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V40"'));
+ assert.ok(source.includes('const READER_VERSION="V44"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=40"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261109-v40"));
+ assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261110-v44"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
@@ -241,9 +241,9 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
 });
 test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=41"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261109-v41"));
- assert.ok(source.includes('const READER_VERSION="V41"'));
+ assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261110-v44"));
+ assert.ok(source.includes('const READER_VERSION="V44"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
