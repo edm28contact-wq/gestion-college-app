@@ -341,7 +341,7 @@ async function analyze(){
     ]);
     if(source!==file||version!==revision)return;
     nativeTaxCount=applyNativePdfVatEvidence(nativeEvidence);
-    if(nativeTaxCount)renderRows();
+    if(nativeTaxCount||rows.some(r=>r.pdfEvidence))renderRows();
    }catch(error){console.warn("Vérification locale des taux TVA indisponible :",error?.message||error)}
   }
   $("readingState").textContent="Lecture terminée";
