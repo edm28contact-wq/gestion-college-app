@@ -216,6 +216,34 @@ test("Secrétariat : la version du lecteur et de son iframe est explicitement in
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
+test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading=false",async()=>{
+ const analyzeSource=functionSource("analyze");
+ const controls={analyze:{disabled:false},clearFile:{disabled:false},results:{hidden:false},applyBulkVat:{disabled:false},repairHeader:{disabled:false}};
+ const mockFile={name:"test.pdf",arrayBuffer:async()=>new Uint8Array([37,80,68,70]).buffer};
+ const h={
+  file:mockFile,loading:false,serverReady:true,saved:false,revision:0,documentData:null,rows:[],removedRows:[],
+  API:{veryfi:"mock"},authToken:"auth",
+  document:{getElementById:id=>controls[id]||(controls[id]={disabled:false,textContent:"",checked:false})},
+  confirm:()=>true,encode:()=>"base64",
+  request:async()=>({ok:true,result:{line_items:[{reference:"A",description:"Produit",quantity:1,unit:"piece",unit_price:6,total:6,tax_rate:""}]},usage:null}),
+  showUsage:()=>{},notice:()=>{},makeRow:x=>({...x,verified:false}),bindDocument:()=>{},refreshMatches:()=>{},autoVerifyGreenRows:()=>{},
+  renderRows:()=>{controls.applyBulkVat.disabled=h.loading;controls.repairHeader.disabled=h.loading;controls.results.hidden=false},
+  updateTotals:()=>{controls.applyBulkVat.disabled=h.loading;controls.repairHeader.disabled=h.loading}
+ };
+ const ctx=vm.createContext(h);
+ vm.runInContext(analyzeSource+";this.runAnalyze=analyze",ctx);
+ await ctx.runAnalyze();
+ assert.equal(ctx.loading,false);
+ assert.equal(controls.analyze.disabled,false);
+ assert.equal(controls.applyBulkVat.disabled,false,"L'action TVA doit rester cliquable après lecture.");
+ assert.equal(controls.repairHeader.disabled,false,"La correction de l'en-tête doit rester cliquable.");
+});
+test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
+ const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
+ assert.ok(page.includes("veryfi.js?v=41"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261109-v41"));
+ assert.ok(source.includes('const READER_VERSION="V41"'));
+});
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
  const secretariat=file("secretariat/index.html"),reader=file("lecteur-veryfi/index.html");

@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V40";
+const READER_VERSION="V41";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -336,7 +336,12 @@ async function analyze(){
   if(e.code===401||e.code===403){serverReady=false;authToken="";$("loginLink").hidden=false;$("sessionDot").className="dot bad";$("sessionState").textContent="Session non autorisée";}
   $("readingState").textContent="Lecture interrompue";
   notice("Échec de la lecture : "+e.message,"error");
- }finally{loading=false;$("analyze").disabled=!serverReady||!file;$("clearFile").disabled=!file}
+ }finally{
+  loading=false;
+  $("analyze").disabled=!serverReady||!file;
+  $("clearFile").disabled=!file;
+  if(source===file&&version===revision&&documentData&&!$("results").hidden)updateTotals();
+ }
 }
 function invoicePackPair(label){
  const m=String(label||"").match(/(?:^|\s)(\d{1,8}(?:[.,]\d{1,3})?)\s+(COL|COLIS|CARTONS?|CTNS?)\.?\s+(\d{1,8}(?:[.,]\d{1,3})?)\s+(POTS?|BT|BOUTEILLES?|PU|PCE|PCS|PIÈCES?|PIECES?|BARQUETTES?|KG|KGS|LITRES?|LTR)\.?\s*$/i);
