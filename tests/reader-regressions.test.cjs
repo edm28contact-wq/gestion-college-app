@@ -217,7 +217,7 @@ test("Secrétariat : la version du lecteur et de son iframe est explicitement in
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
 test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading=false",async()=>{
- const analyzeSource=functionSource("analyze");
+ const analyzeSource="async "+functionSource("analyze");
  const controls={analyze:{disabled:false},clearFile:{disabled:false},results:{hidden:false},applyBulkVat:{disabled:false},repairHeader:{disabled:false}};
  const mockFile={name:"test.pdf",arrayBuffer:async()=>new Uint8Array([37,80,68,70]).buffer};
  const h={
