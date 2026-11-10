@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -386,10 +386,10 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V43"'));
+ assert.ok(source.includes('const READER_VERSION="V44"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=43"));
- assert.ok(secretariat.includes("embed=secretariat&amp;v=20261110-v43"));
+ assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(secretariat.includes("embed=secretariat&amp;v=20261110-v44"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
@@ -399,4 +399,27 @@ test("les intégrations de base restent présentes",()=>{
  assert.ok(planning.includes("Planning des événements du personnel"));
  assert.ok(secretariat.includes("embeddedInvoices")&&secretariat.includes("embeddedPlanning"));
  assert.ok(reader.includes('id="issueFilter"')&&reader.includes('id="freeOcrVerify"'));
+});
+
+test("VA58 : OCR 85 % et preuve PDF native complète permettent le vert sans altérer le score",()=>{
+ const h=harness(),item=row({reference:"VA58",description:"SOUCOUPE 112 RESTAURANT BLANC",quantity:60,unit_price:1.05,total:63,stock_quantity:60,score:.85,pdfEvidence:{reference:true,description:true,quantity:true,unit_price:true,total:true,vat:true}});
+ h.ctx.rows=[item];h.api.autoVerifyGreenRows();
+ assert.equal(h.api.productColor(item),"good");
+ assert.equal(item.score,.85);
+ assert.equal(item.autoVerified,true);
+ assert.equal(h.api.lineEvidenceMetrics(item).nativePdf,true);
+ assert.equal(h.api.calc().sum,63);
+});
+test("VA58 reste orange en cas de preuve PDF partielle ou anomalie metier",()=>{
+ for(const extra of [{pdfEvidence:{reference:true,description:false,quantity:true,unit_price:true,total:true,vat:true}},{total:64},{manualMatchRequired:true},{unit_label_conflict:true},{stock_needs_review:true,stock_confirmed:false}]){
+  const h=harness(),item=row({reference:"VA58",score:.85,quantity:60,unit_price:1.05,total:63,stock_quantity:60,pdfEvidence:{reference:true,description:true,quantity:true,unit_price:true,total:true,vat:true},...extra});
+  h.ctx.rows=[item];h.api.autoVerifyGreenRows();
+  assert.equal(h.api.productColor(item),"warn",JSON.stringify(extra));
+  assert.equal(item.autoVerified,false);
+  assert.equal(h.api.calc().sum,0);
+ }
+});
+test("une preuve PDF partielle n'efface pas le motif OCR",()=>{
+ const h=harness(),item=row({score:.85,pdfEvidence:{reference:true,description:false,quantity:true,unit_price:true,total:true,vat:true}});
+ h.ctx.rows=[item];assert.ok(h.api.issueCategories(item).includes("ocr"));
 });
