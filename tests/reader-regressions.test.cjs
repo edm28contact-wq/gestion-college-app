@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -27,7 +27,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
  return {ctx,api:ctx.reader};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -244,6 +244,68 @@ test("la page intégrée charge la V41 après correction du cycle de lecture",()
  assert.ok(page.includes("veryfi.js?v=41"));
  assert.ok(sec.includes("embed=secretariat&amp;v=20261109-v41"));
  assert.ok(source.includes('const READER_VERSION="V41"'));
+});
+test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
+ const ocr=file("lecteur-veryfi/ocr-secours.js");
+ const name="function nativeVatEvidenceForPage(";
+ const start=ocr.indexOf(name);assert.ok(start>=0);
+ const open=ocr.indexOf("{",start);let depth=0,end=-1;
+ for(let i=open;i<ocr.length;i++){if(ocr[i]==="{")depth++;else if(ocr[i]==="}"&&--depth===0){end=i+1;break}}
+ assert.ok(end>open);
+ const parse=new Function("items","candidates","page",ocr.slice(start,end)+";return nativeVatEvidenceForPage(items,candidates,page)");
+ const codes="MG84 VW87 RV20 RV40 RC54 BR49 RM25 VN19 VW24 VE30 VG41 HL91 CV61R VA58 VW33 XV90 XV87 VA70 VA63 XP81 HE40 HE42 CA24 GL05 CA21".split(" ");
+ const quantities=[6,1,1,3,6,6,3,1,4,72,120,60,1,60,3,2,1,48,48,42,6,12,6,6,6];
+ const prices=[8.9,36.4,11.4,49,11.6,6.6,7.4,27.5,2.55,.7,.25,1.4,4.2,1.05,5,18,9.8,3.78,3.78,2.1,4.28,3.8,3.5,2.7,4.28];
+ const totals=[53.4,36.4,11.4,147,69.6,39.6,22.2,27.5,10.2,50.4,30,84,4.2,63,15,36,9.8,181.44,181.44,88.2,25.68,45.6,21,16.2,25.68];
+ const text=(str,x,y)=>({str:String(str),transform:[1,0,0,1,x,y]});
+ const items=[text("Quantité",352,500),text("Unité",399,500),text("% TVA",451,500),text("Prix",478,500),text("Montant HT",524,500)];
+ for(let i=0;i<codes.length;i++){
+  const y=480-i*10;
+  items.push(text(codes[i],19,y),text(quantities[i],385,y),text("Pièce",400,y),text("20",460,y),
+   text(String(prices[i]).replace(".",","),500,y),text(String(totals[i]).replace(".",","),548,y));
+ }
+ const candidates=codes.map((reference,i)=>({reference,quantity:quantities[i],unit_price:prices[i],total:totals[i]}));
+ const evidence=parse(items,candidates,1);
+ assert.equal(evidence.length,25);
+ assert.ok(evidence.every((item,i)=>item.index===i&&item.rate===20));
+ const h=harness();
+ h.ctx.rows=candidates.map((item,i)=>row({id:i,...item,description:"Article "+i,tax_rate:i===0?20:"",product_id:[0,12,20,21,22,23,24].includes(i)?"":"p-1",score:[13,17].includes(i)?.85:.95}));
+ assert.equal(h.api.applyNativePdfVatEvidence(evidence),24);
+ h.api.autoVerifyGreenRows();
+ assert.deepEqual(Array.from(h.ctx.rows.reduce((acc,r)=>{const c=h.api.productColor(r);acc[c]=(acc[c]||0)+1;return acc},{})),["good","warn","bad"]);
+ const status=Array.from(h.ctx.rows,r=>h.api.productColor(r));
+ assert.equal(status.filter(x=>x==="good").length,16);
+ assert.equal(status.filter(x=>x==="warn").length,2);
+ assert.equal(status.filter(x=>x==="bad").length,7);
+ assert.ok(h.ctx.rows.slice(1).every(r=>r.tax_rate===20));
+ const mismatch=candidates.map((r,i)=>i===0?{...r,quantity:7}:r);
+ assert.equal(parse(items,mismatch,1).length,24);
+ const wrongPrice=candidates.map((r,i)=>i===1?{...r,unit_price:99}:r);
+ assert.equal(parse(items,wrongPrice,1).length,24);
+ const wrongTotal=candidates.map((r,i)=>i===2?{...r,total:99}:r);
+ assert.equal(parse(items,wrongTotal,1).length,24);
+ assert.equal(parse(items.filter(item=>item.str!=="% TVA"),candidates,1).length,0);
+});
+test("TVA du PDF natif : ne remplace jamais une correction manuelle ni un taux existant",()=>{
+ const h=harness();
+ h.ctx.rows=[row({reference:"A",tax_rate:"",changed:true}),row({reference:"B",tax_rate:5}),row({reference:"C",tax_rate:""})];
+ const evidence=[
+  {index:0,reference:"A",rate:20,quantity:2,unit_price:3,total:6},
+  {index:1,reference:"B",rate:20,quantity:2,unit_price:3,total:6},
+  {index:2,reference:"C",rate:20,quantity:2,unit_price:3,total:6},
+  {index:2,reference:"C",rate:5,quantity:42,unit_price:3,total:6}
+ ];
+ assert.equal(h.api.applyNativePdfVatEvidence(evidence),1);
+ assert.equal(h.ctx.rows[0].tax_rate,"");
+ assert.equal(h.ctx.rows[1].tax_rate,5);
+ assert.equal(h.ctx.rows[2].tax_rate,20);
+});
+test("la vérification TVA native ne valide pas une ligne à faible confiance",()=>{
+ const h=harness();h.ctx.rows=[row({reference:"A",tax_rate:"",score:.85})];
+ assert.equal(h.api.applyNativePdfVatEvidence([{index:0,reference:"A",rate:20,quantity:2,unit_price:3,total:6}]),1);
+ h.api.autoVerifyGreenRows();
+ assert.equal(h.api.productColor(h.ctx.rows[0]),"warn");
+ assert.equal(h.ctx.rows[0].verified,false);
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
