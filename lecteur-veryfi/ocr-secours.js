@@ -72,6 +72,9 @@ function nativeVatEvidenceForPage(items,candidates,pageNumber){
    const codes=positions.filter(item=>key(item.text)===reference&&item.x<quantity.x-15&&item.y<taxHead.y-7);
    if(codes.length!==1)continue;
    const sameLine=positions.filter(item=>Math.abs(item.y-codes[0].y)<=2.5);
+   const printedLabel=sameLine.filter(item=>item.x>codes[0].x&&item.x<quantity.x-8).sort((a,b)=>a.x-b.x).map(item=>item.text).join(" ");
+   const expectedLabel=key(row.description),pdfLabel=key(printedLabel);
+   const descriptionVerified=expectedLabel.length>=8&&pdfLabel.includes(expectedLabel);
    const values=(xmin,xmax)=>sameLine.filter(item=>item.x>=xmin&&item.x<xmax).map(item=>number(item.text)).filter(value=>value!==null);
    const exact=(min,max,target,tolerance)=>values(min,max).filter(value=>equal(value,number(target),tolerance)).length===1;
    if(!exact(quantity.x-8,unit.x, row.quantity,.001))continue;
@@ -80,7 +83,8 @@ function nativeVatEvidenceForPage(items,candidates,pageNumber){
    const rates=values(taxHead.x-17,price.x-5).filter(value=>value>=0&&value<=100);
    if(rates.length!==1)continue;
    evidence.push({index,reference:row.reference,rate:rates[0],quantity:number(row.quantity),
-    unit_price:number(row.unit_price),total:number(row.total),page:pageNumber});
+    unit_price:number(row.unit_price),total:number(row.total),page:pageNumber,
+    source:"pdf-native-text",descriptionVerified});
   }
   break; // Un tableau, identifié par ses cinq en-têtes et leur ordre spatial.
  }
