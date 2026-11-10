@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -27,7 +27,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
  return {ctx,api:ctx.reader};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -307,6 +307,89 @@ test("la vérification TVA native ne valide pas une ligne à faible confiance",(
  h.api.autoVerifyGreenRows();
  assert.equal(h.api.productColor(h.ctx.rows[0]),"warn");
  assert.equal(h.ctx.rows[0].verified,false);
+});
+test("Henri Julien : 7 rouges écartées automatiquement, VA58 orange conservée et 17 vertes",()=>{
+ const h=harness();
+ const codes="MG84 VW87 RV20 RV40 RC54 BR49 RM25 VN19 VW24 VE30 VG41 HL91 CV61R VA58 VW33 XV90 XV87 VA70 VA63 XP81 HE40 HE42 CA24 GL05 CA21".split(" ");
+ const amounts=[53.4,36.4,11.4,147,69.6,39.6,22.2,27.5,10.2,50.4,30,84,4.2,63,15,36,9.8,181.44,181.44,88.2,25.68,45.6,21,16.2,25.68];
+ const missing=new Set(["MG84","CV61R","HE40","CA24"]),inactive=new Set(["HE42","GL05","CA21"]);
+ h.ctx.rows=codes.map((code,i)=>row({
+  id:i,reference:code,description:"Produit "+i,quantity:1,unit_price:amounts[i],total:amounts[i],
+  product_id:(missing.has(code)||inactive.has(code))?"":"p-1",
+  reason:missing.has(code)?"Produit ABSENT du catalogue actif — à ajouter ou rapprocher":
+   inactive.has(code)?"Produit DÉSACTIVÉ : "+code+" — produit inactif":"Référence exacte du catalogue",
+  score:code==="VA58"?.85:.97
+ }));
+ h.api.synchronizeExcludedRows();h.api.autoVerifyGreenRows();
+ assert.equal(h.ctx.rows.filter(x=>x.autoExcluded&&x.excluded).length,7);
+ assert.equal(h.ctx.rows.filter(x=>x.excluded&&x.autoExclusionReason==="Produit absent du catalogue actif").length,4);
+ assert.equal(h.ctx.rows.filter(x=>x.excluded&&x.autoExclusionReason==="Produit désactivé dans le catalogue").length,3);
+ assert.equal(h.ctx.rows.filter(x=>!x.excluded&&h.api.productColor(x)==="good").length,17);
+ assert.equal(h.ctx.rows.filter(x=>!x.excluded&&h.api.productColor(x)==="warn").length,1);
+ assert.equal(h.ctx.rows.find(x=>x.reference==="VA58").excluded,false);
+ const result=h.api.calc();
+ assert.equal(result.included.length,17);
+ assert.equal(result.pending.length,1);
+ assert.equal(result.excludedCount,7);
+ assert.equal(result.autoExcludedCount,7);
+ assert.equal(result.autoExcludedHt,191.76);
+ assert.equal(result.sum,1040.18);
+ assert.equal(result.reconciledSum,1294.94);
+ assert.equal(h.api.groupedRows().find(x=>x.status==="excluded").items.length,7);
+ h.api.synchronizeExcludedRows();
+ assert.equal(h.ctx.rows.filter(x=>x.autoExcluded&&x.excluded).length,7,"Pas de nouveaux effets de bord au deuxième passage.");
+});
+test("une ligne automatiquement écartée redevient contrôlable lorsqu'un produit actif est retrouvé",()=>{
+ const h=harness(),item=row({product_id:"",reference:"HE42",reason:"Produit DÉSACTIVÉ : HE42 — Assiette dessert"});
+ h.ctx.rows=[item];h.api.synchronizeExcludedRows();
+ assert.equal(item.excluded,true);assert.equal(item.autoExcluded,true);
+ item.product_id="p-1";item.reason="Référence exacte du catalogue";
+ h.api.synchronizeExcludedRows();
+ assert.equal(item.excluded,false);assert.equal(item.autoExcluded,false);
+ assert.equal(item.autoExclusionReason,"");
+});
+test("réintégration manuelle : pas de ré-exclusion automatique tant que la fiche est absente",()=>{
+ const h=harness(),item=row({product_id:"",reference:"MG84",reason:"Produit ABSENT du catalogue actif — à ajouter ou rapprocher"});
+ h.ctx.rows=[item];h.api.synchronizeExcludedRows();
+ h.api.setRowExclusion(item,false);h.api.synchronizeExcludedRows();
+ assert.equal(item.excluded,false);assert.equal(item.autoExcluded,false);
+ assert.equal(item.exclusionOverride,true);
+ assert.equal(h.api.productColor(item),"bad");
+ assert.equal(h.api.calc().pending.length,1,"La ligne réintégrée reste bloquée jusqu'à rapprochement.");
+ h.api.setRowExclusion(item,true);h.api.synchronizeExcludedRows();
+ assert.equal(item.excluded,true);assert.equal(item.autoExcluded,false,"Exclusion manuelle conservée.");
+});
+test("pas d'exclusion sans catalogue, en comptabilité, ni pour une correspondance ambiguë",()=>{
+ const h=harness();
+ const missing=row({reference:"MG84",product_id:"",reason:"Produit ABSENT du catalogue actif — à ajouter ou rapprocher"});
+ const ambiguous=row({reference:"X",product_id:"",reason:"Référence catalogue ambiguë",manualMatchRequired:true});
+ h.ctx.rows=[missing,ambiguous];h.ctx.catalog=null;h.api.synchronizeExcludedRows();
+ assert.equal(missing.excluded,false);assert.equal(ambiguous.excluded,false);
+ h.ctx.catalog={products:[{id:"p-1",active:true}]};h.ctx.accounting=true;h.api.synchronizeExcludedRows();
+ assert.equal(missing.excluded,false);assert.equal(ambiguous.excluded,false);
+ h.ctx.accounting=false;h.api.synchronizeExcludedRows();
+ assert.equal(missing.excluded,true);assert.equal(ambiguous.excluded,false);
+});
+test("ligne automatiquement exclue : TVA PDF conservée, sans réception en stock",()=>{
+ const h=harness(),item=row({reference:"MG84",product_id:"",reason:"Produit ABSENT du catalogue actif — à ajouter ou rapprocher",tax_rate:""});
+ h.ctx.rows=[item];h.api.synchronizeExcludedRows();
+ assert.equal(h.api.applyNativePdfVatEvidence([{index:0,reference:"MG84",rate:20,quantity:2,unit_price:3,total:6}]),1);
+ assert.equal(item.tax_rate,20);
+ assert.equal(item.excluded,true);
+ assert.equal(h.api.isRetainedGreen(item),false);
+ assert.equal(h.api.calc().included.length,0);
+});
+test("exclusions automatiques : confirmation explicite et trace des références conservées",()=>{
+ assert.ok(source.includes("auto_excluded_details:rows.filter("));
+ assert.ok(source.includes("autoExcludedHt"));
+ assert.ok(source.includes("ne pourront pas être réceptionnés plus tard à partir du même PDF"));
+ assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
+ assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
+ assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
+ assert.ok(source.includes('const READER_VERSION="V43"'));
+ const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
+ assert.ok(page.includes("veryfi.js?v=43"));
+ assert.ok(secretariat.includes("embed=secretariat&amp;v=20261110-v43"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
