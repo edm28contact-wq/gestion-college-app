@@ -8,14 +8,14 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
  autoQuantityReconciled:false,unit_label_conflict:false,excluded:false,...extra}}
 function harness(){
  const values={subtotal:"6",tax:"1.2",total:"7.2",vendor:"Fournisseur",invoiceNumber:"123",invoiceDate:"2026-11-09",bulkVatRate:"20"};
- const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
+ const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,loading:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
   AUTO_APPROVE_SCORE:.90,document:{getElementById:id=>({value:values[id]??""})}};
  const helpers=[
   'const $=id=>document.getElementById(id);',
@@ -27,8 +27,8 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
- return {ctx,api:ctx.reader};
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ return {ctx,api:ctx.reader,values};
 }
 test("ligne fiable: verte et réception permise",()=>{
  const h=harness();h.ctx.rows=[row()];h.api.autoVerifyGreenRows();
@@ -182,7 +182,7 @@ test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  assert.ok(source.includes('banner.hidden=!projection||!projection.missing'));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=39"));
+ assert.ok(page.includes("veryfi.js?v=44"));
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -209,10 +209,10 @@ test("Secrétariat : la version du lecteur et de son iframe est explicitement in
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V40"'));
+ assert.ok(source.includes('const READER_VERSION="V44"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=40"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261109-v40"));
+ assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261110-v44"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
@@ -241,9 +241,9 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
 });
 test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=41"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261109-v41"));
- assert.ok(source.includes('const READER_VERSION="V41"'));
+ assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261110-v44"));
+ assert.ok(source.includes('const READER_VERSION="V44"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
@@ -386,10 +386,10 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V43"'));
+ assert.ok(source.includes('const READER_VERSION="V44"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=43"));
- assert.ok(secretariat.includes("embed=secretariat&amp;v=20261110-v43"));
+ assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(secretariat.includes("embed=secretariat&amp;v=20261110-v44"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
@@ -399,4 +399,27 @@ test("les intégrations de base restent présentes",()=>{
  assert.ok(planning.includes("Planning des événements du personnel"));
  assert.ok(secretariat.includes("embeddedInvoices")&&secretariat.includes("embeddedPlanning"));
  assert.ok(reader.includes('id="issueFilter"')&&reader.includes('id="freeOcrVerify"'));
+});
+
+test("VA58 : OCR 85 % et preuve PDF native complète permettent le vert sans altérer le score",()=>{
+ const h=harness(),item=row({reference:"VA58",description:"SOUCOUPE 112 RESTAURANT BLANC",quantity:60,unit_price:1.05,total:63,stock_quantity:60,score:.85,pdfEvidence:{reference:true,description:true,quantity:true,unit_price:true,total:true,vat:true}});
+ h.ctx.rows=[item];h.api.autoVerifyGreenRows();
+ assert.equal(h.api.productColor(item),"good");
+ assert.equal(item.score,.85);
+ assert.equal(item.autoVerified,true);
+ assert.equal(h.api.lineEvidenceMetrics(item).nativePdf,true);
+ assert.equal(h.api.calc().sum,63);
+});
+test("VA58 reste orange en cas de preuve PDF partielle ou anomalie metier",()=>{
+ for(const extra of [{pdfEvidence:{reference:true,description:false,quantity:true,unit_price:true,total:true,vat:true}},{total:64},{manualMatchRequired:true},{unit_label_conflict:true},{stock_needs_review:true,stock_confirmed:false}]){
+  const h=harness(),item=row({reference:"VA58",score:.85,quantity:60,unit_price:1.05,total:63,stock_quantity:60,pdfEvidence:{reference:true,description:true,quantity:true,unit_price:true,total:true,vat:true},...extra});
+  h.ctx.rows=[item];h.api.autoVerifyGreenRows();
+  assert.equal(h.api.productColor(item),"warn",JSON.stringify(extra));
+  assert.equal(item.autoVerified,false);
+  assert.equal(h.api.calc().sum,0);
+ }
+});
+test("une preuve PDF partielle n'efface pas le motif OCR",()=>{
+ const h=harness(),item=row({score:.85,pdfEvidence:{reference:true,description:false,quantity:true,unit_price:true,total:true,vat:true}});
+ h.ctx.rows=[item];assert.ok(h.api.issueCategories(item).includes("ocr"));
 });

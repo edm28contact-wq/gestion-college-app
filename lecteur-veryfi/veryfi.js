@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V43";
+const READER_VERSION="V44";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -341,7 +341,7 @@ async function analyze(){
     ]);
     if(source!==file||version!==revision)return;
     nativeTaxCount=applyNativePdfVatEvidence(nativeEvidence);
-    if(nativeTaxCount)renderRows();
+    if(nativeTaxCount||rows.some(r=>r.pdfEvidence))renderRows();
    }catch(error){console.warn("Vérification locale des taux TVA indisponible :",error?.message||error)}
   }
   $("readingState").textContent="Lecture terminée";
@@ -406,7 +406,7 @@ function makeRow(x,index){
  const evidence=explicitInvoiceUnit(x);
  return {id:index,ocrOriginal:{reference:x.reference??null,description:x.description??null,quantity:x.quantity??null,unit:x.unit??null,unit_price:x.unit_price??null,total:x.total??null,tax_rate:x.tax_rate??null},reference:String(x.reference||""),description:String(x.description||""),
   quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,unit_label_pair:evidence.pair||null,autoQuantityReconciled:false,
-  tax_rate:x.tax_rate??"",boxes:x.boxes||{},sourceBox:Array.isArray(x.box)?x.box:null,score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,
+  tax_rate:x.tax_rate??"",boxes:x.boxes||{},sourceBox:Array.isArray(x.box)?x.box:null,score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,pdfEvidence:null,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
@@ -420,9 +420,12 @@ function applyNativePdfVatEvidence(evidence){
  for(const value of evidence){
   if(!value||!Number.isInteger(value.index)||value.index<0||value.index>=rows.length)continue;
   const row=rows[value.index],rate=amount(value.rate);
-  if(!row||(row.excluded&&!row.autoExcluded)||row.changed||row.verified||rate===null||rate<0||rate>100||String(row.tax_rate??"").trim())continue;
+  if(!row||(row.excluded&&!row.autoExcluded)||row.changed||row.verified||rate===null||rate<0||rate>100)continue;
+  if(String(row.tax_rate??"").trim()&&Math.abs(amount(row.tax_rate)-rate)>.001)continue;
   if(norm(row.reference)!==norm(value.reference)||!matches(row.quantity,value.quantity,.001)||
      !matches(row.unit_price,value.unit_price,.011)||!matches(row.total,value.total,.021))continue;
+  if(value.source==="pdf-native-text")row.pdfEvidence={reference:true,quantity:true,unit_price:true,total:true,description:value.descriptionVerified===true,vat:true,page:value.page};
+  if(String(row.tax_rate??"").trim())continue;
   row.tax_rate=rate;
   row.vatFromNativePdf=true;
   row.verified=false;row.autoVerified=false;row.manualVerified=false;
@@ -645,6 +648,27 @@ function possibleDuplicate(r){
  const key=duplicateFingerprint(r);
  return !r.excluded&&!!key&&rows.filter(other=>!other.excluded&&duplicateFingerprint(other)===key).length>1;
 }
+function independentPdfVerified(row){
+ const e=row.pdfEvidence;
+ return !!(e?.reference&&e?.description&&e?.quantity&&e?.unit_price&&e?.total&&e?.vat)&&
+  !row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled&&
+  !row.unit_label_conflict&&!row.product_manual&&!row.stock_manual&&!row.excluded&&!possibleDuplicate(row);
+}
+function lineEvidenceMetrics(row){
+ const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ const a=invoiceArithmetic(row);
+ const checks=[
+  ["Produit actif",!!product],
+  ["Rapprochement non ambigu",!!product&&!row.manualMatchRequired],
+  ["Montants HT cohérents",!a.incomplete&&a.valid],
+  ["TVA valide",validLineVat(row)],
+  ["Unité facturée cohérente",!!String(row.unit||"").trim()&&!row.unit_label_conflict&&!row.unit_inferred],
+  ["Stock vérifié",accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed))],
+  ["Pas de doublon suspect",!possibleDuplicate(row)],
+  ["Aucune donnée modifiée",!row.changed]
+ ];
+ return {passed:checks.filter(c=>c[1]).length,total:checks.length,checks,nativePdf:independentPdfVerified(row)};
+}
 function productColor(row){
  if(!catalog)return "warn";
  const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
@@ -653,7 +677,7 @@ function productColor(row){
  const amountsOk=eligible(row)&&validLineVat(row)&&!!String(row.unit||"").trim(),stockOk=accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&!row.unit_label_conflict&&
-  (manuallyApproved||(confidenceOk&&!possibleDuplicate(row)&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled))?"good":"warn";
+  (manuallyApproved||((confidenceOk||independentPdfVerified(row))&&!possibleDuplicate(row)&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled))?"good":"warn";
 }
 function invoiceArithmetic(row){
  const q=amount(row.quantity),price=amount(row.unit_price),total=amount(row.total);
@@ -677,8 +701,10 @@ function reviewReason(row){
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance fournisseur à confirmer sur le PDF.");
  if(row.autoQuantityReconciled&&!row.manualVerified)problems.push("Quantité modifiée à partir du conditionnement et du total HT : contrôler le PDF original.");
- if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
- if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance minimale des champs critiques inférieure à 90 % : vérifier sur le PDF.");
+ if(!independentPdfVerified(row)){
+  if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
+  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance OCR < 90 % sans preuve PDF indépendante complète : vérifier sur le PDF.");
+ }
  if(row.changed&&!row.verified)problems.push("Modification manuelle non confirmée.");
  if(row.confirmedOnPdf)problems.unshift("Lecture vérifiée, correction de montant encore requise.");
  return problems.join(" ")||"Contrôle complémentaire nécessaire.";
@@ -835,6 +861,8 @@ function viewPdfLine(row,index){
  $("pdfComparePage").textContent=page?"Page "+page+" suggérée par Veryfi (si le lecteur PDF le permet)":"Page non localisée automatiquement : recherchez la ligne dans le PDF.";
  const fields=$("pdfCompareFields");fields.replaceChildren();
  const values=[
+  ["Confiance OCR originale",typeof row.score==="number"?Math.floor(row.score*100)+" %":"non fournie"],
+  ["Preuve indépendante",independentPdfVerified(row)?"complète":"partielle ou absente"],
   ["Désignation",row.description],
   ["Référence fournisseur",row.reference],
   ["Quantité facturée",row.quantity],
@@ -842,7 +870,7 @@ function viewPdfLine(row,index){
   ["Prix unitaire HT",row.unit_price],
   ["Total HT",row.total],
   ["Produit associé",row.product_label],
-  ["État de la ligne",productColor(row)==="bad"?"Rouge — rapprochement requis":"Orange — vérification requise"]
+  ["État de la ligne",productColor(row)==="bad"?"Rouge — rapprochement requis":productColor(row)==="good"?"Vert — validée":"Orange — vérification requise"]
  ];
  for(const [name,value] of values){
   const pair=document.createElement("div");pair.className="pdf-compare-field";
@@ -859,9 +887,20 @@ function buildLine(row,index){
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=row.excluded?"excluded":productColor(row);
- const label=color==="excluded"?(row.autoExcluded?"Écartée automatiquement":"Écartée manuellement"):color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
- heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+(score==null?"Confiance inconnue":score+" %")+' · '+label+'</span>';
+ const label=color==="excluded"?(row.autoExcluded?"Écartée automatiquement":"Écartée manuellement"):color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":independentPdfVerified(row)?"Recoupement PDF confirmé":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
+ heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+label+'</span>';
  card.append(heading);
+ const quality=lineEvidenceMetrics(row);
+ const indicators=document.createElement("div");indicators.className="line-indicators";
+ for(const label of ["Lecture OCR : "+(score===null?"non renseignée":score+" %")+" (score brut)","Contrôles métier : "+quality.passed+"/"+quality.total,"Preuve PDF : "+(quality.nativePdf?"6 champs recoupés":row.pdfEvidence?"partielle":"non disponible")]){
+  const indicator=document.createElement("span");indicator.textContent=label;indicators.append(indicator);
+ }
+ card.append(indicators);
+ const details=document.createElement("details");details.className="line-evidence-details";
+ const summary=document.createElement("summary");summary.textContent="Détail des contrôles";details.append(summary);
+ const list=document.createElement("ul");
+ for(const [name,ok] of quality.checks){const li=document.createElement("li");li.textContent=(ok?"OK — ":"À vérifier — ")+name;list.append(li)}
+ details.append(list);card.append(details);
  const fields=document.createElement("div");fields.className="row-grid";
  const productForUnit=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  const storageLabel=productForUnit?(productForUnit.stock_count_mode==="litre"?"litres":productForUnit.inventory_unit_label||productForUnit.unit):"unité non définie";
@@ -922,7 +961,7 @@ function buildLine(row,index){
  if(color==="good"){
   const approved=document.createElement("div");
   approved.className="row-approved";
-  approved.textContent=row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":row.vatFromNativePdf?"TVA extraite de la colonne du PDF original : référence, quantité, prix unitaire et total HT recoupés. Les autres contrôles de validation sont conservés.":row.vatConfirmedFromPdf?"TVA confirmée sur le PDF par l’utilisateur ; référence active, quantités, conditionnement, montants et confiance OCR contrôlés automatiquement.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
+  approved.textContent=independentPdfVerified(row)?"Référence, désignation, quantité, prix, total et TVA recoupés dans le texte natif du PDF. Le score OCR reste inchangé.":row.manualVerified?"Produit et quantités confirmés manuellement. Cette ligne est validée.":row.vatFromNativePdf?"TVA extraite de la colonne du PDF original : référence, quantité, prix unitaire et total HT recoupés. Les autres contrôles de validation sont conservés.":row.vatConfirmedFromPdf?"TVA confirmée sur le PDF par l’utilisateur ; référence active, quantités, conditionnement, montants et confiance OCR contrôlés automatiquement.":"Ligne contrôlée automatiquement (confiance des champs critiques ≥ 90 %, produit actif et montants cohérents).";
   card.append(approved);
  }
  if(color==="warn"&&!row.excluded&&!saved){
@@ -999,7 +1038,7 @@ function issueCategories(row){
  if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed)))issues.push("stock");
  if(!String(row.unit||"").trim()||row.unit_inferred||row.unit_label_conflict)issues.push("unite");
  if(row.manualMatchRequired)issues.push("rapprochement");
- if(row.confidenceMissing?.length||!(typeof row.score==="number"&&row.score>=AUTO_APPROVE_SCORE))issues.push("ocr");
+ if(!independentPdfVerified(row)&&(row.confidenceMissing?.length||!(typeof row.score==="number"&&row.score>=AUTO_APPROVE_SCORE)))issues.push("ocr");
  if(row.changed&&!row.verified)issues.push("validation");
  return issues;
 }
@@ -1205,9 +1244,10 @@ function updateTotals(){
   correctionNote.textContent="En-tête OCR à contrôler : "+info.join(". ")+(suggestion?". Suggestion calculée à partir de la somme des lignes OCR : HT "+fmt(suggestion.ht)+" et TTC "+fmt(suggestion.ttc)+" — vérifiez obligatoirement ces montants sur le PDF original.":"")+(suggestion?"":" Vérifiez les montants sur le PDF original.")+" La réception reste calculée uniquement depuis les produits verts validés.";
  }
  const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
+ const nativeApproved=rows.filter(r=>!r.excluded&&independentPdfVerified(r)&&productColor(r)==="good").length;
  $("metrics").innerHTML=accounting?
    '<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT du PDF</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>':
-   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Rouges / orange en attente</span><strong>'+c.pending.length+'</strong></div><div class="metric"><span>Total HT vert</span><strong>'+fmt(c.sum)+'</strong></div>';
+   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Preuve PDF complète</span><strong>'+nativeApproved+'</strong></div><div class="metric"><span>En attente / HT retenu</span><strong>'+c.pending.length+' / '+fmt(c.sum)+'</strong></div>';
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
