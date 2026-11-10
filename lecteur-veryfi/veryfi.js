@@ -888,7 +888,7 @@ function buildLine(row,index){
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=row.excluded?"excluded":productColor(row);
  const label=color==="excluded"?(row.autoExcluded?"Écartée automatiquement":"Écartée manuellement"):color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":independentPdfVerified(row)?"Recoupement PDF confirmé":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
- heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+label'</span>';
+ heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+label+'</span>';
  card.append(heading);
  const quality=lineEvidenceMetrics(row);
  const indicators=document.createElement("div");indicators.className="line-indicators";
