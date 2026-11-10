@@ -272,7 +272,8 @@ test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  h.ctx.rows=candidates.map((item,i)=>row({id:i,...item,description:"Article "+i,tax_rate:i===0?20:"",product_id:[0,12,20,21,22,23,24].includes(i)?"":"p-1",score:[13,17].includes(i)?.85:.95}));
  assert.equal(h.api.applyNativePdfVatEvidence(evidence),24);
  h.api.autoVerifyGreenRows();
- assert.deepEqual(Array.from(h.ctx.rows.reduce((acc,r)=>{const c=h.api.productColor(r);acc[c]=(acc[c]||0)+1;return acc},{})),["good","warn","bad"]);
+ const counts=Array.from(h.ctx.rows,r=>h.api.productColor(r));
+ assert.equal(counts.length,25);
  const status=Array.from(h.ctx.rows,r=>h.api.productColor(r));
  assert.equal(status.filter(x=>x==="good").length,16);
  assert.equal(status.filter(x=>x==="warn").length,2);
