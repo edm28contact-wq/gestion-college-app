@@ -902,15 +902,31 @@ function buildLine(row,index){
  card.append(heading);
  const quality=lineEvidenceMetrics(row);
  const indicators=document.createElement("div");indicators.className="line-indicators";
- for(const label of ["Lecture OCR : "+(score===null?"non renseignée":score+" %")+" (score brut)","Contrôles métier : "+quality.passed+"/"+quality.total,"Preuve PDF : "+(quality.nativePdf?"6 champs recoupés":row.pdfEvidence?"partielle":"non disponible")]){
+ const weakLabel=quality.weakest.length?" · champ faible : "+quality.weakest.join(", "):"";
+ for(const label of [
+  "Confiance OCR : "+(score===null?"non renseignée":score+" %")+weakLabel,
+  "Contrôles métier : "+quality.passed+"/"+quality.total,
+  "Recoupement PDF : "+(row.pdfEvidence?quality.pdfCount+"/6 champs":"non disponible")
+ ]){
   const indicator=document.createElement("span");indicator.textContent=label;indicators.append(indicator);
  }
  card.append(indicators);
  const details=document.createElement("details");details.className="line-evidence-details";
- const summary=document.createElement("summary");summary.textContent="Détail des contrôles";details.append(summary);
- const list=document.createElement("ul");
- for(const [name,ok] of quality.checks){const li=document.createElement("li");li.textContent=(ok?"OK — ":"À vérifier — ")+name;list.append(li)}
- details.append(list);card.append(details);
+ const summary=document.createElement("summary");summary.textContent="Détail : OCR, métier et preuves du PDF";details.append(summary);
+ const section=(label,items)=>{
+  const title=document.createElement("strong");title.textContent=label;details.append(title);
+  const list=document.createElement("ul");
+  for(const text of items){const li=document.createElement("li");li.textContent=text;list.append(li)}
+  details.append(list);
+ };
+ section("Champs OCR (scores Veryfi)",quality.ocrFields.length?
+  quality.ocrFields.map(f=>f.label+" : "+(f.score===null?"non fourni":Math.floor(f.score*100+1e-8)+" %")):
+  ["Scores détaillés non fournis pour cette ligne"]);
+ section("Contrôles métier",quality.checks.map(([name,ok])=>(ok?"OK — ":"À vérifier — ")+name));
+ section("Recoupement avec le PDF original",quality.pdfChecks.map(e=>
+  (e.ok?"Recoupé — ":"Non démontré — ")+e.label));
+ const note=document.createElement("p");note.textContent="Une cohérence de calcul ne prouve pas à elle seule la lecture du PDF.";details.append(note);
+ card.append(details);
  const fields=document.createElement("div");fields.className="row-grid";
  const productForUnit=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  const storageLabel=productForUnit?(productForUnit.stock_count_mode==="litre"?"litres":productForUnit.inventory_unit_label||productForUnit.unit):"unité non définie";
@@ -1257,7 +1273,7 @@ function updateTotals(){
  const nativeApproved=rows.filter(r=>!r.excluded&&independentPdfVerified(r)&&productColor(r)==="good").length;
  $("metrics").innerHTML=accounting?
    '<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT du PDF</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>':
-   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Preuve PDF complète</span><strong>'+nativeApproved+'</strong></div><div class="metric"><span>En attente / HT retenu</span><strong>'+c.pending.length+' / '+fmt(c.sum)+'</strong></div>';
+   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Vertes avec preuve PDF</span><strong>'+nativeApproved+'</strong></div><div class="metric"><span>À traiter</span><strong>'+c.pending.length+'</strong></div><div class="metric"><span>HT retenu en réception</span><strong>'+fmt(c.sum)+'</strong></div>';
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
