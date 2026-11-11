@@ -145,14 +145,19 @@ function chooseSupplier(key){
  }).join(''):
  '<p class="muted">Aucun produit actif lié à ce fournisseur. Vérifiez d’abord le catalogue et les associations de ses factures.</p>';
 }
+function parisOrderDate(){
+ const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+ const part=key=>parts.find(value=>value.type===key)?.value;
+ return part("year")+"-"+part("month")+"-"+part("day");
+}
 function newOrder(){
  if(readOnly())return alert('Compte visiteur : modification interdite.');
  selectedSupplierKey="";
  $('content').innerHTML='<div class="card"><h2>Nouvelle commande</h2>'+
- '<div class="grid"><div><label>Date</label><input id="od" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'+
+ '<div class="grid"><div><label>Date</label><input id="od" type="date" value="'+parisOrderDate()+'"></div>'+
  '<div><label>Date prévue</label><input id="oe" type="date"></div>'+
  '<div><label>Fournisseur</label><input id="os" placeholder="Commencez à saisir le nom..." autocomplete="off" oninput="searchSupplier()" onfocus="supplierSuggestions()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();chooseFirstSupplier()}">'+
- '<div id="supplierSuggestions" class="supplier-suggestions" role="listbox"></div></div>'+
+ '<div id="supplierSuggestions" class="supplier-suggestions" role="group" aria-label="Fournisseurs proposés"></div></div>'+
  '<div><label>État</label><select id="ost"><option value="brouillon">Brouillon</option><option value="commandee">Commandée</option></select></div></div><br>'+
  '<div id="supplierProducts"><p class="muted">Sélectionnez un fournisseur pour afficher uniquement ses produits.</p></div>'+
  '<br><label>Remarque</label><textarea id="on"></textarea><br><br>'+
