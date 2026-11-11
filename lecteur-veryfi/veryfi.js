@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V44";
+const READER_VERSION="V45";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -403,10 +403,10 @@ function explicitInvoiceUnit(row){
  return {unit:match[2],note:"Unité facturée "+match[2]+" lue dans le libellé fournisseur pour "+observed+" unité(s).",fromLabel:true,conflict:false};
 }
 function makeRow(x,index){
- const evidence=explicitInvoiceUnit(x);
+ const evidence=explicitInvoiceUnit(x),confidence=lineOcrConfidence(x);
  return {id:index,ocrOriginal:{reference:x.reference??null,description:x.description??null,quantity:x.quantity??null,unit:x.unit??null,unit_price:x.unit_price??null,total:x.total??null,tax_rate:x.tax_rate??null},reference:String(x.reference||""),description:String(x.description||""),
   quantity:x.quantity??"",unit:evidence.unit,unit_price:x.unit_price??"",total:x.total??"",unit_label_note:evidence.note,unit_label_conflict:evidence.conflict,unit_label_source:evidence.fromLabel,unit_label_pair:evidence.pair||null,autoQuantityReconciled:false,
-  tax_rate:x.tax_rate??"",boxes:x.boxes||{},sourceBox:Array.isArray(x.box)?x.box:null,score:lineOcrConfidence(x).score,confidenceMissing:lineOcrConfidence(x).missing,pdfEvidence:null,
+  tax_rate:x.tax_rate??"",boxes:x.boxes||{},sourceBox:Array.isArray(x.box)?x.box:null,score:confidence.score,confidenceMissing:confidence.missing,ocrFieldScores:confidence.fields,pdfEvidence:null,
   product_id:"",product_label:"",stock_quantity:"",account:"",account_source:"",
   matched:false,verified:false,autoVerified:false,manualVerified:false,confirmedOnPdf:false,manualMatchRequired:false,stock_needs_review:false,stock_confirmed:false,unit_inferred:false,excluded:false,changed:false,reason:"",stock_note:"",stock_manual:false,account_manual:false,product_manual:false};
 }
@@ -447,12 +447,13 @@ function bindDocument(){
  if(vatHint?.missing&&String($("bulkVatRate").value||"").trim()==="")$("bulkVatRate").value=String(vatHint.rate);
 }
 function lineOcrConfidence(item){
- const fields=item?.boxes||{},required=["description","quantity","unit_price","total"],scores=[],missing=[];
- for(const key of required){
-  const m=fields[key],values=[m?.score,m?.ocr_score].filter(v=>typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=1);
-  if(values.length)scores.push(Math.min(...values));else missing.push(key);
- }
- return {score:scores.length?Math.min(...scores):null,missing};
+ const boxes=item?.boxes||{};
+ const fields=[["description","Désignation"],["quantity","Quantité"],["unit_price","Prix unitaire HT"],["total","Total HT"]].map(([key,label])=>{
+  const field=boxes[key],values=[field?.score,field?.ocr_score].filter(v=>typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=1);
+  return {key,label,score:values.length?Math.min(...values):null};
+ });
+ const known=fields.filter(f=>f.score!==null);
+ return {score:known.length?Math.min(...known.map(f=>f.score)):null,missing:fields.filter(f=>f.score===null).map(f=>f.key),fields};
 }
 function verifiedSupplierReference(row){
  const supplier=supplierNorm(),reference=norm(row.reference);
@@ -577,7 +578,7 @@ function findProduct(row){
 function applyMatch(row,match,keepManual=false){
  const product=match?.product;
  if(row.product_id&&row.product_id!==product?.id){
-  row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;
+  row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;row.pdfEvidence=null;
   if(row.unit_inferred){row.unit="";row.unit_inferred=false}
   row.stock_manual=false;row.stock_confirmed=false;
  }
@@ -655,19 +656,25 @@ function independentPdfVerified(row){
   !row.unit_label_conflict&&!row.product_manual&&!row.stock_manual&&!row.excluded&&!possibleDuplicate(row);
 }
 function lineEvidenceMetrics(row){
- const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
- const a=invoiceArithmetic(row);
+ const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false),a=invoiceArithmetic(row);
  const checks=[
   ["Produit actif",!!product],
-  ["Rapprochement non ambigu",!!product&&!row.manualMatchRequired],
+  ["Rapprochement non ambigu",!!product&&!row.manualMatchRequired&&!row.product_manual],
   ["Montants HT cohérents",!a.incomplete&&a.valid],
-  ["TVA valide",validLineVat(row)],
+  ["TVA renseignée et valide",validLineVat(row)],
   ["Unité facturée cohérente",!!String(row.unit||"").trim()&&!row.unit_label_conflict&&!row.unit_inferred],
   ["Stock vérifié",accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed))],
   ["Pas de doublon suspect",!possibleDuplicate(row)],
-  ["Aucune donnée modifiée",!row.changed]
+  ["Lecture sans correction non confirmée",!row.changed&&!row.autoQuantityReconciled]
  ];
- return {passed:checks.filter(c=>c[1]).length,total:checks.length,checks,nativePdf:independentPdfVerified(row)};
+ const pdfChecks=[["reference","Référence"],["description","Désignation"],["quantity","Quantité"],["unit_price","Prix unitaire HT"],["total","Total HT"],["vat","TVA"]]
+  .map(([key,label])=>({key,label,ok:row.pdfEvidence?.[key]===true}));
+ const ocrFields=Array.isArray(row.ocrFieldScores)?row.ocrFieldScores:[];
+ const known=ocrFields.filter(f=>typeof f.score==="number"&&Number.isFinite(f.score));
+ const min=known.length?Math.min(...known.map(f=>f.score)):null;
+ const weakest=min===null?[]:known.filter(f=>Math.abs(f.score-min)<1e-9).map(f=>f.label);
+ return {passed:checks.filter(c=>c[1]).length,total:checks.length,checks,
+  pdfChecks,pdfCount:pdfChecks.filter(c=>c.ok).length,ocrFields,weakest,nativePdf:independentPdfVerified(row)};
 }
 function productColor(row){
  if(!catalog)return "warn";
@@ -703,7 +710,10 @@ function reviewReason(row){
  if(row.autoQuantityReconciled&&!row.manualVerified)problems.push("Quantité modifiée à partir du conditionnement et du total HT : contrôler le PDF original.");
  if(!independentPdfVerified(row)){
   if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
-  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE))problems.push("Confiance OCR < 90 % sans preuve PDF indépendante complète : vérifier sur le PDF.");
+  if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE)){
+   const weak=lineEvidenceMetrics(row).weakest;
+   problems.push("Confiance OCR < 90 %"+(weak.length?" (point faible : "+weak.join(", ")+")":"")+" et preuve PDF indépendante insuffisante : vérifier sur le PDF.");
+  }
  }
  if(row.changed&&!row.verified)problems.push("Modification manuelle non confirmée.");
  if(row.confirmedOnPdf)problems.unshift("Lecture vérifiée, correction de montant encore requise.");
@@ -892,15 +902,31 @@ function buildLine(row,index){
  card.append(heading);
  const quality=lineEvidenceMetrics(row);
  const indicators=document.createElement("div");indicators.className="line-indicators";
- for(const label of ["Lecture OCR : "+(score===null?"non renseignée":score+" %")+" (score brut)","Contrôles métier : "+quality.passed+"/"+quality.total,"Preuve PDF : "+(quality.nativePdf?"6 champs recoupés":row.pdfEvidence?"partielle":"non disponible")]){
+ const weakLabel=quality.weakest.length?" · champ faible : "+quality.weakest.join(", "):"";
+ for(const label of [
+  "Confiance OCR : "+(score===null?"non renseignée":score+" %")+weakLabel,
+  "Contrôles métier : "+quality.passed+"/"+quality.total,
+  "Recoupement PDF : "+(row.pdfEvidence?quality.pdfCount+"/6 champs":"non disponible")
+ ]){
   const indicator=document.createElement("span");indicator.textContent=label;indicators.append(indicator);
  }
  card.append(indicators);
  const details=document.createElement("details");details.className="line-evidence-details";
- const summary=document.createElement("summary");summary.textContent="Détail des contrôles";details.append(summary);
- const list=document.createElement("ul");
- for(const [name,ok] of quality.checks){const li=document.createElement("li");li.textContent=(ok?"OK — ":"À vérifier — ")+name;list.append(li)}
- details.append(list);card.append(details);
+ const summary=document.createElement("summary");summary.textContent="Détail : OCR, métier et preuves du PDF";details.append(summary);
+ const section=(label,items)=>{
+  const title=document.createElement("strong");title.textContent=label;details.append(title);
+  const list=document.createElement("ul");
+  for(const text of items){const li=document.createElement("li");li.textContent=text;list.append(li)}
+  details.append(list);
+ };
+ section("Champs OCR (scores Veryfi)",quality.ocrFields.length?
+  quality.ocrFields.map(f=>f.label+" : "+(f.score===null?"non fourni":Math.floor(f.score*100+1e-8)+" %")):
+  ["Scores détaillés non fournis pour cette ligne"]);
+ section("Contrôles métier",quality.checks.map(([name,ok])=>(ok?"OK — ":"À vérifier — ")+name));
+ section("Recoupement avec le PDF original",quality.pdfChecks.map(e=>
+  (e.ok?"Recoupé — ":"Non démontré — ")+e.label));
+ const note=document.createElement("p");note.textContent="Une cohérence de calcul ne prouve pas à elle seule la lecture du PDF.";details.append(note);
+ card.append(details);
  const fields=document.createElement("div");fields.className="row-grid";
  const productForUnit=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  const storageLabel=productForUnit?(productForUnit.stock_count_mode==="litre"?"litres":productForUnit.inventory_unit_label||productForUnit.unit):"unité non définie";
@@ -1001,7 +1027,7 @@ function buildLine(row,index){
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
- row[key]=value;if(["quantity","unit","description","unit_price","total"].includes(key))row.autoQuantityReconciled=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
+ row[key]=value;row.pdfEvidence=null;if(["quantity","unit","description","unit_price","total"].includes(key))row.autoQuantityReconciled=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   if(key==="description"&&row.unit_label_source)row.unit="";
   if(key==="description"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel;row.unit_label_pair=e.pair||null}
@@ -1247,7 +1273,7 @@ function updateTotals(){
  const nativeApproved=rows.filter(r=>!r.excluded&&independentPdfVerified(r)&&productColor(r)==="good").length;
  $("metrics").innerHTML=accounting?
    '<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT du PDF</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>':
-   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Preuve PDF complète</span><strong>'+nativeApproved+'</strong></div><div class="metric"><span>En attente / HT retenu</span><strong>'+c.pending.length+' / '+fmt(c.sum)+'</strong></div>';
+   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Vertes avec preuve PDF</span><strong>'+nativeApproved+'</strong></div><div class="metric"><span>À traiter</span><strong>'+c.pending.length+'</strong></div><div class="metric"><span>HT retenu en réception</span><strong>'+fmt(c.sum)+'</strong></div>';
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
