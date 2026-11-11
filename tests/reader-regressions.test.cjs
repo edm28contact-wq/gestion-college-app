@@ -8,11 +8,17 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["lineOcrConfidence","independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
-function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
+const names=["pdfEvidenceFingerprint","currentPdfEvidence","lineOcrConfidence","independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+function row(extra={}){const value={id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
- autoQuantityReconciled:false,unit_label_conflict:false,excluded:false,...extra}}
+ autoQuantityReconciled:false,unit_label_conflict:false,excluded:false,...extra};
+ if(value.pdfEvidence&&!value.pdfEvidence.source){
+  const normLocal=x=>String(x??"").normalize("NFD").toLowerCase().replace(/[^a-z0-9]+/g,"");
+  const fp=[normLocal(value.reference),normLocal(value.description),value.quantity,value.unit_price,value.total,value.tax_rate].join("|");
+  value.pdfEvidence={...value.pdfEvidence,source:"pdf-native-text",fingerprint:fp};
+ }
+ return value;}
 function harness(){
  const values={subtotal:"6",tax:"1.2",total:"7.2",vendor:"Fournisseur",invoiceNumber:"123",invoiceDate:"2026-11-09",bulkVatRate:"20"};
  const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,loading:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
@@ -27,7 +33,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={lineOcrConfidence,lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={pdfEvidenceFingerprint,currentPdfEvidence,lineOcrConfidence,lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
  return {ctx,api:ctx.reader,values};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -182,7 +188,7 @@ test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  assert.ok(source.includes('banner.hidden=!projection||!projection.missing'));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=45"));
+ assert.ok(page.includes("veryfi.js?v=46"));
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -209,10 +215,10 @@ test("Secrétariat : la version du lecteur et de son iframe est explicitement in
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V45"'));
+ assert.ok(source.includes('const READER_VERSION="V46"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=45"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v45"));
+ assert.ok(page.includes("veryfi.js?v=46"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v46"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
@@ -241,9 +247,9 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
 });
 test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=45"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v45"));
- assert.ok(source.includes('const READER_VERSION="V45"'));
+ assert.ok(page.includes("veryfi.js?v=46"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v46"));
+ assert.ok(source.includes('const READER_VERSION="V46"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
@@ -386,10 +392,10 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V45"'));
+ assert.ok(source.includes('const READER_VERSION="V46"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=45"));
- assert.ok(secretariat.includes("embed=secretariat&amp;v=20261111-v45"));
+ assert.ok(page.includes("veryfi.js?v=46"));
+ assert.ok(secretariat.includes("embed=secretariat&amp;v=20261111-v46"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
@@ -454,4 +460,52 @@ test("V45 les corrections de champ invalident les anciennes preuves indépendant
  assert.ok(source.includes("row[key]=value;row.pdfEvidence=null;"));
  assert.ok(source.includes("row.changed=true;row.pdfEvidence=null;"));
  assert.ok(source.includes("Détail : OCR, métier et preuves du PDF"));
+});
+
+test("V46 : des preuves natives authentiques permettent de sortir VA58 de l'orange",()=>{
+ const h=harness(),item=row({reference:"VA58",description:"SOUCOUPE 112 RESTAURANT BLANC",quantity:60,unit_price:1.05,total:63,stock_quantity:60,score:.85});
+ h.ctx.rows=[item];
+ const evidence=[{source:"pdf-native-text",index:0,reference:"VA58",quantity:60,unit_price:1.05,total:63,rate:20,descriptionVerified:true,page:1}];
+ assert.equal(h.api.applyNativePdfVatEvidence(evidence),0,"La TVA existante ne doit pas être réécrite.");
+ assert.equal(h.api.currentPdfEvidence(item),true);
+ h.api.autoVerifyGreenRows();
+ assert.equal(h.api.productColor(item),"good");
+ assert.equal(h.api.calc().sum,63);
+ assert.equal(item.score,.85);
+});
+test("V46 : preuve ancienne ou incomplète ne valide pas la réception",()=>{
+ for(const key of ["reference","description","quantity","unit_price","total","tax_rate"]){
+  const h=harness(),item=row({reference:"VA58",description:"SOUCOUPE 112 RESTAURANT BLANC",quantity:60,unit_price:1.05,total:63,stock_quantity:60,score:.85});
+  h.ctx.rows=[item];
+  h.api.applyNativePdfVatEvidence([{source:"pdf-native-text",index:0,reference:"VA58",quantity:60,unit_price:1.05,total:63,rate:20,descriptionVerified:true,page:1}]);
+  if(key==="tax_rate")item[key]=5;
+  else if(key==="reference")item[key]="VA59";
+  else if(key==="description")item[key]="SOUCOUPE MODIFIEE";
+  else if(key==="quantity")item[key]=61;
+  else if(key==="unit_price")item[key]=1.06;
+  else item[key]=64;
+  h.api.autoVerifyGreenRows();
+  assert.equal(h.api.currentPdfEvidence(item),false,key);
+  assert.equal(h.api.productColor(item),"warn",key);
+  assert.equal(h.api.calc().sum,0,key);
+ }
+});
+test("V46 : aucun recoupement si l'origine ou les valeurs ne correspondent pas",()=>{
+ const h=harness(),item=row({reference:"VA58",description:"SOUCOUPE 112 RESTAURANT BLANC",quantity:60,unit_price:1.05,total:63,stock_quantity:60,score:.85});
+ h.ctx.rows=[item];
+ h.api.applyNativePdfVatEvidence([{source:"autre",index:0,reference:"VA58",quantity:60,unit_price:1.05,total:63,rate:20,descriptionVerified:true,page:1}]);
+ assert.equal(h.api.productColor(item),"warn");
+ h.api.applyNativePdfVatEvidence([{source:"pdf-native-text",index:0,reference:"VA58",quantity:60,unit_price:1.05,total:64,rate:20,descriptionVerified:true,page:1}]);
+ assert.equal(h.api.productColor(item),"warn");
+});
+test("V46 : la lecture PDF reçoit la désignation originale et une seule soumission est permise",()=>{
+ assert.ok(source.includes("description:r.description,quantity:r.quantity,unit_price:r.unit_price,total:r.total"));
+ assert.ok(source.includes("if(loading||saved)return;"));
+ assert.ok(source.includes("const currentFile=file;loading=true;"));
+});
+test("Secrétariat : les suggestions fournisseurs ne contiennent plus d'exécution JavaScript",()=>{
+ const secretary=file("secretariat/index.html");
+ assert.ok(secretary.includes('data-supplier-index'));
+ assert.ok(secretary.includes("addEventListener('click',event=>"));
+ assert.ok(!secretary.includes("onclick=\"chooseSupplier("));
 });
