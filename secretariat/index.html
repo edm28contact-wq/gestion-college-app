@@ -107,7 +107,7 @@ function filterSecretariatStocks(){
  if($('stockCountShown'))$('stockCountShown').textContent=visible+' produit'+(visible>1?'s':'')+' affiché'+(visible>1?'s':'');
 }
 function orders(){const os=db.orders||[];$('content').innerHTML=`<div class="actions">${readOnly()?'':`<button class="btn primary" onclick="newOrder()">Nouvelle commande</button>`}<button class="btn secondary" onclick="refresh()">Actualiser</button></div>${readOnly()?'<p class="muted">Mode Visiteur : consultation uniquement.</p>':''}<br><div class="card table"><table><thead><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>État</th><th>Articles</th><th></th></tr></thead><tbody>${os.map(o=>{const items=(db.order_items||[]).filter(i=>i.order_id===o.id);return `<tr><td>CMD-${String(o.order_no).padStart(6,'0')}</td><td>${esc(o.order_date)}</td><td>${esc(o.supplier||'')}</td><td>${esc(o.status)}</td><td>${items.reduce((s,i)=>s+Number(i.quantity||0),0)}</td><td>${!readOnly()&&o.status==='commandee'?`<button class="btn primary" onclick="receive('${o.id}')">Réceptionner</button>`:''}</td></tr>`}).join('')}</tbody></table></div>`}
-let selectedSupplierKey="",savingOrder=false;
+let selectedSupplierKey="",savingOrder=false,supplierSuggestionKeys=[];
 function supplierMatches(){
  const q=String($('os')?.value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
  return (db.suppliers||[]).filter(s=>String(s.name).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().includes(q)).slice(0,15);
@@ -115,7 +115,8 @@ function supplierMatches(){
 function supplierSuggestions(){
  const container=$('supplierSuggestions');if(!container)return;
  const suppliers=supplierMatches();
- container.innerHTML=suppliers.map(s=>'<button type="button" class="supplier-choice" onclick="chooseSupplier(\''+esc(s.key)+'\')"><b>'+esc(s.name)+'</b><small>'+Number(s.product_count||0)+' produit(s)</small></button>').join('')||
+ supplierSuggestionKeys=suppliers.map(x=>x.key);
+ container.innerHTML=suppliers.map((supplier,index)=>'<button type="button" class="supplier-choice" data-supplier-index="'+index+'"><b>'+esc(supplier.name)+'</b><small>'+Number(supplier.product_count||0)+' produit(s)</small></button>').join('')||
  '<p class="muted">Aucun fournisseur correspondant. Ajoutez ses produits dans le catalogue ou vérifiez ses factures.</p>';
 }
 function searchSupplier(){
@@ -128,7 +129,7 @@ function chooseSupplier(key){
  const supplier=(db.suppliers||[]).find(s=>s.key===key);
  if(!supplier)return;
  selectedSupplierKey=key;$('os').value=supplier.name;
- $('supplierSuggestions').innerHTML="";
+ supplierSuggestionKeys=[];$('supplierSuggestions').innerHTML="";
  const related=(db.supplier_products||[]).filter(x=>x.supplier_key===key);
  const mapping=new Map(related.map(x=>[x.product_id,x]));
  const products=(db.order_products||[]).filter(x=>mapping.has(x.id)).sort((a,b)=>Number(low(b))-Number(low(a))||String(a.name).localeCompare(String(b.name),'fr'));
@@ -157,6 +158,11 @@ function newOrder(){
  '<br><label>Remarque</label><textarea id="on"></textarea><br><br>'+
  '<button id="saveOrderButton" class="btn primary" onclick="saveOrder()">Enregistrer</button> '+
  '<button class="btn secondary" onclick="show(\'orders\')">Annuler</button><div id="msg" class="status"></div></div>';
+ $('supplierSuggestions').addEventListener('click',event=>{
+  const choice=event.target.closest('[data-supplier-index]');if(!choice)return;
+  const index=Number(choice.dataset.supplierIndex);
+  if(Number.isInteger(index)&&index>=0&&index<supplierSuggestionKeys.length)chooseSupplier(supplierSuggestionKeys[index]);
+ });
 }
 async function saveOrder(){
  if(savingOrder)return;
