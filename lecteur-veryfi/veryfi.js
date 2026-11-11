@@ -1097,7 +1097,7 @@ function renderRows(){
  const missingProducts=active.filter(r=>productColor(r)==="bad").length-inactive;
  const autoExcluded=rows.filter(r=>r.excluded&&r.autoExcluded),absent=autoExcluded.filter(r=>r.autoExclusionReason==="Produit absent du catalogue actif").length;
  const inactiveExcluded=autoExcluded.filter(r=>r.autoExclusionReason==="Produit désactivé dans le catalogue").length;
- $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) dont "+autoExcluded.length+" automatiquement (absents : "+absent+", désactivés : "+inactiveExcluded+") · TVA à compléter : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
+ $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) dont "+autoExcluded.length+" automatiquement (absents : "+absent+", désactivés : "+inactiveExcluded+") · Taux TVA facultatifs non renseignés : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
  const box=$("lines");box.replaceChildren();
  for(const group of groupedRows()){
   if(!group.items.length)continue;
@@ -1250,16 +1250,16 @@ function updateTotals(){
  const correctionNote=$("headerRepairNote");
  const vatHint=suggestInvoiceVatRate(),vatHintElement=$("vatSuggestion"),banner=$("vatActionRequired");
  const projection=vatHint?previewVatApproval(vatHint.rate):null;
- banner.hidden=!projection||!projection.missing;
+ banner.hidden=true;
  const bannerButton=$("applyVatBanner");bannerButton.disabled=loading||saved;
  if(projection?.missing){
-  $("vatActionText").textContent="TVA "+vatHint.rate+" % PROPOSÉE, NON APPLIQUÉE : "+projection.missing+" champs restent vides. Après vérification et confirmation sur le PDF, "+projection.good+" ligne(s) pourront passer au vert, "+projection.warn+" resteront orange et "+projection.bad+" rouges. Cette opération ne modifie aucun stock.";
+  $("vatActionText").textContent="TVA "+vatHint.rate+" % PROPOSÉE, NON APPLIQUÉE : "+projection.missing+" champs restent vides. La TVA par ligne est facultative et ne conditionne plus la couleur du produit. Cette opération ne modifie aucun stock.";
   bannerButton.textContent="Confirmer sur le PDF et appliquer "+vatHint.rate+" % aux "+projection.missing+" lignes";
  }
  const vatMissing=missingVatRows(rows).length,bulkButton=$("applyBulkVat");
  bulkButton.disabled=loading||saved||!vatMissing;
- bulkButton.textContent=vatMissing?"Appliquer la TVA aux "+vatMissing+" lignes et recalculer":"TVA déjà renseignée";
- vatHintElement.hidden=!vatHint;
+ bulkButton.textContent=vatMissing?"Renseigner les taux TVA (facultatif)":"Taux TVA déjà renseignés";
+ vatHintElement.hidden=true;
  if(vatHint)vatHintElement.textContent="Le taux "+vatHint.rate+" % a été PRÉREMPLI mais PAS APPLIQUÉ. Vérifiez le PDF et cliquez sur le bouton d'application. Cohérence : "+fmt(vatHint.ht)+" HT × "+vatHint.rate+" % = "+fmt(vatHint.tax)+" de TVA.";
  const suggestion=suggestHeaderFromOcr(),repairButton=$("repairHeader");
  repairButton.hidden=!suggestion;repairButton.disabled=loading||saved;
@@ -1280,7 +1280,7 @@ function updateTotals(){
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
-    retained.textContent="Lignes vertes uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+(c.selectedVat===null?" (taux de TVA d’une ligne verte à vérifier)":"")+" · "+c.pending.length+" ligne(s) rouge(s)/orange(s) non comptée(s) · "+c.autoExcludedCount+" écartée(s) automatiquement de la réception. Les lignes restent consultables et réintégrables. Les montants du PDF original restent inchangés.";
+    retained.textContent="Réception : HT des produits verts "+fmt(c.sum)+" · TVA par ligne "+(c.selectedVat===null?"non ventilée":fmt(c.selectedVat))+" · TTC des produits verts "+(c.selectedTtc===null?"non calculable sans ventilation TVA":fmt(c.selectedTtc))+". Facture originale : TVA "+fmt(c.vat)+" et TTC "+fmt(c.ttc)+" (coût payé, TVA non récupérable). "+c.pending.length+" ligne(s) orange/rouge hors réception · "+c.autoExcludedCount+" écartée(s) automatiquement. Les montants du PDF restent inchangés.";
   }
  const errors=[];
  if(!c.included.length)errors.push(accounting?"Aucune ligne retenue":"Aucune ligne verte validée pour la réception");
@@ -1295,7 +1295,7 @@ function updateTotals(){
  $("reconciliation").className="reconciliation "+(!accounting&&c.pending.length?"":errors.length?"bad":"good");
  const explanation=c.adjusted?" Réception partielle : "+c.pending.length+" ligne(s) encore à vérifier, "+c.removedCount+" supprimée(s), "+c.excludedCount+" écartée(s).":"";
   $("reconciliation").textContent=(accounting?"HT du PDF : "+fmt(c.ht)+" · HT des lignes : "+fmt(c.sum)+".":
-  "RÉCEPTION — Produits verts uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+". Le montant HT lu sur le PDF ("+fmt(c.ht)+") reste informatif et ne remplace pas le total des produits.")+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Lignes retenues contrôlées.");
+  "RÉCEPTION — HT des produits verts : "+fmt(c.sum)+". TVA par ligne "+(c.selectedVat===null?"non ventilée":fmt(c.selectedVat))+". Facture originale : HT "+fmt(c.ht)+" · TVA "+fmt(c.vat)+" · TTC "+fmt(c.ttc)+" (TVA non récupérable). Le HT du PDF ne remplace pas le total validé des produits.")+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Lignes retenues contrôlées.");
  $("save").disabled=trainingMode||!c.ok||!$("confirmReview").checked||loading;
  $("saveHelp").textContent=trainingMode?"MODE ENTRAÎNEMENT : réception et mouvements de stock désactivés. Les corrections restent locales (sauf mots-clés mémorisés explicitement).":saved?"Facture enregistrée.":c.pending.length&&!accounting?"Total vert actualisé. Passez les autres lignes au vert ou écartez-les avant validation définitive (anti-doublon PDF).":c.ok?(c.adjusted?"Réception partielle : seuls les produits verts seront enregistrés.":"Les lignes vertes sont prêtes ; confirmez après contrôle du PDF."):"Vérifiez les lignes vertes et les champs obligatoires avant l’enregistrement.";
 }
@@ -1338,7 +1338,7 @@ async function save(){
       invoice_unit:r.unit,delivered_unit:r.unit,detected_label:r.description,detected_reference:r.reference,
       unit_price_ht:amount(r.unit_price),line_total_ht:amount(r.total),vat_rate:amount(r.tax_rate),verified:true};
    });
-   if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
+   if(items.some(x=>!x.product_id||!(x.stock_quantity>0)||Math.abs(x.stock_quantity-Math.round(x.stock_quantity*1000)/1000)>1e-9))throw Error("Une ou plusieurs quantités de stock sont invalides ou dépassent 3 décimales.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:currentFile.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
     supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
     raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,auto_excluded_lines:c.autoExcludedCount,auto_excluded_details:rows.filter(r=>r.excluded&&r.autoExcluded).map(r=>({source_index:r.id,reference:r.reference,description:r.description,total_ht:amount(r.total),reason:r.autoExclusionReason})),pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
