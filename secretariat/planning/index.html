@@ -49,7 +49,7 @@
 html.secretariat-embedded{background:transparent}
 .secretariat-embedded .shell{max-width:none;margin:0;padding:0}
 .secretariat-embedded .shell>.flex.between:first-child{display:none!important}
-</style><link rel="stylesheet" href="../../college/workspace-layout.css?v=4">
+</style><link rel="stylesheet" href="../../college/workspace-layout.css?v=20261111-47">
 <script>try{if(window.self!==window.top&&window.parent.location.origin===location.origin&&new URLSearchParams(location.search).get('embed')==='secretariat')document.documentElement.classList.add('secretariat-embedded')}catch{}</script>
 </head><body><main class="shell"><div class="flex between"><div><h1>Planning des événements du personnel</h1><div class="muted">Secrétariat · Absences, retards et événements · Préparation des éléments de paie</div></div><div class="flex"><a class="btn alt" href="../">Secrétariat</a><a class="btn alt" href="../../college/admin/">Administration Collège</a></div></div>
 <section id="login" class="card login hide"><h2>Connexion requise</h2><div class="field"><label>Identifiant</label><input id="username" autocomplete="username"></div><br><div class="field"><label>Mot de passe</label><input id="password" type="password" autocomplete="current-password"></div><p><button class="btn" id="loginBtn">Se connecter</button></p><p id="loginMessage" class="status"></p></section>
@@ -260,5 +260,5 @@ function openRow(e){const del=e.target.closest('[data-delete]');if(del){e.stopPr
 $('rows').addEventListener('click',openRow);$('rows').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openRow(e)}});
 initPlanningCalendar();
 load();
-</script><script defer src="../../college/workspace-layout.js?v=9" data-area="planning" data-target="#main"></script>
+</script><script defer src="../../college/workspace-layout.js?v=20261111-47" data-area="planning" data-target="#main"></script>
 </body></html>
