@@ -747,7 +747,7 @@ function stockProposal(row){
  const inferred=/à confirmer/i.test(String(product.conditionnement||""))||/à confirmer/i.test(String(product.inventory_unit_label||""));
  if(factor!==1&&inferred)return null;
  const suggested=stockSuggestion(row,product);
- if(!(amount(suggested.quantity)>0))return null;
+ if(!(amount(suggested.quantity)>0)||!validStockQuantity({...row,stock_quantity:suggested.quantity}))return null;
  return {quantity:amount(suggested.quantity),unit:label,note:factor===1?"Conversion 1 pour 1":"Coefficient ×"+factor+" du catalogue",fromCatalog:factor===1};
 }
 function confirmStockProposal(row){
@@ -764,7 +764,7 @@ function confirmStockProposal(row){
 }
 function quickFixOptions(row){
  const fixes=[];
- if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed))&&stockProposal(row))
+ if(!accounting&&(!validStockQuantity(row)||(row.stock_needs_review&&!row.stock_confirmed))&&stockProposal(row)&&validStockQuantity({...row,stock_quantity:stockProposal(row).quantity}))
   fixes.push({kind:"stock",label:"Confirmer le conditionnement"});
  if(eligible(row)&&lineVatAcceptable(row)&&(accounting||(validStockQuantity(row)&&(!row.stock_needs_review||row.stock_confirmed)))&&productColor(row)==="warn")
   fixes.push({kind:"approve",label:"Vérifier et passer au vert"});
@@ -784,6 +784,7 @@ function confirmRowManually(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product||row.excluded)return {ok:false,message:"Choisissez un produit actif et non écarté avant de confirmer la ligne."};
  if(row.unit_label_conflict)return {ok:false,message:row.unit_label_note+" Corrigez la quantité ou l’unité d’après le PDF avant validation."};
+ if(!accounting&&amount(row.stock_quantity)>0&&!validStockQuantity(row))return {ok:false,message:"Quantité de stock invalide : 3 décimales maximum. Corrigez selon le PDF."};
  if(!accounting&&(!validStockQuantity(row)||(row.stock_needs_review&&!row.stock_confirmed))&&!row.stock_manual&&!confirmStockProposal(row))
   return {ok:false,message:stockProposal(row)?
    "Quantité en stock non confirmée. Vérifiez le conditionnement ou indiquez le nombre réel à réceptionner.":
