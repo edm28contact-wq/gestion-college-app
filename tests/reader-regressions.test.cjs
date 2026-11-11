@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["pdfEvidenceFingerprint","currentPdfEvidence","lineOcrConfidence","independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["pdfEvidenceFingerprint","currentPdfEvidence","lineOcrConfidence","independentPdfVerified","lineEvidenceMetrics","validLineVat","lineVatAcceptable","validStockQuantity","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){const value={id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -33,7 +33,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={pdfEvidenceFingerprint,currentPdfEvidence,lineOcrConfidence,lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={lineVatAcceptable,validStockQuantity,pdfEvidenceFingerprint,currentPdfEvidence,lineOcrConfidence,lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
  return {ctx,api:ctx.reader,values};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -47,9 +47,17 @@ test("deux lignes identiques ne passent pas automatiquement au vert",()=>{
  assert.equal(h.api.calc().ok,false);
  assert.ok(h.api.issueCategories(h.ctx.rows[0]).includes("doublon"));
 });
-test("TVA absente, négative ou supérieure à 100: réception bloquée",()=>{
- for(const tax_rate of ["",null,-1,101]){const h=harness();h.ctx.rows=[row({tax_rate})];h.api.autoVerifyGreenRows();
-  assert.equal(h.api.productColor(h.ctx.rows[0]),"warn");assert.equal(h.api.calc().ok,false)}
+test("TVA non récupérable : absence autorisée, taux explicitement invalide bloqué",()=>{
+ for(const tax_rate of ["",null]){
+  const h=harness();h.ctx.rows=[row({tax_rate})];h.api.autoVerifyGreenRows();
+  assert.equal(h.api.productColor(h.ctx.rows[0]),"good");
+  assert.equal(h.api.calc().ok,true);
+  assert.equal(h.api.calc().sum,6);
+ }
+ for(const tax_rate of [-1,101]){
+  const h=harness();h.ctx.rows=[row({tax_rate})];h.api.autoVerifyGreenRows();
+  assert.equal(h.api.productColor(h.ctx.rows[0]),"warn");assert.equal(h.api.calc().ok,false);
+ }
 });
 test("écart quantité/prix/total et stock non confirmé: réception bloquée",()=>{
  for(const value of [{total:7},{stock_needs_review:true,stock_confirmed:false}]){
@@ -185,10 +193,10 @@ test("aperçu TVA sans écriture, puis classification après validation explicit
 test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  const page=file("lecteur-veryfi/index.html");
  assert.ok(page.includes('id="vatActionRequired"')&&page.includes('id="applyVatBanner"'));
- assert.ok(source.includes('banner.hidden=!projection||!projection.missing'));
+ assert.ok(source.includes("banner.hidden=true"));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=46"));
+ assert.ok(page.includes("veryfi.js?v=48"));
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -208,17 +216,17 @@ test("annulation de la confirmation TVA : aucune ligne modifiée",()=>{
  h.ctx.renderRows=()=>{throw Error("Le recalcul ne doit pas se produire")};
  h.api.applyVatFromPdf();
  assert.equal(h.ctx.rows[0].tax_rate,"");
- assert.equal(h.api.productColor(h.ctx.rows[0]),"warn");
+ assert.equal(h.api.productColor(h.ctx.rows[0]),"good");
  assert.ok(notifications.some(x=>x.message.includes("TVA non appliquée")));
 });
 test("Secrétariat : la version du lecteur et de son iframe est explicitement incrémentée",()=>{
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V46"'));
+ assert.ok(source.includes('const READER_VERSION="V48"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=46"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v46"));
+ assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v48"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
@@ -247,9 +255,9 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
 });
 test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=46"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v46"));
- assert.ok(source.includes('const READER_VERSION="V46"'));
+ assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v48"));
+ assert.ok(source.includes('const READER_VERSION="V48"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
@@ -392,10 +400,10 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V46"'));
+ assert.ok(source.includes('const READER_VERSION="V48"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=46"));
- assert.ok(secretariat.includes("embed=secretariat&amp;v=20261111-v46"));
+ assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(secretariat.includes("embed=secretariat&amp;v=20261111-v48"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
@@ -508,4 +516,45 @@ test("Secrétariat : les suggestions fournisseurs ne contiennent plus d'exécuti
  assert.ok(secretary.includes('data-supplier-index'));
  assert.ok(secretary.includes("addEventListener('click',event=>"));
  assert.ok(!secretary.includes("onclick=\"chooseSupplier("));
+});
+
+test("Pomona : TVA absente ne bloque plus trois lignes réellement cohérentes",()=>{
+ const h=harness();
+ const entries=[
+  {reference:"44556",quantity:48,unit:"POT",unit_price:0.29,total:13.92,stock_quantity:48,score:.91},
+  {reference:"244299",quantity:10,unit:"PU",unit_price:2.244,total:22.44,stock_quantity:10,score:.93},
+  {reference:"6662",quantity:60,unit:"PU",unit_price:.33,total:19.8,stock_quantity:60,score:.90},
+  {reference:"12693",quantity:1,unit:"KG",unit_price:5.85,total:9.95,stock_quantity:1,score:.84},
+  {reference:"97606",quantity:1,unit:"KG",unit_price:10.479,total:7.86,stock_quantity:1,score:.88},
+  {reference:"31189",quantity:2.5696,unit:"KG",unit_price:8.546,total:21.96,stock_quantity:2.5696,score:.98}
+ ];
+ h.ctx.rows=entries.map((x,i)=>row({id:i,description:"Produit "+i,tax_rate:"",...x}));
+ h.api.autoVerifyGreenRows();
+ assert.deepEqual(Array.from(h.ctx.rows,r=>h.api.productColor(r)),["good","good","good","warn","warn","warn"]);
+ assert.equal(h.api.calc().sum,56.16);
+ assert.equal(h.api.calc().pending.length,3);
+ assert.equal(h.api.calc().ok,false,"Ne pas enregistrer les lignes restantes sans correction.");
+});
+test("Pomona : la précision des quantités de stock doit rester compatible avec le serveur",()=>{
+ const h=harness();
+ for(const stock_quantity of [2.5696,15.9982,48.0203]){
+  h.ctx.rows=[row({tax_rate:"",score:.99,stock_quantity})];
+  assert.equal(h.api.validStockQuantity(h.ctx.rows[0]),false);
+  assert.equal(h.api.productColor(h.ctx.rows[0]),"warn");
+ }
+ for(const stock_quantity of [2.570,16,48]){
+  h.ctx.rows=[row({tax_rate:"",score:.99,stock_quantity})];
+  assert.equal(h.api.validStockQuantity(h.ctx.rows[0]),true);
+ }
+});
+test("Pomona : le bouton ne doit plus réécrire le montant HT réel",()=>{
+ assert.ok(!source.includes('label:"Corriger le total HT"'));
+ assert.ok(!source.includes('row.total=calculation.calculated'));
+ assert.ok(source.includes("quantité FACTURÉE"));
+});
+test("TVA : ne jamais transformer un taux vide en taux zéro ni supprimer le TTC de facture",()=>{
+ assert.ok(source.includes("function lineVatAcceptable(row)"));
+ assert.ok(source.includes("vat_rate:amount(r.tax_rate)"));
+ assert.ok(source.includes('original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc}'));
+ assert.ok(source.includes('coût payé, TVA non récupérable'));
 });

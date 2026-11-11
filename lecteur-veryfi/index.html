@@ -7,7 +7,7 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Collège</title>
 <link rel="stylesheet" href="./veryfi.css?v=16">
-<script defer src="./veryfi.js?v=46"></script>
+<script defer src="./veryfi.js?v=48"></script>
 <script defer src="./ocr-secours.js?v=3"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=20261111-47">
 <style>
@@ -99,7 +99,7 @@ html.secretariat-embedded{background:transparent}
 <div id="vatActionRequired" class="vat-action-required" role="region" aria-label="TVA manquante : action nécessaire" hidden><strong>Action nécessaire pour débloquer les lignes vertes</strong><p id="vatActionText"></p><button id="applyVatBanner" type="button" class="btn primary">Confirmer la TVA et recalculer les lignes</button></div>
       <p id="headerRepairNote" class="hint" role="status" aria-live="polite" hidden></p>
 <button id="repairHeader" class="btn secondary small" type="button" hidden>Corriger HT et TTC après vérification du PDF</button>
-      <div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>
+      <p class="hint" id="vatNonRecoverableNote">TVA non récupérable : son taux par produit est facultatif pour la validation. Conservez les montants HT, TVA et TTC indiqués sur la facture ; le TTC constitue le montant payé.</p><div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>
       <p id="greenOnlyInfo" class="subtle">Les montants de réception proviennent uniquement des produits verts validés. Les montants du PDF sont conservés pour contrôle et ne remplacent jamais ceux des produits retenus. Les corrections confirmées après vérification du PDF enrichissent le carnet d’apprentissage interne pour les prochaines factures.</p>
       <div class="section-heading">
         <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF.</p></div>
@@ -111,7 +111,7 @@ html.secretariat-embedded{background:transparent}
       <option value="catalogue">Produit absent du catalogue</option>
       <option value="montant">Quantité / prix / total HT incohérents</option>
       <option value="doublon">Doublons potentiels</option>
-      <option value="tva">TVA manquante ou invalide</option>
+      <option value="tva">Taux TVA renseigné invalide</option>
       <option value="stock">Entrée en stock / conditionnement</option>
       <option value="unite">Unité à vérifier</option>
       <option value="rapprochement">Correspondance fournisseur incertaine</option>
@@ -121,7 +121,7 @@ html.secretariat-embedded{background:transparent}
       <option value="warn">Lignes orange</option>
       <option value="good">Lignes vertes</option>
       <option value="excluded">Lignes écartées</option>
-      </select></label><div class="bulk-vat-tools"><label for="bulkVatRate">TVA vérifiée sur le PDF (%)</label><input id="bulkVatRate" type="number" min="0" max="100" step="0.01" placeholder="Ex. 20" inputmode="decimal"><button id="applyBulkVat" type="button" class="btn secondary small">Renseigner les TVA manquantes</button></div><p id="vatSuggestion" class="subtle vat-suggestion" aria-live="polite" hidden></p><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
+      </select></label><div class="bulk-vat-tools"><label for="bulkVatRate">Taux TVA facultatif (%)</label><input id="bulkVatRate" type="number" min="0" max="100" step="0.01" placeholder="Ex. 20" inputmode="decimal"><button id="applyBulkVat" type="button" class="btn secondary small">Renseigner les TVA manquantes</button></div><p id="vatSuggestion" class="subtle vat-suggestion" aria-live="polite" hidden></p><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
       <div id="lines" class="lines"></div>
       <datalist id="productOptions"></datalist>
       <datalist id="accountOptions"></datalist>

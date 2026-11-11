@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V46";
+const READER_VERSION="V48";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -648,6 +648,11 @@ function setRowExclusion(row,excluded){
  row.changed=true;
 }
 function validLineVat(r){const n=amount(r.tax_rate);return n!==null&&n>=0&&n<=100}
+function lineVatAcceptable(row){return !String(row.tax_rate??"").trim()||validLineVat(row)}
+function validStockQuantity(row){
+ const q=amount(row.stock_quantity);
+ return q!==null&&q>0&&q<=1000000&&Math.abs(q-Math.round(q*1000)/1000)<=1e-9;
+}
 function duplicateFingerprint(r){
  const ref=norm(r.reference),label=invoiceDesignationKey(r.description),q=amount(r.quantity),p=amount(r.unit_price),t=amount(r.total);
  if((!ref&&!label)||q===null||p===null||t===null)return "";
@@ -669,9 +674,9 @@ function lineEvidenceMetrics(row){
   ["Produit actif",!!product],
   ["Rapprochement non ambigu",!!product&&!row.manualMatchRequired&&!row.product_manual],
   ["Montants HT cohérents",!a.incomplete&&a.valid],
-  ["TVA renseignée et valide",validLineVat(row)],
+  ["TVA non récupérable : taux facultatif ou valide",lineVatAcceptable(row)],
   ["Unité facturée cohérente",!!String(row.unit||"").trim()&&!row.unit_label_conflict&&!row.unit_inferred],
-  ["Stock vérifié",accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed))],
+  ["Stock vérifié (3 décimales maximum)",accounting||(validStockQuantity(row)&&(!row.stock_needs_review||row.stock_confirmed))],
   ["Pas de doublon suspect",!possibleDuplicate(row)],
   ["Lecture sans correction non confirmée",!row.changed&&!row.autoQuantityReconciled]
  ];
@@ -689,7 +694,7 @@ function productColor(row){
  const product=(catalog.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)return "bad";
  const confidenceOk=typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE&&(!Array.isArray(row.confidenceMissing)||row.confidenceMissing.length===0);
- const amountsOk=eligible(row)&&validLineVat(row)&&!!String(row.unit||"").trim(),stockOk=accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed));
+ const amountsOk=eligible(row)&&lineVatAcceptable(row)&&!!String(row.unit||"").trim(),stockOk=accounting||(validStockQuantity(row)&&(!row.stock_needs_review||row.stock_confirmed));
  const manuallyApproved=row.manualVerified===true&&row.verified===true;
  return amountsOk&&stockOk&&!row.excluded&&!row.unit_label_conflict&&
   (manuallyApproved||((confidenceOk||independentPdfVerified(row))&&!possibleDuplicate(row)&&!row.changed&&!row.manualMatchRequired&&!row.unit_inferred&&!row.autoQuantityReconciled))?"good":"warn";
@@ -706,10 +711,11 @@ function reviewReason(row){
  const problems=[],arithmetic=invoiceArithmetic(row);
  if(!row.product_id)problems.push(row.reason||"Aucun produit actif trouvé.");
  if(arithmetic.incomplete)problems.push("Quantité, prix unitaire ou total HT incomplet.");
- else if(!arithmetic.valid)problems.push("Écart HT : quantité × prix = "+fmt(arithmetic.calculated)+" ; montant de la ligne = "+fmt(arithmetic.total)+". Vérifiez le PDF.");
- if(!validLineVat(row))problems.push("TVA absente ou invalide : vérifiez le taux réel sur le PDF.");
+ else if(!arithmetic.valid)problems.push("Écart HT : quantité × prix = "+fmt(arithmetic.calculated)+" ; montant de la ligne = "+fmt(arithmetic.total)+". Vérifiez la quantité FACTURÉE (qui peut différer de la quantité livrée) sans modifier le montant réellement imprimé.");
+ if(!lineVatAcceptable(row))problems.push("Taux de TVA saisi invalide : laissez-le vide ou corrigez-le selon la facture (TVA non récupérable).");
  if(possibleDuplicate(row)&&!row.manualVerified)problems.push("Doublon potentiel : référence, désignation, quantité, prix et total identiques. Vérifiez deux achats distincts.");
  if(!accounting&&!(amount(row.stock_quantity)>0))problems.push("Quantité de stock absente : confirmez le conditionnement ou renseignez la quantité exacte.");
+ else if(!accounting&&!validStockQuantity(row))problems.push("Quantité de stock à contrôler : trois décimales maximum sont acceptées. Vérifiez la quantité sur la facture.");
  else if(!accounting&&row.stock_needs_review&&!row.stock_confirmed)problems.push("Conversion du stock à confirmer.");
  if(row.unit_inferred)problems.push("Unité proposée depuis la fiche produit : vérifier sur le PDF.");
  if(row.unit_label_conflict)problems.push(row.unit_label_note||"Quantité fournisseur et unité discordantes.");
@@ -741,7 +747,7 @@ function stockProposal(row){
  const inferred=/à confirmer/i.test(String(product.conditionnement||""))||/à confirmer/i.test(String(product.inventory_unit_label||""));
  if(factor!==1&&inferred)return null;
  const suggested=stockSuggestion(row,product);
- if(!(amount(suggested.quantity)>0))return null;
+ if(!(amount(suggested.quantity)>0)||!validStockQuantity({...row,stock_quantity:suggested.quantity}))return null;
  return {quantity:amount(suggested.quantity),unit:label,note:factor===1?"Conversion 1 pour 1":"Coefficient ×"+factor+" du catalogue",fromCatalog:factor===1};
 }
 function confirmStockProposal(row){
@@ -757,12 +763,10 @@ function confirmStockProposal(row){
  row.confirmedOnPdf=false;return true;
 }
 function quickFixOptions(row){
- const fixes=[],arithmetic=invoiceArithmetic(row);
- if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed))&&stockProposal(row))
+ const fixes=[];
+ if(!accounting&&(!validStockQuantity(row)||(row.stock_needs_review&&!row.stock_confirmed))&&stockProposal(row)&&validStockQuantity({...row,stock_quantity:stockProposal(row).quantity}))
   fixes.push({kind:"stock",label:"Confirmer le conditionnement"});
- if(!arithmetic.incomplete&&!arithmetic.valid)
-  fixes.push({kind:"amount",label:"Corriger le total HT"});
- if(eligible(row)&&validLineVat(row)&&(accounting||(amount(row.stock_quantity)>0&&(!row.stock_needs_review||row.stock_confirmed)))&&productColor(row)==="warn")
+ if(eligible(row)&&lineVatAcceptable(row)&&(accounting||(validStockQuantity(row)&&(!row.stock_needs_review||row.stock_confirmed)))&&productColor(row)==="warn")
   fixes.push({kind:"approve",label:"Vérifier et passer au vert"});
  return fixes;
 }
@@ -773,15 +777,6 @@ function applyQuickFix(row,kind){
   if(!confirmStockProposal(row))return {ok:false,quiet:true};
   return {ok:true,message:"Quantité de stock confirmée. Vous pouvez maintenant vérifier et valider la ligne."};
  }
- if(kind==="amount"){
-  const calculation=invoiceArithmetic(row);
-  if(calculation.incomplete||calculation.valid)return {ok:false,message:"Aucune correction de montant nécessaire."};
-  if(!confirm("Le lecteur propose "+fmt(calculation.calculated)+" à la place de "+fmt(calculation.total)+". Vérifiez le montant de la ligne sur le PDF ORIGINAL avant de confirmer. Appliquer cette correction ?"))
-   return {ok:false,quiet:true};
-  row.total=calculation.calculated;row.verified=false;row.autoVerified=false;
-  row.manualVerified=false;row.confirmedOnPdf=false;row.changed=true;
-  return {ok:true,message:"Total HT corrigé. Confirmez la ligne après vérification sur la facture."};
- }
  if(kind==="approve")return confirmRowManually(row);
  return {ok:false,message:"Action inconnue."};
 }
@@ -789,12 +784,13 @@ function confirmRowManually(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product||row.excluded)return {ok:false,message:"Choisissez un produit actif et non écarté avant de confirmer la ligne."};
  if(row.unit_label_conflict)return {ok:false,message:row.unit_label_note+" Corrigez la quantité ou l’unité d’après le PDF avant validation."};
- if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed))&&!row.stock_manual&&!confirmStockProposal(row))
+ if(!accounting&&amount(row.stock_quantity)>0&&!validStockQuantity(row))return {ok:false,message:"Quantité de stock invalide : 3 décimales maximum. Corrigez selon le PDF."};
+ if(!accounting&&(!validStockQuantity(row)||(row.stock_needs_review&&!row.stock_confirmed))&&!row.stock_manual&&!confirmStockProposal(row))
   return {ok:false,message:stockProposal(row)?
    "Quantité en stock non confirmée. Vérifiez le conditionnement ou indiquez le nombre réel à réceptionner.":
    "Renseignez l'entrée en stock manuellement : impossible de déduire une conversion fiable de cette facture."};
  if(!accounting&&row.stock_manual&&row.stock_needs_review&&!row.stock_confirmed){
-  if(!(amount(row.stock_quantity)>0))return {ok:false,message:"Renseignez une quantité de stock positive."};
+  if(!validStockQuantity(row))return {ok:false,message:"Saisissez une quantité de stock positive avec 3 décimales maximum, après vérification du PDF."};
   if(!confirm("Confirmer la quantité de stock saisie manuellement : "+row.stock_quantity+" pour "+row.product_label+" après vérification du conditionnement ?"))
    return {ok:false,quiet:true};
   row.stock_confirmed=true;
@@ -808,7 +804,7 @@ function confirmRowManually(row){
   row.verified=true;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=true;
   return {ok:true,partial:true,message:"Lecture du PDF confirmée. Corrigez l'écart de montant avant l'enregistrement de la facture."};
  }
- if(!validLineVat(row))return {ok:false,message:"Vérifiez et renseignez la TVA sur le PDF avant de valider cette ligne."};
+ if(!lineVatAcceptable(row))return {ok:false,message:"Taux de TVA saisi invalide : corrigez-le ou laissez ce champ facultatif vide."};
  if(possibleDuplicate(row)&&!confirm("Doublon potentiel : ces lignes identiques correspondent-elles réellement à deux achats distincts ? Confirmez seulement après vérification du PDF."))return {ok:false,quiet:true};
  row.verified=true;row.autoVerified=false;row.manualVerified=true;row.confirmedOnPdf=false;row.changed=false;
  return {ok:true,partial:false,message:"Ligne validée manuellement. Elle passe au vert."};
@@ -1068,8 +1064,8 @@ function issueCategories(row){
  if(!catalog||!row.product_id)issues.push("catalogue");
  if(a.incomplete||!a.valid)issues.push("montant");
  if(possibleDuplicate(row)&&!row.manualVerified)issues.push("doublon");
- if(!validLineVat(row))issues.push("tva");
- if(!accounting&&(!(amount(row.stock_quantity)>0)||(row.stock_needs_review&&!row.stock_confirmed)))issues.push("stock");
+ if(!lineVatAcceptable(row))issues.push("tva");
+ if(!accounting&&(!validStockQuantity(row)||(row.stock_needs_review&&!row.stock_confirmed)))issues.push("stock");
  if(!String(row.unit||"").trim()||row.unit_inferred||row.unit_label_conflict)issues.push("unite");
  if(row.manualMatchRequired)issues.push("rapprochement");
  if(!independentPdfVerified(row)&&(row.confidenceMissing?.length||!(typeof row.score==="number"&&row.score>=AUTO_APPROVE_SCORE)))issues.push("ocr");
@@ -1102,7 +1098,7 @@ function renderRows(){
  const missingProducts=active.filter(r=>productColor(r)==="bad").length-inactive;
  const autoExcluded=rows.filter(r=>r.excluded&&r.autoExcluded),absent=autoExcluded.filter(r=>r.autoExclusionReason==="Produit absent du catalogue actif").length;
  const inactiveExcluded=autoExcluded.filter(r=>r.autoExclusionReason==="Produit désactivé dans le catalogue").length;
- $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) dont "+autoExcluded.length+" automatiquement (absents : "+absent+", désactivés : "+inactiveExcluded+") · TVA à compléter : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
+ $("triageSummary").textContent=red+" rouge(s) · "+orange+" orange(s) · "+green+" verte(s) · "+(rows.length-active.length)+" écartée(s) dont "+autoExcluded.length+" automatiquement (absents : "+absent+", désactivés : "+inactiveExcluded+") · Taux TVA facultatifs non renseignés : "+missingTaxes+" · Produit absent : "+missingProducts+" · Produit désactivé : "+inactive+". Le filtre ne modifie ni les données ni les montants.";
  const box=$("lines");box.replaceChildren();
  for(const group of groupedRows()){
   if(!group.items.length)continue;
@@ -1143,7 +1139,7 @@ function calc(){
  const adjusted=!accounting&&discardedRows.length>0;
  const ht=amount($("subtotal").value),vat=amount($("tax").value),ttc=amount($("total").value);
  const missing=included.filter(r=>!eligible(r));
- const unmatched=accounting?[]:included.filter(r=>!r.product_id||!(amount(r.stock_quantity)>0)||(r.stock_needs_review&&!r.stock_confirmed));
+ const unmatched=accounting?[]:included.filter(r=>!r.product_id||!validStockQuantity(r)||(r.stock_needs_review&&!r.stock_confirmed));
  const unverified=included.filter(r=>!r.verified);
  const discrepancy=ht==null||(!accounting&&discardedInvalid)||Math.abs((accounting?sum:reconciledSum)-ht)>.02;
  const grossMismatch=ht!=null&&vat!=null&&ttc!=null&&Math.abs(round(ht+vat)-ttc)>.02;
@@ -1255,16 +1251,16 @@ function updateTotals(){
  const correctionNote=$("headerRepairNote");
  const vatHint=suggestInvoiceVatRate(),vatHintElement=$("vatSuggestion"),banner=$("vatActionRequired");
  const projection=vatHint?previewVatApproval(vatHint.rate):null;
- banner.hidden=!projection||!projection.missing;
+ banner.hidden=true;
  const bannerButton=$("applyVatBanner");bannerButton.disabled=loading||saved;
  if(projection?.missing){
-  $("vatActionText").textContent="TVA "+vatHint.rate+" % PROPOSÉE, NON APPLIQUÉE : "+projection.missing+" champs restent vides. Après vérification et confirmation sur le PDF, "+projection.good+" ligne(s) pourront passer au vert, "+projection.warn+" resteront orange et "+projection.bad+" rouges. Cette opération ne modifie aucun stock.";
+  $("vatActionText").textContent="TVA "+vatHint.rate+" % PROPOSÉE, NON APPLIQUÉE : "+projection.missing+" champs restent vides. La TVA par ligne est facultative et ne conditionne plus la couleur du produit. Cette opération ne modifie aucun stock.";
   bannerButton.textContent="Confirmer sur le PDF et appliquer "+vatHint.rate+" % aux "+projection.missing+" lignes";
  }
  const vatMissing=missingVatRows(rows).length,bulkButton=$("applyBulkVat");
  bulkButton.disabled=loading||saved||!vatMissing;
- bulkButton.textContent=vatMissing?"Appliquer la TVA aux "+vatMissing+" lignes et recalculer":"TVA déjà renseignée";
- vatHintElement.hidden=!vatHint;
+ bulkButton.textContent=vatMissing?"Renseigner les taux TVA (facultatif)":"Taux TVA déjà renseignés";
+ vatHintElement.hidden=true;
  if(vatHint)vatHintElement.textContent="Le taux "+vatHint.rate+" % a été PRÉREMPLI mais PAS APPLIQUÉ. Vérifiez le PDF et cliquez sur le bouton d'application. Cohérence : "+fmt(vatHint.ht)+" HT × "+vatHint.rate+" % = "+fmt(vatHint.tax)+" de TVA.";
  const suggestion=suggestHeaderFromOcr(),repairButton=$("repairHeader");
  repairButton.hidden=!suggestion;repairButton.disabled=loading||saved;
@@ -1285,7 +1281,7 @@ function updateTotals(){
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
-    retained.textContent="Lignes vertes uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+(c.selectedVat===null?" (taux de TVA d’une ligne verte à vérifier)":"")+" · "+c.pending.length+" ligne(s) rouge(s)/orange(s) non comptée(s) · "+c.autoExcludedCount+" écartée(s) automatiquement de la réception. Les lignes restent consultables et réintégrables. Les montants du PDF original restent inchangés.";
+    retained.textContent="Réception : HT des produits verts "+fmt(c.sum)+" · TVA par ligne "+(c.selectedVat===null?"non ventilée":fmt(c.selectedVat))+" · TTC des produits verts "+(c.selectedTtc===null?"non calculable sans ventilation TVA":fmt(c.selectedTtc))+". Facture originale : TVA "+fmt(c.vat)+" et TTC "+fmt(c.ttc)+" (coût payé, TVA non récupérable). "+c.pending.length+" ligne(s) orange/rouge hors réception · "+c.autoExcludedCount+" écartée(s) automatiquement. Les montants du PDF restent inchangés.";
   }
  const errors=[];
  if(!c.included.length)errors.push(accounting?"Aucune ligne retenue":"Aucune ligne verte validée pour la réception");
@@ -1300,7 +1296,7 @@ function updateTotals(){
  $("reconciliation").className="reconciliation "+(!accounting&&c.pending.length?"":errors.length?"bad":"good");
  const explanation=c.adjusted?" Réception partielle : "+c.pending.length+" ligne(s) encore à vérifier, "+c.removedCount+" supprimée(s), "+c.excludedCount+" écartée(s).":"";
   $("reconciliation").textContent=(accounting?"HT du PDF : "+fmt(c.ht)+" · HT des lignes : "+fmt(c.sum)+".":
-  "RÉCEPTION — Produits verts uniquement : HT "+fmt(c.sum)+" · TVA calculée "+fmt(c.selectedVat)+" · TTC calculé "+fmt(c.selectedTtc)+". Le montant HT lu sur le PDF ("+fmt(c.ht)+") reste informatif et ne remplace pas le total des produits.")+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Lignes retenues contrôlées.");
+  "RÉCEPTION — HT des produits verts : "+fmt(c.sum)+". TVA par ligne "+(c.selectedVat===null?"non ventilée":fmt(c.selectedVat))+". Facture originale : HT "+fmt(c.ht)+" · TVA "+fmt(c.vat)+" · TTC "+fmt(c.ttc)+" (TVA non récupérable). Le HT du PDF ne remplace pas le total validé des produits.")+explanation+(errors.length?" Contrôles : "+errors.join(" ; "):" Lignes retenues contrôlées.");
  $("save").disabled=trainingMode||!c.ok||!$("confirmReview").checked||loading;
  $("saveHelp").textContent=trainingMode?"MODE ENTRAÎNEMENT : réception et mouvements de stock désactivés. Les corrections restent locales (sauf mots-clés mémorisés explicitement).":saved?"Facture enregistrée.":c.pending.length&&!accounting?"Total vert actualisé. Passez les autres lignes au vert ou écartez-les avant validation définitive (anti-doublon PDF).":c.ok?(c.adjusted?"Réception partielle : seuls les produits verts seront enregistrés.":"Les lignes vertes sont prêtes ; confirmez après contrôle du PDF."):"Vérifiez les lignes vertes et les champs obligatoires avant l’enregistrement.";
 }
@@ -1343,7 +1339,7 @@ async function save(){
       invoice_unit:r.unit,delivered_unit:r.unit,detected_label:r.description,detected_reference:r.reference,
       unit_price_ht:amount(r.unit_price),line_total_ht:amount(r.total),vat_rate:amount(r.tax_rate),verified:true};
    });
-   if(items.some(x=>!x.product_id||!(x.stock_quantity>0)))throw Error("Une ou plusieurs quantités de stock sont manquantes.");
+   if(items.some(x=>!x.product_id||!(x.stock_quantity>0)||Math.abs(x.stock_quantity-Math.round(x.stock_quantity*1000)/1000)>1e-9))throw Error("Une ou plusieurs quantités de stock sont invalides ou dépassent 3 décimales.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:currentFile.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
     supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
     raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,auto_excluded_lines:c.autoExcludedCount,auto_excluded_details:rows.filter(r=>r.excluded&&r.autoExcluded).map(r=>({source_index:r.id,reference:r.reference,description:r.description,total_ht:amount(r.total),reason:r.autoExclusionReason})),pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
