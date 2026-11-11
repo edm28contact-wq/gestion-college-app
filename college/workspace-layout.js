@@ -170,8 +170,12 @@
     for(const group of aside.querySelectorAll(".school-nav-section[data-restricted-shortcuts]")){
      group.hidden=restricted||!role;
     }
-    if(restricted)for(const control of aside.querySelectorAll(".school-nav-links a")){
-     try{const destination=new URL(control.href);if(!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/"))control.hidden=true}catch{}
+    for(const control of aside.querySelectorAll(".school-nav-links a")){
+     try{
+      const destination=new URL(control.href);
+      const outside=!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/");
+      control.hidden=(restricted&&outside)||control.dataset.configHidden==="true";
+     }catch{control.hidden=restricted||control.dataset.configHidden==="true"}
     }
     brand.href=restricted?url("secretariat/"):url("college/admin/");
     filterMenu();
@@ -216,7 +220,7 @@
      const control=menuControls.get(id);
      if(!control||!options||typeof options!=="object")continue;
      if(typeof options.label==="string"&&options.label.trim()&&options.label.length<=65)control.textContent=options.label;
-     if(options.hidden===true)control.hidden=true;
+     if(options.hidden===true){control.dataset.configHidden="true";control.hidden=true;}
      if(Number.isInteger(options.order)&&options.order>=0&&options.order<=1000)control.dataset.order=String(options.order);
     }
     for(const section of aside.querySelectorAll(".school-nav-links")){
