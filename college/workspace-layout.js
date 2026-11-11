@@ -98,7 +98,7 @@
   const searchInput=document.createElement("input");searchInput.type="search";searchInput.placeholder="Page, rubrique ou outil";searchInput.autocomplete="off";
   const searchStatus=document.createElement("span");searchStatus.className="school-menu-search-status";searchStatus.setAttribute("role","status");searchStatus.setAttribute("aria-live","polite");
   searchBox.append(searchLabel,searchInput,searchStatus);aside.append(searchBox);
-  const normalizeSearch=value=>String(value||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().trim();
+  const normalizeSearch=value=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
   const filterMenu=()=>{
    const q=normalizeSearch(searchInput.value);let count=0;
    for(const group of aside.querySelectorAll(".school-nav-section")){
