@@ -8,7 +8,7 @@ function functionSource(name){
  for(let i=open;i<source.length;i++){if(source[i]==="{")depth++;if(source[i]==="}"&&--depth===0)return source.slice(start,i+1)}
  throw Error("Corps de fonction incomplet: "+name);
 }
-const names=["independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
+const names=["lineOcrConfidence","independentPdfVerified","lineEvidenceMetrics","validLineVat","groupedVatAmount","proposeHeaderAmounts","missingVatRows","applyVerifiedVat","applyNativePdfVatEvidence","applyVatFromPdf","suggestInvoiceVatRate","previewVatApproval","duplicateFingerprint","possibleDuplicate","automaticExclusionReason","synchronizeExcludedRows","setRowExclusion","productColor","invoiceArithmetic","eligible","isRetainedGreen","autoVerifyGreenRows","issueCategories","issueRank","groupedRows","calc"];
 function row(extra={}){return {id:0,reference:"R100",description:"Fromage",quantity:2,unit:"piece",unit_price:3,total:6,tax_rate:20,
  product_id:"p-1",stock_quantity:2,stock_needs_review:false,stock_confirmed:true,score:.99,confidenceMissing:[],
  verified:false,manualVerified:false,autoVerified:false,changed:false,manualMatchRequired:false,unit_inferred:false,
@@ -27,7 +27,7 @@ function harness(){
   'const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});'
  ].join("\n");
  vm.createContext(ctx);
- vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
+ vm.runInContext(helpers+"\n"+names.map(functionSource).join("\n")+"\nthis.reader={lineOcrConfidence,lineEvidenceMetrics,productColor,autoVerifyGreenRows,isRetainedGreen,issueCategories,groupedRows,calc,automaticExclusionReason,synchronizeExcludedRows,setRowExclusion,groupedVatAmount,proposeHeaderAmounts,applyVerifiedVat,applyNativePdfVatEvidence,applyVatFromPdf,suggestInvoiceVatRate,previewVatApproval};",ctx);
  return {ctx,api:ctx.reader,values};
 }
 test("ligne fiable: verte et réception permise",()=>{
@@ -182,7 +182,7 @@ test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  assert.ok(source.includes('banner.hidden=!projection||!projection.missing'));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=44"));
+ assert.ok(page.includes("veryfi.js?v=45"));
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -209,10 +209,10 @@ test("Secrétariat : la version du lecteur et de son iframe est explicitement in
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V44"'));
+ assert.ok(source.includes('const READER_VERSION="V45"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=44"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261110-v44"));
+ assert.ok(page.includes("veryfi.js?v=45"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v45"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
@@ -241,9 +241,9 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
 });
 test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=44"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261110-v44"));
- assert.ok(source.includes('const READER_VERSION="V44"'));
+ assert.ok(page.includes("veryfi.js?v=45"));
+ assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v45"));
+ assert.ok(source.includes('const READER_VERSION="V45"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
@@ -386,10 +386,10 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V44"'));
+ assert.ok(source.includes('const READER_VERSION="V45"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=44"));
- assert.ok(secretariat.includes("embed=secretariat&amp;v=20261110-v44"));
+ assert.ok(page.includes("veryfi.js?v=45"));
+ assert.ok(secretariat.includes("embed=secretariat&amp;v=20261111-v45"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
@@ -422,4 +422,36 @@ test("VA58 reste orange en cas de preuve PDF partielle ou anomalie metier",()=>{
 test("une preuve PDF partielle n'efface pas le motif OCR",()=>{
  const h=harness(),item=row({score:.85,pdfEvidence:{reference:true,description:false,quantity:true,unit_price:true,total:true,vat:true}});
  h.ctx.rows=[item];assert.ok(h.api.issueCategories(item).includes("ocr"));
+});
+
+test("V45 conserve les scores OCR et désigne le champ le plus faible",()=>{
+ const h=harness();
+ const x=h.api.lineOcrConfidence({boxes:{
+  description:{score:.97,ocr_score:.96},quantity:{score:.93},unit_price:{score:.85},total:{score:.99}
+ }});
+ assert.equal(x.score,.85);
+ assert.equal(x.missing.length,0);
+ assert.equal(x.fields.length,4);
+ const item=row({ocrFieldScores:x.fields,score:x.score});
+ h.ctx.rows=[item];
+ assert.deepEqual(Array.from(h.api.lineEvidenceMetrics(item).weakest),["Prix unitaire HT"]);
+ assert.equal(h.api.lineEvidenceMetrics(item).pdfCount,0);
+});
+test("V45 signale séparément les scores OCR absents et preuves PDF partielles",()=>{
+ const h=harness();
+ const x=h.api.lineOcrConfidence({boxes:{quantity:{ocr_score:.85},description:{score:.95}}});
+ assert.equal(x.score,.85);
+ assert.deepEqual(Array.from(x.missing),["unit_price","total"]);
+ const item=row({score:x.score,ocrFieldScores:x.fields,pdfEvidence:{reference:true,description:false,quantity:true,unit_price:true,total:true,vat:true}});
+ h.ctx.rows=[item];
+ const m=h.api.lineEvidenceMetrics(item);
+ assert.equal(m.pdfCount,5);
+ assert.equal(m.nativePdf,false);
+ assert.equal(h.api.productColor(item),"warn");
+ assert.equal(h.api.calc().sum,0);
+});
+test("V45 les corrections de champ invalident les anciennes preuves indépendantes",()=>{
+ assert.ok(source.includes("row[key]=value;row.pdfEvidence=null;"));
+ assert.ok(source.includes("row.changed=true;row.pdfEvidence=null;"));
+ assert.ok(source.includes("Détail : OCR, métier et preuves du PDF"));
 });
