@@ -31,7 +31,7 @@
 #content[hidden],#embeddedContent[hidden],#embeddedContent iframe[hidden]{display:none!important}
 #embeddedContent{width:100%;min-width:0}
 #embeddedContent iframe{display:block;width:100%;border:0;background:transparent;min-width:0;min-height:850px;overflow:hidden}
-</style><link rel="stylesheet" href="../college/workspace-layout.css?v=4">
+</style><link rel="stylesheet" href="../college/workspace-layout.css?v=20261111-47">
 </head><body><main class="wrap"><form id="login" class="card login" onsubmit="event.preventDefault();doLogin()"><h1>Secrétariat commandes</h1><p class="muted">Connexion avec <b>admin</b> ou avec un compte Secrétariat créé depuis la Holding.</p><label>Identifiant</label><input id="user" value="admin" autocomplete="username"><br><br><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><br><br><button class="btn primary" type="submit" style="width:100%">Se connecter</button><p id="loginMsg" class="status"></p></form><section id="app" class="hide"><div class="actions" style="justify-content:space-between;align-items:center"><div><h1>Secrétariat</h1><div id="who" class="muted"></div><div id="syncInfo" class="muted"></div></div><div class="actions"><a id="secretariatAdminSpace" class="btn secondary" href="../college/admin/">Administration Collège</a><a id="secretariatHoldingSpace" class="btn secondary" href="../admin/holding/">Holding</a><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div class="tabs"><button id="tStocks" class="btn active" onclick="show('stocks')">Stocks et produits</button><button id="tOrders" class="btn secondary" onclick="show('orders')">Commandes</button><button id="tInvoices" class="btn secondary" onclick="show('invoices')">Factures</button><button id="tPlanning" class="btn secondary" onclick="show('planning')">Planning</button><button id="tSettings" class="btn secondary" onclick="show('settings')">Paramètres</button><button id="tPassword" class="btn secondary" onclick="show('password')">Mot de passe</button></div><br><div id="content"></div><div id="embeddedContent" hidden>
 <iframe id="embeddedInvoices" title="Lecteur de factures du Secrétariat" data-src="../lecteur-veryfi/?origine=secretariat&amp;embed=secretariat&amp;v=20261111-v46" hidden></iframe>
 <iframe id="embeddedPlanning" title="Planning du personnel du Secrétariat" data-src="planning/?embed=secretariat&amp;v=20261109-events-v4" hidden></iframe>
@@ -145,14 +145,19 @@ function chooseSupplier(key){
  }).join(''):
  '<p class="muted">Aucun produit actif lié à ce fournisseur. Vérifiez d’abord le catalogue et les associations de ses factures.</p>';
 }
+function parisOrderDate(){
+ const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+ const part=key=>parts.find(value=>value.type===key)?.value;
+ return part("year")+"-"+part("month")+"-"+part("day");
+}
 function newOrder(){
  if(readOnly())return alert('Compte visiteur : modification interdite.');
  selectedSupplierKey="";
  $('content').innerHTML='<div class="card"><h2>Nouvelle commande</h2>'+
- '<div class="grid"><div><label>Date</label><input id="od" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'+
+ '<div class="grid"><div><label>Date</label><input id="od" type="date" value="'+parisOrderDate()+'"></div>'+
  '<div><label>Date prévue</label><input id="oe" type="date"></div>'+
  '<div><label>Fournisseur</label><input id="os" placeholder="Commencez à saisir le nom..." autocomplete="off" oninput="searchSupplier()" onfocus="supplierSuggestions()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();chooseFirstSupplier()}">'+
- '<div id="supplierSuggestions" class="supplier-suggestions" role="listbox"></div></div>'+
+ '<div id="supplierSuggestions" class="supplier-suggestions" role="group" aria-label="Fournisseurs proposés"></div></div>'+
  '<div><label>État</label><select id="ost"><option value="brouillon">Brouillon</option><option value="commandee">Commandée</option></select></div></div><br>'+
  '<div id="supplierProducts"><p class="muted">Sélectionnez un fournisseur pour afficher uniquement ses produits.</p></div>'+
  '<br><label>Remarque</label><textarea id="on"></textarea><br><br>'+
@@ -189,5 +194,5 @@ async function testSecretariatGemini(){const msg=$('sgMsg');try{msg.className='s
 function settingsPage(){if(isSecretary()){show('stocks');return}const ro=readOnly();$('content').innerHTML='<div class="card"><h2>Clés API Gemini · Secrétariat</h2><p class="muted">Pool indépendant de la Comptabilité. Jusqu’à <b>10 clés API Gemini</b>. Chaque clé est testée avant enregistrement et stockée chiffrée dans <b>Supabase Vault</b>. Les clés ne sont jamais réaffichées ni enregistrées dans GitHub.</p><div id="sgState" class="status">Vérification…</div><div style="max-width:720px;margin-top:12px"><label>Clé API Gemini Secrétariat</label><input id="sgKey" type="password" autocomplete="off" placeholder="Colle ici la clé du projet Gemini Secrétariat" '+(ro?'disabled':'')+'><div class="actions" style="margin-top:10px">'+(ro?'':'<button id="sgSave" class="btn primary" onclick="saveSecretariatGeminiKey()">Enregistrer et tester</button>')+'<button class="btn secondary" onclick="testSecretariatGemini()">Tester le pool</button></div><div id="sgMsg" class="status"></div></div></div>';loadSecretariatGeminiConfig()}
 function passwordPage(){if(isSecretary()){show('stocks');return}$('content').innerHTML=`<div class="card"><h2>Changer le mot de passe</h2><p class="muted">10 caractères minimum.</p><input id="p1" type="password" placeholder="Nouveau mot de passe"><br><br><input id="p2" type="password" placeholder="Confirmation"><br><br><button class="btn primary" onclick="changePassword()">Enregistrer</button><div id="pm" class="status"></div></div>`}async function changePassword(){if(isSecretary())return;const a=$('p1').value,b=$('p2').value,m=$('pm');if(a.length<10)return m.textContent='10 caractères minimum.';if(a!==b)return m.textContent='Les mots de passe ne correspondent pas.';try{await adminAction('change-password',{password:a});if(localStorage.getItem('edm_admin_token')===token)localStorage.removeItem('edm_admin_token');logout()}catch(e){m.className='status err';m.textContent=e.message}}
 if(new URLSearchParams(location.search).get('reauth')==='1'){token='';localStorage.removeItem('college_secretariat_token');localStorage.removeItem('edm_admin_token');$('login').classList.remove('hide');$('app').classList.add('hide')}else if(token)load().catch(()=>{const own=localStorage.getItem('college_secretariat_token')||'';if(!own&&localStorage.getItem('edm_admin_token')===token)localStorage.removeItem('edm_admin_token');logout()});
-</script><script defer src="../college/workspace-layout.js?v=9" data-area="secretariat" data-target="#app"></script>
+</script><script defer src="../college/workspace-layout.js?v=20261111-47" data-area="secretariat" data-target="#app"></script>
 </body></html>

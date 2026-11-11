@@ -67,3 +67,13 @@
 .school-custom-card{border:1px solid #d8e1ea;border-radius:11px;background:#fff;padding:14px 16px;min-width:0}
 .school-custom-card strong{display:block;font-size:14px;margin-bottom:5px}
 .school-custom-card p{font-size:13px;color:#566676;white-space:pre-wrap;margin:0}
+
+/* Recherche de navigation : le filtre masque les éléments sans modifier les autorisations. */
+.school-menu-search{display:grid;gap:6px;margin:2px 6px 14px;color:#d5e4ef;font-size:11px;font-weight:700}
+.school-menu-search input{width:100%;min-width:0;border:1px solid #62798d;border-radius:8px;padding:9px 11px;background:#f8fbff;color:#173349;font:inherit;font-size:13px}
+.school-menu-search input:focus-visible{outline:3px solid #9dd2f1;outline-offset:2px}
+.school-menu-search input::placeholder{color:#647b8e}
+.school-menu-search-status{font-weight:500;line-height:1.4;color:#c1d5e7}
+.school-nav-section.school-menu-group-filtered,.school-nav-links>.school-menu-filtered{display:none!important}
+@media(max-width:1060px){.school-menu-search{max-width:420px;margin:3px 6px 11px}}
+@media(max-width:650px){.school-menu-search{max-width:none}}

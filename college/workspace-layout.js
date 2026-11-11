@@ -93,6 +93,28 @@
   brand.append(title,subtitle);aside.append(brand);
   const context=document.createElement("div");context.className="school-nav-context";context.textContent=config.label;
   aside.append(context);
+  const searchBox=document.createElement("label");searchBox.className="school-menu-search";
+  const searchLabel=document.createElement("span");searchLabel.textContent="Rechercher dans le menu";
+  const searchInput=document.createElement("input");searchInput.type="search";searchInput.placeholder="Page, rubrique ou outil";searchInput.autocomplete="off";
+  const searchStatus=document.createElement("span");searchStatus.className="school-menu-search-status";searchStatus.setAttribute("role","status");searchStatus.setAttribute("aria-live","polite");
+  searchBox.append(searchLabel,searchInput,searchStatus);aside.append(searchBox);
+  const normalizeSearch=value=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const filterMenu=()=>{
+   const q=normalizeSearch(searchInput.value);let count=0;
+   for(const group of aside.querySelectorAll(".school-nav-section")){
+    let visible=0;
+    for(const control of group.querySelectorAll(".school-nav-links > a, .school-nav-links > button")){
+     const matches=!q||normalizeSearch(control.textContent).includes(q);
+     control.classList.toggle("school-menu-filtered",!matches);
+     if(!control.hidden&&matches)visible++;
+    }
+    group.classList.toggle("school-menu-group-filtered",!!q&&!visible);
+    if(!group.hidden)count+=visible;
+   }
+   searchStatus.textContent=q?(count?count+" rubrique(s) correspondante(s)":"Aucun résultat dans les espaces accessibles"):"";
+  };
+  searchInput.addEventListener("input",filterMenu);
+  searchInput.addEventListener("keydown",event=>{if(event.key==="Escape"){searchInput.value="";filterMenu();searchInput.blur();}});
   const bindings=[];
   const menuControls=new Map();
   const idFor=item=>item.path?"link:"+item.path:item.selector?"tab:"+item.selector:"scroll:"+item.scrollTo;
@@ -148,10 +170,15 @@
     for(const group of aside.querySelectorAll(".school-nav-section[data-restricted-shortcuts]")){
      group.hidden=restricted||!role;
     }
-    if(restricted)for(const control of aside.querySelectorAll(".school-nav-links a")){
-     try{const destination=new URL(control.href);if(!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/"))control.hidden=true}catch{}
+    for(const control of aside.querySelectorAll(".school-nav-links a")){
+     try{
+      const destination=new URL(control.href);
+      const outside=!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/");
+      control.hidden=(restricted&&outside)||control.dataset.configHidden==="true";
+     }catch{control.hidden=restricted||control.dataset.configHidden==="true"}
     }
     brand.href=restricted?url("secretariat/"):url("college/admin/");
+    filterMenu();
   };
   if(area==="secretariat"){
    document.addEventListener("college:secretariat-role",event=>applySecretaryRestriction(event.detail?.role));
@@ -193,7 +220,7 @@
      const control=menuControls.get(id);
      if(!control||!options||typeof options!=="object")continue;
      if(typeof options.label==="string"&&options.label.trim()&&options.label.length<=65)control.textContent=options.label;
-     if(options.hidden===true)control.hidden=true;
+     if(options.hidden===true){control.dataset.configHidden="true";control.hidden=true;}
      if(Number.isInteger(options.order)&&options.order>=0&&options.order<=1000)control.dataset.order=String(options.order);
     }
     for(const section of aside.querySelectorAll(".school-nav-links")){
@@ -231,6 +258,7 @@
     }
     if(panel.children.length)body.prepend(panel);
    }
+   filterMenu();
   }).catch(()=>{});
   if(bindings.length&&typeof MutationObserver==="function"){
    const observer=new MutationObserver(()=>bindings.forEach(({update})=>update()));
