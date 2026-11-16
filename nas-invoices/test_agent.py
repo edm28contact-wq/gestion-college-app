@@ -60,6 +60,37 @@ class InvoiceNasTests(unittest.TestCase):
         with self.assertRaises(ReviewRequired):
             classify(record)
 
+    def test_veryfi_vendor_nested_confidence(self):
+        invoice = {
+            "vendor": {"name": {"value": "LA NORMANDE SA", "score": .98}},
+            "date": {"value": "30/09/2026", "score": .98},
+            "invoice_number": {"value": "9027435888", "score": .95},
+        }
+        self.assertEqual(classify(invoice), "2026-09-30 LA NORMANDE.pdf")
+
+    def test_veryfi_no_scores_must_be_reviewed(self):
+        invoice = {"vendor": {"name": "LA NORMANDE SA"}, "date": "2026-09-30",
+                   "invoice_number": "9027435888"}
+        with self.assertRaises(ReviewRequired):
+            classify(invoice)
+
+    def test_document_modified_during_read_is_not_copied(self):
+        original = self.pdf.read_bytes()
+        real_read = Path.read_bytes
+
+        def read_with_interruption(obj):
+            data = real_read(obj)
+            if obj == self.pdf:
+                obj.write_bytes(data + b"later bytes")
+            return data
+
+        with patch.object(Path, "read_bytes", read_with_interruption):
+            status, destination = process_one(self.pdf, self.dst, self.review, {},
+                                              reader=self.reader)
+        self.assertEqual(status, "ignored")
+        self.assertIsNone(destination)
+        self.assertEqual(list(self.dst.glob("*.pdf")), [])
+
     def test_copy_preserves_original_and_exact_bytes(self):
         status, target = process_one(self.pdf, self.dst, self.review, {}, reader=self.reader)
         self.assertEqual(status, "copied")
