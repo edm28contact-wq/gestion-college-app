@@ -41,6 +41,11 @@ def confidence(field):
     return min(values) if values else None
 
 
+def valid_confidence(field, minimum):
+    score = confidence(field)
+    return score is not None and score >= minimum
+
+
 def canonical_date(value):
     value = str(unwrap(value) or "").strip()
     iso = DATE_ISO.fullmatch(value)
@@ -81,15 +86,12 @@ def classify(document, min_confidence=0.90):
     invoice_date = unwrap(document.get("date") or document.get("invoice_date"))
     if not number or len(number) > 140:
         raise ReviewRequired("Numero de facture absent ou ambigu")
-    fields = document.get("confidence_details") or {}
-    # La disponibilite exacte de ces scores depend du format repondu par Veryfi.
-    # Une preuve de faible confiance bloque; l'absence de score doit etre verifiee.
     top = document.get("fields") if isinstance(document.get("fields"), dict) else {}
-    for label, raw in (("fournisseur", top.get("vendor")), ("date", top.get("date")),
-                       ("numero", top.get("invoice_number"))):
-        score = confidence(raw)
-        if score is not None and score < min_confidence:
-            raise ReviewRequired(f"Confiance insuffisante pour {label}: {score:.0%}")
+    for label, raw in (("fournisseur", top.get("vendor") or document.get("vendor", {}).get("name") if isinstance(document.get("vendor"), dict) else top.get("vendor")),
+                       ("date", top.get("date") or document.get("date")),
+                       ("numero", top.get("invoice_number") or document.get("invoice_number"))):
+        if not valid_confidence(raw, min_confidence):
+            raise ReviewRequired("Confiance absente ou insuffisante pour " + label)
     # Le numero est exige meme s'il n'apparait pas dans le nom du PDF.
     return canonical_date(invoice_date) + " " + supplier_name(vendor) + ".pdf"
 
