@@ -87,10 +87,14 @@ def classify(document, min_confidence=0.90):
     if not number or len(number) > 140:
         raise ReviewRequired("Numero de facture absent ou ambigu")
     top = document.get("fields") if isinstance(document.get("fields"), dict) else {}
-    for label, raw in (("fournisseur", top.get("vendor") or document.get("vendor", {}).get("name") if isinstance(document.get("vendor"), dict) else top.get("vendor")),
-                       ("date", top.get("date") or document.get("date")),
-                       ("numero", top.get("invoice_number") or document.get("invoice_number"))):
-        if not valid_confidence(raw, min_confidence):
+    raw_vendor = document.get("vendor")
+    vendor_field = top.get("vendor")
+    if vendor_field is None and isinstance(raw_vendor, dict):
+        vendor_field = raw_vendor.get("name")
+    raw_date = top.get("date") if top.get("date") is not None else document.get("date")
+    raw_number = top.get("invoice_number") if top.get("invoice_number") is not None else document.get("invoice_number")
+    for label, field in (("fournisseur", vendor_field), ("date", raw_date), ("numero", raw_number)):
+        if not valid_confidence(field, min_confidence):
             raise ReviewRequired("Confiance absente ou insuffisante pour " + label)
     # Le numero est exige meme s'il n'apparait pas dans le nom du PDF.
     return canonical_date(invoice_date) + " " + supplier_name(vendor) + ".pdf"
@@ -173,9 +177,13 @@ def process_one(path, destination, review, credentials, reader=read_veryfi,
                 min_confidence=0.90, dry_run=False):
     if path.suffix.lower() != ".pdf" or not is_stable(path):
         return "ignored", None
+    before = path.stat()
+    # Ne pas charger un PDF demesure en memoire et ne jamais traiter un fichier incomplet.
+    if before.st_size > MAX_BYTES:
+        raise RuntimeError("PDF > 6 Mo : traitement manuel requis, aucune copie")
     data = path.read_bytes()
-    # Deuxieme controle pour eviter les fichiers encore en cours d'ecriture.
-    if path.stat().st_size != len(data):
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or len(data) != after.st_size:
         return "ignored", None
     h = digest(data)
     # Aucun cout OCR si ce contenu a deja ete archive, meme sous un autre nom.
