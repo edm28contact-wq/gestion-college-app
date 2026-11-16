@@ -4,6 +4,14 @@
 
 Un NAS capable d'executer Docker/Container Manager et ayant acces a Internet peut effectuer la surveillance sans PC Windows. Aucune installation n'est active tant que les chemins et le NAS ne sont pas configures.
 
+## Dossier source confirme
+
+Le dossier exact est le sous-dossier `SEC-Factures a Saisir` du partage `02-Secretariat`, repertoire `03-COMPTABLE`. Son chemin UNC Windows a ete confirme par capture d'ecran. Par securite, l'adresse locale du NAS n'est pas inscrite dans ce depot public.
+
+**Attention :** un chemin Windows UNC (commencant par deux antislashs) n'est pas un chemin Linux de l'hote NAS. Dans `.env` sur le NAS, `NAS_SOURCE_HOST_PATH` devra indiquer le chemin ABSOLU de ce dossier tel qu'il existe sur le NAS. Il reste a verifier selon le modele et le volume du NAS.
+
+Le montage du dossier source est `read_only: true`. Avec `create_host_path: false`, Compose doit refuser une source inexistante au lieu de creer par erreur un dossier vide. Le programme n'ecrit jamais dans ce dossier.
+
 ## Resultat
 
 Fichier `SCAN_000145.pdf` contenant la facture LA NORMANDE SA du 30/09/2026 -> copie exacte `2026-09-30 LA NORMANDE.pdf` dans `FACTURES_CLASSEES`.
@@ -19,8 +27,8 @@ Fichier `SCAN_000145.pdf` contenant la facture LA NORMANDE SA du 30/09/2026 -> c
 ## Preparation sur NAS compatible Docker
 
 1. Installer le gestionnaire de conteneurs fourni par le NAS (Synology Container Manager, QNAP Container Station ou Docker compatible), si le modele le permet.
-2. Copier ce dossier `nas-invoices/` sur le NAS. Creer dans ce dossier `ENTREE_FACTURES`, `FACTURES_CLASSEES` et `A_VERIFIER`.
-3. Copier `.env.example` en `.env` **sur le NAS seulement**, y renseigner les identifiants Veryfi dedies. Ne pas committer `.env`, ne pas placer le token dans le navigateur.
+2. Copier ce dossier `nas-invoices/` sur le NAS. Creer dans ce dossier uniquement `FACTURES_CLASSEES` et `A_VERIFIER`. Ne pas creer une nouvelle source `ENTREE_FACTURES` : le montage doit pointer vers le dossier NAS existant.
+3. Copier `.env.example` en `.env` **sur le NAS seulement**. Renseigner `NAS_SOURCE_HOST_PATH` avec le chemin Linux absolu confirme et les identifiants Veryfi dedies. Ne jamais y mettre directement le chemin UNC Windows, ne pas committer `.env`, ne pas placer le token dans le navigateur.
 4. Donner a l'utilisateur du conteneur (UID/GID 10001) les droits de lecture du dossier source et d'ecriture dans les deux destinations.
 5. Pour la premiere execution, conserver `DRY_RUN=true`. Lancer `docker compose up -d --build` puis lire `docker compose logs -f invoices`.
 6. Verifier la lecture et le nom propose ; passer ensuite `DRY_RUN=false` et redemarrer par `docker compose up -d` **seulement apres validation de l'installation**.
@@ -35,7 +43,7 @@ Le conteneur doit garder acces au reseau HTTPS sortant vers Veryfi. Le NAS doit 
 
 ## Limites de cette version
 
-- Le modele de NAS, les chemins finaux et les identifiants Veryfi ne sont pas encore fournis : la configuration reelle ne peut pas etre terminee.
+- Le dossier source est identifie sous Windows, mais le modele de NAS, le chemin Linux absolu, la destination choisie et les identifiants Veryfi ne sont pas connus : la connexion reelle ne peut pas etre activee.
 - Les factures sans scores de confiance exploitables seront mises en revue pour eviter un nom incorrect.
 - Veryfi est un service payant pouvant appliquer des quotas et des couts ; aucune gestion automatique du quota interne Supabase dans ce module local.
 - Ne pas utiliser ce script pour mettre a jour les stocks : ce n'est **que** du classement de PDF.

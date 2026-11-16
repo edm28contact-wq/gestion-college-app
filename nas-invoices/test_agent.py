@@ -60,6 +60,37 @@ class InvoiceNasTests(unittest.TestCase):
         with self.assertRaises(ReviewRequired):
             classify(record)
 
+    def test_veryfi_vendor_nested_confidence(self):
+        invoice = {
+            "vendor": {"name": {"value": "LA NORMANDE SA", "score": .98}},
+            "date": {"value": "30/09/2026", "score": .98},
+            "invoice_number": {"value": "9027435888", "score": .95},
+        }
+        self.assertEqual(classify(invoice), "2026-09-30 LA NORMANDE.pdf")
+
+    def test_veryfi_no_scores_must_be_reviewed(self):
+        invoice = {"vendor": {"name": "LA NORMANDE SA"}, "date": "2026-09-30",
+                   "invoice_number": "9027435888"}
+        with self.assertRaises(ReviewRequired):
+            classify(invoice)
+
+    def test_document_modified_during_read_is_not_copied(self):
+        original = self.pdf.read_bytes()
+        real_read = Path.read_bytes
+
+        def read_with_interruption(obj):
+            data = real_read(obj)
+            if obj == self.pdf:
+                obj.write_bytes(data + b"later bytes")
+            return data
+
+        with patch.object(Path, "read_bytes", read_with_interruption):
+            status, destination = process_one(self.pdf, self.dst, self.review, {},
+                                              reader=self.reader)
+        self.assertEqual(status, "ignored")
+        self.assertIsNone(destination)
+        self.assertEqual(list(self.dst.glob("*.pdf")), [])
+
     def test_copy_preserves_original_and_exact_bytes(self):
         status, target = process_one(self.pdf, self.dst, self.review, {}, reader=self.reader)
         self.assertEqual(status, "copied")
@@ -109,6 +140,16 @@ class InvoiceNasTests(unittest.TestCase):
         def bad(*args):
             raise ReviewRequired("PDF invalide")
         self.assertEqual(process_one(self.pdf,self.dst,self.review,{},reader=bad)[0],"review")
+
+    def test_compose_mounts_existing_source_read_only(self):
+        compose = (Path(__file__).parent / "compose.yaml").read_text(encoding="utf-8")
+        env = (Path(__file__).parent / ".env.example").read_text(encoding="utf-8")
+        self.assertIn("NAS_SOURCE_HOST_PATH:?", compose)
+        self.assertIn("target: /data/ENTREE_FACTURES", compose)
+        self.assertIn("read_only: true", compose)
+        self.assertIn("create_host_path: false", compose)
+        self.assertNotIn("./ENTREE_FACTURES:/data/ENTREE_FACTURES", compose)
+        self.assertIn("NAS_SOURCE_HOST_PATH=", env)
 
     def test_dry_run_writes_nothing(self):
         status,target=process_one(self.pdf,self.dst,self.review,{},reader=self.reader,dry_run=True)

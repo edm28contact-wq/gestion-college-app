@@ -11,6 +11,11 @@ services:
     env_file:
       - .env
     volumes:
-      - ./ENTREE_FACTURES:/data/ENTREE_FACTURES:ro
+      - type: bind
+        source: "${NAS_SOURCE_HOST_PATH:?Definir le chemin Linux absolu du dossier source sur le NAS}"
+        target: /data/ENTREE_FACTURES
+        read_only: true
+        bind:
+          create_host_path: false
       - ./FACTURES_CLASSEES:/data/FACTURES_CLASSEES:rw
       - ./A_VERIFIER:/data/A_VERIFIER:rw
