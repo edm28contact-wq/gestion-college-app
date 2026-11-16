@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent import (ReviewRequired, canonical_date, classify, digest, process_one,
-                   save_without_overwrite, supplier_name, valid_confidence)
+                   save_without_overwrite, supplier_name, valid_confidence,
+                   read_veryfi, external_ocr_authorized)
 
 
 class InvoiceNasTests(unittest.TestCase):
@@ -90,6 +91,17 @@ class InvoiceNasTests(unittest.TestCase):
         self.assertEqual(status, "ignored")
         self.assertIsNone(destination)
         self.assertEqual(list(self.dst.glob("*.pdf")), [])
+
+    def test_ocr_externe_refuse_par_defaut_y_compris_en_simulation(self):
+        with patch.dict(os.environ, {"ALLOW_EXTERNAL_OCR": "false"}):
+            self.assertFalse(external_ocr_authorized())
+            with self.assertRaisesRegex(RuntimeError, "desactivee"):
+                read_veryfi(self.pdf.read_bytes(), self.pdf.name, {
+                    "client_id": "TEST", "api_key": "TEST"})
+
+    def test_optin_ocr_externe_explicite(self):
+        with patch.dict(os.environ, {"ALLOW_EXTERNAL_OCR": "true"}):
+            self.assertTrue(external_ocr_authorized())
 
     def test_copy_preserves_original_and_exact_bytes(self):
         status, target = process_one(self.pdf, self.dst, self.review, {}, reader=self.reader)
