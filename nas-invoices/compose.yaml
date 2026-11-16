@@ -1,0 +1,16 @@
+services:
+  invoices:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    env_file:
+      - .env
+    volumes:
+      - ./ENTREE_FACTURES:/data/ENTREE_FACTURES:ro
+      - ./FACTURES_CLASSEES:/data/FACTURES_CLASSEES:rw
+      - ./A_VERIFIER:/data/A_VERIFIER:rw
