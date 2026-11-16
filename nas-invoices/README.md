@@ -35,6 +35,15 @@ Fichier `SCAN_000145.pdf` contenant la facture LA NORMANDE SA du 30/09/2026 -> c
 
 Le mode simulation utilise Veryfi et peut donc consommer des appels OCR. Ne pas laisser le service tourner en boucle en simulation pendant une longue periode.
 
+## Securite et protection des donnees sensibles
+
+**Par defaut : aucun document n'est envoye a Veryfi**, y compris en simulation.
+L'agent refuse de demarrer si `ALLOW_EXTERNAL_OCR` n'est pas defini explicitement sur `true`.
+Avant toute activation : verifier le contrat de sous-traitance (DPA), la localisation de traitement des donnees, la duree de conservation, les sous-traitants et le niveau de confidentialite des PDF.
+L'activation ne doit se faire que par une personne autorisee a traiter ces donnees.
+
+Le compte utilise pour le conteneur n'a pas besoin du role administrateur Synology. Donner uniquement lecture sur le partage source et ecriture sur les deux dossiers d'archive. Ne pas monter les autres dossiers du NAS. Isoler les comptes, appliquer les mises a jour DSM, activer MFA pour les administrateurs et restreindre le pare-feu.
+
 ## Securite
 
 La cle Veryfi est stockee dans le NAS, pas dans le depot GitHub. Utiliser un compte/une cle Veryfi destine(e) a l'agent si disponible. Les copies ne deviennent visibles qu'une fois les octets ecrits. Ne jamais exposer SMB directement sur Internet.
