@@ -110,6 +110,16 @@ class InvoiceNasTests(unittest.TestCase):
             raise ReviewRequired("PDF invalide")
         self.assertEqual(process_one(self.pdf,self.dst,self.review,{},reader=bad)[0],"review")
 
+    def test_compose_mounts_existing_source_read_only(self):
+        compose = (Path(__file__).parent / "compose.yaml").read_text(encoding="utf-8")
+        env = (Path(__file__).parent / ".env.example").read_text(encoding="utf-8")
+        self.assertIn("NAS_SOURCE_HOST_PATH:?", compose)
+        self.assertIn("target: /data/ENTREE_FACTURES", compose)
+        self.assertIn("read_only: true", compose)
+        self.assertIn("create_host_path: false", compose)
+        self.assertNotIn("./ENTREE_FACTURES:/data/ENTREE_FACTURES", compose)
+        self.assertIn("NAS_SOURCE_HOST_PATH=", env)
+
     def test_dry_run_writes_nothing(self):
         status,target=process_one(self.pdf,self.dst,self.review,{},reader=self.reader,dry_run=True)
         self.assertEqual(status,"dry-run-copied")
