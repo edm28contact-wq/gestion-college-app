@@ -100,8 +100,15 @@ def classify(document, min_confidence=0.90):
     return canonical_date(invoice_date) + " " + supplier_name(vendor) + ".pdf"
 
 
+def external_ocr_authorized():
+    """Les simulations ne doivent pas envoyer des donnees confidentielles sans accord."""
+    return os.environ.get("ALLOW_EXTERNAL_OCR", "false").strip().lower() == "true"
+
+
 def read_veryfi(pdf_bytes, filename, credentials, opener=None):
     import base64
+    if not external_ocr_authorized():
+        raise RuntimeError("Transmission de factures vers Veryfi desactivee. Verifier RGPD, hebergement et DPA avant ALLOW_EXTERNAL_OCR=true.")
     if not pdf_bytes.startswith(b"%PDF-"):
         raise ReviewRequired("Document non PDF")
     if len(pdf_bytes) > MAX_BYTES:
@@ -224,6 +231,8 @@ def main():
                    "api_key": os.environ.get("VERYFI_API_KEY", ""),
                    "username": os.environ.get("VERYFI_USERNAME", ""),
                    "auth_mode": os.environ.get("VERYFI_AUTH_MODE", "bearer")}
+    if not external_ocr_authorized():
+        raise RuntimeError("OCR externe bloque par defaut : aucune facture n'est envoyee. Autorisation RGPD et parametre ALLOW_EXTERNAL_OCR requis.")
     if not credentials["client_id"] or not credentials["api_key"]:
         raise RuntimeError("VERYFI_CLIENT_ID et VERYFI_API_KEY doivent etre configures sur le NAS")
     if not source.is_dir():
