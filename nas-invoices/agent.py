@@ -226,11 +226,17 @@ def main():
     interval = max(30, int(os.environ.get("SCAN_INTERVAL_SEC", "60")))
     dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
     LOG.info("Surveillance NAS : %s -> %s (simulation=%s)", source, destination, dry_run)
+    seen_dry_run = set()
     while True:
         for path in sorted(source.iterdir()):
             if not path.is_file() or path.suffix.lower() != ".pdf":
                 continue
             try:
+                if dry_run and is_stable(path):
+                    hash_value = digest(path.read_bytes())
+                    if hash_value in seen_dry_run:
+                        continue
+                    seen_dry_run.add(hash_value)
                 status, target = process_one(path, destination, review, credentials,
                                             min_confidence=min_score, dry_run=dry_run)
                 if status != "ignored":
