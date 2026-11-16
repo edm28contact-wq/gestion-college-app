@@ -1,0 +1,27 @@
+name: Tests agent NAS factures
+on:
+  pull_request:
+    paths:
+      - 'nas-invoices/**'
+      - '.github/workflows/test-nas-invoices.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'nas-invoices/**'
+      - '.github/workflows/test-nas-invoices.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntaxe Python
+        run: python -m py_compile nas-invoices/agent.py nas-invoices/test_agent.py
+      - name: Tests de copie et renommage
+        run: cd nas-invoices && python -m unittest -v test_agent.py
