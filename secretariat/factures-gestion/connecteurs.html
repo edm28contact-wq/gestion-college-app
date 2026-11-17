@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta http-equiv="Cache-Control" content="no-store">
+<title>Connecteurs OCR | Admin Collège</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#223548;background:#f4f7fa}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:1120px;margin:auto;padding:20px}
+h1{margin:0 0 8px;font-size:25px}h2{margin:0 0 6px;font-size:19px}
+p{line-height:1.5}.muted{color:#586b7d;font-size:13px}
+.card{background:white;border:1px solid #d8e2ec;padding:19px;margin:15px 0;border-radius:12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+label.field{display:block;font-weight:600;font-size:13px;margin-top:13px}
+.field input{margin-top:5px;width:100%;border:1px solid #b9cbdc;border-radius:8px;padding:10px;font:inherit;font-weight:400}
+label.check{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:1.4;margin-top:12px}
+label.check input{margin-top:3px}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:15px}
+button,.btn{border:1px solid #bdccda;border-radius:8px;background:#fff;color:#1c364e;font:600 14px system-ui;padding:10px 14px;cursor:pointer;text-decoration:none}
+button.primary{color:#fff;background:#234b70;border-color:#234b70}
+button:disabled{opacity:.5;cursor:not-allowed}.status{font-size:12px;color:#455e74}
+.note{background:#edf2f7;padding:12px;border-radius:8px;color:#34516c;font-size:13px}
+#error{color:#a32626;white-space:pre-line}#message{font-size:14px;min-height:24px}
+a{color:#164d7d}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.wrap{padding:11px}}
+</style></head><body><main class="wrap">
+<div class="actions"><a class="btn" href="./">Retour aux factures</a><a class="btn" href="../../college/admin/?page=advanced">Outils avancés</a></div>
+<h1>Connecteurs OCR — Gestion Collège</h1>
+<p class="muted">Configuration réservée au super-administrateur. Les identifiants sont conservés côté serveur dans Supabase Vault.</p>
+<div class="card note"><strong>Connexion technique en préparation.</strong> Ajouter une clé et activer un connecteur autorise son utilisation future, mais ne déclenche actuellement aucun envoi de PDF. Les moteurs de lecture en arrière-plan et la comparaison automatique ne sont pas encore reliés à cette page.</div>
+<p id="message" role="status" aria-live="polite">Chargement des connecteurs…</p>
+<div class="grid">
+<section class="card" data-provider="azure_invoice">
+<h2>Azure AI Document Intelligence</h2>
+<p class="muted">Extraction de factures et de lignes de produits. L'offre gratuite F0 est limitée, notamment sur les documents multipages.</p>
+<p class="status" data-status>Non configuré</p>
+<label class="field">Point de terminaison Azure<input data-endpoint placeholder="https://xxxx.cognitiveservices.azure.com" autocomplete="off" spellcheck="false"></label>
+<label class="field">Clé Azure (jamais réaffichée)<input data-credential type="password" autocomplete="new-password" placeholder="Laisser vide pour conserver la clé"></label>
+<label class="field">Nombre maximal de requêtes par mois<input data-cap type="number" min="1" max="100" value="25"></label>
+<label class="check"><input data-enabled type="checkbox"> Activer ce fournisseur pour un traitement futur</label>
+<label class="check"><input data-consent type="checkbox"> J'autorise explicitement la transmission des PDF concernés à Microsoft, selon les conditions de traitement applicables</label>
+<label class="check"><input data-erase type="checkbox"> Supprimer la clé enregistrée (désactive le fournisseur)</label>
+<div class="actions"><button class="primary" type="button" data-save>Enregistrer Azure</button></div>
+<a href="https://learn.microsoft.com/azure/ai-services/document-intelligence/prebuilt/invoice" target="_blank" rel="noopener noreferrer">Documentation officielle Azure</a>
+</section>
+<section class="card" data-provider="ocrspace">
+<h2>OCR.space</h2>
+<p class="muted">Lecture OCR complémentaire de PDF. L'API gratuite a des limites de poids, de pages et de fréquence : prévoir le contrôle avant utilisation.</p>
+<p class="status" data-status>Non configuré</p>
+<label class="field">Clé API OCR.space (jamais réaffichée)<input data-credential type="password" autocomplete="new-password" placeholder="Laisser vide pour conserver la clé"></label>
+<label class="field">Nombre maximal de requêtes par mois<input data-cap type="number" min="1" max="100" value="25"></label>
+<label class="check"><input data-enabled type="checkbox"> Activer ce fournisseur pour un traitement futur</label>
+<label class="check"><input data-consent type="checkbox"> J'autorise explicitement la transmission des PDF concernés à OCR.space, selon les conditions de traitement applicables</label>
+<label class="check"><input data-erase type="checkbox"> Supprimer la clé enregistrée (désactive le fournisseur)</label>
+<div class="actions"><button class="primary" type="button" data-save>Enregistrer OCR.space</button></div>
+<a href="https://ocr.space/ocrapi" target="_blank" rel="noopener noreferrer">Documentation officielle OCR.space</a>
+</section>
+</div>
+<section class="card"><h2>Autres moteurs à intégrer</h2>
+<p class="muted">Google Cloud Vision (API cloud), AWS Textract (API cloud), Tesseract.js (déjà présent dans le lecteur de secours). Les moteurs sans adaptateur opérationnel ne sont pas indiqués comme connectés. Veryfi reste accessible dans l'ancien lecteur, séparément.</p>
+<p class="note">Pour garantir la fiabilité, chaque résultat devra être recoupé avec les références fournisseurs, les conditionnements, les montants et la couverture complète des lignes. Le nombre de moteurs ne suffira pas à garantir une validation automatique.</p></section>
+</main><script src="./connecteurs.js?v=20261117-1" defer></script></body></html>
