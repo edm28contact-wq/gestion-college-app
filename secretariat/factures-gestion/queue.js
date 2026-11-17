@@ -4,6 +4,7 @@
   const $ = id => document.getElementById(id);
   let invoices = [], currentTab = "todo", busy = false, previewUrl = null;
   const OCR_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-ocrspace-reader";
+  const AZURE_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-azure-invoice-reader";
   const session = () => localStorage.getItem("college_secretariat_token") || localStorage.getItem("edm_admin_token") || "";
   const notice = (value, error = false) => {
     $("notice").textContent = String(value);
@@ -46,7 +47,7 @@
     invoices = result.invoices || [];
     $("countTodo").textContent = invoices.filter(x => x.state === "todo").length;
     $("countDone").textContent = invoices.filter(x => x.state === "done").length;
-    $("ocrState").textContent = "OCR.space à configurer";
+    $("ocrState").textContent = "Lecture manuelle";
     render();
   }
   function render() {
@@ -70,8 +71,12 @@
       if (invoice.state === "todo") {
         const scan = element("button", null, "Lire avec OCR.space");
         scan.type = "button"; scan.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3;
-        scan.onclick = () => void runOcr(invoice);
+        scan.onclick = () => void runOcr(invoice, "ocrspace");
         actions.append(scan);
+        const azure = element("button", null, "Lire avec Azure");
+        azure.type = "button"; azure.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3;
+        azure.onclick = () => void runOcr(invoice, "azure_invoice");
+        actions.append(azure);
       }
       if (invoice.ocr_attempts > 0) {
         const results = element("button", null, "Résultats OCR (" + invoice.ocr_attempts + ")");
@@ -88,28 +93,32 @@
       item.append(detail, actions); list.append(item);
     }
   }
-  async function runOcr(invoice) {
+  async function runOcr(invoice, provider = "ocrspace") {
     if (busy) return;
-    if (invoice.file_bytes > 1000000) return notice("OCR.space gratuit refuse les PDF de plus de 1 Mo. Utilisez un autre lecteur.",true);
-    if (!confirm("Envoyer cette facture à OCR.space pour lecture ? Le fournisseur externe recevra une copie du PDF. Aucune écriture en stock.")) return;
+    const isAzure=provider==="azure_invoice";
+    const label=isAzure?"Azure Document Intelligence":"OCR.space";
+    const limit=isAzure?4000000:1000000;
+    if (invoice.file_bytes>limit)
+      return notice(label+" : facture supérieure à "+(limit/1000000)+" Mo. Essayez un autre lecteur.",true);
+    if (!confirm("Envoyer cette facture à "+label+" pour lecture externe ? Aucun stock ne sera modifié.")) return;
     setBusy(true);
-    notice("Lecture OCR.space en cours sur " + invoice.file_name + "…");
+    notice("Lecture "+label+" en cours sur "+invoice.file_name+"…");
     try {
       const current = session();
       if (!current) throw Error("Reconnectez-vous au Secrétariat.");
-      const res = await fetch(OCR_API, {
+      const res=await fetch(isAzure?AZURE_API:OCR_API,{
         method:"POST",headers:{"authorization":"Bearer "+current,"content-type":"application/json"},
-        body:JSON.stringify({invoice_id:invoice.id}),cache:"no-store",signal:AbortSignal.timeout(85000),
+        body:JSON.stringify({invoice_id:invoice.id}),cache:"no-store",signal:AbortSignal.timeout(90000),
       });
-      const data = await res.json().catch(()=>({}));
-      if (!res.ok || data.ok !== true) throw Error(data.error || "Lecture OCR impossible");
+      const data=await res.json().catch(()=>({}));
+      if (!res.ok||data.ok!==true)throw Error(data.error||"Lecture OCR impossible");
       await fetchInvoices();
-      notice("Lecture n°"+data.attempt+" terminée : "+data.page_count+" page(s) reconnue(s). Vérification manuelle requise.");
+      notice("Lecture n°"+data.attempt+" avec "+label+" terminée : "+data.page_count+" page(s). Résultats à vérifier.");
       await showOcr(invoice);
-    } catch(e) {
-      notice("OCR.space : "+e.message,true);
+    }catch(e){
+      notice(label+" : "+e.message,true);
       try {await fetchInvoices()} catch {}
-    } finally {setBusy(false)}
+    }finally {setBusy(false)}
   }
   async function showOcr(invoice) {
     try {
@@ -119,14 +128,27 @@
       if (!data.readings.length) out.append(element("p","subtle","Aucune lecture enregistrée."));
       for (const reading of data.readings) {
         const wrapper=element("section","panel");
-        wrapper.append(element("strong",null,"Lecture "+reading.attempt+" · Moteur OCR.space "+reading.engine+
+        wrapper.append(element("strong",null,"Lecture "+reading.attempt+" · "+(reading.provider==="azure_invoice"?"Azure Document Intelligence":"OCR.space (moteur "+reading.engine+")")+
           " · "+(reading.status==="review"?"Texte à vérifier":"Échec")));
         wrapper.append(element("p","subtle","Pages retournées : "+reading.page_count+
           (reading.error_code?" · Code : "+reading.error_code:"")));
         const text = element("textarea","ocr-text");
         text.readOnly=true; text.rows=12; text.value=reading.ocr_text||"";
         text.style.cssText="display:block;max-width:100%;width:100%;margin-top:10px;min-height:150px";
-        wrapper.append(text); out.append(wrapper);
+        wrapper.append(text);
+        if (reading.provider==="azure_invoice" && reading.structured_result) {
+          const fields=reading.structured_result;
+          wrapper.append(element("p","subtle","Fournisseur : "+(fields.supplier||"—")+" · Facture : "+(fields.invoice_number||"—")+" · Total : "+(fields.total||"—")));
+          const items=Array.isArray(fields.items)?fields.items:[];
+          wrapper.append(element("strong",null,items.length+" ligne(s) reconnue(s) par Azure, à vérifier"));
+          for (const item of items) {
+            wrapper.append(element("p","subtle",(item.index||"")+" · "+(item.description||"Produit non reconnu")+
+              " · Qté : "+(item.quantity||"—")+" · PU : "+(item.unit_price||"—")+" · Montant : "+(item.amount||"—")));
+          }
+          if(fields.partial_document_possible)
+            wrapper.append(element("p","subtle","Attention : l’offre Azure F0 peut limiter l’analyse aux deux premières pages. Vérifier le PDF complet."));
+        }
+        out.append(wrapper);
       }
       $("ocrPanel").hidden=false;
       $("ocrPanel").scrollIntoView({behavior:"smooth",block:"start"});

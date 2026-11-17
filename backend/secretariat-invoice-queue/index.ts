@@ -78,7 +78,7 @@ Deno.serve(async (req: Request) => {
       const invoice = await c.from("secretariat_invoice_queue").select("id,ocr_status,ocr_attempts").eq("id",id).maybeSingle();
       if (invoice.error || !invoice.data) return response({ error: "Facture introuvable" }, 404);
       const scans = await c.from("secretariat_ocr_scan_results")
-        .select("attempt,engine,status,ocr_text,page_count,error_code,created_at")
+        .select("provider,attempt,engine,status,ocr_text,page_count,error_code,created_at,structured_result")
         .eq("invoice_id",id).order("attempt",{ascending:true}).limit(3);
       if (scans.error) throw scans.error;
       return response({ ok:true,invoice:invoice.data,readings:scans.data||[],stock_unchanged:true });
