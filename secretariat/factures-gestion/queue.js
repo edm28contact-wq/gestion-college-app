@@ -47,7 +47,7 @@
     invoices = result.invoices || [];
     $("countTodo").textContent = invoices.filter(x => x.state === "todo").length;
     $("countDone").textContent = invoices.filter(x => x.state === "done").length;
-    $("ocrState").textContent = "OCR.space à configurer";
+    $("ocrState").textContent = "Lecture manuelle";
     render();
   }
   function render() {
