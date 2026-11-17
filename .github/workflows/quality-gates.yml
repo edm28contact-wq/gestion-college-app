@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for source in lecteur-veryfi/veryfi.js lecteur-veryfi/ocr-secours.js secretariat/factures-gestion/queue.js secretariat/planning/calendar.js secretariat/planning/print-month.js college/workspace-layout.js college/admin/salaires.js; do
+          for source in lecteur-veryfi/veryfi.js lecteur-veryfi/ocr-secours.js secretariat/factures-gestion/queue.js secretariat/factures-gestion/connecteurs.js secretariat/planning/calendar.js secretariat/planning/print-month.js college/workspace-layout.js college/admin/salaires.js; do
             node --check "$source"
           done
       - name: Tester les invariants métier
