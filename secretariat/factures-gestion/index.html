@@ -44,8 +44,9 @@ button:disabled{opacity:.5;cursor:not-allowed}.tabs button.active{background:#20
 <p class="subtle">Les factures sont conservées dans un stockage privé. « Faite » indique ici un classement administratif manuel, pas une réception en stock.</p>
 <div id="list" class="list"></div>
 </section>
+<section class="panel" id="ocrPanel" hidden><div class="review-header"><h2 id="ocrTitle">Lectures OCR</h2><button id="closeOcr" type="button">Fermer</button></div><p class="subtle">Les résultats OCR sont conservés pour vérification. Ils ne valident aucune ligne de produits et ne changent pas les stocks.</p><div id="ocrResults"></div></section>
 <section class="panel" id="previewPanel" hidden><div class="review-header"><h2 id="previewTitle">Aperçu du PDF</h2><button id="closePreview" type="button">Fermer</button></div>
 <p class="subtle">Aperçu temporaire réservé aux utilisateurs connectés.</p><iframe id="preview" class="viewer" title="Document PDF privé" referrerpolicy="no-referrer"></iframe></section>
 <section class="panel"><strong>Traitement OCR automatisé</strong>
 <p class="subtle">Le traitement PaddleOCR/docTR en arrière-plan n'est pas encore hébergé ni connecté. Les factures restent dans « À faire » ; aucune ligne n'est automatiquement validée et aucun stock n'est modifié depuis cette page. Le lecteur Veryfi existant reste accessible séparément.</p></section>
-</main><script src="./queue.js?v=20261117-1" defer></script></body></html>
+</main><script src="./queue.js?v=20261117-2" defer></script></body></html>
