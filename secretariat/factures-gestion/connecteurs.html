@@ -24,7 +24,18 @@ a{color:#164d7d}
 <div class="actions"><a class="btn" href="./">Retour aux factures</a><a class="btn" href="../../college/admin/?page=advanced">Outils avancés</a></div>
 <h1>Connecteurs OCR — Gestion Collège</h1>
 <p class="muted">Configuration réservée au super-administrateur. Les identifiants sont conservés côté serveur dans Supabase Vault.</p>
-<div class="card note"><strong>Connexion technique en préparation.</strong> Ajouter une clé et activer un connecteur autorise son utilisation future, mais ne déclenche actuellement aucun envoi de PDF. Les moteurs de lecture en arrière-plan et la comparaison automatique ne sont pas encore reliés à cette page.</div>
+<div class="card note"><strong>OCR.space : lecture manuelle disponible.</strong> Après enregistrement de la clé et autorisation d’envoi, allez dans Secrétariat → Factures → À faire, puis cliquez sur « Lire avec OCR.space ». Les lectures automatiques multi-OCR et la classification des produits restent en préparation.</div>
+<form id="adminLoginForm" class="card" hidden autocomplete="on">
+<h2>Connexion du super-administrateur</h2>
+<p class="muted">La connexion du Secrétariat ne suffit pas pour modifier des clés API. Connectez-vous ici avec le compte administrateur global. La session utilisée pour cette page n’est pas enregistrée dans le navigateur.</p>
+<div class="grid">
+<label class="field">Identifiant administrateur<input id="adminUser" autocomplete="username" value="admin" required></label>
+<label class="field">Mot de passe administrateur<input id="adminPass" type="password" autocomplete="current-password" required></label>
+</div>
+<div class="actions"><button id="adminLoginButton" type="submit" class="primary">Se connecter pour configurer les OCR</button>
+<a class="btn" href="../../college/admin/">Ouvrir Admin Collège</a></div>
+<p class="muted" id="adminLoginMessage" role="status" aria-live="polite"></p>
+</form>
 <p id="message" role="status" aria-live="polite">Chargement des connecteurs…</p>
 <div class="grid">
 <section class="card" data-provider="azure_invoice">
@@ -37,7 +48,7 @@ a{color:#164d7d}
 <label class="check"><input data-enabled type="checkbox"> Activer ce fournisseur pour un traitement futur</label>
 <label class="check"><input data-consent type="checkbox"> J'autorise explicitement la transmission des PDF concernés à Microsoft, selon les conditions de traitement applicables</label>
 <label class="check"><input data-erase type="checkbox"> Supprimer la clé enregistrée (désactive le fournisseur)</label>
-<div class="actions"><button class="primary" type="button" data-save>Enregistrer Azure</button></div>
+<div class="actions"><button class="primary" type="button" data-save disabled>Enregistrer Azure</button></div>
 <a href="https://learn.microsoft.com/azure/ai-services/document-intelligence/prebuilt/invoice" target="_blank" rel="noopener noreferrer">Documentation officielle Azure</a>
 </section>
 <section class="card" data-provider="ocrspace">
@@ -49,11 +60,11 @@ a{color:#164d7d}
 <label class="check"><input data-enabled type="checkbox"> Activer ce fournisseur pour un traitement futur</label>
 <label class="check"><input data-consent type="checkbox"> J'autorise explicitement la transmission des PDF concernés à OCR.space, selon les conditions de traitement applicables</label>
 <label class="check"><input data-erase type="checkbox"> Supprimer la clé enregistrée (désactive le fournisseur)</label>
-<div class="actions"><button class="primary" type="button" data-save>Enregistrer OCR.space</button></div>
+<div class="actions"><button class="primary" type="button" data-save disabled>Enregistrer OCR.space</button></div>
 <a href="https://ocr.space/ocrapi" target="_blank" rel="noopener noreferrer">Documentation officielle OCR.space</a>
 </section>
 </div>
 <section class="card"><h2>Autres moteurs à intégrer</h2>
 <p class="muted">Google Cloud Vision (API cloud), AWS Textract (API cloud), Tesseract.js (déjà présent dans le lecteur de secours). Les moteurs sans adaptateur opérationnel ne sont pas indiqués comme connectés. Veryfi reste accessible dans l'ancien lecteur, séparément.</p>
 <p class="note">Pour garantir la fiabilité, chaque résultat devra être recoupé avec les références fournisseurs, les conditionnements, les montants et la couverture complète des lignes. Le nombre de moteurs ne suffira pas à garantir une validation automatique.</p></section>
-</main><script src="./connecteurs.js?v=20261117-1" defer></script></body></html>
+</main><script src="./connecteurs.js?v=20261117-2" defer></script></body></html>
