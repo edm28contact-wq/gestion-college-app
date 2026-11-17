@@ -50,6 +50,21 @@ La cle Veryfi est stockee dans le NAS, pas dans le depot GitHub. Utiliser un com
 
 Le conteneur doit garder acces au reseau HTTPS sortant vers Veryfi. Le NAS doit etre allume. Les PDF originaux sont uniquement lus et ne sont pas deplaces.
 
+## Prototype de comparaison de deux OCR locaux
+
+Le module `ocr_consensus.py` est un composant **isole, sans acces reseau ni ecriture en stock**. Il recoit des extractions structurees independantes de deux moteurs (cibles : PaddleOCR PP-StructureV3 et docTR). Les adaptateurs reels de ces moteurs, leur installation et le rapprochement geométrique page/ligne **ne sont pas encore realises**.
+
+Pour chaque ligne alignee (position `pN:rN`), il controle :
+- fournisseur/date/numero de facture ;
+- reference exacte du fournisseur et designation ;
+- quantites, prix unitaire HT, total HT, unites d'achat et de tarification ;
+- correspondance **unique** a un produit actif du catalogue ;
+- coherence arithmetique et facteur de conversion vers le stock.
+
+Des divergences ou l'absence d'une ligne conduisent a `review` ; un accord correct produit uniquement `candidate_for_review`, jamais un mouvement de stock. **Un accord entre OCR ne suffit pas pour declencher une entree en stock** : l'existence du produit, le conditionnement, l'absence de doublon et la confirmation de reception restent obligatoires.
+
+Aucun document du NAS n'a ete lu et aucune facture n'a ete envoyee a un service externe. La phase suivante depend du modele Synology exact, de la RAM et d'un jeu de factures de test anonymisees.
+
 ## Limites de cette version
 
 - Le dossier source est identifie sous Windows, mais le modele de NAS, le chemin Linux absolu, la destination choisie et les identifiants Veryfi ne sont pas connus : la connexion reelle ne peut pas etre activee.
