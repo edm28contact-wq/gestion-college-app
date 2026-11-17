@@ -71,6 +71,18 @@ Deno.serve(async (req: Request) => {
       if (q.error) throw q.error;
       return response({ ok: true, invoices: q.data || [], ocr_connected: false, processing_mode: "manual_pending_worker" });
     }
+    if (action === "ocr-results" && req.method === "GET") {
+      const id = url.searchParams.get("id") || "";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+        return response({ error: "Identifiant invalide" }, 400);
+      const invoice = await c.from("secretariat_invoice_queue").select("id,ocr_status,ocr_attempts").eq("id",id).maybeSingle();
+      if (invoice.error || !invoice.data) return response({ error: "Facture introuvable" }, 404);
+      const scans = await c.from("secretariat_ocr_scan_results")
+        .select("attempt,engine,status,ocr_text,page_count,error_code,created_at")
+        .eq("invoice_id",id).order("attempt",{ascending:true}).limit(3);
+      if (scans.error) throw scans.error;
+      return response({ ok:true,invoice:invoice.data,readings:scans.data||[],stock_unchanged:true });
+    }
     if (action === "view" && req.method === "GET") {
       const id = url.searchParams.get("id") || "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) return response({ error: "Identifiant invalide" }, 400);
