@@ -8,7 +8,7 @@
     $("notice").textContent = String(value);
     $("notice").className = "notice" + (error ? " error" : "");
   };
-  async function api(action, method = "GET", payload) {
+  async function api(action, method = "GET", payload, params = {}) {
     const token = session();
     if (!token) throw Error("Connectez-vous d'abord au Secrétariat.");
     const headers = { authorization: "Bearer " + token };
@@ -18,7 +18,8 @@
       headers["content-type"] = "application/json";
       body = JSON.stringify(payload);
     }
-    const response = await fetch(API + "?action=" + encodeURIComponent(action), {
+    const query = new URLSearchParams({ action, ...params });
+    const response = await fetch(API + "?" + query.toString(), {
       method, headers, body, cache: "no-store", signal: AbortSignal.timeout(85000)
     });
     const result = await response.json().catch(() => ({}));
@@ -77,7 +78,7 @@
   }
   async function openInvoice(invoice) {
     try {
-      const result = await api("view&id=" + encodeURIComponent(invoice.id));
+      const result = await api("view", "GET", undefined, {id:invoice.id});
       previewUrl = result.url;
       $("previewTitle").textContent = invoice.file_name;
       $("previewPanel").hidden = false;
