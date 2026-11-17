@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store"><meta name="referrer" content="no-referrer">
+<title>Gestion des factures | Secrétariat</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#213447;background:#f5f8fb}
+*{box-sizing:border-box}body{margin:0}.shell{max-width:1360px;margin:auto;padding:20px}
+h1{font-size:24px;margin:0 0 5px}h2{font-size:18px;margin:0}p{line-height:1.45}
+small,.subtle{font-size:13px;color:#536679}.toolbar,.summary,.tabs,.line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.toolbar{justify-content:space-between}.panel{background:white;border:1px solid #dce4ed;border-radius:12px;padding:18px;margin:14px 0}
+button,.button{display:inline-block;border:1px solid #c6d3df;border-radius:9px;background:#fff;color:#213447;padding:10px 13px;font:600 14px system-ui;cursor:pointer;text-decoration:none}
+button.primary,.button.primary{background:#204a70;color:#fff;border-color:#204a70}
+button:disabled{opacity:.5;cursor:not-allowed}.tabs button.active{background:#204a70;color:#fff;border-color:#204a70}
+.drop{display:block;border:2px dashed #aabccf;border-radius:12px;padding:23px;text-align:center;cursor:pointer;background:#f7fafc}
+.drop input{display:block;margin:11px auto 0;max-width:100%}.list{display:grid;gap:8px}
+.entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px;border:1px solid #dae4ed;border-radius:9px}
+.entry strong{word-break:break-word}.entry .meta{font-size:12px;color:#64748b;margin-top:4px}.entry .actions{display:flex;gap:6px;flex-wrap:wrap}
+.state{display:inline-block;font-size:12px;color:#445b70;border:1px solid #cdd8e3;padding:4px 7px;border-radius:15px}
+.state.done{color:#1e633d;border-color:#a0d5b5}.notice{font-size:14px;color:#35516b;white-space:pre-line;min-height:20px}
+.notice.error{color:#a32424}.kpi{padding:12px 17px;border-radius:10px;background:#eef3f8;min-width:105px}.kpi strong{display:block;font-size:23px}
+.viewer{width:100%;height:650px;border:1px solid #dce4ed;border-radius:9px;background:#fff}
+.review-header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+@media(max-width:700px){.entry{grid-template-columns:1fr}.shell{padding:10px}}
+</style></head>
+<body><main class="shell">
+<header class="toolbar"><div><h1>Gestion des factures</h1><p class="subtle">Secrétariat · Dépôt, suivi et classement des PDF</p></div>
+<a class="button" href="../../lecteur-veryfi/?origine=secretariat">Ouvrir le lecteur de factures existant</a></header>
+<section class="panel">
+<label class="drop" for="invoices"><strong>Déposer les factures PDF</strong>
+<span class="subtle" style="display:block">Plusieurs fichiers possibles · Maximum 6 Mo par PDF · Doublons bloqués</span>
+<input id="invoices" type="file" accept="application/pdf,.pdf" multiple></label>
+<div class="toolbar" style="margin-top:12px"><button class="primary" id="upload" type="button">Ajouter à la liste « À faire »</button>
+<button id="refresh" type="button">Actualiser</button></div>
+<p id="notice" class="notice" role="status" aria-live="polite">Connexion à la liste des factures…</p>
+</section>
+<section class="summary">
+<div class="kpi"><span class="subtle">À faire</span><strong id="countTodo">—</strong></div>
+<div class="kpi"><span class="subtle">Faites</span><strong id="countDone">—</strong></div>
+<div class="kpi"><span class="subtle">OCR cloud</span><strong style="font-size:14px" id="ocrState">Non connecté</strong></div>
+</section>
+<section class="panel">
+<div class="toolbar"><h2>Mes factures</h2><div class="tabs" role="group" aria-label="Filtrer les factures">
+<button id="todoTab" class="active" type="button">À faire</button><button id="doneTab" type="button">Faites</button></div></div>
+<p class="subtle">Les factures sont conservées dans un stockage privé. « Faite » indique ici un classement administratif manuel, pas une réception en stock.</p>
+<div id="list" class="list"></div>
+</section>
+<section class="panel" id="previewPanel" hidden><div class="review-header"><h2 id="previewTitle">Aperçu du PDF</h2><button id="closePreview" type="button">Fermer</button></div>
+<p class="subtle">Aperçu temporaire réservé aux utilisateurs connectés.</p><iframe id="preview" class="viewer" title="Document PDF privé" referrerpolicy="no-referrer"></iframe></section>
+<section class="panel"><strong>Traitement OCR automatisé</strong>
+<p class="subtle">Le traitement PaddleOCR/docTR en arrière-plan n'est pas encore hébergé ni connecté. Les factures restent dans « À faire » ; aucune ligne n'est automatiquement validée et aucun stock n'est modifié depuis cette page. Le lecteur Veryfi existant reste accessible séparément.</p></section>
+</main><script src="./queue.js?v=20261117-1" defer></script></body></html>

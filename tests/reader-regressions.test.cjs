@@ -219,14 +219,15 @@ test("annulation de la confirmation TVA : aucune ligne modifiée",()=>{
  assert.equal(h.api.productColor(h.ctx.rows[0]),"good");
  assert.ok(notifications.some(x=>x.message.includes("TVA non appliquée")));
 });
-test("Secrétariat : la version du lecteur et de son iframe est explicitement incrémentée",()=>{
+test("Secrétariat : l'interface de factures conserve un acces explicite au lecteur V48",()=>{
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
  assert.ok(source.includes('const READER_VERSION="V48"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
  assert.ok(page.includes("veryfi.js?v=48"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v48"));
+ assert.ok(sec.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
+  assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
 });
@@ -253,10 +254,11 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
  assert.equal(controls.applyBulkVat.disabled,false,"L'action TVA doit rester cliquable après lecture.");
  assert.equal(controls.repairHeader.disabled,false,"La correction de l'en-tête doit rester cliquable.");
 });
-test("la page intégrée charge la V41 après correction du cycle de lecture",()=>{
+test("la page integree de factures conserve le lecteur Veryfi V48 accessible",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
  assert.ok(page.includes("veryfi.js?v=48"));
- assert.ok(sec.includes("embed=secretariat&amp;v=20261111-v48"));
+ assert.ok(sec.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
+  assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
  assert.ok(source.includes('const READER_VERSION="V48"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
@@ -403,7 +405,8 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('const READER_VERSION="V48"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
  assert.ok(page.includes("veryfi.js?v=48"));
- assert.ok(secretariat.includes("embed=secretariat&amp;v=20261111-v48"));
+ assert.ok(secretariat.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
+  assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
 });
 test("les intégrations de base restent présentes",()=>{
  const admin=file("college/admin/index.html"),payroll=file("college/admin/salaires.js"),planning=file("secretariat/planning/index.html");
