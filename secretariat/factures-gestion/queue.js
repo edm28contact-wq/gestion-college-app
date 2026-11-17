@@ -3,6 +3,7 @@
   const API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-invoice-queue";
   const $ = id => document.getElementById(id);
   let invoices = [], currentTab = "todo", busy = false, previewUrl = null;
+  const OCR_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-ocrspace-reader";
   const session = () => localStorage.getItem("college_secretariat_token") || localStorage.getItem("edm_admin_token") || "";
   const notice = (value, error = false) => {
     $("notice").textContent = String(value);
@@ -45,7 +46,7 @@
     invoices = result.invoices || [];
     $("countTodo").textContent = invoices.filter(x => x.state === "todo").length;
     $("countDone").textContent = invoices.filter(x => x.state === "done").length;
-    $("ocrState").textContent = result.ocr_connected ? "Connecté" : "Non connecté";
+    $("ocrState").textContent = "OCR.space à configurer";
     render();
   }
   function render() {
@@ -66,6 +67,17 @@
         invoice.state === "done" ? "Classée manuellement" : "OCR en attente de connexion");
       detail.append(tag);
       const actions = element("div", "actions");
+      if (invoice.state === "todo") {
+        const scan = element("button", null, "Lire avec OCR.space");
+        scan.type = "button"; scan.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3;
+        scan.onclick = () => void runOcr(invoice);
+        actions.append(scan);
+      }
+      if (invoice.ocr_attempts > 0) {
+        const results = element("button", null, "Résultats OCR (" + invoice.ocr_attempts + ")");
+        results.type = "button"; results.onclick = () => void showOcr(invoice);
+        actions.append(results);
+      }
       const view = element("button", null, "Voir PDF");
       view.type = "button"; view.onclick = () => void openInvoice(invoice);
       actions.append(view);
@@ -75,6 +87,50 @@
       actions.append(change);
       item.append(detail, actions); list.append(item);
     }
+  }
+  async function runOcr(invoice) {
+    if (busy) return;
+    if (invoice.file_bytes > 1000000) return notice("OCR.space gratuit refuse les PDF de plus de 1 Mo. Utilisez un autre lecteur.",true);
+    if (!confirm("Envoyer cette facture à OCR.space pour lecture ? Le fournisseur externe recevra une copie du PDF. Aucune écriture en stock.")) return;
+    setBusy(true);
+    notice("Lecture OCR.space en cours sur " + invoice.file_name + "…");
+    try {
+      const current = session();
+      if (!current) throw Error("Reconnectez-vous au Secrétariat.");
+      const res = await fetch(OCR_API, {
+        method:"POST",headers:{"authorization":"Bearer "+current,"content-type":"application/json"},
+        body:JSON.stringify({invoice_id:invoice.id}),cache:"no-store",signal:AbortSignal.timeout(85000),
+      });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok || data.ok !== true) throw Error(data.error || "Lecture OCR impossible");
+      await fetchInvoices();
+      notice("Lecture n°"+data.attempt+" terminée : "+data.page_count+" page(s) reconnue(s). Vérification manuelle requise.");
+      await showOcr(invoice);
+    } catch(e) {
+      notice("OCR.space : "+e.message,true);
+      try {await fetchInvoices()} catch {}
+    } finally {setBusy(false)}
+  }
+  async function showOcr(invoice) {
+    try {
+      const data = await api("ocr-results", "GET", undefined, {id:invoice.id});
+      $("ocrTitle").textContent = "Lectures OCR : " + invoice.file_name;
+      const out = $("ocrResults"); out.replaceChildren();
+      if (!data.readings.length) out.append(element("p","subtle","Aucune lecture enregistrée."));
+      for (const reading of data.readings) {
+        const wrapper=element("section","panel");
+        wrapper.append(element("strong",null,"Lecture "+reading.attempt+" · Moteur OCR.space "+reading.engine+
+          " · "+(reading.status==="review"?"Texte à vérifier":"Échec")));
+        wrapper.append(element("p","subtle","Pages retournées : "+reading.page_count+
+          (reading.error_code?" · Code : "+reading.error_code:"")));
+        const text = element("textarea","ocr-text");
+        text.readOnly=true; text.rows=12; text.value=reading.ocr_text||"";
+        text.style.cssText="display:block;max-width:100%;width:100%;margin-top:10px;min-height:150px";
+        wrapper.append(text); out.append(wrapper);
+      }
+      $("ocrPanel").hidden=false;
+      $("ocrPanel").scrollIntoView({behavior:"smooth",block:"start"});
+    }catch(e){notice(e.message,true)}
   }
   async function openInvoice(invoice) {
     try {
@@ -136,6 +192,7 @@
   $("closePreview").addEventListener("click", () => {
     $("preview").removeAttribute("src"); $("previewPanel").hidden = true; previewUrl = null;
   });
+  $("closeOcr").addEventListener("click",()=>{$("ocrPanel").hidden=true;$("ocrResults").replaceChildren();});
   void fetchInvoices().then(() => notice("Liste prête. Les OCR automatiques restent à connecter."))
     .catch(error => notice(error.message, true));
 })();
