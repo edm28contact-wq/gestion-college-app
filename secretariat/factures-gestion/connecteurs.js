@@ -83,8 +83,10 @@
       message("L'autorisation explicite d'envoi externe est indispensable.",true);
       return;
     }
-    if (body.enabled && !confirm("Autoriser les futurs transferts de PDF vers " +
-        provider + " ? Les lectures ne sont pas encore activées dans le site.")) return;
+    if (body.enabled && !confirm("Autoriser la transmission des PDF à " +
+        provider + " ? " + (provider === "ocrspace"
+        ? "La lecture manuelle sera possible dans « Factures à faire » après enregistrement."
+        : "La lecture Azure sera disponible lorsque son adaptateur sera connecté."))) return;
     const button = qs(root, "[data-save]");
     button.disabled = true;
     try {
