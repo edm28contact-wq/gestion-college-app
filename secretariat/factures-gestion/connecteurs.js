@@ -2,8 +2,21 @@
 (() => {
   const API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-ocr-connectors";
   const qs = (el, selector) => el.querySelector(selector);
-  const token = () => localStorage.getItem("edm_admin_token") ||
-    localStorage.getItem("college_secretariat_token") || "";
+  let temporaryAdminToken = "";
+  let authorized = false;
+  const token = () => temporaryAdminToken || localStorage.getItem("edm_admin_token") || "";
+  const showAdminLogin = (reason) => {
+    authorized = false;
+    temporaryAdminToken = "";
+    document.getElementById("adminLoginForm").hidden = false;
+    for (const button of document.querySelectorAll("[data-save]")) button.disabled = true;
+    if (reason) message(reason, true);
+  };
+  const showAuthorized = () => {
+    authorized = true;
+    document.getElementById("adminLoginForm").hidden = true;
+    for (const button of document.querySelectorAll("[data-save]")) button.disabled = false;
+  };
   const message = (value, error = false) => {
     const node = document.getElementById("message");
     node.textContent = String(value);
@@ -40,6 +53,10 @@
     }
   }
   async function save(root) {
+    if (!authorized) {
+      showAdminLogin("Reconnectez-vous avec le compte super-administrateur avant d'enregistrer la clé.");
+      return;
+    }
     const provider = root.dataset.provider;
     const keyInput = qs(root, "[data-credential]");
     const body = {
@@ -66,8 +83,10 @@
       message("L'autorisation explicite d'envoi externe est indispensable.",true);
       return;
     }
-    if (body.enabled && !confirm("Autoriser les futurs transferts de PDF vers " +
-        provider + " ? Les lectures ne sont pas encore activées dans le site.")) return;
+    if (body.enabled && !confirm("Autoriser la transmission des PDF à " +
+        provider + " ? " + (provider === "ocrspace"
+        ? "La lecture manuelle sera possible dans « Factures à faire » après enregistrement."
+        : "La lecture Azure sera disponible lorsque son adaptateur sera connecté."))) return;
     const button = qs(root, "[data-save]");
     button.disabled = true;
     try {
@@ -75,17 +94,54 @@
       render(data.providers);
       message("Configuration enregistrée. Aucune facture n'a été envoyée et aucun stock n'a été modifié.");
     } catch (e) {
-      message(e.message,true);
-      keyInput.value = "";
+      if (/super-administrateur|session|connexion administrateur|HTTP 403|HTTP 401/i.test(e.message))
+        showAdminLogin("Session administrateur refusée. Reconnectez-vous ci-dessus.");
+      else message(e.message,true);
     } finally {
-      button.disabled = false;
+      button.disabled = !authorized;
     }
   }
   for (const button of document.querySelectorAll("[data-save]")) {
     button.addEventListener("click", () => void save(button.closest("[data-provider]")));
   }
+  async function loginSuperAdmin(event) {
+    event.preventDefault();
+    const form = document.getElementById("adminLoginForm");
+    const user = document.getElementById("adminUser").value.trim();
+    const password = document.getElementById("adminPass").value;
+    const button = document.getElementById("adminLoginButton");
+    if (!user || !password) return;
+    button.disabled = true;
+    document.getElementById("adminLoginMessage").textContent = "Authentification en cours…";
+    try {
+      const response = await fetch(
+        "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-api?action=login",
+        {method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({username:user,password}),cache:"no-store",signal:AbortSignal.timeout(20000)}
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok !== true || data.role !== "admin" || !data.token)
+        throw Error(data.error || "Ce compte ne dispose pas des droits administrateur requis.");
+      temporaryAdminToken = data.token;
+      const state = await request("GET");
+      render(state.providers);
+      showAuthorized();
+      message("Connecté en super-administrateur. Vous pouvez enregistrer la clé OCR.space.");
+      document.getElementById("adminLoginMessage").textContent = "";
+    } catch (e) {
+      temporaryAdminToken = "";
+      authorized = false;
+      document.getElementById("adminLoginMessage").textContent = String(e.message || "Connexion refusée.");
+      message("Connexion super-administrateur requise.",true);
+    } finally {
+      document.getElementById("adminPass").value = "";
+      button.disabled = false;
+    }
+  }
+  document.getElementById("adminLoginForm").addEventListener("submit",loginSuperAdmin);
   void request("GET").then(data => {
     render(data.providers);
-    message("Connecteurs chargés. Les traitements OCR automatiques sont encore désactivés.");
-  }).catch(e => message(e.message,true));
+    showAuthorized();
+    message("Connecteurs chargés. OCR.space peut être utilisé depuis « Factures à faire » une fois configuré.");
+  }).catch(() => showAdminLogin("Session du super-administrateur requise. Connectez-vous dans le formulaire ci-dessus."));
 })();
