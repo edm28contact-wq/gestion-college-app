@@ -65,7 +65,20 @@ Des divergences ou l'absence d'une ligne conduisent a `review` ; un accord corre
 
 Aucun document du NAS n'a ete lu et aucune facture n'a ete envoyee a un service externe. La phase suivante depend du modele Synology exact, de la RAM et d'un jeu de factures de test anonymisees.
 
-## Limites de cette version
+## Politique de 1 a 3 lectures (prototype)
+
+Le composant autonome `ocr_review_policy.py` gere les decisions d'orchestration, **sans declencher de lecture OCR ni aucune ecriture en stock** :
+
+- Premiere lecture : si tous les produits sont verts et le document complet, arret ; sinon lancer une deuxieme lecture.
+- Deuxieme lecture : si aucune ligne orange n'est presente et les controles documentaires sont satisfaits, arret, y compris en presence de lignes rouges exclues ; sinon troisieme lecture.
+- Troisieme lecture : les oranges restants doivent etre corriges manuellement. Aucun quatrieme passage automatique.
+- Chaque rouge est **exclu de la reception**, mais conserve dans la piste d'audit pour etre reintegre manuellement plus tard.
+- Une ligne disparue d'une lecture reste a examiner ; une ligne nouvelle ne devient pas verte sans confirmation par une lecture suivante.
+- Une erreur de controle global de couverture/pages/total empêche l'arret automatique, meme avec des lignes vertes.
+
+**Limite de production critique :** le lecteur actuel `lecteur-veryfi/veryfi.js` cree des mouvements de stock a la validation de la facture et peut bloquer une reintegration apres reception partielle de la meme facture. Il faut modifier les transactions de reception pour avoir un statut de traitement par ligne, une cle d'idempotence par ligne et un mecanisme de reception complementaire avant toute mise en service. Ce changement ne les active pas.
+
+
 
 - Le dossier source est identifie sous Windows, mais le modele de NAS, le chemin Linux absolu, la destination choisie et les identifiants Veryfi ne sont pas connus : la connexion reelle ne peut pas etre activee.
 - Les factures sans scores de confiance exploitables seront mises en revue pour eviter un nom incorrect.
