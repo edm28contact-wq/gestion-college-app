@@ -1,3 +1,4 @@
+import { evaluateInvoice } from "./core.mjs";
 import { createClient } from "npm:@supabase/supabase-js@2.112.4";
 
 const ORIGIN = "https://edm28contact-wq.github.io";
@@ -69,7 +70,44 @@ Deno.serve(async (req: Request) => {
     if (action === "list" && req.method === "GET") {
       const q = await c.from("secretariat_invoice_queue").select(queryFields).order("created_at", { ascending: false }).limit(1000);
       if (q.error) throw q.error;
-      return response({ ok: true, invoices: q.data || [], ocr_connected: false, processing_mode: "manual_pending_worker" });
+      const providers=await c.from("secretariat_ocr_connectors")
+        .select("provider,enabled,secret_id,endpoint,consent_at").order("provider");
+      if(providers.error) throw providers.error;
+      const availability=(providers.data||[]).map(p=>({
+        provider:p.provider,ready:p.enabled===true&&!!p.secret_id&&!!p.consent_at&&
+          (p.provider!=="azure_invoice"||!!p.endpoint)
+      }));
+      return response({ok:true,invoices:q.data||[],providers:availability,
+        ocr_connected:availability.some(p=>p.ready),processing_mode:"manual_reading_with_comparison"});
+    }
+    if (action === "ocr-review" && req.method === "GET") {
+      const id = url.searchParams.get("id") || "";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+        return response({error:"Identifiant invalide"},400);
+      const [invoice,scans,products,mappings,aliases,history] = await Promise.all([
+        c.from("secretariat_invoice_queue").select("id,ocr_attempts,state").eq("id",id).maybeSingle(),
+        c.from("secretariat_ocr_scan_results").select("provider,attempt,status,ocr_text,page_count,structured_result")
+          .eq("invoice_id",id).order("attempt",{ascending:true}).limit(3),
+        c.from("products").select("id,code,name,unit,active,stock_count_mode,inventory_unit_label,purchase_to_stock_factor,conditionnement")
+          .eq("active",true).limit(2000),
+        c.from("invoice_supplier_product_mappings").select("supplier_key,supplier_name,supplier_reference,supplier_reference_norm,supplier_label,product_id,verification_count")
+          .eq("active",true).gt("verification_count",0).limit(5000),
+        c.from("product_alias_keywords").select("product_id,supplier_key,keyword,keyword_norm,alias_kind").limit(5000),
+        c.from("secretariat_supplier_product_learning").select("product_id,supplier_key,supplier_name,product_name,product_code,certified_count")
+          .eq("active",true).limit(5000),
+      ]);
+      for(const query of [invoice,scans,products,mappings,aliases,history]) if(query.error) throw query.error;
+      if(!invoice.data) return response({error:"Facture introuvable"},404);
+      const historical=(history.data||[]).map(item=>({
+        supplier_key:item.supplier_key,supplier_name:item.supplier_name,supplier_product_name:item.product_name,
+        supplier_reference:item.product_code,product_id:item.product_id,certified_count:item.certified_count,
+      }));
+      const review=evaluateInvoice({readings:scans.data||[],catalog:{
+        products:products.data||[],verified_mappings:mappings.data||[],
+        supplier_product_catalog:historical,
+      },aliases:aliases.data||[]});
+      return response({ok:true,invoice_id:id,review,scan_attempts:invoice.data.ocr_attempts,
+        stock_unchanged:true,classification_version:1});
     }
     if (action === "ocr-results" && req.method === "GET") {
       const id = url.searchParams.get("id") || "";
