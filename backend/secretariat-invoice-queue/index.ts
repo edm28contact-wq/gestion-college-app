@@ -70,7 +70,15 @@ Deno.serve(async (req: Request) => {
     if (action === "list" && req.method === "GET") {
       const q = await c.from("secretariat_invoice_queue").select(queryFields).order("created_at", { ascending: false }).limit(1000);
       if (q.error) throw q.error;
-      return response({ ok: true, invoices: q.data || [], ocr_connected: false, processing_mode: "manual_pending_worker" });
+      const providers=await c.from("secretariat_ocr_connectors")
+        .select("provider,enabled,secret_id,endpoint,consent_at").order("provider");
+      if(providers.error) throw providers.error;
+      const availability=(providers.data||[]).map(p=>({
+        provider:p.provider,ready:p.enabled===true&&!!p.secret_id&&!!p.consent_at&&
+          (p.provider!=="azure_invoice"||!!p.endpoint)
+      }));
+      return response({ok:true,invoices:q.data||[],providers:availability,
+        ocr_connected:availability.some(p=>p.ready),processing_mode:"manual_reading_with_comparison"});
     }
     if (action === "ocr-review" && req.method === "GET") {
       const id = url.searchParams.get("id") || "";
