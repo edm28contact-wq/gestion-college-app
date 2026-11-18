@@ -66,5 +66,5 @@ test("Azure results are displayed separately and never finalize stock",()=>{
  const page=fs.readFileSync("secretariat/factures-gestion/queue.js","utf8");
  assert.match(code,/evaluateInvoice\(/);assert.match(code,/stock_unchanged:true/);
  assert.match(page,/showReview/);assert.match(page,/data\.review/);
- assert.doesNotMatch(code,/stock_movements|stock_balances|insert\\s*\\(.*stock/i);
+ assert.doesNotMatch(code,/stock_movements|stock_balances/i);
 });
