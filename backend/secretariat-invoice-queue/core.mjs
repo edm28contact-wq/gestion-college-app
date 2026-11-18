@@ -134,6 +134,7 @@ export function evaluateInvoice({readings=[],catalog={},aliases=[]}) {
   const otherAzure=azure.slice(0,-1);
   const supplier=clean(structured.supplier);
   const rows=structured.items.slice(0,300);
+  // A page-count of two cannot prove full coverage under Azure F0; never auto-accept it.
   const missingCoverage=Number(latest.page_count)!==1 || structured.partial_document_possible===true;
   const lines=rows.map((source,index)=>{
     const line={index:index+1,reference:String(source.product_code||""),description:String(source.description||""),
@@ -163,6 +164,8 @@ export function evaluateInvoice({readings=[],catalog={},aliases=[]}) {
       line.reasons.push("Confiance Azure insuffisante ou absente");
     if(missingCoverage)
       line.reasons.push("Couverture complète du PDF non démontrée (Azure F0 : deux pages maximum)");
+    if(!supplier)
+      line.reasons.push("Identité du fournisseur absente : correspondance fournisseur non fiable");
     if(otherAzure.some(prev=>{
       const previous=prev.structured_result.items[index];
       return !previous || invoiceLabel(previous.description)!==invoiceLabel(source.description) ||
@@ -179,6 +182,14 @@ export function evaluateInvoice({readings=[],catalog={},aliases=[]}) {
   if(!sumsAgreed){
     for(const line of lines)if(line.status==="green"){
       line.status="orange";line.reasons.push("Total des lignes et sous-total du PDF non recoupés");
+    }
+  }
+  // A missing Azure line cannot be treated as an absent catalogue product.
+  // A blank structured list requires full document review, not a completed invoice.
+  if(!rows.length || !supplier) {
+    for(const line of lines) if(line.status==="red"){
+      line.status="orange";line.excluded=false;
+      line.reasons.push("Document incomplet ou fournisseur non identifié");
     }
   }
   const green_lines=lines.filter(r=>r.status==="green").length;
