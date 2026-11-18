@@ -2,7 +2,7 @@
 (() => {
   const API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-invoice-queue";
   const $ = id => document.getElementById(id);
-  let invoices = [], currentTab = "todo", busy = false, previewUrl = null;
+  let invoices = [], currentTab = "todo", busy = false, previewUrl = null, providers = [];
   const OCR_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-ocrspace-reader";
   const AZURE_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-azure-invoice-reader";
   const session = () => localStorage.getItem("college_secretariat_token") || localStorage.getItem("edm_admin_token") || "";
@@ -45,9 +45,13 @@
   async function fetchInvoices() {
     const result = await api("list");
     invoices = result.invoices || [];
+    providers = Array.isArray(result.providers) ? result.providers : [];
     $("countTodo").textContent = invoices.filter(x => x.state === "todo").length;
     $("countDone").textContent = invoices.filter(x => x.state === "done").length;
-    $("ocrState").textContent = "Lecture manuelle";
+    const azureReady=providers.some(p=>p.provider==="azure_invoice"&&p.ready);
+    const ocrspaceReady=providers.some(p=>p.provider==="ocrspace"&&p.ready);
+    $("ocrState").textContent=azureReady?"Azure prêt"+(ocrspaceReady?" + OCR.space":""):
+      ocrspaceReady?"OCR.space prêt · Azure en attente":"Aucun lecteur connecté";
     render();
   }
   function render() {
@@ -70,11 +74,15 @@
       const actions = element("div", "actions");
       if (invoice.state === "todo") {
         const scan = element("button", null, "Lire avec OCR.space");
-        scan.type = "button"; scan.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3;
+        scan.type = "button"; scan.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3 ||
+          !providers.some(p=>p.provider==="ocrspace"&&p.ready);
+        scan.title=scan.disabled?"OCR.space désactivé, facture en traitement ou maximum de lectures atteint":"Lecture OCR.space";
         scan.onclick = () => void runOcr(invoice, "ocrspace");
         actions.append(scan);
         const azure = element("button", null, "Lire avec Azure");
-        azure.type = "button"; azure.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3;
+        azure.type = "button"; azure.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3 ||
+          !providers.some(p=>p.provider==="azure_invoice"&&p.ready);
+        azure.title=azure.disabled?"Azure non connecté, facture en traitement ou maximum de lectures atteint":"Lecture Azure";
         azure.onclick = () => void runOcr(invoice, "azure_invoice");
         actions.append(azure);
       }
@@ -82,6 +90,9 @@
         const results = element("button", null, "Résultats OCR (" + invoice.ocr_attempts + ")");
         results.type = "button"; results.onclick = () => void showOcr(invoice);
         actions.append(results);
+        const review = element("button", null, "Vérifier les produits");
+        review.type = "button"; review.onclick = () => void showReview(invoice);
+        actions.append(review);
       }
       const view = element("button", null, "Voir PDF");
       view.type = "button"; view.onclick = () => void openInvoice(invoice);
@@ -154,6 +165,42 @@
       $("ocrPanel").scrollIntoView({behavior:"smooth",block:"start"});
     }catch(e){notice(e.message,true)}
   }
+  async function showReview(invoice) {
+    try {
+      const data=await api("ocr-review","GET",undefined,{id:invoice.id});
+      const result=data.review;
+      const out=$("reviewResults");out.replaceChildren();
+      $("reviewTitle").textContent="Rapprochement catalogue — "+invoice.file_name;
+      const summary=element("p","subtle",
+        "Pré-analyse : "+result.green_lines+" ligne(s) verte(s), "+
+        result.orange_lines+" orange(s), "+result.red_lines+" rouge(s) exclue(s) · "+
+        data.scan_attempts+" lecture(s). Aucun mouvement de stock.");
+      out.append(summary);
+      if(!result.ready){
+        out.append(element("p","notice error",result.reasons.join(" · ")));
+      }
+      for(const reason of result.reasons||[]){
+        out.append(element("p","subtle",reason));
+      }
+      if(result.comparison_complete)
+        out.append(element("p","subtle","Deux fournisseurs ont fourni des données. Le texte OCR.space sert à signaler des concordances, pas à approuver les quantités."));
+      for(const line of result.lines||[]){
+        const item=element("article","entry review-line");
+        const detail=element("div");
+        detail.append(element("strong",null,"Ligne "+line.index+" · "+(line.description||"Désignation absente")));
+        detail.append(element("div","meta","Réf. : "+(line.reference||"—")+
+          " · Produit : "+(line.matched_product_name||"Non rapproché")+
+          " · Qté stock suggérée : "+(line.stock_quantity??"À confirmer")));
+        if(line.reasons?.length)detail.append(element("p","subtle",line.reasons.join(" · ")));
+        const status=element("span","state "+line.status,
+          line.status==="green"?"Vert · Précontrôlé":line.status==="red"?"Rouge · Exclu, récupérable":"Orange · À corriger");
+        item.append(detail,status);out.append(item);
+      }
+      if(!result.lines?.length)out.append(element("p","subtle","Aucune ligne structurée disponible. Un résultat OCR texte seul ne permet pas d'identifier et de valider les produits automatiquement."));
+      $("reviewPanel").hidden=false;
+      $("reviewPanel").scrollIntoView({behavior:"smooth",block:"start"});
+    }catch(e){notice("Rapprochement catalogue : "+e.message,true)}
+  }
   async function openInvoice(invoice) {
     try {
       const result = await api("view", "GET", undefined, {id:invoice.id});
@@ -215,6 +262,7 @@
     $("preview").removeAttribute("src"); $("previewPanel").hidden = true; previewUrl = null;
   });
   $("closeOcr").addEventListener("click",()=>{$("ocrPanel").hidden=true;$("ocrResults").replaceChildren();});
-  void fetchInvoices().then(() => notice("Liste prête. Les OCR automatiques restent à connecter."))
+  $("closeReview").addEventListener("click",()=>{$("reviewPanel").hidden=true;$("reviewResults").replaceChildren();});
+  void fetchInvoices().then(() => notice("Liste prête. Les moteurs connectés peuvent être lancés, puis leurs produits comparés au catalogue."))
     .catch(error => notice(error.message, true));
 })();
