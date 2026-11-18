@@ -196,7 +196,7 @@ test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  assert.ok(source.includes("banner.hidden=true"));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(page.includes("veryfi.js?v=49"));
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -219,13 +219,13 @@ test("annulation de la confirmation TVA : aucune ligne modifiée",()=>{
  assert.equal(h.api.productColor(h.ctx.rows[0]),"good");
  assert.ok(notifications.some(x=>x.message.includes("TVA non appliquée")));
 });
-test("Secrétariat : l'interface de factures conserve un acces explicite au lecteur V48",()=>{
+test("Secrétariat : l'interface de factures conserve un acces explicite au lecteur V49",()=>{
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V48"'));
+ assert.ok(source.includes('const READER_VERSION="V49"'));
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(page.includes("veryfi.js?v=49"));
  assert.ok(sec.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
@@ -254,12 +254,12 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
  assert.equal(controls.applyBulkVat.disabled,false,"L'action TVA doit rester cliquable après lecture.");
  assert.equal(controls.repairHeader.disabled,false,"La correction de l'en-tête doit rester cliquable.");
 });
-test("la page integree de factures conserve le lecteur Veryfi V48 accessible",()=>{
+test("la page integree de factures conserve le lecteur Veryfi V49 accessible",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(page.includes("veryfi.js?v=49"));
  assert.ok(sec.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
- assert.ok(source.includes('const READER_VERSION="V48"'));
+ assert.ok(source.includes('const READER_VERSION="V49"'));
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
@@ -402,9 +402,9 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V48"'));
+ assert.ok(source.includes('const READER_VERSION="V49"'));
  const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=48"));
+ assert.ok(page.includes("veryfi.js?v=49"));
  assert.ok(secretariat.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
 });
