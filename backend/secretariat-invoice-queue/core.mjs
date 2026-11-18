@@ -195,9 +195,9 @@ export function evaluateInvoice({readings=[],catalog={},aliases=[]}) {
   const green_lines=lines.filter(r=>r.status==="green").length;
   const orange_lines=lines.filter(r=>r.status==="orange").length;
   const red_lines=lines.filter(r=>r.status==="red").length;
-  return {version:1,ready:true,needs_review:Boolean(orange_lines||missingCoverage),retry_needed:Boolean(orange_lines||red_lines||missingCoverage),
+  return {version:1,ready:rows.length>0,needs_review:Boolean(!rows.length||!supplier||orange_lines||missingCoverage||!sumsAgreed),retry_needed:Boolean(!rows.length||orange_lines||red_lines||missingCoverage||!sumsAgreed),
     green_lines,orange_lines,red_lines,
-    reasons:[...(missingCoverage?["Le PDF doit être vérifié sur toutes ses pages"]:[]),
+    reasons:[...(!rows.length?["Aucune ligne produit structurée : contrôle intégral du PDF obligatoire"]:[]),...(missingCoverage?["Le PDF doit être vérifié sur toutes ses pages"]:[]),
       ...(!sumsAgreed?["Somme des lignes incompatible ou subtotal absent"]:[]),
       ...(!supplier?["Fournisseur non identifié avec certitude"]:[])],
     lines,source_count:azure.length+textOnly.length,comparison_complete:azure.length>0&&textOnly.length>0,
