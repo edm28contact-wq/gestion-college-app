@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V48";
+const READER_VERSION="V49";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -32,6 +32,7 @@ const canonicalUnit=x=>{
   seau:["seau","seaux","sea"],
   carton:["carton","cartons","col","colis","ctn","ctns"],
   boite:["boite","boites","bte","btes"],
+  bidon:["bidon","bidons","bdn","bdns"],
   rouleau:["rouleau","rouleaux","roul"],
   sachet:["sachet","sachets","sac"],
   ramette:["ramette","ramettes"]
@@ -90,10 +91,9 @@ function invoiceSaleUnit(row,product){
   return {ok:true,why:"Pièce / Unité sur la facture = "+product.unit+" du catalogue"};
  const packaging=String(product.conditionnement||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
  const trustedMultiplier=factor>1&&Object.hasOwn(verifiedConversions,String(product.code))&&verifiedConversions[String(product.code)]===factor;
- if(sale==="piece"&&invoice==="carton"&&/^carton\b/.test(packaging)&&trustedMultiplier)
-  return {ok:true,why:"Carton fournisseur et coefficient de stock vérifié"};
- if(sale==="piece"&&invoice==="lot"&&/^lot\b/.test(packaging)&&trustedMultiplier)
-  return {ok:true,why:"Lot fournisseur et coefficient de stock vérifié"};
+ const documentedContainer=new Set(["carton","lot","boite","bidon"]);
+ if(sale==="piece"&&trustedMultiplier&&documentedContainer.has(invoice)&&packaging.startsWith(invoice+" "))
+  return {ok:true,why:"Conditionnement "+invoice+" et coefficient de stock vérifié"};
  return {ok:false,why:"Unité fournisseur « "+row.unit+" » différente de l'unité d'achat « "+product.unit+" »"};
 }
 function stockSuggestion(row,product){
@@ -244,11 +244,11 @@ async function loadAliases(){
   notice("Carnet des mots-clés indisponible : "+error.message,"error");
  }
 }
-async function saveKeyword(row,keyword,global=false){
+async function saveKeyword(row,keyword,global=false,aliasKind="designation"){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)throw Error("Sélectionnez un produit actif.");
  if(norm(keyword).length<3)throw Error("Mot-clé trop court.");
- const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm(),alias_kind:"designation"},timeout:20000});
+ const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm(),alias_kind:aliasKind},timeout:20000});
  if(!result.ok)throw Error(result.error||"Enregistrement refusé");
  await loadAliases();
  return result.alias;
