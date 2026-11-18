@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V48";
+const READER_VERSION="V49";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -32,6 +32,7 @@ const canonicalUnit=x=>{
   seau:["seau","seaux","sea"],
   carton:["carton","cartons","col","colis","ctn","ctns"],
   boite:["boite","boites","bte","btes"],
+  bidon:["bidon","bidons","bdn","bdns"],
   rouleau:["rouleau","rouleaux","roul"],
   sachet:["sachet","sachets","sac"],
   ramette:["ramette","ramettes"]
@@ -90,10 +91,9 @@ function invoiceSaleUnit(row,product){
   return {ok:true,why:"Pièce / Unité sur la facture = "+product.unit+" du catalogue"};
  const packaging=String(product.conditionnement||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
  const trustedMultiplier=factor>1&&Object.hasOwn(verifiedConversions,String(product.code))&&verifiedConversions[String(product.code)]===factor;
- if(sale==="piece"&&invoice==="carton"&&/^carton\b/.test(packaging)&&trustedMultiplier)
-  return {ok:true,why:"Carton fournisseur et coefficient de stock vérifié"};
- if(sale==="piece"&&invoice==="lot"&&/^lot\b/.test(packaging)&&trustedMultiplier)
-  return {ok:true,why:"Lot fournisseur et coefficient de stock vérifié"};
+ const documentedContainer=new Set(["carton","lot","boite","bidon"]);
+ if(sale==="piece"&&trustedMultiplier&&documentedContainer.has(invoice)&&packaging.startsWith(invoice+" "))
+  return {ok:true,why:"Conditionnement "+invoice+" et coefficient de stock vérifié"};
  return {ok:false,why:"Unité fournisseur « "+row.unit+" » différente de l'unité d'achat « "+product.unit+" »"};
 }
 function stockSuggestion(row,product){
@@ -244,11 +244,11 @@ async function loadAliases(){
   notice("Carnet des mots-clés indisponible : "+error.message,"error");
  }
 }
-async function saveKeyword(row,keyword,global=false){
+async function saveKeyword(row,keyword,global=false,aliasKind="designation"){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product)throw Error("Sélectionnez un produit actif.");
  if(norm(keyword).length<3)throw Error("Mot-clé trop court.");
- const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm(),alias_kind:"designation"},timeout:20000});
+ const result=await request(API.aliases,{method:"POST",token:authToken,payload:{product_id:product.id,keyword,supplier_key:global?"":supplierNorm(),alias_kind:aliasKind},timeout:20000});
  if(!result.ok)throw Error(result.error||"Enregistrement refusé");
  await loadAliases();
  return result.alias;
@@ -492,6 +492,12 @@ function findProduct(row){
  const supplier=supplierNorm(),ref=norm(row.reference),label=norm(row.description);
  const active=(catalog.products||[]).filter(p=>p.active!==false);
  const designation=invoiceDesignationKey(row.description);
+ // A supplier's priced quantity suffix is not part of the product designation.
+ const exactCatalogName=designation.length>=7?active.filter(p=>norm(p.name)===designation):[];
+ const supplierHistoricalLabel=supplier&&designation.length>=7?(catalog.supplier_product_catalog||[]).filter(x=>
+  norm(x.supplier_key||x.supplier_name)===supplier&&
+  x.supplier_product_name&&invoiceDesignationKey(x.supplier_product_name)===designation):[];
+ const historicalLabelIds=[...new Set(supplierHistoricalLabel.map(x=>x.product_id).filter(Boolean))];
  const strict=supplier&&designation.length>=8?aliases.filter(a=>a.alias_kind!=="reference"&&a.supplier_key&&norm(a.supplier_key)===supplier&&invoiceDesignationKey(a.keyword)===designation):[];
  const strictIds=[...new Set(strict.map(a=>a.product_id).filter(Boolean))];
  const referenceAliases=supplier&&ref?aliases.filter(a=>a.alias_kind==="reference"&&a.supplier_key&&norm(a.supplier_key)===supplier&&norm(a.keyword_norm||a.keyword)===ref):[];
@@ -504,6 +510,10 @@ function findProduct(row){
   return {product:null,source:"Désignations fournisseur vérifiées contradictoires : sélection manuelle obligatoire",manualMatchRequired:true};
  const checkConflict=match=>{
   if(!match?.product)return match;
+  if(exactCatalogName.length===1&&exactCatalogName[0].id!==match.product.id)
+   return {product:null,source:"Référence fournisseur et désignation catalogue exacte contradictoires : vérifier le PDF",manualMatchRequired:true};
+  if(historicalLabelIds.length===1&&historicalLabelIds[0]!==match.product.id)
+   return {product:null,source:"Référence fournisseur et ancienne désignation historique contradictoires : vérifier le PDF",manualMatchRequired:true};
   if(strict.length&&(strictIds.length!==1||strictIds[0]!==match.product.id))
    return {product:null,source:"Référence fournisseur et désignation exacte contradictoires : vérification manuelle obligatoire",manualMatchRequired:true};
   if(referenceAliases.length&&(referenceIds.length!==1||referenceIds[0]!==match.product.id))
@@ -577,10 +587,18 @@ function findProduct(row){
    if(p)return {product:p,source:"Mot-clé partiel : valider manuellement",manualMatchRequired:true};
   }else return {product:null,source:"Mots-clés partiels ambigus"};
  }
- if(label.length>=7){
-  const exact=active.filter(x=>norm(x.name)===label);
-  if(exact.length===1)return {product:exact[0],source:"Désignation catalogue exacte"};
+ if(historicalLabelIds.length){
+  if(historicalLabelIds.length!==1)
+   return {product:null,source:"Désignation historique fournisseur ambiguë : vérification manuelle",manualMatchRequired:true};
+  const p=active.find(x=>x.id===historicalLabelIds[0]);
+  if(p)return checkConflict({product:p,source:"Désignation historique fournisseur retrouvée : référence à confirmer",manualMatchRequired:true});
  }
+ if(exactCatalogName.length===1){
+  const p=exactCatalogName[0],confirmedReference=ref&&norm(p.code)===ref;
+  return checkConflict({product:p,source:"Désignation catalogue exacte après retrait de la quantité facturée",manualMatchRequired:!!ref&&!confirmedReference});
+ }
+ if(exactCatalogName.length>1)
+  return {product:null,source:"Désignation catalogue ambiguë : vérification manuelle",manualMatchRequired:true};
  return {product:null,source:"Produit ABSENT du catalogue actif — à ajouter ou rapprocher"};
 }
 function applyMatch(row,match,keepManual=false){
@@ -854,6 +872,24 @@ function keywordNotebook(row,index){
   catch(e){notice("Mot-clé non enregistré : "+e.message,"error");button.disabled=false}
  });
  form.append(input,button);wrap.append(form);
+ const supplier=supplierNorm(),reference=String(row.reference||"").trim();
+ if(supplier&&norm(reference).length>=3&&!aliases.some(a=>
+  a.alias_kind==="reference"&&a.product_id===product.id&&
+  norm(a.supplier_key)===supplier&&norm(a.keyword_norm||a.keyword)===norm(reference))){
+  const refButton=document.createElement("button");
+  refButton.type="button";refButton.className="btn secondary small";
+  refButton.textContent="Mémoriser la référence fournisseur « "+reference+" »";
+  refButton.disabled=saved;
+  refButton.addEventListener("click",async()=>{
+   if(!confirm("Associer la référence "+reference+" du fournisseur "+$("vendor").value+
+     " au produit "+product.code+" ? Vérifiez la référence sur le PDF avant confirmation."))return;
+   refButton.disabled=true;
+   try{await saveKeyword(row,reference,false,"reference");
+    notice("Référence fournisseur mémorisée pour "+product.code+".","success");renderRows()}
+   catch(error){notice("Référence non mémorisée : "+error.message,"error");refButton.disabled=false}
+  });
+  wrap.append(refButton);
+ }
  const note=document.createElement("p");note.className="subtle";note.textContent="Par défaut, mot-clé lié au fournisseur de cette facture. Une correspondance complète sera réutilisée sur les prochaines factures.";wrap.append(note);
  return wrap;
 }
