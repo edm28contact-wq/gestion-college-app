@@ -1,19 +1,136 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cuisine · Cours Chambertin</title>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#203447">
+<title>Espace Cuisine · Cours Chambertin</title>
 <style>
-:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f2f5f8;color:#1c2c3c}*{box-sizing:border-box}body{margin:0}header{background:#243447;color:#fff;padding:19px max(16px,calc((100vw - 1080px)/2))}header h1{margin:0;font-size:24px}header p{margin:5px 0 0;color:#cedae4}main{max-width:1080px;margin:20px auto;padding:0 15px 65px}.card{background:#fff;border:1px solid #dce4eb;border-radius:14px;padding:18px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:14px}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.stat{background:#eef3f6;border-radius:11px;padding:14px}.stat strong{font-size:27px;display:block}.stat small,.muted{color:#607282}.tabs,.actions{display:flex;gap:9px;flex-wrap:wrap;margin:15px 0}button,.btn{cursor:pointer;padding:13px 17px;border:0;border-radius:10px;font:inherit;font-weight:700;background:#e7edf3;color:#20364a}button.primary,.active{background:#243447;color:#fff}button:disabled{opacity:.55;cursor:not-allowed}label{font-size:13px;font-weight:700;display:block;margin-bottom:7px}input,select,textarea{width:100%;border:1px solid #becbd6;border-radius:10px;padding:13px;font:inherit;background:#fff;min-height:48px}textarea{resize:vertical}.field{margin:12px 0}.hide{display:none!important}.error{color:#aa2929}.good{color:#166b3b}.warning{color:#8c4c00}.pill{display:inline-block;font-size:12px;border-radius:18px;padding:5px 9px;background:#e9edf3;font-weight:700}.pill.alert{background:#fde4e4;color:#952424}.pill.ok{background:#dff3e7;color:#16592e}.data-row{padding:12px 0;border-bottom:1px solid #e6ebef;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.data-row:last-child{border:0}.clock{font-size:27px;font-weight:800;font-variant-numeric:tabular-nums}.details{font-size:13px;color:#617284}.status{min-height:22px;font-size:14px;margin:10px 0}a{color:inherit}.login{max-width:430px;margin:7vh auto}.nowrap{white-space:nowrap}h2{font-size:21px;margin:0 0 12px}h3{font-size:17px;margin:0 0 8px}@media(max-width:580px){.stats{grid-template-columns:1fr 1fr}.clock{font-size:24px}header{padding:16px}}
-</style></head><body>
-<header><h1>Cours Chambertin · Cuisine</h1><p>Relevés de températures et suivi HACCP</p></header>
-<main>
-<section id="login" class="card login"><h2>Accès personnel de cuisine</h2><p class="muted">Sélectionnez votre compte puis entrez votre code PIN.</p>
-<div class="field"><label for="agent">Agent</label><select id="agent"><option value="">Chargement des comptes…</option></select></div>
-<div class="field"><label for="pin">Code PIN (6 à 8 chiffres)</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></div>
-<button id="connect" class="primary" type="button">Se connecter</button><p id="loginStatus" class="status" role="status"></p>
-<p class="muted">MEDJEBER et MOREL : vos accès sont liés aux fiches salariés. Un administrateur doit définir votre code PIN personnel dans Gestion Cuisine.</p></section>
-<section id="app" class="hide"><div class="card data-row"><div><strong id="identity"></strong><p class="muted">Saisie rapide · Horodatage automatique</p></div><button id="logout">Déconnexion</button></div>
-<div id="stats" class="stats"></div><div class="tabs">
-<button class="active" data-page="cold">Chambres froides</button><button data-page="reheat">Remise en température</button><button data-page="tasks">Nettoyage</button>
-</div><section id="content"></section><div class="actions"><button id="refresh">Actualiser</button></div><p id="message" class="status" role="status"></p></section>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#213347;background:#f4f6f8;--navy:#203447;--navy2:#2e4960;--teal:#116e68;--line:#dce4e9;--muted:#657585;--soft:#edf4f3;--error:#aa3030}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.52}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #8ac6c2;outline-offset:2px}
+.hide{display:none!important}
+.site-header{background:var(--navy);color:#fff;padding:15px 20px}
+.header-inner{max-width:1110px;margin:auto;display:flex;align-items:center;gap:12px}
+.brand-mark{border:1px solid #8da4b6;width:43px;height:43px;border-radius:50%;display:grid;place-items:center;font-family:Georgia,serif;font-weight:700;flex-shrink:0}
+.brand-name{font-family:Georgia,serif;font-size:21px;letter-spacing:.015em}
+.brand-sub{font-size:12px;color:#c0d2de;margin-top:2px}
+.shell{max-width:1110px;margin:auto;padding:26px 18px 65px}
+.card{border:1px solid var(--line);background:#fff;border-radius:16px;padding:22px;box-shadow:0 1px 3px #15283b08;margin-bottom:16px}
+.login{max-width:450px;margin:clamp(24px,7vh,65px) auto}
+label{display:block;font-size:13px;font-weight:750;margin-bottom:7px;color:#344b5c}
+input,select{width:100%;padding:12px 13px;border:1px solid #bdcbd5;border-radius:10px;background:white;color:#1c3242;min-height:48px}
+.field{min-width:0;margin:0 0 16px}
+small,.muted{color:var(--muted);line-height:1.5}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--teal);font-weight:800}
+h1{font-size:clamp(24px,3.3vw,32px);letter-spacing:-.03em;margin:7px 0 9px}
+h2{font-size:21px;margin:0 0 7px;letter-spacing:-.015em}
+h3{font-size:17px;margin:0 0 7px}
+p{line-height:1.5}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 17px;border:1px solid transparent;border-radius:10px;font-weight:750;text-decoration:none;gap:7px;background:#e9eff2;color:var(--navy)}
+.btn-primary{color:white;background:var(--navy)}
+.btn-accent{background:var(--teal);color:#fff}
+.btn-outline{background:white;border-color:#cbd6df;color:var(--navy)}
+.btn-light{background:#eef2f5;color:var(--navy)}
+.btn-small{min-height:37px;padding:7px 12px;font-size:13px}
+.btn-block{width:100%}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.nav{display:flex;gap:7px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:0 0 13px;margin:19px 0}
+.nav button{font-weight:750;border:1px solid transparent;border-radius:10px;padding:10px 14px;background:transparent;color:#576d7d;min-height:44px}
+.nav button.active{background:var(--navy);color:white}
+.nav button:hover:not(.active){background:#e6edf1}
+.session{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap}
+.agent{font-weight:800}
+.subline{color:var(--muted);font-size:13px;margin-top:3px}
+.banner{background:#e8f2f0;border:1px solid #cde0dd;border-radius:15px;padding:20px;margin-bottom:20px}
+.banner p{margin:5px 0 0;max-width:740px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.action-card{border:1px solid var(--line);border-radius:14px;background:#fff;padding:19px;display:flex;flex-direction:column;justify-content:space-between;gap:12px;min-height:190px}
+.action-card p{color:var(--muted);font-size:13px;margin:4px 0 0}
+.action-card strong{font-size:18px}
+.action-card .btn{align-self:flex-start}
+.big-number{font-size:26px;font-weight:850;letter-spacing:-.03em}
+.stat-box{background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px}
+.stat-box .muted{font-size:12px}
+.tag{display:inline-flex;align-items:center;gap:5px;border-radius:40px;padding:6px 10px;font-size:12px;font-weight:750;background:#eef2f5;color:#466073}
+.tag-ok{background:#e1f3e9;color:#165f3b}
+.tag-warn{background:#fff1dc;color:#7e4c08}
+.tag-alert{background:#fbe6e5;color:#9a2f2e}
+.section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:0 0 16px}
+.section-heading p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.tile{padding:18px;border:1px solid var(--line);border-radius:13px}
+.tile h3{margin-bottom:9px}
+.tile .reading{font-size:24px;font-weight:800}
+.tile form{margin-top:16px}
+.tile .field{margin-bottom:10px}
+.tile .btn{width:100%}
+.line{border-top:1px solid #e7ecef;padding:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.line:last-child{padding-bottom:0}
+.help{font-size:13px;color:var(--muted);line-height:1.55}
+.step-chip{width:32px;height:32px;border-radius:9px;background:#e9f0f4;color:#234255;display:inline-grid;place-items:center;font-weight:850;margin-right:9px}
+.step-title{display:flex;align-items:center;gap:7px;margin-bottom:14px}
+.timer-card{border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:13px;background:#fff}
+.timer-card:last-child{margin-bottom:0}
+.timer-display{font-variant-numeric:tabular-nums;font-size:clamp(31px,4vw,45px);font-weight:850;color:var(--navy);letter-spacing:-.035em;line-height:1.05}
+.timer-card.is-ready{border-color:#85c4b1;background:#f7fcf9}
+.timer-card.is-late{border-color:#e8c2a8;background:#fffaf4}
+.timer-status{font-size:13px;color:var(--muted);margin:7px 0 12px}
+.timer-track{width:100%;height:8px;background:#e4ebee;border-radius:20px;overflow:hidden;margin:10px 0 14px}
+.timer-track>div{height:100%;background:var(--teal);width:0%;transition:width .2s linear}
+.timer-card.is-late .timer-track>div{background:#b66b26}
+.timer-details{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.timer-details span{font-size:12px;color:#526779;background:#eff3f6;padding:6px 9px;border-radius:7px}
+.finish-area{border-top:1px solid var(--line);padding-top:15px}
+.finish-area .field{max-width:400px;margin-bottom:10px}
+.info{font-size:13px;line-height:1.5;color:#556c7d;background:#f0f4f6;border-radius:9px;padding:10px 12px}
+.info-warn{background:#fff2dc;color:#78501c}
+.empty{padding:26px;text-align:center;background:#f8fafb;border:1px dashed #cbd8df;border-radius:13px;color:#6a7882}
+.empty strong{display:block;color:#31485a;margin-bottom:5px}
+.task-list{display:grid;gap:10px}
+.task-item{border:1px solid var(--line);border-radius:12px;padding:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.task-item.done{background:#f4faf6;border-color:#cce5d5}
+.task-item strong{display:block;font-size:15px;margin-bottom:4px}
+.task-item small{font-size:12px}
+.status{min-height:0;margin:10px 0 0;font-size:13px}
+.status:empty{display:none}
+.status.good{color:#16703e}.status.error{color:#a12c2c}
+.toast{position:sticky;bottom:15px;z-index:12;padding:13px 17px;background:#1d3a4b;color:white;border-radius:12px;box-shadow:0 4px 20px #20344722;max-width:760px;margin:18px auto 0}
+.toast:empty{display:none}
+.toast.error{background:#953637}.toast.good{background:#195e50}
+.guided-note{border-left:3px solid #b4c7d1;padding-left:14px;font-size:13px;color:#586c7c;margin:12px 0}
+@media(max-width:760px){.shell{padding:20px 13px 70px}.card{padding:18px}.grid,.grid-3,.field-grid{grid-template-columns:1fr}.nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.nav button{font-size:13px;padding:10px 7px}.action-card{min-height:155px}.session{align-items:flex-start}.timer-details span{display:block}}
+@media(prefers-reduced-motion:reduce){.timer-track>div{transition:none}}
+</style>
+</head>
+<body>
+<header class="site-header"><div class="header-inner"><div class="brand-mark" aria-hidden="true">CC</div><div><div class="brand-name">Cours Chambertin</div><div class="brand-sub">Espace Cuisine · Suivi des contrôles</div></div></div></header>
+<main class="shell">
+<section id="login" class="card login">
+ <div class="eyebrow">Accès sécurisé</div><h1>Connexion Cuisine</h1>
+ <p class="muted">Choisissez votre nom et entrez votre code personnel.</p>
+ <form id="loginForm">
+ <div class="field"><label for="agent">Je suis</label><select id="agent" required><option value="">Chargement des agents…</option></select></div>
+ <div class="field"><label for="pin">Mon code PIN</label><input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" minlength="6" maxlength="8" pattern="[0-9]{6,8}" required placeholder="6 à 8 chiffres"></div>
+ <button id="connect" type="submit" class="btn btn-primary btn-block">Accéder à mon espace</button></form>
+ <p id="loginStatus" class="status" role="status" aria-live="polite"></p>
+ <p class="help">Si votre compte n'apparaît pas, demandez l'activation à l'administration.</p>
+</section>
+<section id="app" class="hide">
+ <div class="session"><div><div class="eyebrow">Votre poste de travail</div><div class="agent" id="identity"></div><div class="subline" id="todayLabel"></div></div><div class="row"><button id="refresh" class="btn btn-outline btn-small" type="button">Actualiser</button><button id="logout" class="btn btn-light btn-small" type="button">Déconnexion</button></div></div>
+ <nav class="nav" aria-label="Navigation Cuisine">
+  <button type="button" class="active" data-page="dashboard" aria-current="page">Accueil</button>
+  <button type="button" data-page="reheat">Remise en température</button>
+  <button type="button" data-page="cold">Chambres froides</button>
+  <button type="button" data-page="tasks">Nettoyage</button>
+ </nav>
+ <section id="content" aria-live="off"></section>
+ <div id="message" class="toast" role="status" aria-live="polite"></div>
+</section>
 </main>
-<script src="./cuisine.js?v=20261120-4" defer></script>
-</body></html>
+<script src="./cuisine.js?v=20261120-5" defer></script>
+</body>
+</html>
