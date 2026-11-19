@@ -40,7 +40,7 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
  assert.match(script,/enableKitchenAlarm/);
- assert.match(html,/cuisine\.js\?v=20261120-5/);
+ assert.match(html,/cuisine\.js\?v=20261120-6/);
 });
 
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
@@ -57,6 +57,20 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchenTab="overview"/);
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
- assert.match(html,/cuisine\.js\?v=20261120-5/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-5/);
+ assert.match(html,/cuisine\.js\?v=20261120-6/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-6/);
+});
+
+test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ const kitchen=read("cuisine/cuisine.js");
+ assert.match(admin,/kitchenGoveeKey/);
+ assert.match(admin,/govee-save-key/);
+ assert.match(admin,/govee-discover/);
+ assert.match(admin,/govee-add-sensor/);
+ assert.match(admin,/govee-sync/);
+ assert.match(admin,/kitchenProbeRegister/);
+ assert.match(admin,/testo 104-IR BT/);
+ assert.match(kitchen,/sensor\.status==='online'/);
+ assert.match(kitchen,/r\.source==='govee_cloud'/);
 });
