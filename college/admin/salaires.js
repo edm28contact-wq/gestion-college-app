@@ -1,5 +1,5 @@
 /* Administration Collège : journal mensuel des éléments du personnel */
-let salaryMonth=null,salaryEvents=[],salaryError="",salaryLoading=false,salaryPerson="all",salaryMonthSummaries=[],salaryHistoryError="",salaryHistoryLoading=false,salaryHistoryLoaded=false,salaryRequestVersion=0,salaryStaff=[],salaryStaffLoaded=false,salaryStaffLoading=false,salaryStaffSaving=false,salaryStaffError="",salaryStaffMessage="";
+let salaryMonth=null,salaryEvents=[],salaryError="",salaryLoading=false,salaryPerson="all",salaryMonthSummaries=[],salaryHistoryError="",salaryHistoryLoading=false,salaryHistoryLoaded=false,salaryRequestVersion=0,salaryStaff=[],salaryStaffLoaded=false,salaryStaffLoading=false,salaryStaffSaving=false,salaryStaffError="",salaryStaffMessage="",salaryProfileEmployeeId="",salaryProfileMonth="",salaryProfileEvents=[],salaryProfileLoading=false,salaryProfileError="",salaryProfileLoaded=false,salaryProfileRequestVersion=0;
 const salaryTypes={absence:"Absence",retard:"Retard",depart_anticipe:"Départ anticipé",incident:"Incident"};
 const salaryStatuses={a_verifier:"À vérifier",valide:"Validé",sans_suite:"Sans suite"};
 const salaryJust={non_requis:"Non requis",a_fournir:"À fournir",recu:"Reçu"};
@@ -87,6 +87,110 @@ function salarySelectMonth(month){
 }
 
 
+
+function salaryStaffKey(name){
+ return String(name??"").normalize("NFKC").replace(/\s+/g," ").trim()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"");
+}
+function salaryLateMinutes(event){
+ if(event.event_type!=="retard"||event.all_day)return null;
+ const minutes=event.duration_minutes;
+ if(Number.isInteger(minutes)&&minutes>0&&minutes<=1440)return minutes;
+ const start=String(event.start_time||"").slice(0,5),end=String(event.end_time||"").slice(0,5);
+ const time=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
+ if(!time.test(start)||!time.test(end))return null;
+ const minute=value=>Number(value.slice(0,2))*60+Number(value.slice(3,5));
+ const difference=minute(end)-minute(start);
+ return difference>0&&difference<=1440?difference:null;
+}
+function salaryProfileTotals(events,month){
+ const year=String(month).slice(0,4);
+ const retards=events.filter(e=>e.event_type==="retard");
+ const monthly=retards.filter(e=>String(e.event_date||"").slice(0,7)===month);
+ const annual=retards.filter(e=>String(e.event_date||"").slice(0,4)===year);
+ const total=items=>items.reduce((sum,e)=>sum+(salaryLateMinutes(e)??0),0);
+ const missing=items=>items.filter(e=>salaryLateMinutes(e)===null).length;
+ return {monthMinutes:total(monthly),yearMinutes:total(annual),
+  monthCount:monthly.length,yearCount:annual.length,
+  monthMissing:missing(monthly),yearMissing:missing(annual),
+  eventCount:events.length,incidentCount:events.filter(e=>e.event_type==="incident").length};
+}
+function salaryFormatLate(minutes){
+ const n=Number(minutes)||0;
+ return Math.floor(n/60)+" h "+String(n%60).padStart(2,"0");
+}
+function salaryStaffProfilePanel(){
+ if(!salaryProfileEmployeeId)return "";
+ const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
+ if(!staff)return "";
+ const month=salaryProfileMonth||salaryCurrentMonth(),year=month.slice(0,4);
+ const totals=salaryProfileTotals(salaryProfileEvents,month);
+ const events=salaryProfileEvents;
+ const summary='<div class="salary-profile-kpis">'+
+  '<div><span>Retards · '+esc(salaryMonthLabel(month))+'</span><strong>'+salaryFormatLate(totals.monthMinutes)+'</strong><small>'+totals.monthCount+' retard(s) déclaré(s)'+(totals.monthMissing?' · '+totals.monthMissing+' sans durée':'')+'</small></div>'+
+  '<div><span>Retards · année '+esc(year)+'</span><strong>'+salaryFormatLate(totals.yearMinutes)+'</strong><small>'+totals.yearCount+' retard(s) déclaré(s)'+(totals.yearMissing?' · '+totals.yearMissing+' sans durée':'')+'</small></div>'+
+  '<div><span>Historique complet</span><strong>'+totals.eventCount+' événement(s)</strong><small>'+totals.incidentCount+' incident(s) · toutes périodes</small></div></div>';
+ const content=salaryProfileLoading?'<p class="muted">Chargement de l’historique des événements…</p>':
+  salaryProfileError?'<p class="err" role="alert">'+esc(salaryProfileError)+'</p>':
+  salaryProfileLoaded?
+   summary+'<p class="muted">Seuls les retards avec une durée fiable sont additionnés. Une absence, un départ anticipé ou une journée entière ne devient pas automatiquement un retard. Les événements ci-dessous couvrent toutes les années disponibles.</p>'+
+    (events.length?'<div class="table"><table><thead><tr><th>Date</th><th>Type</th><th>Durée</th><th>Observation</th><th>Justificatif</th><th>Statut</th><th>PDF</th></tr></thead><tbody>'+
+      events.map(e=>'<tr><td>'+esc(e.event_date||"")+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td><td>'+esc(salaryDuration(e))+'</td><td>'+esc(e.details||"—")+'</td><td>'+esc(salaryJust[e.justification_status]||"—")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td><td>'+(e.attachment_path?'<button class="btn secondary compact" type="button" data-salary-profile-pdf="'+esc(e.id)+'">Voir PDF</button>':'—')+'</td></tr>').join("")+
+    '</tbody></table></div>':'<p class="muted">Aucun incident ou événement enregistré pour ce salarié.</p>'):
+   '<p class="muted">Aucune donnée chargée.</p>';
+ return '<section class="card salary-profile" id="salaryProfile" aria-labelledby="salaryProfileTitle">'+
+  '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
+  '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
+  '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+content+'</section>';
+}
+async function salaryOpenStaffProfile(id){
+ const staff=salaryStaff.find(p=>p.id===id);
+ if(!staff)return;
+ if(salaryProfileEmployeeId!==id)salaryProfileMonth=salaryCurrentMonth();
+ salaryProfileEmployeeId=id;salaryProfileEvents=[];salaryProfileLoaded=false;salaryProfileError="";salaryProfileLoading=true;
+ const version=++salaryProfileRequestVersion;
+ if(page==="salaires"){
+  salaryPage();
+  $('salaryProfile')?.scrollIntoView({behavior:"smooth",block:"start"});
+ }
+ try{
+  const history=await call(ROOT+"/personnel-planning","admin-months");
+  if(version!==salaryProfileRequestVersion)return;
+  if(!Array.isArray(history.months))throw Error("Historique mensuel indisponible.");
+  const months=[...new Set(history.months.filter(m=>Number(m.events)>0&&/^\d{4}-(0[1-9]|1[0-2])$/.test(String(m.month||""))).map(m=>m.month))];
+  const employeeKey=String(staff.name_key||salaryStaffKey(staff.name));
+  const found=[];
+  for(let i=0;i<months.length;i+=4){
+   const batch=await Promise.all(months.slice(i,i+4).map(month=>
+    call(ROOT+"/personnel-planning","admin-list","GET",undefined,{month})));
+   if(version!==salaryProfileRequestVersion)return;
+   for(const result of batch){
+    if(!Array.isArray(result.events))throw Error("Un mois de l’historique est incomplet.");
+    found.push(...result.events.filter(e=>salaryStaffKey(e.personnel_name)===employeeKey));
+   }
+  }
+  if(version!==salaryProfileRequestVersion)return;
+  salaryProfileEvents=[...new Map(found.map(e=>[e.id,e])).values()].sort((a,b)=>
+   String(b.event_date||"").localeCompare(String(a.event_date||""))||
+   String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  salaryProfileLoaded=true;
+ }catch(e){
+  if(version===salaryProfileRequestVersion)salaryProfileError=frError(e.message);
+ }finally{
+  if(version===salaryProfileRequestVersion){
+   salaryProfileLoading=false;
+   if(page==="salaires")salaryPage();
+  }
+ }
+}
+function salaryCloseStaffProfile(){
+ salaryProfileRequestVersion++;
+ salaryProfileEmployeeId="";salaryProfileEvents=[];salaryProfileError="";salaryProfileLoading=false;
+ salaryProfileLoaded=false;
+ if(page==="salaires")salaryPage();
+}
+
 function salaryStaffPanel(){
  const state=salaryStaffLoading?'<p class="muted">Chargement de la liste du personnel…</p>':
   salaryStaffError?'<p class="err">'+esc(salaryStaffError)+'</p><button type="button" class="btn secondary" onclick="salaryLoadStaff()">Réessayer</button>':'';
@@ -95,6 +199,7 @@ function salaryStaffPanel(){
   const visible=!p.archived&&p.visible_in_planning;
   return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+(p.archived?'Archivé':visible?'Visible dans le planning':'Masqué du planning')+'</td>'+
    '<td><input type="checkbox" data-salary-staff-id="'+esc(p.id)+'" '+(visible?'checked':'')+' '+(p.archived||salaryStaffSaving?'disabled':'')+' aria-label="Afficher '+esc(p.name)+' dans le planning"></td>'+
+   '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Voir la fiche</button></td>'+
    '<td><button type="button" class="btn secondary compact" data-salary-archive="'+esc(p.id)+'" '+(salaryStaffSaving?'disabled':'')+'>'+(p.archived?'Réactiver':'Retirer de la liste')+'</button></td></tr>';
  };
  return '<section class="card salary-personnel"><h2>Salariés affichés dans le planning</h2>'+
@@ -104,9 +209,9 @@ function salaryStaffPanel(){
   '<input id="salaryStaffName" type="text" maxlength="120" required placeholder="Nom et prénom" autocomplete="off" '+(salaryStaffSaving?'disabled':'')+'>'+
   '<label><input id="salaryStaffVisible" type="checkbox" checked> Afficher dans le planning</label>'+
   '<button type="submit" class="btn primary" '+(salaryStaffSaving?'disabled':'')+'>Ajouter le salarié</button></form>'+
-  '<div class="table"><table><thead><tr><th>Salarié</th><th>État</th><th>Afficher</th><th>Action</th></tr></thead><tbody>'+
+  '<div class="table"><table><thead><tr><th>Salarié</th><th>État</th><th>Afficher</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
   active.map(row).join('')+archived.map(row).join('')+
-  (!salaryStaff.length?'<tr><td colspan="4">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
+  (!salaryStaff.length?'<tr><td colspan="5">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
 }
 async function salaryLoadStaff(){
  if(!token||salaryStaffLoading)return;
@@ -147,6 +252,13 @@ async function salaryUpdateStaff(id,archived,visible){
 }
 function salaryWireStaff(){
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
+ document.querySelectorAll('[data-salary-staff-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryStaffProfile)));
+ const close=$('salaryProfileClose');if(close)close.addEventListener('click',salaryCloseStaffProfile);
+ const refresh=$('salaryProfileRefresh');if(refresh)refresh.addEventListener('click',()=>void salaryOpenStaffProfile(salaryProfileEmployeeId));
+ const month=$('salaryProfileMonth');if(month)month.addEventListener('change',()=>{
+  if(/^\d{4}-(0[1-9]|1[0-2])$/.test(month.value)){salaryProfileMonth=month.value;salaryPage()}
+ });
+ document.querySelectorAll('[data-salary-profile-pdf]').forEach(button=>button.addEventListener('click',()=>void salaryOpenIncidentPdf(button.dataset.salaryProfilePdf)));
  document.querySelectorAll('[data-salary-staff-id]').forEach(box=>box.addEventListener('change',()=>{
   const row=salaryStaff.find(x=>x.id===box.dataset.salaryStaffId);
   if(row)void salaryUpdateStaff(row.id,false,box.checked);
@@ -162,7 +274,7 @@ function salaryPage(){
  const groups=salaryGroups(),shown=groups.filter(([key])=>salaryPerson==="all"||salaryPerson===key);
  const total=shown.reduce((n,[,g])=>n+g.items.length,0);
  const option=(val,label)=>'<option value="'+esc(val)+'"'+(salaryPerson===val?' selected':'')+'>'+esc(label)+'</option>';
- $('content').innerHTML=salaryOverview()+salaryStaffPanel()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
+ $('content').innerHTML=salaryOverview()+salaryStaffPanel()+salaryStaffProfilePanel()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
  (salaryLoading?'<div class="card">Chargement des événements…</div>':'')+
  (salaryError?'<div class="card" style="color:#a32929">'+esc(salaryError)+'</div>':'')+
  (!salaryLoading&&!salaryError?'<div class="card"><b>'+shown.length+' salarié(s) · '+total+' événement(s) · '+shown.reduce((n,[,g])=>n+g.items.filter(e=>e.event_type==="incident").length,0)+' incident(s)</b></div>':'')+
