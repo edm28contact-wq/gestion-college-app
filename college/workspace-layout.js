@@ -13,6 +13,8 @@
  const scroll=(label,selector)=>({label,scrollTo:selector});
  const common=[
   link("Administration Collège","college/admin/"),
+  link("Gestion Cuisine","college/admin/?page=cuisine"),
+  link("Cuisine","cuisine/"),
   link("Secrétariat","secretariat/"),
   link("Comptabilité","comptabilite/"),
   link("Planning du personnel","secretariat/planning/"),
@@ -43,6 +45,9 @@
   comptabilite:{label:"Comptabilité",hideTabs:true,sections:[
    section("Comptabilité",[tab("Tableau de bord","#td"),tab("Recettes","#trc"),tab("Factures fournisseurs","#tde"),tab("Import de factures","#ti"),link("Lecteur Veryfi","lecteur-veryfi/?origine=comptabilite"),tab("Livres et documents","#tdoc"),tab("Outils avancés","#tadv")]),
    section("Autres espaces",common)]},
+  cuisine:{label:"Cuisine",sections:[
+   section("Cuisine",[link("Cuisine · Accueil","cuisine/")]),
+   section("Autres espaces",[link("Administration Collège","college/admin/")])]},
   planning:{label:"Planning du personnel",sections:[
    section("Planning",[scroll("Registre des événements","#rows"),tab("Nouvel événement","#new"),scroll("Filtrer le mois","#month")]),
    section("Autres espaces",common)]},
