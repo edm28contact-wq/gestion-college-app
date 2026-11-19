@@ -113,6 +113,17 @@
 .salary-staff-form>button{grid-column:3;grid-row:2}
 .salary-personnel .table table{min-width:600px}
 .salary-personnel td input[type="checkbox"]{width:19px;height:19px}
+.salary-profile{scroll-margin-top:20px}
+.salary-profile-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.salary-profile-head h2{margin:0 0 6px}
+.salary-profile-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.salary-profile-kpis>div{background:#f5f8fc;border:1px solid #dbe4ec;border-radius:10px;padding:15px;display:flex;flex-direction:column;gap:5px}
+.salary-profile-kpis strong{font-size:22px;color:#183e62}
+.salary-profile-kpis span{font-size:13px;font-weight:600}
+.salary-profile-kpis small{color:#566a7d}
+.salary-profile .table{overflow-x:auto}
+.salary-profile .table table{min-width:760px}
+@media(max-width:700px){.salary-profile-kpis{grid-template-columns:1fr}}
 @media(max-width:700px){.salary-staff-form{display:flex;flex-direction:column;align-items:stretch}}
 </style>
 </head>
@@ -544,7 +555,7 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 if(token)enterApp().catch(()=>logout());
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261109-staff-management-v1"></script>
+<script src="./salaires.js?v=20261119-employee-profile-v1"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 
 </body>
