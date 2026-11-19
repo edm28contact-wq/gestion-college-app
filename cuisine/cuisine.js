@@ -71,15 +71,16 @@ function renderCold(){
  $("content").innerHTML=
  '<div class="section-heading"><div><div class="eyebrow">Contrôle des équipements</div><h1>Chambres froides</h1><p>Une température par chambre, relevée directement sur l’équipement.</p></div><span class="tag">'+todayIds.size+' / '+data.rooms.length+' contrôlées aujourd’hui</span></div>'+
  '<div class="grid">'+data.rooms.map(r=>{
- const current=last.get(r.id),done=todayIds.has(r.id);
+ const current=last.get(r.id),done=todayIds.has(r.id),sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.room_id===r.id&&d.provider==="govee");
  const threshold=r.min_c===null?'≤ '+number(r.max_c)+' °C':number(r.min_c)+' à '+number(r.max_c)+' °C';
  return '<div class="tile"><div class="row between"><h3>'+esc(r.label)+'</h3><span class="tag '+(done?'tag-ok':'tag-warn')+'">'+(done?'Relevée aujourd’hui':'À contrôler')+'</span></div>'+
  '<div class="subline">Plage autorisée : '+esc(threshold)+'</div>'+
+ (sensor?'<p class="help">Capteur Govee : <strong>'+esc(sensor.status==='online'?'Dernière valeur reçue':'Non connecté')+'</strong>'+(sensor.last_temperature_c==null?'':' · '+number(sensor.last_temperature_c)+' °C')+(sensor.last_checked_at?' · '+clock(sensor.last_checked_at):'')+'</p>':'')+
  (current?'<p class="help">Dernier relevé : <strong>'+number(current.temperature_c)+' °C</strong> · '+clock(current.measured_at)+' <span class="tag '+(current.is_alert?'tag-alert':'tag-ok')+'">'+(current.is_alert?'Hors seuil':'Dans la plage')+'</span></p>':'<p class="help">Aucun relevé enregistré.</p>')+
  '<form data-cold="'+esc(r.id)+'"><div class="field"><label>Température mesurée (°C)</label><input type="number" required step="0.1" min="-60" max="60" name="temperature_c" inputmode="decimal" placeholder="Ex. 2,5"></div>'+
  '<button class="btn btn-primary" type="submit">Enregistrer la mesure</button></form></div>'}).join("")+'</div>'+
  '<div class="card" style="margin-top:17px"><div class="section-heading"><div><h2>Derniers relevés</h2><p>Mesures horodatées et conservées automatiquement.</p></div></div>'+
- (data.cold.length?data.cold.slice(0,12).map(r=>'<div class="line"><div><strong>'+esc(roomName(r.room_id))+'</strong><div class="subline">'+clock(r.measured_at)+' · '+esc(staffName(r.taken_by))+'</div></div><div class="row"><strong>'+number(r.temperature_c)+' °C</strong><span class="tag '+(r.is_alert?'tag-alert':'tag-ok')+'">'+(r.is_alert?'Hors seuil':'Conforme au seuil')+'</span></div></div>').join(""):'<div class="empty"><strong>Pas encore de relevé</strong>Les mesures apparaîtront ici.</div>')+'</div>';
+ (data.cold.length?data.cold.slice(0,12).map(r=>'<div class="line"><div><strong>'+esc(roomName(r.room_id))+'</strong><div class="subline">'+clock(r.measured_at)+' · '+(r.source==='govee_cloud'?'Capteur Govee':esc(staffName(r.taken_by)))+'</div></div><div class="row"><strong>'+number(r.temperature_c)+' °C</strong><span class="tag '+(r.is_alert?'tag-alert':'tag-ok')+'">'+(r.is_alert?'Hors seuil':'Conforme au seuil')+'</span></div></div>').join(""):'<div class="empty"><strong>Pas encore de relevé</strong>Les mesures apparaîtront ici.</div>')+'</div>';
 }
 
 function remaining(iso){const n=Math.ceil((new Date(iso).getTime()-Date.now())/1000);if(n<=0)return"Contrôle attendu";return Math.floor(n/60)+" min "+String(n%60).padStart(2,"0")+" s";}
