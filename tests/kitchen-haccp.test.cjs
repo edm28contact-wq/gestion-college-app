@@ -40,7 +40,7 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
  assert.match(script,/enableKitchenAlarm/);
- assert.match(html,/cuisine\.js\?v=20261120-4/);
+ assert.match(html,/cuisine\.js\?v=20261120-5/);
 });
 
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
@@ -56,7 +56,7 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(js,/function checkReheatAlarms\(\)/);
  assert.match(admin,/kitchenTab="overview"/);
  assert.match(admin,/kitchen-section-intro/);
- assert.match(admin,/data-kitchen-tab/);
+ assert.match(admin,/b\.dataset\.kitchenTab/);
  assert.match(html,/cuisine\.js\?v=20261120-5/);
  assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-5/);
 });
