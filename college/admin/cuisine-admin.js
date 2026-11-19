@@ -46,6 +46,15 @@
  '<div><label>Cible minimale en fin (°C)</label><input name="target_end_c" type="number" step="0.1" min="63" max="120" required value="'+e(s.defaults?.target_end_c??63)+'"></div>'+
  '<div><label>Rappel (minutes)</label><input name="reminder_minutes" type="number" min="1" max="60" required value="'+e(s.defaults?.reminder_minutes??55)+'"></div>'+
  '<div><button class="btn primary" type="submit">Enregistrer les valeurs par défaut</button></div></form></div>'+
+ '<div class="card"><h2>Thermomètres connectés</h2><p class="muted">Govee : connexion via l’API officielle (capteurs Wi-Fi compatibles uniquement). Les sondes Testo 104-IR / 104-IR BT sont référencées pour une intégration ultérieure. Les relevés manuels restent disponibles.</p>'+
+ '<div class="grid"><form id="kitchenGoveeKey"><h3>1. Compte Govee</h3><p class="muted">Clé conservée chiffrée côté Supabase Vault, jamais affichée après l’enregistrement.</p><label>Clé API Govee</label><input type="password" name="api_key" required minlength="10" maxlength="240" autocomplete="new-password" placeholder="Coller votre clé Govee Home"><button class="btn primary" type="submit">Tester et enregistrer la clé</button><p class="muted">'+(s.account?.govee_key_configured?'Clé enregistrée — vous pouvez rechercher les capteurs.':'Aucune clé configurée.')+'</p></form>'+
+ '<div><h3>2. Rechercher les capteurs</h3><p class="muted">L’API Govee affiche les capteurs compatibles avec votre compte. Un thermomètre Bluetooth seul peut ne pas être détecté.</p><button id="kitchenGoveeDiscover" class="btn secondary" type="button">Rechercher mes capteurs Govee</button><div id="kitchenGoveeDiscovered" class="muted" aria-live="polite">Associez un capteur par chambre froide.</div></div></div>'+
+ '<h3>Capteurs associés aux chambres froides</h3>'+
+ ((s.connected||[]).filter(d=>d.kind==="cold_room").length?(s.connected||[]).filter(d=>d.kind==="cold_room").map(d=>'<div class="data-row"><div><strong>'+e(d.label)+'</strong><div class="muted">'+e(s.rooms.find(r=>r.id===d.room_id)?.label||"Chambre")+' · '+e(d.model)+' · '+e(d.device_identifier)+'</div><div class="muted">État : '+e(d.status)+' · Dernière synchronisation : '+when(d.last_checked_at)+(d.last_temperature_c==null?'':' · '+t(d.last_temperature_c)+' °C')+(d.last_error?' · '+e(d.last_error):'')+'</div></div><button class="btn secondary" data-govee-sync="'+attr(d,"id")+'" type="button">Lire la température</button></div>').join(""):'<p class="muted">Aucun capteur associé.</p>')+
+ '<h3>Pour plus tard : sondes de plats Testo</h3><p class="muted">Le testo 104-IR classique n’est pas une sonde API. Le 104-IR BT transmet à Testo Smart, mais aucune connexion automatique à ce site n’est activée. Il faut continuer à mesurer et saisir manuellement la température à cœur.</p>'+
+ '<form id="kitchenProbeRegister" class="grid"><div><label>Désignation de la sonde</label><input name="label" required minlength="2" maxlength="80" placeholder="Ex. Sonde cuisine 1"></div><div><label>Modèle Testo</label><select name="model"><option value="testo 104-IR">testo 104-IR (manuel)</option><option value="testo 104-IR BT">testo 104-IR BT (application Testo Smart)</option></select></div><div><button class="btn secondary" type="submit">Référencer la sonde pour plus tard</button></div></form>'+
+ ((s.connected||[]).filter(d=>d.kind==="food_probe").map(d=>'<div class="data-row"><strong>'+e(d.label)+'</strong><span class="muted">'+e(d.model)+' · Connexion au site non disponible</span></div>').join(""))+
+ '</div>'+
  '<div class="card"><h2>Derniers relevés des chambres</h2>'+rows(s.cold.slice(0,35),[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Agent",x=>e(staff(x.taken_by))],["Statut",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?"Alerte":"Conforme")+'</span>'],["",x=>x.is_alert?'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
  '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Statut",x=>e(x.status)],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
  '<div class="card"><h2>Tâches de nettoyage</h2>'+rows(s.tasks,[["Tâche",x=>e(x.label)],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":"Non validée"]])+
@@ -66,7 +75,7 @@
    const heading=el.querySelector?.("h2")?.textContent||"";
    if(heading.startsWith("Gestion Cuisine"))groups.overview.push(el);
    else if(heading.startsWith("Agents de cuisine")||heading.startsWith("Tâches de nettoyage"))groups.staff.push(el);
-   else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut"))groups.equipment.push(el);
+   else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut")||heading.startsWith("Thermomètres connectés"))groups.equipment.push(el);
    else if(heading.startsWith("Derniers relevés")||heading.startsWith("Remises en température")||heading.startsWith("Actions correctives"))groups.records.push(el);
    else groups.overview.push(el);
  }
@@ -110,8 +119,9 @@
  const link=document.createElement("a"),u=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));link.href=u;link.download="cuisine-haccp-"+new Date().toISOString().slice(0,10)+".csv";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(u),1500);}
  async function load(){try{snapshot=await api("list");render()}catch(err){node("content").innerHTML='<div class="card"><b>Impossible de charger Gestion Cuisine.</b><p class="status err">'+e(err.message)+'</p></div>'}}
  document.addEventListener("submit",evt=>{
- const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit]"))return;evt.preventDefault();
+ const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate]"))return;evt.preventDefault();
  const f=new FormData(form),values=Object.fromEntries(f.entries());
+ if(form.matches("[data-govee-associate]")){action("govee-add-sensor",{device:form.dataset.goveeAssociate,sku:form.dataset.sku,room_id:values.room_id,raw_unit:values.raw_unit});return;}
  if(form.matches("[data-kitchen-pin]"))action("set-staff-pin",{staff_id:form.dataset.kitchenPin,pin:values.pin});
  if(form.id==="kitchenAddRoom")action("add-room",{room_type:values.room_type,room_number:Number(values.room_number),label:values.label,min_c:values.min_c===""?null:Number(values.min_c),max_c:Number(values.max_c)});
  if(form.matches("[data-room-edit]"))action("update-room",{id:form.dataset.roomEdit,label:values.label,min_c:values.min_c===""?null:Number(values.min_c),max_c:Number(values.max_c)});
@@ -121,7 +131,24 @@
  if(form.matches("[data-dish-edit]"))action("update-dish-type",{id:form.dataset.dishEdit,label:values.label});
  if(form.id==="kitchenSaveDefaults")action("save-defaults",{default_cold_room_id:values.default_cold_room_id,default_oven_id:values.default_oven_id,default_dish_type_id:values.default_dish_type_id,target_start_c:Number(values.target_start_c),target_end_c:Number(values.target_end_c),reminder_minutes:Number(values.reminder_minutes)});
  if(form.id==="kitchenAddTask")action("add-task",{label:values.label,assigned_to:values.assigned_to||null});
+ if(form.id==="kitchenGoveeKey")action("govee-save-key",{api_key:String(values.api_key||"")});
+ if(form.id==="kitchenProbeRegister")action("probe-register",{label:values.label,model:values.model});
  });
+ document.addEventListener("click",async evt=>{
+ const discover=evt.target.closest?.("#kitchenGoveeDiscover");
+ if(discover){
+  const output=node("kitchenGoveeDiscovered");if(!output)return;
+  discover.disabled=true;output.textContent="Recherche des appareils Govee…";
+  try{
+   const result=await api("govee-discover");
+   const supported=result.devices.filter(d=>d.temperature_capability);
+   if(!supported.length){output.textContent="Aucun capteur exposant sensorTemperature dans l’API Govee. Vérifiez votre modèle et la connexion Wi-Fi.";return;}
+   output.innerHTML=supported.map(d=>'<form class="grid" data-govee-associate="'+e(d.device)+'" data-sku="'+e(d.sku)+'"><div><strong>'+e(d.label)+'</strong><p class="muted">'+e(d.sku)+'</p></div><div><label>Chambre froide</label><select name="room_id" required>'+snapshot.rooms.map(r=>'<option value="'+e(r.id)+'">'+e(r.label)+'</option>').join("")+'</select></div><div><label>Unité RENVOYÉE par Govee</label><select name="raw_unit" required><option value="">Choisir l’unité du capteur</option><option value="C">Celsius (°C)</option><option value="F">Fahrenheit (°F)</option></select></div><div><button class="btn primary" type="submit">Associer ce capteur</button></div></form>').join("");
+  }catch(err){output.textContent=err.message;}finally{discover.disabled=false}
+ }
+ const sync=evt.target.closest?.("button[data-govee-sync]");
+ if(sync)action("govee-sync",{id:sync.dataset.goveeSync});
+});
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-kitchen-active]");if(b)action("set-staff-active",{staff_id:b.dataset.kitchenActive,active:b.dataset.next==="true"});});
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-corrective]");if(!b)return;const note=prompt("Décrivez l’anomalie constatée, les mesures correctives réellement prises et le résultat du nouveau contrôle :");if(note&&note.trim().length>=3)action("corrective",{entity_type:b.dataset.corrective,entity_id:b.dataset.id,note:note.trim()})});
  window.kitchenAdminPage=function(){node("content").innerHTML='<div class="card">Chargement des relevés Cuisine…</div>';load()};
