@@ -38,7 +38,7 @@ test("Fiche individuelle réservée à la page des salaires; toutes les période
  assert.match(source,/salaryStaffKey\(e\.personnel_name\)===employeeKey/);
  assert.match(source,/data-salary-profile-pdf/);
  assert.match(admin,/salary-profile-kpis/);
- assert.match(admin,/salaires\.js\?v=20261119-employee-totals-v2/);
+ assert.match(admin,/salaires\.js\?v=20261119-global-hours-v3/);
 });
 
 test("Départs anticipés et incidents sont totalisés séparément sans fabriquer des retards",()=>{
@@ -59,8 +59,53 @@ test("Départs anticipés et incidents sont totalisés séparément sans fabriqu
  assert.equal(t.earlyYearCount,3);
 });
 test("La fiche indique explicitement les retards non saisis et les autres catégories",()=>{
- assert.match(source,/Aucun retard enregistré pour/);
+ assert.match(source,/Attention : cumul horaire partiel/);
  assert.match(source,/salary-profile-secondary/);
  assert.match(source,/salaryFormatLate\(totals.earlyMonthMinutes\)/);
  assert.match(source,/salaryFormatLate\(totals.incidentYearMinutes\)/);
+});
+
+test("Total du mois = retard + départ anticipé + absence de durée connue",()=>{
+ const events=[
+  entry("2026-11-04","retard",70),
+  entry("2026-11-05","depart_anticipe",105),
+  entry("2026-11-06","absence",180),
+  entry("2026-11-07","incident",90),
+  entry("2026-10-03","absence",45),
+  entry("2025-12-08","retard",45)
+ ];
+ const totals=api.salaryProfileTotals(events,"2026-11");
+ assert.equal(totals.totalMonthMinutes,355);
+ assert.equal(totals.totalYearMinutes,400);
+ assert.equal(totals.absenceMonthMinutes,180);
+ assert.equal(totals.absenceYearMinutes,225);
+ assert.equal(totals.totalMonthCount,3);
+ assert.equal(totals.totalYearCount,4);
+ assert.equal(totals.totalYearMissing,0);
+ assert.equal(totals.incidentMonthMinutes,90);
+});
+test("Une journée entière ne crée jamais 24 h fictives : total partiel indiqué",()=>{
+ const events=[
+  entry("2026-11-05","absence",1440,{all_day:true}),
+  entry("2026-11-06","retard",20),
+  entry("2026-10-07","absence",90)
+ ];
+ const totals=api.salaryProfileTotals(events,"2026-11");
+ assert.equal(totals.totalMonthMinutes,20);
+ assert.equal(totals.totalYearMinutes,110);
+ assert.equal(totals.totalMonthMissing,1);
+ assert.equal(totals.totalYearMissing,1);
+ assert.equal(totals.absenceMonthMinutes,0);
+ assert.equal(totals.absenceYearMinutes,90);
+});
+test("Une durée absente ne doit pas être calculée comme zéro effectif sans avertissement",()=>{
+ const totals=api.salaryProfileTotals([entry("2026-11-09","depart_anticipe",null)],"2026-11");
+ assert.equal(totals.totalMonthMinutes,0);
+ assert.equal(totals.totalMonthMissing,1);
+ assert.equal(totals.earlyMonthMissing,1);
+});
+test("Les incidents génériques restent hors total global",()=>{
+ const totals=api.salaryProfileTotals([entry("2026-11-11","incident",165)],"2026-11");
+ assert.equal(totals.totalMonthMinutes,0);
+ assert.equal(totals.incidentMonthMinutes,165);
 });

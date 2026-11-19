@@ -115,7 +115,12 @@ function salaryProfileTotals(events,month){
  const missing=items=>items.filter(e=>salaryRecordedMinutes(e)===null).length;
  const lateMonth=group("retard",inMonth),lateYear=group("retard",inYear);
  const earlyMonth=group("depart_anticipe",inMonth),earlyYear=group("depart_anticipe",inYear);
+ const absenceMonth=group("absence",inMonth),absenceYear=group("absence",inYear);
  const incidentMonth=group("incident",inMonth),incidentYear=group("incident",inYear);
+ // One "all_day" is stored as 1440 by the planning, but 24h is not a paid shift.
+ // Do not turn a full-day absence into 24 hours of absence.
+ const hoursMonth=[...lateMonth,...earlyMonth,...absenceMonth];
+ const hoursYear=[...lateYear,...earlyYear,...absenceYear];
  return {
   monthMinutes:total(lateMonth),yearMinutes:total(lateYear),
   monthCount:lateMonth.length,yearCount:lateYear.length,
@@ -126,7 +131,12 @@ function salaryProfileTotals(events,month){
   incidentMonthMinutes:total(incidentMonth),incidentYearMinutes:total(incidentYear),
   incidentMonthCount:incidentMonth.length,incidentYearCount:incidentYear.length,
   incidentMonthMissing:missing(incidentMonth),incidentYearMissing:missing(incidentYear),
-  absenceMonthCount:group("absence",inMonth).length,absenceYearCount:group("absence",inYear).length,
+  absenceMonthMinutes:total(absenceMonth),absenceYearMinutes:total(absenceYear),
+  absenceMonthCount:absenceMonth.length,absenceYearCount:absenceYear.length,
+  absenceMonthMissing:missing(absenceMonth),absenceYearMissing:missing(absenceYear),
+  totalMonthMinutes:total(hoursMonth),totalYearMinutes:total(hoursYear),
+  totalMonthCount:hoursMonth.length,totalYearCount:hoursYear.length,
+  totalMonthMissing:missing(hoursMonth),totalYearMissing:missing(hoursYear),
   eventCount:events.length,incidentCount:events.filter(e=>e.event_type==="incident").length
  };
 }
@@ -141,20 +151,22 @@ function salaryStaffProfilePanel(){
  const month=salaryProfileMonth||salaryCurrentMonth(),year=month.slice(0,4);
  const totals=salaryProfileTotals(salaryProfileEvents,month);
  const events=salaryProfileEvents;
+ const monthPartial=totals.totalMonthMissing>0,yearPartial=totals.totalYearMissing>0;
  const summary='<div class="salary-profile-kpis">'+
-  '<div><span>Retards · '+esc(salaryMonthLabel(month))+'</span><strong>'+salaryFormatLate(totals.monthMinutes)+'</strong><small>'+(totals.monthCount?totals.monthCount+' retard(s) déclaré(s)':'Aucun retard saisi')+(totals.monthMissing?' · '+totals.monthMissing+' sans durée':'')+'</small></div>'+
-  '<div><span>Retards · année '+esc(year)+'</span><strong>'+salaryFormatLate(totals.yearMinutes)+'</strong><small>'+(totals.yearCount?totals.yearCount+' retard(s) déclaré(s)':'Aucun retard saisi')+(totals.yearMissing?' · '+totals.yearMissing+' sans durée':'')+'</small></div>'+
+  '<div><span>Total des heures · '+esc(salaryMonthLabel(month))+'</span><strong>'+salaryFormatLate(totals.totalMonthMinutes)+'</strong><small>'+(monthPartial?'Total partiel · '+totals.totalMonthMissing+' événement(s) sans durée en heures':totals.totalMonthCount+' événement(s) comptabilisé(s)')+'</small></div>'+
+  '<div><span>Total des heures · année '+esc(year)+'</span><strong>'+salaryFormatLate(totals.totalYearMinutes)+'</strong><small>'+(yearPartial?'Total partiel · '+totals.totalYearMissing+' événement(s) sans durée en heures':totals.totalYearCount+' événement(s) comptabilisé(s)')+'</small></div>'+
   '<div><span>Historique complet</span><strong>'+totals.eventCount+' événement(s)</strong><small>'+totals.incidentCount+' incident(s) · toutes périodes</small></div></div>';
- const noLateInfo=!totals.yearCount?'<p class="salary-profile-explain" role="status"><b>Aucun retard enregistré pour '+esc(year)+'.</b> Les événements « Incident », « Départ anticipé » et « Absence » restent distincts : ils ne sont pas comptés comme retards. Pour saisir un retard, choisissez « Retard » dans Secrétariat → Planning.</p>':
-  !totals.monthCount?'<p class="salary-profile-explain">Aucun retard déclaré pour '+esc(salaryMonthLabel(month))+'. Le cumul annuel reprend les autres mois de '+esc(year)+'.</p>':'';
+ const incompleteInfo=yearPartial?'<p class="salary-profile-explain" role="status"><b>Attention : cumul horaire partiel.</b> '+totals.totalYearMissing+' événement(s) de '+esc(year)+' ne possèdent pas de durée horaire exploitable (notamment une absence en journée entière). Une journée entière ne vaut pas automatiquement 24 h : renseignez sa durée de travail réelle pour l’inclure dans le total.</p>':
+  !totals.totalYearCount?'<p class="salary-profile-explain">Aucun retard, départ anticipé ou absence déclaré pour '+esc(year)+'.</p>':'';
  const otherTotals='<div class="salary-profile-secondary">'+
-  '<div><h3>Départs anticipés</h3><p><b>'+salaryFormatLate(totals.earlyMonthMinutes)+'</b> sur le mois · '+totals.earlyMonthCount+' événement(s)</p><p><b>'+salaryFormatLate(totals.earlyYearMinutes)+'</b> sur l’année · '+totals.earlyYearCount+' événement(s)</p>'+(totals.earlyYearMissing?'<small>'+totals.earlyYearMissing+' événement(s) sans durée additionnable</small>':'')+'</div>'+
-  '<div><h3>Incidents déclarés</h3><p><b>'+totals.incidentMonthCount+'</b> incident(s) ce mois · Durées renseignées : '+salaryFormatLate(totals.incidentMonthMinutes)+'</p><p><b>'+totals.incidentYearCount+'</b> incident(s) cette année · Durées renseignées : '+salaryFormatLate(totals.incidentYearMinutes)+'</p>'+(totals.incidentYearMissing?'<small>'+totals.incidentYearMissing+' incident(s) sans durée additionnable</small>':'')+'</div>'+
-  '<div><h3>Absences</h3><p><b>'+totals.absenceMonthCount+'</b> absence(s) ce mois</p><p><b>'+totals.absenceYearCount+'</b> absence(s) cette année</p></div></div>';
+  '<div><h3>Retards</h3><p><b>'+salaryFormatLate(totals.monthMinutes)+'</b> ce mois · '+totals.monthCount+' événement(s)</p><p><b>'+salaryFormatLate(totals.yearMinutes)+'</b> sur l’année · '+totals.yearCount+' événement(s)</p>'+(totals.yearMissing?'<small>'+totals.yearMissing+' événement(s) sans durée additionnable</small>':'')+'</div>'+
+  '<div><h3>Départs anticipés</h3><p><b>'+salaryFormatLate(totals.earlyMonthMinutes)+'</b> ce mois · '+totals.earlyMonthCount+' événement(s)</p><p><b>'+salaryFormatLate(totals.earlyYearMinutes)+'</b> sur l’année · '+totals.earlyYearCount+' événement(s)</p>'+(totals.earlyYearMissing?'<small>'+totals.earlyYearMissing+' événement(s) sans durée additionnable</small>':'')+'</div>'+
+  '<div><h3>Absences</h3><p><b>'+salaryFormatLate(totals.absenceMonthMinutes)+'</b> ce mois · '+totals.absenceMonthCount+' absence(s)</p><p><b>'+salaryFormatLate(totals.absenceYearMinutes)+'</b> sur l’année · '+totals.absenceYearCount+' absence(s)</p>'+(totals.absenceYearMissing?'<small>'+totals.absenceYearMissing+' absence(s) en journée entière ou sans durée exploitable</small>':'')+'</div>'+
+  '<div><h3>Autres incidents (hors total)</h3><p><b>'+totals.incidentMonthCount+'</b> incident(s) ce mois · '+salaryFormatLate(totals.incidentMonthMinutes)+' renseignées</p><p><b>'+totals.incidentYearCount+'</b> sur l’année · '+salaryFormatLate(totals.incidentYearMinutes)+' renseignées</p>'+(totals.incidentYearMissing?'<small>'+totals.incidentYearMissing+' sans durée additionnable</small>':'')+'</div></div>';
  const content=salaryProfileLoading?'<p class="muted">Chargement de l’historique des événements…</p>':
   salaryProfileError?'<p class="err" role="alert">'+esc(salaryProfileError)+'</p>':
   salaryProfileLoaded?
-   summary+noLateInfo+otherTotals+'<p class="muted">Les cumuls par catégorie sont calculés uniquement à partir des durées renseignées (heures et minutes), sans déductions salariales. Une absence, un départ anticipé ou un incident générique ne devient pas automatiquement un retard. Les événements ci-dessous couvrent toutes les années disponibles.</p>'+
+   summary+incompleteInfo+otherTotals+'<p class="muted">Total global = retards + départs anticipés + absences, uniquement pour les durées horaires connues. Les incidents génériques sont listés séparément et ne sont pas ajoutés au total. Les événements ci-dessous couvrent toutes les années disponibles ; aucune retenue de paie n’est calculée.</p>'+
     (events.length?'<div class="table"><table><thead><tr><th>Date</th><th>Type</th><th>Durée</th><th>Observation</th><th>Justificatif</th><th>Statut</th><th>PDF</th></tr></thead><tbody>'+
       events.map(e=>'<tr><td>'+esc(e.event_date||"")+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td><td>'+esc(salaryDuration(e))+'</td><td>'+esc(e.details||"—")+'</td><td>'+esc(salaryJust[e.justification_status]||"—")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td><td>'+(e.attachment_path?'<button class="btn secondary compact" type="button" data-salary-profile-pdf="'+esc(e.id)+'">Voir PDF</button>':'—')+'</td></tr>').join("")+
     '</tbody></table></div>':'<p class="muted">Aucun incident ou événement enregistré pour ce salarié.</p>'):
