@@ -185,16 +185,7 @@ Deno.serve(async (req: Request) => {
       return response({ok:true,invoice:updated.data,receipt_verified:true,stock_unchanged:true});
     }
     if (action === "finish" && req.method === "POST") {
-      if (!canWrite(a)) return response({ error: "Modification non autorisée" }, 403);
-      const body = await req.json();
-      if (!/^[0-9a-f-]{36}$/i.test(String(body?.id || ""))) return response({ error: "Identifiant invalide" }, 400);
-      if (body?.acknowledge !== true) return response({ error: "Confirmation explicite nécessaire" }, 400);
-      const updated = await c.from("secretariat_invoice_queue").update({
-        state: "done", completed_by: a.username, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }).eq("id", String(body.id)).eq("state", "todo").select("id,state").maybeSingle();
-      if (updated.error) throw updated.error;
-      if (!updated.data) return response({ error: "Facture déjà terminée ou introuvable" }, 409);
-      return response({ ok: true, invoice: updated.data, stock_unchanged: true });
+      return response({error:"Classement manuel suspendu : validez la facture dans Veryfi, puis utilisez la synchronisation de réception."},409);
     }
     if (action === "reopen" && req.method === "POST") {
       if (!canWrite(a)) return response({ error: "Modification non autorisée" }, 403);
