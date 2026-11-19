@@ -46,7 +46,7 @@ function renderReheat(){
  const dishOptions=(data.dishes||[]).map(r=>'<option value="'+esc(r.id)+'" '+(d.default_dish_type_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
  const equipment=r=>esc(r.cold_room_label_snapshot||data.rooms.find(x=>x.id===r.cold_room_id)?.label||"Chambre non précisée")+' → '+esc(r.oven_label_snapshot||(data.ovens||[]).find(x=>x.id===r.oven_id)?.label||("Four "+r.oven_number));
  const dish=r=>esc(r.dish_type_label_snapshot||(data.dishes||[]).find(x=>x.id===r.dish_type_id)?.label||"Type non précisé");
- const delta=r=>r.end_temperature_c==null?"":" · Écart de chauffe : +"+number(Number(r.end_temperature_c)-Number(r.start_temperature_c))+" °C";
+ const delta=r=>{if(r.end_temperature_c==null)return"";const change=Number(r.end_temperature_c)-Number(r.start_temperature_c);return" · Écart de chauffe : "+(change>=0?"+":"")+number(change)+" °C"};
  $("content").innerHTML='<div class="card"><h2>Remise en température — chambre froide → four</h2>'+
  '<p class="muted">Mesurer à cœur le plat au départ de la chambre froide, puis à cœur en sortie du four. Les valeurs par défaut sont des cibles de contrôle, jamais des mesures prévalidées. Rappel après '+Number(d.reminder_minutes||55)+' minutes, uniquement si cette page reste ouverte.</p>'+
  '<p class="details">Cible de départ : '+number(d.target_start_c??2)+' °C · Température finale minimale : '+number(d.target_end_c??63)+' °C</p>'+
