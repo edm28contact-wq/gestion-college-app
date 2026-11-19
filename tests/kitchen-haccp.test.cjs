@@ -29,3 +29,16 @@ test("Cuisine : l'administration et les accès proposent les deux espaces",()=>{
  assert.match(links,/ROOT\+'cuisine\/'/);
  assert.match(workspace,/link\("Cuisine","cuisine\/"\)/);
 });
+
+test("Cuisine : les températures finales restent bloquées avant les cinq dernières minutes",()=>{
+ const script=read("cuisine/cuisine.js"),html=read("cuisine/index.html");
+ assert.match(script,/remainingMs\(due\)<5\*60\*1000/);
+ assert.match(script,/input\.disabled=!unlocked/);
+ assert.match(script,/button\.disabled=!unlocked/);
+ assert.match(script,/!canFinish\(form\.dataset\.due\)/);
+ assert.match(script,/const key=r\.id\+":"\+stage/);
+ assert.match(script,/stage==="five"/);
+ assert.match(script,/stage==="zero"/);
+ assert.match(script,/enableKitchenAlarm/);
+ assert.match(html,/cuisine\.js\?v=20261120-4/);
+});
