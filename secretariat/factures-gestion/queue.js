@@ -101,7 +101,7 @@
     }
   }
   function GenVeryfi(invoice){
-    window.location.href=VERYFI_READER+encodeURIComponent(invoice.id);
+    window.top.location.assign(new URL(VERYFI_READER+encodeURIComponent(invoice.id),window.location.href).href);
   }
   async function syncReceipt(invoice){
     if(busy)return;
