@@ -24,7 +24,7 @@ button:disabled{opacity:.5;cursor:not-allowed}.tabs button.active{background:#20
 </style></head>
 <body><main class="shell">
 <header class="toolbar"><div><h1>Gestion des factures</h1><p class="subtle">Secrétariat · Dépôt, suivi et classement des PDF</p></div>
-<div class="toolbar"><a class="button" href="../../lecteur-veryfi/?origine=secretariat">Ouvrir le lecteur de factures existant</a><a class="button" href="connecteurs.html">Configuration OCR (Admin)</a></div></header>
+<div class="toolbar"><a class="button primary" href="../../lecteur-veryfi/?origine=secretariat" target="_top">Lecteur Veryfi principal</a><a class="button" href="connecteurs.html">Configuration OCR (Admin)</a></div></header>
 <section class="panel">
 <label class="drop" for="invoices"><strong>Déposer les factures PDF</strong>
 <span class="subtle" style="display:block">Plusieurs fichiers possibles · Maximum 6 Mo par PDF · Doublons bloqués</span>
@@ -36,12 +36,12 @@ button:disabled{opacity:.5;cursor:not-allowed}.tabs button.active{background:#20
 <section class="summary">
 <div class="kpi"><span class="subtle">À faire</span><strong id="countTodo">—</strong></div>
 <div class="kpi"><span class="subtle">Faites</span><strong id="countDone">—</strong></div>
-<div class="kpi"><span class="subtle">OCR cloud</span><strong style="font-size:14px" id="ocrState">Non connecté</strong></div>
+<div class="kpi"><span class="subtle">Lecteurs</span><strong style="font-size:14px" id="ocrState">Non connecté</strong></div>
 </section>
 <section class="panel">
 <div class="toolbar"><h2>Mes factures</h2><div class="tabs" role="group" aria-label="Filtrer les factures">
 <button id="todoTab" class="active" type="button">À faire</button><button id="doneTab" type="button">Faites</button></div></div>
-<p class="subtle">Les factures sont conservées dans un stockage privé. « Faite » indique ici un classement administratif manuel, pas une réception en stock.</p>
+<p class="subtle">PDF conservés dans un stockage privé. « Faite » signifie désormais réception Veryfi vérifiée par le serveur, sans double entrée en stock.</p>
 <div id="list" class="list"></div>
 </section>
 <section class="panel" id="reviewPanel" hidden>
@@ -51,6 +51,6 @@ button:disabled{opacity:.5;cursor:not-allowed}.tabs button.active{background:#20
 <section class="panel" id="ocrPanel" hidden><div class="review-header"><h2 id="ocrTitle">Lectures OCR</h2><button id="closeOcr" type="button">Fermer</button></div><p class="subtle">Les résultats OCR sont conservés pour vérification. Ils ne valident aucune ligne de produits et ne changent pas les stocks.</p><div id="ocrResults"></div></section>
 <section class="panel" id="previewPanel" hidden><div class="review-header"><h2 id="previewTitle">Aperçu du PDF</h2><button id="closePreview" type="button">Fermer</button></div>
 <p class="subtle">Aperçu temporaire réservé aux utilisateurs connectés.</p><iframe id="preview" class="viewer" title="Document PDF privé" referrerpolicy="no-referrer"></iframe></section>
-<section class="panel"><strong>Traitement OCR automatisé</strong>
-<p class="subtle">Les lectures manuelles OCR.space (1 Mo maximum) et Azure Document Intelligence (4 Mo maximum en offre F0, analyse des deux premières pages) peuvent être lancées après configuration. Les résultats nécessitent une vérification. Aucun produit ni aucun stock n'est automatiquement validé. Les lectures multi-OCR automatiques restent à intégrer.</p></section>
-</main><script src="./queue.js?v=20261118-4" defer></script></body></html>
+<section class="panel"><strong>Veryfi — lecteur principal</strong>
+<p class="subtle">Traitez les PDF en attente avec Veryfi : lecture structurée, rapprochement catalogue et contrôle des conditionnements. Après validation explicite, le serveur vérifie la réception avant de classer la facture dans « Faites ». OCR.space reste un lecteur de secours. Aucun recours à Azure.</p></section>
+</main><script src="./queue.js?v=20261119-veryfi1" defer></script></body></html>
