@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cuisine · Cours Chambertin</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f2f5f8;color:#1c2c3c}*{box-sizing:border-box}body{margin:0}header{background:#243447;color:#fff;padding:19px max(16px,calc((100vw - 1080px)/2))}header h1{margin:0;font-size:24px}header p{margin:5px 0 0;color:#cedae4}main{max-width:1080px;margin:20px auto;padding:0 15px 65px}.card{background:#fff;border:1px solid #dce4eb;border-radius:14px;padding:18px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:14px}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.stat{background:#eef3f6;border-radius:11px;padding:14px}.stat strong{font-size:27px;display:block}.stat small,.muted{color:#607282}.tabs,.actions{display:flex;gap:9px;flex-wrap:wrap;margin:15px 0}button,.btn{cursor:pointer;padding:13px 17px;border:0;border-radius:10px;font:inherit;font-weight:700;background:#e7edf3;color:#20364a}button.primary,.active{background:#243447;color:#fff}button:disabled{opacity:.55;cursor:not-allowed}label{font-size:13px;font-weight:700;display:block;margin-bottom:7px}input,select,textarea{width:100%;border:1px solid #becbd6;border-radius:10px;padding:13px;font:inherit;background:#fff;min-height:48px}textarea{resize:vertical}.field{margin:12px 0}.hide{display:none!important}.error{color:#aa2929}.good{color:#166b3b}.warning{color:#8c4c00}.pill{display:inline-block;font-size:12px;border-radius:18px;padding:5px 9px;background:#e9edf3;font-weight:700}.pill.alert{background:#fde4e4;color:#952424}.pill.ok{background:#dff3e7;color:#16592e}.data-row{padding:12px 0;border-bottom:1px solid #e6ebef;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.data-row:last-child{border:0}.clock{font-size:27px;font-weight:800;font-variant-numeric:tabular-nums}.details{font-size:13px;color:#617284}.status{min-height:22px;font-size:14px;margin:10px 0}a{color:inherit}.login{max-width:430px;margin:7vh auto}.nowrap{white-space:nowrap}h2{font-size:21px;margin:0 0 12px}h3{font-size:17px;margin:0 0 8px}@media(max-width:580px){.stats{grid-template-columns:1fr 1fr}.clock{font-size:24px}header{padding:16px}}
+</style></head><body>
+<header><h1>Cours Chambertin · Cuisine</h1><p>Relevés de températures et suivi HACCP</p></header>
+<main>
+<section id="login" class="card login"><h2>Accès personnel de cuisine</h2><p class="muted">Sélectionnez votre compte puis entrez votre code PIN.</p>
+<div class="field"><label for="agent">Agent</label><select id="agent"><option value="">Chargement des comptes…</option></select></div>
+<div class="field"><label for="pin">Code PIN (6 à 8 chiffres)</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></div>
+<button id="connect" class="primary" type="button">Se connecter</button><p id="loginStatus" class="status" role="status"></p>
+<p class="muted">Les comptes sont créés dans Admin Collège → Gestion Cuisine.</p></section>
+<section id="app" class="hide"><div class="card data-row"><div><strong id="identity"></strong><p class="muted">Saisie rapide · Horodatage automatique</p></div><button id="logout">Déconnexion</button></div>
+<div id="stats" class="stats"></div><div class="tabs">
+<button class="active" data-page="cold">Chambres froides</button><button data-page="reheat">Remise en température</button><button data-page="tasks">Nettoyage</button>
+</div><section id="content"></section><div class="actions"><button id="refresh">Actualiser</button></div><p id="message" class="status" role="status"></p></section>
+</main>
+<script src="./cuisine.js?v=20261119-1" defer></script>
+</body></html>
