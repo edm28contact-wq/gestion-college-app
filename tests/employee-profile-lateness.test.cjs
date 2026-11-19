@@ -40,3 +40,27 @@ test("Fiche individuelle réservée à la page des salaires; toutes les période
  assert.match(admin,/salary-profile-kpis/);
  assert.match(admin,/salaires\.js\?v=20261119-employee-profile-v1/);
 });
+
+test("Départs anticipés et incidents sont totalisés séparément sans fabriquer des retards",()=>{
+ const events=[
+  entry("2026-11-04","depart_anticipe",90),
+  entry("2026-11-07","depart_anticipe",35),
+  entry("2026-11-08","incident",40),
+  entry("2026-11-10","incident",null),
+  entry("2026-10-09","depart_anticipe",75),
+  entry("2025-11-01","depart_anticipe",60),
+  entry("2026-11-12","absence",1440,{all_day:true})
+ ];
+ const t=api.salaryProfileTotals(events,"2026-11");
+ assert.equal(t.monthMinutes,0);assert.equal(t.yearMinutes,0);
+ assert.equal(t.earlyMonthMinutes,125);assert.equal(t.earlyYearMinutes,200);
+ assert.equal(t.incidentMonthMinutes,40);assert.equal(t.incidentYearMissing,1);
+ assert.equal(t.incidentMonthCount,2);assert.equal(t.absenceMonthCount,1);
+ assert.equal(t.earlyYearCount,3);
+});
+test("La fiche indique explicitement les retards non saisis et les autres catégories",()=>{
+ assert.match(source,/Aucun retard enregistré pour/);
+ assert.match(source,/salary-profile-secondary/);
+ assert.match(source,/salaryFormatLate\(totals.earlyMonthMinutes\)/);
+ assert.match(source,/salaryFormatLate\(totals.incidentYearMinutes\)/);
+});
