@@ -58,7 +58,7 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
  assert.match(html,/cuisine\.js\?v=20261120-6/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-6/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-7/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
