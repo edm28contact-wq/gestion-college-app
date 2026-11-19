@@ -71,14 +71,14 @@ Deno.serve(async (req: Request) => {
       const q = await c.from("secretariat_invoice_queue").select(queryFields).order("created_at", { ascending: false }).limit(1000);
       if (q.error) throw q.error;
       const providers=await c.from("secretariat_ocr_connectors")
-        .select("provider,enabled,secret_id,endpoint,consent_at").order("provider");
+        .select("provider,enabled,secret_id,endpoint,consent_at").eq("provider","ocrspace").order("provider");
       if(providers.error) throw providers.error;
       const availability=(providers.data||[]).map(p=>({
         provider:p.provider,ready:p.enabled===true&&!!p.secret_id&&!!p.consent_at&&
           (p.provider!=="azure_invoice"||!!p.endpoint)
       }));
       return response({ok:true,invoices:q.data||[],providers:availability,
-        ocr_connected:availability.some(p=>p.ready),processing_mode:"manual_reading_with_comparison"});
+        ocr_connected:availability.some(p=>p.ready),processing_mode:"veryfi_primary_with_ocrspace_backup"});
     }
     if (action === "ocr-review" && req.method === "GET") {
       const id = url.searchParams.get("id") || "";
@@ -124,11 +124,12 @@ Deno.serve(async (req: Request) => {
     if (action === "view" && req.method === "GET") {
       const id = url.searchParams.get("id") || "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) return response({ error: "Identifiant invalide" }, 400);
-      const q = await c.from("secretariat_invoice_queue").select("storage_path").eq("id", id).maybeSingle();
+      const q = await c.from("secretariat_invoice_queue").select("storage_path,file_name,file_hash,file_bytes,state").eq("id", id).maybeSingle();
       if (q.error || !q.data) return response({ error: "Facture introuvable" }, 404);
       const link = await c.storage.from(BUCKET).createSignedUrl(q.data.storage_path, 60);
       if (link.error || !link.data?.signedUrl) return response({ error: "Document indisponible" }, 503);
-      return response({ ok: true, url: link.data.signedUrl, expires_in: 60 });
+      return response({ ok: true, url: link.data.signedUrl, file_name:q.data.file_name,
+        file_hash:q.data.file_hash, file_bytes:q.data.file_bytes, state:q.data.state, expires_in: 60 });
     }
     if (action === "upload" && req.method === "POST") {
       if (!canWrite(a)) return response({ error: "Dépôt non autorisé" }, 403);
@@ -162,17 +163,29 @@ Deno.serve(async (req: Request) => {
       }
       return response({ ok: true, duplicate: false, invoice: saved.data });
     }
+    if (action === "sync-receipt" && req.method === "POST") {
+      if (!canWrite(a)) return response({error:"Synchronisation non autorisée"},403);
+      const body=await req.json().catch(()=>null);
+      const id=String(body?.id||"");
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+        return response({error:"Identifiant de facture invalide"},400);
+      const invoice=await c.from("secretariat_invoice_queue").select("id,file_hash,state").eq("id",id).maybeSingle();
+      if(invoice.error)throw invoice.error;
+      if(!invoice.data)return response({error:"Facture non trouvée"},404);
+      // A caller cannot mark a reception complete without an actual committed invoice with exactly the same PDF hash.
+      const receipt=await c.from("supplier_invoices").select("id").eq("file_hash",invoice.data.file_hash).maybeSingle();
+      if(receipt.error)throw receipt.error;
+      if(!receipt.data)return response({error:"Aucune réception Veryfi validée pour ce PDF. Le stock est inchangé."},409);
+      if(invoice.data.state==="done")return response({ok:true,already_done:true,receipt_verified:true,stock_unchanged:true});
+      const updated=await c.from("secretariat_invoice_queue").update({
+        state:"done",completed_by:a.username,completed_at:new Date().toISOString(),updated_at:new Date().toISOString(),
+      }).eq("id",id).eq("state","todo").select("id,state").maybeSingle();
+      if(updated.error)throw updated.error;
+      if(!updated.data)return response({error:"Statut de la file modifié pendant la synchronisation. Actualisez."},409);
+      return response({ok:true,invoice:updated.data,receipt_verified:true,stock_unchanged:true});
+    }
     if (action === "finish" && req.method === "POST") {
-      if (!canWrite(a)) return response({ error: "Modification non autorisée" }, 403);
-      const body = await req.json();
-      if (!/^[0-9a-f-]{36}$/i.test(String(body?.id || ""))) return response({ error: "Identifiant invalide" }, 400);
-      if (body?.acknowledge !== true) return response({ error: "Confirmation explicite nécessaire" }, 400);
-      const updated = await c.from("secretariat_invoice_queue").update({
-        state: "done", completed_by: a.username, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }).eq("id", String(body.id)).eq("state", "todo").select("id,state").maybeSingle();
-      if (updated.error) throw updated.error;
-      if (!updated.data) return response({ error: "Facture déjà terminée ou introuvable" }, 409);
-      return response({ ok: true, invoice: updated.data, stock_unchanged: true });
+      return response({error:"Classement manuel suspendu : validez la facture dans Veryfi, puis utilisez la synchronisation de réception."},409);
     }
     if (action === "reopen" && req.method === "POST") {
       if (!canWrite(a)) return response({ error: "Modification non autorisée" }, 403);

@@ -24,7 +24,7 @@ a{color:#164d7d}
 <div class="actions"><a class="btn" href="./">Retour aux factures</a><a class="btn" href="../../college/admin/?page=advanced">Outils avancés</a></div>
 <h1>Connecteurs OCR — Gestion Collège</h1>
 <p class="muted">Configuration réservée au super-administrateur. Les identifiants sont conservés côté serveur dans Supabase Vault.</p>
-<div class="card note"><strong>OCR.space : lecture manuelle disponible.</strong> Après enregistrement de la clé et autorisation d’envoi, allez dans Secrétariat → Factures → À faire, puis cliquez sur « Lire avec OCR.space ». Les lectures automatiques multi-OCR et la classification des produits restent en préparation.</div>
+<div class="card note"><strong>OCR.space : lecture manuelle disponible.</strong> Après enregistrement de la clé et autorisation d’envoi, allez dans Secrétariat → Factures → À faire, puis cliquez sur « Lire avec OCR.space ». Veryfi assure la reconnaissance structurée et le rapprochement des produits avec le catalogue.</div>
 <form id="adminLoginForm" class="card" hidden autocomplete="on">
 <h2>Connexion du super-administrateur</h2>
 <p class="muted">La connexion du Secrétariat ne suffit pas pour modifier des clés API. Connectez-vous ici avec le compte administrateur global. La session utilisée pour cette page n’est pas enregistrée dans le navigateur.</p>
@@ -38,18 +38,9 @@ a{color:#164d7d}
 </form>
 <p id="message" role="status" aria-live="polite">Chargement des connecteurs…</p>
 <div class="grid">
-<section class="card" data-provider="azure_invoice">
-<h2>Azure AI Document Intelligence</h2>
-<p class="muted">Extraction de factures et de lignes de produits. L'offre gratuite F0 est limitée, notamment sur les documents multipages.</p>
-<p class="status" data-status>Non configuré</p>
-<label class="field">Point de terminaison Azure<input data-endpoint placeholder="https://xxxx.cognitiveservices.azure.com" autocomplete="off" spellcheck="false"></label>
-<label class="field">Clé Azure (jamais réaffichée)<input data-credential type="password" autocomplete="new-password" placeholder="Laisser vide pour conserver la clé"></label>
-<label class="field">Nombre maximal de requêtes par mois<input data-cap type="number" min="1" max="100" value="25"></label>
-<label class="check"><input data-enabled type="checkbox"> Activer ce fournisseur pour un traitement futur</label>
-<label class="check"><input data-consent type="checkbox"> J'autorise explicitement la transmission des PDF concernés à Microsoft, selon les conditions de traitement applicables</label>
-<label class="check"><input data-erase type="checkbox"> Supprimer la clé enregistrée (désactive le fournisseur)</label>
-<div class="actions"><button class="primary" type="button" data-save disabled>Enregistrer Azure</button></div>
-<a href="https://learn.microsoft.com/azure/ai-services/document-intelligence/prebuilt/invoice" target="_blank" rel="noopener noreferrer">Documentation officielle Azure</a>
+<section class="card"><h2>Veryfi — lecteur principal</h2>
+<p class="muted">Veryfi est configuré sur le serveur du collège. Aucune clé Veryfi n'est saisie ici.</p>
+<a class="btn" href="../../lecteur-veryfi/?origine=secretariat" target="_top">Ouvrir Veryfi</a>
 </section>
 <section class="card" data-provider="ocrspace">
 <h2>OCR.space</h2>
@@ -65,6 +56,6 @@ a{color:#164d7d}
 </section>
 </div>
 <section class="card"><h2>Autres moteurs à intégrer</h2>
-<p class="muted">Google Cloud Vision (API cloud), AWS Textract (API cloud), Tesseract.js (déjà présent dans le lecteur de secours). Les moteurs sans adaptateur opérationnel ne sont pas indiqués comme connectés. Veryfi reste accessible dans l'ancien lecteur, séparément.</p>
+<p class="muted">Google Cloud Vision (API cloud), AWS Textract (API cloud), Tesseract.js (déjà présent dans le lecteur de secours). Les moteurs sans adaptateur opérationnel ne sont pas indiqués comme connectés. Veryfi est le lecteur principal ; l'OCR natif du navigateur reste disponible en secours.</p>
 <p class="note">Pour garantir la fiabilité, chaque résultat devra être recoupé avec les références fournisseurs, les conditionnements, les montants et la couverture complète des lignes. Le nombre de moteurs ne suffira pas à garantir une validation automatique.</p></section>
-</main><script src="./connecteurs.js?v=20261117-3" defer></script></body></html>
+</main><script src="./connecteurs.js?v=20261119-veryfi1" defer></script></body></html>

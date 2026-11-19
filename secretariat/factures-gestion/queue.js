@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   let invoices = [], currentTab = "todo", busy = false, previewUrl = null, providers = [];
   const OCR_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-ocrspace-reader";
-  const AZURE_API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-azure-invoice-reader";
+  const VERYFI_READER = "../../lecteur-veryfi/?origine=secretariat&queue_id=";
   const session = () => localStorage.getItem("college_secretariat_token") || localStorage.getItem("edm_admin_token") || "";
   const notice = (value, error = false) => {
     $("notice").textContent = String(value);
@@ -48,10 +48,8 @@
     providers = Array.isArray(result.providers) ? result.providers : [];
     $("countTodo").textContent = invoices.filter(x => x.state === "todo").length;
     $("countDone").textContent = invoices.filter(x => x.state === "done").length;
-    const azureReady=providers.some(p=>p.provider==="azure_invoice"&&p.ready);
-    const ocrspaceReady=providers.some(p=>p.provider==="ocrspace"&&p.ready);
-    $("ocrState").textContent=azureReady?"Azure prêt"+(ocrspaceReady?" + OCR.space":""):
-      ocrspaceReady?"OCR.space prêt · Azure en attente":"Aucun lecteur connecté";
+    const backup=providers.some(p=>p.provider==="ocrspace"&&p.ready);
+    $("ocrState").textContent=backup?"Veryfi principal · OCR.space secours":"Veryfi principal";
     render();
   }
   function render() {
@@ -69,7 +67,7 @@
       detail.append(element("div", "meta", dateLabel(invoice.created_at) + " · " +
         (invoice.file_bytes / 1024 / 1024).toFixed(2) + " Mo · Déposée par " + invoice.uploaded_by));
       const tag = element("span", "state " + (invoice.state === "done" ? "done" : ""),
-        invoice.state === "done" ? "Classée manuellement" : "OCR en attente de connexion");
+        invoice.state === "done" ? "Facture traitée" : "À traiter avec Veryfi");
       detail.append(tag);
       const actions = element("div", "actions");
       if (invoice.state === "todo") {
@@ -77,38 +75,48 @@
         scan.type = "button"; scan.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3 ||
           !providers.some(p=>p.provider==="ocrspace"&&p.ready);
         scan.title=scan.disabled?"OCR.space désactivé, facture en traitement ou maximum de lectures atteint":"Lecture OCR.space";
-        scan.onclick = () => void runOcr(invoice, "ocrspace");
+        scan.onclick = () => void runOcr(invoice);
         actions.append(scan);
-        const azure = element("button", null, "Lire avec Azure");
-        azure.type = "button"; azure.disabled = invoice.ocr_status === "processing" || invoice.ocr_attempts >= 3 ||
-          !providers.some(p=>p.provider==="azure_invoice"&&p.ready);
-        azure.title=azure.disabled?"Azure non connecté, facture en traitement ou maximum de lectures atteint":"Lecture Azure";
-        azure.onclick = () => void runOcr(invoice, "azure_invoice");
-        actions.append(azure);
+        const veryfi=element("button","primary","Traiter avec Veryfi");
+        veryfi.type="button";veryfi.onclick=()=>GenVeryfi(invoice);
+        actions.prepend(veryfi);
+        const sync=element("button",null,"Vérifier la réception Veryfi");
+        sync.type="button";sync.onclick=()=>void syncReceipt(invoice);
+        actions.append(sync);
       }
       if (invoice.ocr_attempts > 0) {
         const results = element("button", null, "Résultats OCR (" + invoice.ocr_attempts + ")");
         results.type = "button"; results.onclick = () => void showOcr(invoice);
         actions.append(results);
-        const review = element("button", null, "Vérifier les produits");
-        review.type = "button"; review.onclick = () => void showReview(invoice);
-        actions.append(review);
+        // L'ancienne préanalyse Azure reste conservée au serveur pour audit, sans action en interface.
       }
       const view = element("button", null, "Voir PDF");
       view.type = "button"; view.onclick = () => void openInvoice(invoice);
       actions.append(view);
-      const change = element("button", null, invoice.state === "todo" ? "Classer comme faite" : "Remettre à faire");
-      change.type = "button";
-      change.onclick = () => void changeState(invoice);
-      actions.append(change);
+      if(invoice.state==="done"){
+        const done=element("span","state done","Réception/traitement terminé");
+        actions.append(done);
+      }
       item.append(detail, actions); list.append(item);
     }
   }
-  async function runOcr(invoice, provider = "ocrspace") {
+  function GenVeryfi(invoice){
+    window.top.location.assign(new URL(VERYFI_READER+encodeURIComponent(invoice.id),window.location.href).href);
+  }
+  async function syncReceipt(invoice){
+    if(busy)return;
+    setBusy(true);
+    try{
+      await api("sync-receipt","POST",{id:invoice.id});
+      await fetchInvoices();
+      notice("Réception Veryfi vérifiée par le serveur. Facture déplacée dans « Faites ».");
+    }catch(e){notice("Réception non synchronisée : "+e.message,true)}
+    finally{setBusy(false)}
+  }
+  async function runOcr(invoice) {
     if (busy) return;
-    const isAzure=provider==="azure_invoice";
-    const label=isAzure?"Azure Document Intelligence":"OCR.space";
-    const limit=isAzure?4000000:1000000;
+    const label="OCR.space";
+    const limit=1000000;
     if (invoice.file_bytes>limit)
       return notice(label+" : facture supérieure à "+(limit/1000000)+" Mo. Essayez un autre lecteur.",true);
     if (!confirm("Envoyer cette facture à "+label+" pour lecture externe ? Aucun stock ne sera modifié.")) return;
@@ -117,7 +125,7 @@
     try {
       const current = session();
       if (!current) throw Error("Reconnectez-vous au Secrétariat.");
-      const res=await fetch(isAzure?AZURE_API:OCR_API,{
+      const res=await fetch(OCR_API,{
         method:"POST",headers:{"authorization":"Bearer "+current,"content-type":"application/json"},
         body:JSON.stringify({invoice_id:invoice.id}),cache:"no-store",signal:AbortSignal.timeout(90000),
       });
@@ -211,19 +219,6 @@
       $("previewPanel").scrollIntoView({behavior:"smooth",block:"start"});
     } catch (error) { notice(error.message, true); }
   }
-  async function changeState(invoice) {
-    if (busy) return;
-    const done = invoice.state === "todo";
-    if (done && !confirm("Classer cette facture comme faite ? Cette action est administrative : aucun OCR, aucun produit ni aucun stock ne sera validé.")) return;
-    if (!done && !confirm("Remettre cette facture dans la liste À faire ?")) return;
-    setBusy(true);
-    try {
-      await api(done ? "finish" : "reopen", "POST", {id:invoice.id, acknowledge:true});
-      await fetchInvoices();
-      notice(done ? "Facture classée sans écriture en stock." : "Facture remise à faire.");
-    } catch (error) { notice(error.message, true); }
-    finally { setBusy(false); }
-  }
   async function upload() {
     if (busy) return;
     const files = Array.from($("invoices").files || []);
@@ -263,6 +258,6 @@
   });
   $("closeOcr").addEventListener("click",()=>{$("ocrPanel").hidden=true;$("ocrResults").replaceChildren();});
   $("closeReview").addEventListener("click",()=>{$("reviewPanel").hidden=true;$("reviewResults").replaceChildren();});
-  void fetchInvoices().then(() => notice("Liste prête. Les moteurs connectés peuvent être lancés, puis leurs produits comparés au catalogue."))
+  void fetchInvoices().then(() => notice("Liste prête. Veryfi est le lecteur principal ; utilisez OCR.space uniquement si la facture exige un secours."))
     .catch(error => notice(error.message, true));
 })();

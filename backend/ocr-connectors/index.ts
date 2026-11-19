@@ -11,7 +11,7 @@ const cors = {
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { ...cors, "Content-Type": "application/json; charset=utf-8" },
 });
-const ALLOWED = ["azure_invoice", "ocrspace"] as const;
+const ALLOWED = ["ocrspace"] as const;
 function db() {
   const keys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}");
   const key = keys.default || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

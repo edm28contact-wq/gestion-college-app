@@ -76,6 +76,7 @@ const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:CORS});
  if(req.method!=="POST")return respond({error:"Méthode non autorisée"},405);
+ return respond({error:"Azure désactivé : utilisez Veryfi."},410);
  if(req.headers.get("origin")&&req.headers.get("origin")!==ORIGIN)return respond({error:"Origine non autorisée"},403);
  try{
   const c=db(),account=await auth(c,req);

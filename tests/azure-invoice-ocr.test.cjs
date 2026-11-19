@@ -32,7 +32,8 @@ test("Azure F0 processing is limited to two pages and results are not auto-valid
 test("OCR result history includes the provider and structured invoice fields",()=>{
  assert.match(queue,/structured_result/);
  assert.match(queue,/provider,attempt,engine/);
- assert.match(ui,/Lire avec Azure/);
+ assert.doesNotMatch(ui,/Lire avec Azure/);
+ assert.match(ui,/Traiter avec Veryfi/);
  assert.match(ui,/Lire avec OCR.space/);
  assert.match(ui,/fields\.items/);
 });
