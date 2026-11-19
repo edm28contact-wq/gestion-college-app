@@ -11,6 +11,14 @@ test("Cuisine : fichiers autonomes et scripts valides",()=>{
  assert.match(script,/cold-reading/);
  assert.match(script,/task-check/);
  assert.match(script,/data-due/);
+ assert.match(script,/name="cold_room_id"/);
+ assert.match(script,/name="dish_type_id"/);
+ assert.match(script,/name="oven_id"/);
+ assert.doesNotMatch(script,/name="service_number"/);
+ assert.match(admin,/data-room-edit/);
+ assert.match(admin,/kitchenAddOven/);
+ assert.match(admin,/kitchenAddDish/);
+ assert.match(admin,/kitchenSaveDefaults/);
  new vm.Script(script,{filename:"cuisine.js"});new vm.Script(admin,{filename:"cuisine-admin.js"});
 });
 test("Cuisine : l'administration et les accès proposent les deux espaces",()=>{
