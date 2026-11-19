@@ -42,3 +42,21 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/enableKitchenAlarm/);
  assert.match(html,/cuisine\.js\?v=20261120-4/);
 });
+
+test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
+ const html=read("cuisine/index.html"),js=read("cuisine/cuisine.js");
+ const admin=read("college/admin/cuisine-admin.js"),adminHtml=read("college/admin/index.html");
+ for(const tab of ["dashboard","reheat","cold","tasks"])assert.match(html,new RegExp('data-page="'+tab+'"'));
+ assert.match(html,/id="loginForm"/);
+ assert.match(js,/function renderDashboard\(\)/);
+ assert.match(js,/function switchPage\(next\)/);
+ assert.match(js,/function renderCold\(\)/);
+ assert.match(js,/function renderReheat\(\)/);
+ assert.match(js,/function renderTasks\(\)/);
+ assert.match(js,/function checkReheatAlarms\(\)/);
+ assert.match(admin,/kitchenTab="overview"/);
+ assert.match(admin,/kitchen-section-intro/);
+ assert.match(admin,/data-kitchen-tab/);
+ assert.match(html,/cuisine\.js\?v=20261120-5/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-5/);
+});
