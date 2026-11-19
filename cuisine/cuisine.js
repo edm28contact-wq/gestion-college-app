@@ -4,6 +4,9 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="cold",busy=false;
 let alarmAudio=null;
+const alarmed=new Set();
+const remainingMs=due=>new Date(due).getTime()-Date.now();
+const canFinish=due=>Number.isFinite(new Date(due).getTime())&&remainingMs(due)<5*60*1000;
 function unlockAlarm(){try{alarmAudio??=new (window.AudioContext||window.webkitAudioContext)();if(alarmAudio.state==="suspended")alarmAudio.resume().catch(()=>{});}catch{}}
 function soundAlarm(){try{if(!alarmAudio||alarmAudio.state!=="running")return;for(let i=0;i<3;i++){const oscillator=alarmAudio.createOscillator(),gain=alarmAudio.createGain(),at=alarmAudio.currentTime+i*.38;oscillator.frequency.value=760;gain.gain.setValueAtTime(.0001,at);gain.gain.exponentialRampToValueAtTime(.16,at+.02);gain.gain.exponentialRampToValueAtTime(.0001,at+.25);oscillator.connect(gain);gain.connect(alarmAudio.destination);oscillator.start(at);oscillator.stop(at+.26)}}catch{}}
 const clock=v=>v?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
@@ -29,7 +32,7 @@ function render(){
  const coldDay=data.cold.filter(r=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(r.measured_at))===day);
  $("stats").innerHTML='<div class="stat"><small>Chambres contrôlées</small><strong>'+new Set(coldDay.map(x=>x.room_id)).size+'/'+data.rooms.length+'</strong></div><div class="stat"><small>Remises en cours</small><strong>'+current.length+'</strong></div><div class="stat"><small>Tâches réalisées</small><strong>'+done.size+'/'+data.tasks.length+'</strong></div>';
  document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===page));
- if(page==="cold")renderCold();else if(page==="reheat")renderReheat();else renderTasks();
+ if(page==="cold")renderCold();else if(page==="reheat"){renderReheat();updateReheatControls();}else renderTasks();
 }
 function renderCold(){
  const latest=new Map();for(const r of data.cold)if(!latest.has(r.room_id))latest.set(r.room_id,r);
@@ -48,15 +51,15 @@ function renderReheat(){
  const dish=r=>esc(r.dish_type_label_snapshot||(data.dishes||[]).find(x=>x.id===r.dish_type_id)?.label||"Type non précisé");
  const delta=r=>{if(r.end_temperature_c==null)return"";const change=Number(r.end_temperature_c)-Number(r.start_temperature_c);return" · Écart de chauffe : "+(change>=0?"+":"")+number(change)+" °C"};
  $("content").innerHTML='<div class="card"><h2>Remise en température — chambre froide → four</h2>'+
- '<p class="muted">Mesurer à cœur le plat au départ de la chambre froide, puis à cœur en sortie du four. Les valeurs par défaut sont des cibles de contrôle, jamais des mesures prévalidées. Rappel après '+Number(d.reminder_minutes||55)+' minutes, uniquement si cette page reste ouverte.</p>'+
+ '<p class="muted">Mesurer à cœur le plat au départ de la chambre froide, puis à cœur en sortie du four. Les valeurs par défaut sont des cibles de contrôle, jamais des mesures prévalidées. La saisie finale est verrouillée jusqu’aux 5 dernières minutes. Une alarme se déclenche au seuil des 5 minutes puis à zéro, si l’application reste ouverte et si le son est activé.</p>'+
  '<p class="details">Cible de départ : '+number(d.target_start_c??2)+' °C · Température finale minimale : '+number(d.target_end_c??63)+' °C</p>'+
  '<form id="startReheat"><div class="grid"><div class="field"><label>1 · Chambre froide de départ</label><select name="cold_room_id" required><option value="">Sélectionner une chambre</option>'+roomOptions+'</select></div>'+
  '<div class="field"><label>Type de plat</label><select name="dish_type_id" required><option value="">Sélectionner le plat</option>'+dishOptions+'</select></div>'+
  '<div class="field"><label>2 · Four de destination</label><select name="oven_id" required><option value="">Sélectionner un four</option>'+ovenOptions+'</select></div>'+
  '<div class="field"><label>Température RÉELLE du plat au départ (°C)</label><input name="temperature_c" required type="number" step="0.1" min="-10" max="90" inputmode="decimal" placeholder="Mesurer à cœur, ex. 2"></div></div>'+
- '<button type="submit" class="primary">Enregistrer le départ et lancer le rappel</button></form></div>'+
+ '<button type="submit" class="primary">Enregistrer le départ et lancer le rappel</button></form><div class="actions"><button type="button" id="enableKitchenAlarm">Activer / tester le son</button><span class="details">Laissez cette page ouverte pour entendre les alarmes.</span></div></div>'+
  '<div class="card"><h2>Remises en cours</h2><div id="reheatTimers">'+
- (open.map(r=>'<div class="data-row" data-reheat="'+esc(r.id)+'"><div><strong>'+equipment(r)+'</strong><div class="details">'+dish(r)+' · Départ '+clock(r.started_at)+' · '+number(r.start_temperature_c)+' °C</div><div class="clock" data-due="'+esc(r.due_at)+'">'+remaining(r.due_at)+'</div></div><form data-finish="'+esc(r.id)+'"><label>Température RÉELLE à cœur à la sortie du four (°C)</label><input required type="number" step="0.1" min="-10" max="120" name="temperature_c" inputmode="decimal" placeholder="Mesurer à cœur, minimum '+number(r.target_end_c??63)+'"><button type="submit" class="primary">Enregistrer la fin</button></form></div>').join("")||'<p class="muted">Aucun cycle en cours.</p>')+'</div></div>'+
+ (open.map(r=>'<div class="data-row" data-reheat="'+esc(r.id)+'"><div><strong>'+equipment(r)+'</strong><div class="details">'+dish(r)+' · Départ '+clock(r.started_at)+' · '+number(r.start_temperature_c)+' °C</div><div class="clock" data-due="'+esc(r.due_at)+'">'+remaining(r.due_at)+'</div></div><form data-finish="'+esc(r.id)+'" data-due="'+esc(r.due_at)+'"><label>Température RÉELLE à cœur à la sortie du four (°C)</label><input required type="number" step="0.1" min="-10" max="120" name="temperature_c" inputmode="decimal" placeholder="Mesurer à cœur, minimum '+number(r.target_end_c??63)+'" '+(canFinish(r.due_at)?"":"disabled")+'><button type="submit" class="primary" '+(canFinish(r.due_at)?"":"disabled")+'>Enregistrer la fin</button><div class="details" data-lock-message>'+(canFinish(r.due_at)?"Contrôle final disponible.":"Saisie bloquée avant les 5 dernières minutes.")+'</div></form></div>').join("")||'<p class="muted">Aucun cycle en cours.</p>')+'</div></div>'+
  '<div class="card"><h2>Historique récent</h2>'+
  (recent.map(r=>'<div class="data-row"><span><strong>'+equipment(r)+'</strong><span class="details"> · '+dish(r)+' · '+clock(r.started_at)+' · '+number(r.start_temperature_c)+' → '+number(r.end_temperature_c)+' °C'+delta(r)+'</span></span><span class="pill '+(r.status==="alerte"?"alert":"ok")+'">'+(r.status==="alerte"?"À contrôler":"Seuils de contrôle atteints")+'</span></div>').join("")||'<p>Aucune mesure terminée.</p>')+'</div>';
 }
@@ -66,9 +69,38 @@ function renderTasks(){
  data.tasks.map(t=>{const c=checks.find(x=>x.task_id===t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id;return '<div class="data-row"><div><strong>'+esc(t.label)+'</strong><div class="details">'+(t.assigned_to?"Responsable : "+esc(staffName(t.assigned_to)):"Tâche commune")+(c?" · "+clock(c.performed_at)+" · "+esc(staffName(c.performed_by)):"")+'</div></div>'+(done.has(t.id)?'<span class="pill ok">Réalisée</span>':'<button type="button" data-task="'+esc(t.id)+'" '+(locked?"disabled":"")+'>Valider la tâche</button>')+'</div>'}).join("")+'</div>';
 }
 async function save(action,body){if(busy)return;busy=true;document.querySelectorAll("button").forEach(b=>b.disabled=true);try{const r=await request(action,"POST",body);await load();if(r.alert)status("Alerte : relevé enregistré, action corrective à prévoir.",true);else status("Enregistrement horodaté effectué.");}catch(e){status(e.message,true)}finally{busy=false;document.querySelectorAll("button").forEach(b=>{if(!b.hasAttribute("data-task"))b.disabled=false});if(data)render()}}
-document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else save("finish-reheat",{id:form.dataset.finish,temperature_c:t})});
+document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else if(form.dataset.finish){if(!canFinish(form.dataset.due)){status("Saisie bloquée : attendez les 5 dernières minutes.",true);return;}save("finish-reheat",{id:form.dataset.finish,temperature_c:t})}});
 document.addEventListener("click",e=>{const b=e.target.closest?.("button[data-task]");if(b)save("task-check",{task_id:b.dataset.task})});
 $("connect").addEventListener("click",login);$("pin").addEventListener("keydown",e=>{if(e.key==="Enter")login()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
 document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>{page=b.dataset.page;render()}));
-let notified=new Set();setInterval(()=>{if(!data||page!=="reheat")return;for(const el of document.querySelectorAll("[data-due]")){const date=el.dataset.due;el.textContent=remaining(date);if(new Date(date).getTime()<=Date.now()&&!notified.has(date)){notified.add(date);status("55 minutes écoulées : contrôlez la température à cœur.",true);soundAlarm();if(navigator.vibrate)navigator.vibrate([200,100,200]);}}},1000);
+function updateReheatControls(){
+ if(!data)return;
+ for(const form of document.querySelectorAll("form[data-finish][data-due]")){
+   const unlocked=canFinish(form.dataset.due);
+   const input=form.elements.namedItem("temperature_c"),button=form.querySelector('button[type="submit"]');
+   if(input)input.disabled=!unlocked;
+   if(button)button.disabled=!unlocked;
+   const note=form.querySelector("[data-lock-message]");
+   if(note)note.textContent=unlocked?"Contrôle final disponible.":"Saisie bloquée avant les 5 dernières minutes.";
+ }
+ for(const el of document.querySelectorAll(".clock[data-due]"))el.textContent=remaining(el.dataset.due);
+}
+function checkReheatAlarms(){
+ if(!data)return;
+ for(const r of data.reheats.filter(x=>x.status==="en_cours")){
+   const ms=remainingMs(r.due_at);
+   for(const stage of ["five","zero"]){
+     if(stage==="five"&&ms>5*60000)continue;
+     if(stage==="zero"&&ms>0)continue;
+     const key=r.id+":"+stage;
+     if(alarmed.has(key))continue;
+     alarmed.add(key);
+     status(stage==="five"?"Plus que 5 minutes : préparez le contrôle à cœur.":"Chrono terminé : contrôlez immédiatement la température à cœur.",true);
+     soundAlarm();
+     if(navigator.vibrate)navigator.vibrate([200,100,200]);
+   }
+ }
+}
+document.addEventListener("click",e=>{if(e.target.closest?.("#enableKitchenAlarm")){unlockAlarm();soundAlarm();status("Alarme sonore testée. Gardez l’application ouverte.");}});
+setInterval(()=>{if(!data)return;if(page==="reheat")updateReheatControls();checkReheatAlarms();},1000);
 if(token)load();else staffList();
