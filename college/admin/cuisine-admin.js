@@ -5,7 +5,7 @@
  const e=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  const when=v=>v?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris"}):"—";
  const t=v=>Number(v).toLocaleString("fr-FR",{maximumFractionDigits:2});
- let snapshot=null,busy=false;
+ let snapshot=null,busy=false,kitchenTab="overview";
  async function api(action,method="GET",body){
    const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
    const r=await fetch(API+"?action="+encodeURIComponent(action),{method,headers:{"content-type":"application/json","x-admin-session":token},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});
@@ -51,6 +51,56 @@
  '<div class="card"><h2>Tâches de nettoyage</h2>'+rows(s.tasks,[["Tâche",x=>e(x.label)],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":"Non validée"]])+
  '<h3>Ajouter une tâche</h3><form id="kitchenAddTask" class="grid"><div><label>Libellé</label><input required name="label" maxlength="100"></div><div><label>Responsable</label><select name="assigned_to"><option value="">Commune</option>'+s.staff.filter(x=>x.active).map(x=>'<option value="'+attr(x,"id")+'">'+e(x.name)+'</option>').join("")+'</select></div><div><button class="btn primary" type="submit">Ajouter une tâche</button></div></form></div>'+
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
+ 
+ const content=node("content"),all=Array.from(content.children),tabs=[
+  ["overview","Vue d’ensemble"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["staff","Équipe et nettoyage"]
+ ];
+ if(!node("kitchen-organized-styles")){
+   const css=document.createElement("style");css.id="kitchen-organized-styles";
+   css.textContent="#kitchen-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:13px 0 18px}#kitchen-tabs button{border:1px solid #d3dce3;border-radius:9px;padding:11px 15px;font-weight:750;background:#f1f4f6;color:#334657;cursor:pointer}#kitchen-tabs button.active{background:#243447;color:white;border-color:#243447}#content .kitchen-panel[hidden]{display:none!important}#content .kitchen-panel .grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}#content .kitchen-panel form{margin:10px 0 14px}#content .kitchen-panel form label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}#content .kitchen-panel .card{padding:18px}#content .kitchen-panel h2{margin:0 0 9px}#content .kitchen-panel h3{margin:17px 0 9px}#content .kitchen-panel .data-row{padding:11px 0;border-bottom:1px solid #e7edf0}#content .kitchen-panel .data-row:last-child{border:0}#content .kitchen-panel .btn{margin-top:4px}#content .kitchen-section-intro{padding:18px 20px;border:1px solid #dbe4ea;border-radius:12px;background:#f5f8fa;margin-bottom:14px}#content .kitchen-section-intro h2{margin:0 0 5px}#content .kitchen-section-intro p{margin:0;color:#5d6d79;font-size:13px}#content .kitchen-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}#content .kitchen-overview-grid>div{padding:17px;background:#fff;border:1px solid #dce4e9;border-radius:12px}#content .kitchen-overview-grid strong{display:block;font-size:27px;margin:5px 0;color:#243447}#content .kitchen-overview-grid small{color:#607182}#content #kitchen-tabs{position:relative}";
+   document.head.append(css);
+ }
+ const groups={overview:[],records:[],equipment:[],staff:[]};
+ for(const el of all){
+   if(el.id==="kitchen-tabs")continue;
+   const heading=el.querySelector?.("h2")?.textContent||"";
+   if(heading.startsWith("Gestion Cuisine"))groups.overview.push(el);
+   else if(heading.startsWith("Agents de cuisine")||heading.startsWith("Tâches de nettoyage"))groups.staff.push(el);
+   else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut"))groups.equipment.push(el);
+   else if(heading.startsWith("Derniers relevés")||heading.startsWith("Remises en température")||heading.startsWith("Actions correctives"))groups.records.push(el);
+   else groups.overview.push(el);
+ }
+ const header=document.createElement("div");header.id="kitchen-tabs";header.setAttribute("role","tablist");header.setAttribute("aria-label","Rubriques Gestion Cuisine");
+ for(const [key,label] of tabs){
+   const b=document.createElement("button");b.type="button";b.dataset.kitchenTab=key;b.textContent=label;b.setAttribute("role","tab");b.addEventListener("click",()=>{kitchenTab=key;selectTab()});header.append(b);
+ }
+ content.prepend(header);
+ const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],staff:["Équipe de cuisine","Gérez les codes personnels MEDJEBER / MOREL et les tâches quotidiennes."]};
+ const panels={};
+ for(const [key] of tabs){
+   const wrapper=document.createElement("section");wrapper.className="kitchen-panel";wrapper.dataset.panel=key;wrapper.setAttribute("role","tabpanel");
+   const intro=document.createElement("div");intro.className="kitchen-section-intro";const h=document.createElement("h2");h.textContent=intros[key][0];const p=document.createElement("p");p.textContent=intros[key][1];intro.append(h,p);wrapper.append(intro);
+   if(key==="overview"){
+     const day=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+     const done=new Set(s.checks.filter(x=>x.performed_on===day).map(x=>x.task_id));
+     const active=s.reheats.filter(x=>x.status==="en_cours");
+     const todayCold=s.cold.filter(x=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(x.measured_at))===day);
+     const summary=document.createElement("div");summary.className="kitchen-overview-grid";summary.innerHTML=
+       '<div><small>Chambres relevées aujourd’hui</small><strong>'+new Set(todayCold.map(x=>x.room_id)).size+' / '+s.rooms.length+'</strong></div>'+
+       '<div><small>Réchauffages en cours</small><strong>'+active.length+'</strong></div>'+
+       '<div><small>Nettoyage terminé aujourd’hui</small><strong>'+done.size+' / '+s.tasks.length+'</strong></div>'+
+       '<div><small>Alertes (historique chargé)</small><strong>'+alerts+'</strong></div>';
+     wrapper.append(summary);
+     const tip=document.createElement("div");tip.className="card";tip.style.marginTop="16px";tip.innerHTML='<h3>Utilisation quotidienne</h3><p>Les agents travaillent dans l’espace Cuisine. Ici, vous vérifiez les relevés, contrôlez les anomalies et adaptez les équipements ou tâches.</p>';wrapper.append(tip);
+   }
+   for(const el of groups[key])wrapper.append(el);
+   content.append(wrapper);panels[key]=wrapper;
+ }
+ function selectTab(){
+   for(const [key]of tabs)panels[key].hidden=key!==kitchenTab;
+   header.querySelectorAll("button").forEach(b=>{const active=b.dataset.kitchenTab===kitchenTab;b.classList.toggle("active",active);b.setAttribute("aria-selected",String(active))});
+ }
+ selectTab();
  node("kitchenReload").addEventListener("click",load);node("kitchenCsv").addEventListener("click",downloadCsv);
  }
  function downloadCsv(){if(!snapshot)return;const lines=[["Type","Date et heure","Équipement","Début °C","Fin °C","Statut","Agent"]];
