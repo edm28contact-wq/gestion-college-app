@@ -7,6 +7,9 @@ const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
 const READER_VERSION="V49";
+const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
+const QUEUE_API=ROOT+"secretariat-invoice-queue";
+let queueImportStarted=false,queueImported=false;
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all";
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -212,6 +215,7 @@ async function resolveSession(){
     $("analyze").disabled=!file||loading||!serverReady;
     if(!serverReady)notice("Identifiants Veryfi non configurés sur le serveur.","error");
     await loadCatalog();
+    if(queueId&&!queueImportStarted&&!file)void importQueuedInvoice();
     return;
    }catch(e){last=e;if(e.code!==401&&e.code!==403)throw e}
   }
@@ -292,9 +296,51 @@ function populateDatalists(){
  const a=$("accountOptions");a.replaceChildren();
  for(const x of catalog?.accounts||[]){const o=document.createElement("option");o.value=String(x.account||"");o.label=String(x.label||x.name||"");a.append(o)}
 }
+async function importQueuedInvoice(){
+ if(!queueId||queueImportStarted||file)return;
+ queueImportStarted=true;
+ try{
+  if(!authToken)throw Error("Session Secrétariat requise.");
+  const response=await fetch(QUEUE_API+"?"+new URLSearchParams({action:"view",id:queueId}),{
+   headers:{authorization:"Bearer "+authToken},cache:"no-store",signal:AbortSignal.timeout(20000)});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok||!data.url)throw Error(data.error||"Facture inaccessible.");
+  if(data.state!=="todo")throw Error("La facture est déjà classée comme faite.");
+  const download=await fetch(data.url,{cache:"no-store",signal:AbortSignal.timeout(30000)});
+  if(!download.ok)throw Error("Téléchargement sécurisé du PDF impossible.");
+  const bytes=new Uint8Array(await download.arrayBuffer());
+  if(bytes.length!==data.file_bytes||bytes.length>6*1024*1024)
+   throw Error("Taille du PDF archivé incohérente.");
+  if(await digest(bytes)!==data.file_hash)throw Error("Empreinte du PDF archivé incorrecte.");
+  if(String.fromCharCode(...bytes.subarray(0,5))!=="%PDF-")
+   throw Error("Le PDF archivé est invalide.");
+  const safeName=String(data.file_name||"facture.pdf").replace(/[\\/]/g,"_");
+  setFile(new File([bytes],safeName,{type:"application/pdf"}));
+  queueImported=true;
+  notice("Facture chargée depuis « À faire ». Cliquez sur « Lire avec Veryfi » après vérification du PDF. Aucun stock modifié.","success");
+ }catch(e){
+  queueImportStarted=false;
+  notice("Import facture en attente : "+(e?.message||"indisponible")+". Vous pouvez importer manuellement le PDF.","error");
+ }
+}
+async function syncQueueAfterReception(){
+ if(!queueId||!queueImported||!authToken)return;
+ try{
+  const res=await fetch(QUEUE_API+"?action=sync-receipt",{
+   method:"POST",headers:{authorization:"Bearer "+authToken,"content-type":"application/json"},
+   body:JSON.stringify({id:queueId}),cache:"no-store",signal:AbortSignal.timeout(15000)
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok||!data.ok)throw Error(data.error||"Synchronisation impossible.");
+  $("saveResult").textContent+=" · File Secrétariat synchronisée : « Faites ».";
+ }catch(e){
+  $("saveResult").textContent+=" · Réception enregistrée ; classement « Faites » non synchronisé. Utilisez « Vérifier la réception Veryfi » dans Secrétariat.";
+ }
+}
 function setFile(newFile){
  if(loading)return;
  clearPdf();
+ queueImported=false;
  const valid=newFile&&/\.pdf$/i.test(newFile.name)&&newFile.size>=5&&newFile.size<=6*1024*1024;
  if(newFile&&!valid){$("file").value="";notice("PDF invalide ou supérieur à 6 Mo. La lecture Veryfi n’a pas été lancée.","error");return}
  file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";$("bulkVatRate").value="";$("repairHeader").hidden=true;$("vatActionRequired").hidden=true;
@@ -1387,6 +1433,7 @@ async function save(){
       " · Apprentissage : "+Number(learned.manual||0)+" ligne(s) vérifiée(s), "+Number(learned.aliases||0)+" appellation(s) et "+Number(learned.corrections||0)+" correction(s) mémorisée(s).":
       learned.status==="partial"||learned.status==="error"?" · Stock validé ; apprentissage partiellement indisponible.":"";
     $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s) · HT retenu "+fmt(c.sum)+(c.adjusted?" (réception partielle)":"")+"."+learningMessage;
+    await syncQueueAfterReception();
   }
   lockFields();$("newDocument").hidden=false;
  }catch(e){notice("Enregistrement refusé : "+e.message,"error");$("saveResult").textContent=e.message}
