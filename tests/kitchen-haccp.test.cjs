@@ -40,7 +40,7 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
  assert.match(script,/enableKitchenAlarm/);
- assert.match(html,/cuisine\.js\?v=20261120-9/);
+ assert.match(html,/cuisine\.js\?v=20261120-10/);
 });
 
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
@@ -57,8 +57,8 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchenTab="overview"/);
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
- assert.match(html,/cuisine\.js\?v=20261120-9/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-9/);
+ assert.match(html,/cuisine\.js\?v=20261120-10/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-10/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -83,7 +83,7 @@ test("Cuisine : l’archivage et la suppression conservent les contrôles histor
  assert.match(admin,/delete-room/);
  assert.match(kitchen,/function activeRooms\(\)/);
  assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-9/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-10/);
 });
 
 test("Cuisine : alerte prioritaire persistante et son répétitif sans faux contrôle",()=>{
@@ -100,4 +100,32 @@ test("Cuisine : alerte prioritaire persistante et son répétitif sans faux cont
  assert.match(script,/switchPage\("reheat"\)/);
  assert.match(script,/if\(!active\.length\)/);
  assert.match(script,/status==="en_cours"&&canFinish/);
+});
+
+test("Cuisine : choisir les chambres et exporter la totalité des relevés",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ const kitchen=read("cuisine/cuisine.js");
+ const reports=read("cuisine/releve-export.js");
+ assert.match(kitchen,/id="coldRoomSelector"/);
+ assert.match(admin,/id="adminColdRoomSelector"/);
+ assert.match(kitchen,/data-cold-export="csv"/);
+ assert.match(kitchen,/data-cold-export="pdf"/);
+ assert.match(admin,/data-admin-cold-export="csv"/);
+ assert.match(admin,/data-admin-cold-export="pdf"/);
+ assert.match(kitchen,/cold-history/);
+ assert.match(admin,/cold-history/);
+ assert.match(reports,/for\(let offset=0;offset<=1000000;offset\+=step\)/);
+ assert.match(reports,/page\.has_more/);
+ assert.match(reports,/window\.CuisineReports=/);
+ assert.match(reports,/new jsPDF/);
+ assert.match(read("cuisine/index.html"),/releve-export\.js/);
+ assert.match(read("college/admin/index.html"),/releve-export\.js/);
+ new vm.Script(reports,{filename:"releve-export.js"});
+});
+test("Cuisine : un rappel dépassé n'est pas une anomalie thermique",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ const kitchen=read("cuisine/cuisine.js");
+ assert.match(admin,/Température cible atteinte/);
+ assert.match(admin,/Relevé après le rappel/);
+ assert.match(kitchen,/Mesure enregistrée après le rappel/);
 });
