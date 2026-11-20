@@ -40,7 +40,7 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
  assert.match(script,/enableKitchenAlarm/);
- assert.match(html,/cuisine\.js\?v=20261120-10/);
+ assert.match(html,/cuisine\.js\?v=20261120-11/);
 });
 
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
@@ -57,8 +57,8 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchenTab="overview"/);
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
- assert.match(html,/cuisine\.js\?v=20261120-10/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-10/);
+ assert.match(html,/cuisine\.js\?v=20261120-11/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-11/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -83,7 +83,7 @@ test("Cuisine : l’archivage et la suppression conservent les contrôles histor
  assert.match(admin,/delete-room/);
  assert.match(kitchen,/function activeRooms\(\)/);
  assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-10/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-11/);
 });
 
 test("Cuisine : alerte prioritaire persistante et son répétitif sans faux contrôle",()=>{
@@ -128,4 +128,14 @@ test("Cuisine : un rappel dépassé n'est pas une anomalie thermique",()=>{
  assert.match(admin,/Température cible atteinte/);
  assert.match(admin,/Relevé après le rappel/);
  assert.match(kitchen,/Mesure enregistrée après le rappel/);
+});
+
+test("Cuisine : une mesure froide recontrôlée ne déclenche pas une alerte actuelle",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ const agent=read("cuisine/cuisine.js");
+ assert.match(admin,/latestCold=new Map/);
+ assert.match(admin,/followedByGood=/);
+ assert.match(admin,/Ancien écart/);
+ assert.match(agent,/\.\.\.latestByRoom\(\)\.values\(\)/);
+ assert.match(agent,/nécessitant une vérification/);
 });
