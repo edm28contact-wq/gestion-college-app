@@ -40,7 +40,7 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
  assert.match(script,/enableKitchenAlarm/);
- assert.match(html,/cuisine\.js\?v=20261120-6/);
+ assert.match(html,/cuisine\.js\?v=20261120-8/);
 });
 
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
@@ -57,8 +57,8 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchenTab="overview"/);
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
- assert.match(html,/cuisine\.js\?v=20261120-6/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-7/);
+ assert.match(html,/cuisine\.js\?v=20261120-8/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-8/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -73,4 +73,15 @@ test("Cuisine : raccordement Govee identifiable et provenance des relevés prés
  assert.match(admin,/testo 104-IR BT/);
  assert.match(kitchen,/sensor\.status==='online'/);
  assert.match(kitchen,/r\.source==='govee_cloud'/);
+});
+
+test("Cuisine : l’archivage et la suppression conservent les contrôles historiques",()=>{
+ const admin=read("college/admin/cuisine-admin.js"),kitchen=read("cuisine/cuisine.js");
+ assert.match(admin,/data-archive-room/);
+ assert.match(admin,/data-delete-room/);
+ assert.match(admin,/request-room-delete-code/);
+ assert.match(admin,/delete-room/);
+ assert.match(kitchen,/function activeRooms\(\)/);
+ assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-8/);
 });
