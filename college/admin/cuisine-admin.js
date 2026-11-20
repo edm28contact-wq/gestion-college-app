@@ -5,13 +5,46 @@
  const e=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  const when=v=>v?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris"}):"—";
  const t=v=>Number(v).toLocaleString("fr-FR",{maximumFractionDigits:2});
- let snapshot=null,busy=false,kitchenTab="overview";
+ let snapshot=null,busy=false,kitchenTab="overview",selectedColdRoom="",coldHistory=[],coldHistoryTotal=0,coldHistoryOffset=0,coldHistoryError="";
  async function api(action,method="GET",body){
    const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
    const r=await fetch(API+"?action="+encodeURIComponent(action),{method,headers:{"content-type":"application/json","x-admin-session":token},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});
    const j=await r.json().catch(()=>({error:"Réponse du service invalide"}));if(!r.ok)throw Error(j.error||"Service indisponible");return j;
  }
  const staff=id=>snapshot?.staff.find(x=>x.id===id)?.name||"Agent";
+ async function fetchColdHistoryPage(offset=0,limit=50,roomId=selectedColdRoom){
+  const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
+  const qs=new URLSearchParams({action:"cold-history",offset:String(offset),limit:String(limit)});
+  if(roomId)qs.set("room_id",roomId);
+  const r=await fetch(API+"?"+qs,{headers:{"x-admin-session":token},cache:"no-store"});
+  const data=await r.json().catch(()=>({error:"Réponse invalide"}));
+  if(!r.ok)throw Error(data.error||"Impossible de charger l'historique");
+  return data;
+ }
+ async function refreshColdHistory(offset=0,keepTab=true){
+  const current=selectedColdRoom;
+  try{
+   const result=await fetchColdHistoryPage(offset,50,current);
+   if(current!==selectedColdRoom)return;
+   coldHistory=result.readings;coldHistoryTotal=result.total;coldHistoryOffset=offset;coldHistoryError="";
+   if(snapshot&&keepTab)render();
+  }catch(err){coldHistoryError=err.message;if(snapshot&&keepTab)render();}
+ }
+ async function exportColdReadings(format){
+  const busyButtons=document.querySelectorAll("[data-admin-cold-export]");
+  busyButtons.forEach(b=>b.disabled=true);
+  try{
+   const label=selectedColdRoom?snapshot.rooms.find(r=>r.id===selectedColdRoom)?.label||"Chambre":"Toutes les chambres";
+   const count=await window.CuisineReports[format]({
+    fetchPage:(offset,limit)=>fetchColdHistoryPage(offset,limit),
+    rooms:snapshot.rooms,staff:snapshot.staff,roomLabel:label,
+    notify:(done,total)=>notify("Export en cours : "+done+" / "+total+" relevés")
+   });
+   notify("Export "+format.toUpperCase()+" effectué : "+count+" relevé(s).");
+  }catch(err){notify("Échec de l’export : "+err.message,true)}
+  finally{busyButtons.forEach(b=>b.disabled=false)}
+ }
+
  function notify(text,bad=false){const el=node("kitchenAdminMessage");if(el){el.textContent=text;el.style.color=bad?"#a32929":"#176b3a"}}
  async function action(name,data){
   if(busy)return;busy=true;try{const res=await api(name,"POST",data);await load();notify("Enregistré.");return res}
@@ -57,8 +90,13 @@
  '<form id="kitchenProbeRegister" class="grid"><div><label>Désignation de la sonde</label><input name="label" required minlength="2" maxlength="80" placeholder="Ex. Sonde cuisine 1"></div><div><label>Modèle Testo</label><select name="model"><option value="testo 104-IR">testo 104-IR (manuel)</option><option value="testo 104-IR BT">testo 104-IR BT (application Testo Smart)</option></select></div><div><button class="btn secondary" type="submit">Référencer la sonde pour plus tard</button></div></form>'+
  ((s.connected||[]).filter(d=>d.kind==="food_probe").map(d=>'<div class="data-row"><strong>'+e(d.label)+'</strong><span class="muted">'+e(d.model)+' · Connexion au site non disponible</span></div>').join(""))+
  '</div>'+
- '<div class="card"><h2>Derniers relevés des chambres</h2>'+rows(s.cold.slice(0,35),[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Statut",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?"Alerte":"Conforme")+'</span>'],["",x=>x.is_alert?'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
- '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Statut",x=>e(x.status)],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
+ '<div class="card"><h2>Derniers relevés des chambres</h2><p class="muted">Choisissez une chambre. Le tableau affiche 50 lignes par page, mais les exports récupèrent l’intégralité de l’historique filtré.</p>'+
+ '<div class="grid"><div><label for="adminColdRoomSelector">Chambre froide à consulter</label><select id="adminColdRoomSelector"><option value="">Toutes les chambres</option>'+s.rooms.map(r=>'<option value="'+attr(r,"id")+'" '+(selectedColdRoom===r.id?"selected":"")+'>'+e(r.label)+'</option>').join("")+'</select></div><div><label>Exporter les résultats</label><div class="actions"><button type="button" class="btn secondary" data-admin-cold-export="csv">Exporter CSV</button><button type="button" class="btn secondary" data-admin-cold-export="pdf">Exporter PDF</button></div></div></div>'+
+ (coldHistoryError?'<p class="status err">'+e(coldHistoryError)+'</p>':'')+
+ '<div class="muted">'+coldHistoryTotal+' relevé(s) trouvé(s) · page '+(Math.floor(coldHistoryOffset/50)+1)+'</div>'+
+ rows(coldHistory,[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Résultat",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?"Hors seuil":"Dans la plage")+'</span>'],["",x=>x.is_alert?'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+
+ '<div class="actions"><button class="btn secondary" type="button" data-admin-cold-page="previous" '+(coldHistoryOffset===0?'disabled':'')+'>Précédent</button><button class="btn secondary" type="button" data-admin-cold-page="next" '+(coldHistoryOffset+50>=coldHistoryTotal?'disabled':'')+'>Suivant</button></div></div>'+
+ '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Évaluation",x=>x.status==="alerte"?"Température hors cible":x.status==="en_cours"?"En cours":"Température cible atteinte"],["Rappel",x=>x.ended_at&&new Date(x.ended_at)>new Date(x.due_at)?"Relevé après le rappel":"Dans le délai du rappel"],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
  '<div class="card"><h2>Tâches de nettoyage</h2>'+rows(s.tasks,[["Tâche",x=>e(x.label)],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":"Non validée"]])+
  '<h3>Ajouter une tâche</h3><form id="kitchenAddTask" class="grid"><div><label>Libellé</label><input required name="label" maxlength="100"></div><div><label>Responsable</label><select name="assigned_to"><option value="">Commune</option>'+s.staff.filter(x=>x.active).map(x=>'<option value="'+attr(x,"id")+'">'+e(x.name)+'</option>').join("")+'</select></div><div><button class="btn primary" type="submit">Ajouter une tâche</button></div></form></div>'+
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
@@ -119,7 +157,20 @@
  for(const x of snapshot.reheats)lines.push(["Remise en température",x.started_at,(x.cold_room_label_snapshot||"Chambre non renseignée")+" → "+(x.oven_label_snapshot||("Four "+x.oven_number))+" · "+(x.dish_type_label_snapshot||"Plat non renseigné"),x.start_temperature_c,x.end_temperature_c??"",x.status,staff(x.started_by)]);
  const csv="\ufeff"+lines.map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(";")).join("\r\n");
  const link=document.createElement("a"),u=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));link.href=u;link.download="cuisine-haccp-"+new Date().toISOString().slice(0,10)+".csv";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(u),1500);}
- async function load(){try{snapshot=await api("list");render()}catch(err){node("content").innerHTML='<div class="card"><b>Impossible de charger Gestion Cuisine.</b><p class="status err">'+e(err.message)+'</p></div>'}}
+ async function load(){try{snapshot=await api("list");await refreshColdHistory(coldHistoryOffset,false);render()}catch(err){node("content").innerHTML='<div class="card"><b>Impossible de charger Gestion Cuisine.</b><p class="status err">'+e(err.message)+'</p></div>'}}
+
+ document.addEventListener("change",evt=>{
+  if(evt.target?.id==="adminColdRoomSelector"){
+   selectedColdRoom=evt.target.value;coldHistoryOffset=0;coldHistory=[];
+   refreshColdHistory(0);
+  }
+ });
+ document.addEventListener("click",evt=>{
+  const ex=evt.target.closest?.("[data-admin-cold-export]");
+  if(ex){exportColdReadings(ex.dataset.adminColdExport);return}
+  const pageBtn=evt.target.closest?.("[data-admin-cold-page]");
+  if(pageBtn)refreshColdHistory(Math.max(0,coldHistoryOffset+(pageBtn.dataset.adminColdPage==="next"?50:-50)));
+ });
  document.addEventListener("submit",evt=>{
  const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate]"))return;evt.preventDefault();
  const f=new FormData(form),values=Object.fromEntries(f.entries());
