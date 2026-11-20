@@ -88,7 +88,7 @@
  '<div class="grid"><form id="kitchenGoveeKey"><h3>1. Compte Govee</h3><p class="muted">Clé conservée chiffrée côté Supabase Vault, jamais affichée après l’enregistrement.</p><label>Clé API Govee</label><input type="password" name="api_key" required minlength="10" maxlength="240" autocomplete="new-password" placeholder="Coller votre clé Govee Home"><button class="btn primary" type="submit">Tester et enregistrer la clé</button><p class="muted">'+(s.account?.govee_key_configured?'Clé enregistrée — vous pouvez rechercher les capteurs.':'Aucune clé configurée.')+'</p></form>'+
  '<div><h3>2. Rechercher les capteurs</h3><p class="muted">L’API Govee affiche les capteurs compatibles avec votre compte. Un thermomètre Bluetooth seul peut ne pas être détecté.</p><button id="kitchenGoveeDiscover" class="btn secondary" type="button">Rechercher mes capteurs Govee</button><div id="kitchenGoveeDiscovered" class="muted" aria-live="polite">Associez un capteur par chambre froide.</div></div></div>'+
  '<h3>Capteurs associés aux chambres froides</h3>'+
- ((s.connected||[]).filter(d=>d.kind==="cold_room").length?(s.connected||[]).filter(d=>d.kind==="cold_room").map(d=>'<div class="data-row"><div><strong>'+e(d.label)+'</strong><div class="muted">'+e(s.rooms.find(r=>r.id===d.room_id)?.label||"Chambre")+' · '+e(d.model)+' · '+e(d.device_identifier)+'</div><div class="muted">État : '+e(d.status)+' · Dernière synchronisation : '+when(d.last_checked_at)+(d.last_temperature_c==null?'':' · '+t(d.last_temperature_c)+' °C')+(d.last_error?' · '+e(d.last_error):'')+'</div></div><button class="btn secondary" data-govee-sync="'+attr(d,"id")+'" type="button">Lire la température</button></div>').join(""):'<p class="muted">Aucun capteur associé.</p>')+
+ ((s.connected||[]).filter(d=>d.kind==="cold_room").length?(s.connected||[]).filter(d=>d.kind==="cold_room").map(d=>'<div class="data-row"><div><strong>'+e(d.label)+'</strong><div class="muted">Modèle : '+e(d.model)+' · Référence : '+e(d.device_identifier)+'</div><div class="muted">État : '+e(d.status)+' · Dernière synchronisation : '+when(d.last_checked_at)+(d.last_temperature_c==null?'':' · '+t(d.last_temperature_c)+' °C')+(d.last_error?' · '+e(d.last_error):'')+'</div></div><form class="grid" data-govee-room="'+attr(d,"id")+'"><div><label>Chambre froide associée à ce capteur</label><select required name="room_id">'+s.rooms.filter(r=>!r.archived_at&&!r.deleted_at).filter(r=>r.id===d.room_id||!(s.connected||[]).some(other=>other.kind==="cold_room"&&other.id!==d.id&&other.room_id===r.id)).map(r=>'<option value="'+attr(r,"id")+'" '+(r.id===d.room_id?"selected":"")+'>'+e(r.label)+'</option>').join("")+'</select></div><div><button class="btn primary" type="submit">Enregistrer l’affectation</button></div></form><button class="btn secondary" data-govee-sync="'+attr(d,"id")+'" type="button">Lire la température</button></div>').join(""):'<p class="muted">Aucun capteur associé. Recherchez les capteurs pour affecter un appareil à chaque chambre.</p>')+
  '<h3>Pour plus tard : sondes de plats Testo</h3><p class="muted">Le testo 104-IR classique n’est pas une sonde API. Le 104-IR BT transmet à Testo Smart, mais aucune connexion automatique à ce site n’est activée. Il faut continuer à mesurer et saisir manuellement la température à cœur.</p>'+
  '<form id="kitchenProbeRegister" class="grid"><div><label>Désignation de la sonde</label><input name="label" required minlength="2" maxlength="80" placeholder="Ex. Sonde cuisine 1"></div><div><label>Modèle Testo</label><select name="model"><option value="testo 104-IR">testo 104-IR (manuel)</option><option value="testo 104-IR BT">testo 104-IR BT (application Testo Smart)</option></select></div><div><button class="btn secondary" type="submit">Référencer la sonde pour plus tard</button></div></form>'+
  ((s.connected||[]).filter(d=>d.kind==="food_probe").map(d=>'<div class="data-row"><strong>'+e(d.label)+'</strong><span class="muted">'+e(d.model)+' · Connexion au site non disponible</span></div>').join(""))+
@@ -97,10 +97,10 @@
  '<div class="grid"><div><label for="adminColdRoomSelector">Chambre froide à consulter</label><select id="adminColdRoomSelector"><option value="">Toutes les chambres</option>'+s.rooms.map(r=>'<option value="'+attr(r,"id")+'" '+(selectedColdRoom===r.id?"selected":"")+'>'+e(r.label)+'</option>').join("")+'</select></div><div><label>Exporter les résultats</label><div class="actions"><button type="button" class="btn secondary" data-admin-cold-export="csv">Exporter CSV</button><button type="button" class="btn secondary" data-admin-cold-export="pdf">Exporter PDF</button></div></div></div>'+
  (coldHistoryError?'<p class="status err">'+e(coldHistoryError)+'</p>':'')+
  '<div class="muted">'+coldHistoryTotal+' relevé(s) trouvé(s) · page '+(Math.floor(coldHistoryOffset/50)+1)+'</div>'+
- rows(coldHistory,[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Résultat",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?(followedByGood(x)?"Ancien écart · recontrôlé":"Hors seuil"):"Dans la plage")+'</span>'],["",x=>x.is_alert?'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">'+(followedByGood(x)?"Documenter l’ancien écart":"Documenter l’anomalie")+'</button>':""]])+
+ rows(coldHistory,[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Résultat",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?(followedByGood(x)?"Ancien écart · recontrôlé":"Hors seuil"):"Dans la plage")+'</span>'],["",x=>'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>']])+
  '<div class="actions"><button class="btn secondary" type="button" data-admin-cold-page="previous" '+(coldHistoryOffset===0?'disabled':'')+'>Précédent</button><button class="btn secondary" type="button" data-admin-cold-page="next" '+(coldHistoryOffset+50>=coldHistoryTotal?'disabled':'')+'>Suivant</button></div></div>'+
  '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Évaluation",x=>x.status==="alerte"?"Température hors cible":x.status==="en_cours"?"En cours":"Température cible atteinte"],["Contrôle horaire",x=>x.ended_at?(new Date(x.ended_at)>new Date(x.due_at)?"Relevé après le rappel":"Relevé avant le rappel"):"Contrôle en cours"],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
- '<div class="card"><h2>Tâches de nettoyage</h2>'+rows(s.tasks,[["Tâche",x=>e(x.label)],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":"Non validée"]])+
+ '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Exportez le suivi quotidien en PDF : validations, agents, heures et tâches non validées.</p><div class="grid"><div><label for="kitchenTasksReportDate">Date du rapport</label><input id="kitchenTasksReportDate" type="date" value="'+day+'"></div><div><label>Rapport</label><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button></div></div>'+rows(s.tasks,[["Tâche",x=>e(x.label)],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":"Non validée"]])+
  '<h3>Ajouter une tâche</h3><form id="kitchenAddTask" class="grid"><div><label>Libellé</label><input required name="label" maxlength="100"></div><div><label>Responsable</label><select name="assigned_to"><option value="">Commune</option>'+s.staff.filter(x=>x.active).map(x=>'<option value="'+attr(x,"id")+'">'+e(x.name)+'</option>').join("")+'</select></div><div><button class="btn primary" type="submit">Ajouter une tâche</button></div></form></div>'+
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
  
@@ -175,9 +175,10 @@
   if(pageBtn)refreshColdHistory(Math.max(0,coldHistoryOffset+(pageBtn.dataset.adminColdPage==="next"?50:-50)));
  });
  document.addEventListener("submit",evt=>{
- const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate]"))return;evt.preventDefault();
+ const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate],[data-govee-room]"))return;evt.preventDefault();
  const f=new FormData(form),values=Object.fromEntries(f.entries());
  if(form.matches("[data-govee-associate]")){action("govee-add-sensor",{device:form.dataset.goveeAssociate,sku:form.dataset.sku,room_id:values.room_id,raw_unit:values.raw_unit});return;}
+ if(form.matches("[data-govee-room]")){action("govee-reassign-sensor",{id:form.dataset.goveeRoom,room_id:values.room_id});return;}
  if(form.matches("[data-kitchen-pin]"))action("set-staff-pin",{staff_id:form.dataset.kitchenPin,pin:values.pin});
  if(form.id==="kitchenAddRoom")action("add-room",{room_type:values.room_type,room_number:Number(values.room_number),label:values.label,min_c:values.min_c===""?null:Number(values.min_c),max_c:Number(values.max_c)});
  if(form.matches("[data-room-edit]"))action("update-room",{id:form.dataset.roomEdit,label:values.label,min_c:values.min_c===""?null:Number(values.min_c),max_c:Number(values.max_c)});
@@ -228,7 +229,56 @@
  }
  });
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-kitchen-active]");if(b)action("set-staff-active",{staff_id:b.dataset.kitchenActive,active:b.dataset.next==="true"});});
- document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-corrective]");if(!b)return;const note=prompt("Décrivez l’anomalie constatée, les mesures correctives réellement prises et le résultat du nouveau contrôle :");if(note&&note.trim().length>=3)action("corrective",{entity_type:b.dataset.corrective,entity_id:b.dataset.id,note:note.trim()})});
+ 
+ async function exportTasksPDF(){
+  const date=node("kitchenTasksReportDate")?.value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")){notify("Choisissez une date de rapport.",true);return}
+  const button=node("kitchenTasksPdf");if(button)button.disabled=true;
+  try{
+   const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
+   const response=await fetch(API+"?"+new URLSearchParams({action:"task-report",date}),{headers:{"x-admin-session":token},cache:"no-store"});
+   const report=await response.json().catch(()=>({error:"Réponse du serveur invalide"}));
+   if(!response.ok)throw Error(report.error||"Impossible de récupérer le suivi du nettoyage");
+   const result=await window.CuisineReports.tasksPdf({...report,staff:snapshot.staff});
+   notify("PDF du nettoyage généré : "+result.completed+" tâche(s) validée(s) sur "+result.total+".");
+  }catch(err){notify("Export PDF impossible : "+err.message,true)}
+  finally{if(button)button.disabled=false}
+ }
+ function openCorrectiveDialog(type,id){
+  let modal=node("kitchenCorrectionDialog");
+  if(!modal){
+   modal=document.createElement("dialog");modal.id="kitchenCorrectionDialog";
+   modal.style.cssText="border:1px solid #c8d4df;border-radius:14px;padding:24px;max-width:min(550px,95vw);width:100%;color:#243447;box-shadow:0 20px 80px #162b4573";
+   modal.innerHTML='<form method="dialog" id="kitchenCorrectionForm"><h2>Action corrective</h2><p id="kitchenCorrectionDetails"></p><label for="kitchenCorrectionReason">Motif de correction</label><textarea id="kitchenCorrectionReason" required minlength="8" maxlength="500" rows="3" style="width:100%;margin:10px 0 15px;padding:11px;border:1px solid #bbcbd5;border-radius:8px" placeholder="Ex. Erreur de saisie : signe moins oublié. Mesure de contrôle effectuée."></textarea><p id="kitchenCorrectionHelp" class="muted">Invalider conserve la valeur originale dans le journal d’audit, sans l’inclure dans les relevés valides et les exports standards.</p><div class="actions"><button type="button" class="btn secondary" id="kitchenCorrectionCancel">Annuler</button><button type="button" class="btn secondary" id="kitchenCorrectionNote">Documenter sans invalider</button><button type="button" class="btn primary" id="kitchenCorrectionInvalidate">Erreur de saisie — retirer du suivi</button></div><p id="kitchenCorrectionFeedback" role="status"></p></form>';
+   document.body.append(modal);
+   node("kitchenCorrectionCancel").addEventListener("click",()=>modal.close());
+   for(const [buttonId,mode] of [["kitchenCorrectionNote","corrective"],["kitchenCorrectionInvalidate","invalidate-cold-reading"]]){
+    node(buttonId).addEventListener("click",async()=>{
+     const reason=node("kitchenCorrectionReason").value.trim(),feedback=node("kitchenCorrectionFeedback");
+     if(reason.length<8){feedback.textContent="Indiquez un motif d’au moins 8 caractères.";return}
+     if(mode==="invalidate-cold-reading"&&!confirm("Retirer ce relevé des mesures valides et des exports standards ? La valeur et le motif resteront dans l’audit."))return;
+     const controls=modal.querySelectorAll("button");controls.forEach(b=>b.disabled=true);
+     try{
+      await api(mode,"POST",mode==="corrective"?{entity_type:modal.dataset.entityType,entity_id:modal.dataset.recordId,note:reason}:{id:modal.dataset.recordId,reason});
+      modal.close();await load();notify(mode==="corrective"?"Observation enregistrée.":"Relevé invalidé pour erreur de saisie ; valeur conservée dans l’audit.");
+     }catch(err){feedback.textContent=err.message;}
+     finally{controls.forEach(b=>b.disabled=false)}
+    });
+   }
+  }
+  const reading=coldHistory.find(r=>r.id===id)||snapshot.cold.find(r=>r.id===id);
+  modal.dataset.recordId=id;modal.dataset.entityType=type;
+  node("kitchenCorrectionDetails").textContent=type==="chambre_froide"&&reading?
+   "Chambre : "+(snapshot.rooms.find(r=>r.id===reading.room_id)?.label||"Inconnue")+" · "+t(reading.temperature_c)+" °C · "+when(reading.measured_at):
+   "Enregistrement HACCP sélectionné.";
+  node("kitchenCorrectionInvalidate").hidden=type!=="chambre_froide";
+  node("kitchenCorrectionHelp").hidden=type!=="chambre_froide";
+  node("kitchenCorrectionReason").value="";node("kitchenCorrectionFeedback").textContent="";
+  modal.showModal();
+ }
+
+ document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-corrective]");if(b)openCorrectiveDialog(b.dataset.corrective,b.dataset.id)});
+ document.addEventListener("click",evt=>{if(evt.target.closest?.("#kitchenTasksPdf"))exportTasksPDF()});
  window.kitchenAdminPage=function(){node("content").innerHTML='<div class="card">Chargement des relevés Cuisine…</div>';load()};
  window.kitchenAdminLoad=load;
 })();
