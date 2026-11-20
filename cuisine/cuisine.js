@@ -41,24 +41,25 @@ function render(){
 }
 function dayOf(iso){return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(iso))}
 function latestByRoom(){const m=new Map();for(const r of data.cold)if(!m.has(r.room_id))m.set(r.room_id,r);return m}
+function activeRooms(){return data.rooms.filter(r=>!r.archived_at&&!r.deleted_at)}
 function roomName(id){return data.rooms.find(x=>x.id===id)?.label||"Chambre inconnue"}
 function ovenName(r){return r.oven_label_snapshot||(data.ovens||[]).find(x=>x.id===r.oven_id)?.label||("Four "+r.oven_number)}
 function dishName(r){return r.dish_type_label_snapshot||(data.dishes||[]).find(x=>x.id===r.dish_type_id)?.label||"Plat non précisé"}
 function deltaC(r){if(r.end_temperature_c==null)return"";const change=Number(r.end_temperature_c)-Number(r.start_temperature_c);return(change>=0?"+":"")+number(change)+" °C"}
 function renderDashboard(){
- const day=today(),coldToday=data.cold.filter(r=>dayOf(r.measured_at)===day),checked=new Set(coldToday.map(r=>r.room_id));
+ const day=today(),rooms=activeRooms(),coldToday=data.cold.filter(r=>dayOf(r.measured_at)===day),checked=new Set(coldToday.filter(r=>rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
  const done=new Set(data.checks.filter(r=>r.performed_on===day).map(r=>r.task_id));
  const open=data.reheats.filter(r=>r.status==="en_cours");
  const alarms=data.cold.filter(r=>dayOf(r.measured_at)===day&&r.is_alert).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
  $("content").innerHTML=
  '<div class="banner"><div class="eyebrow">Aujourd’hui en cuisine</div><h1>Que voulez-vous faire ?</h1><p>Choisissez une action. Vous n’avez besoin que de quelques saisies pour enregistrer chaque contrôle.</p></div>'+
  '<div class="grid-3" style="margin-bottom:20px">'+
- '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+data.rooms.length+'</div></div>'+
+ '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+rooms.length+'</div></div>'+
  '<div class="stat-box"><div class="muted">Remises en température en cours</div><div class="big-number">'+open.length+'</div></div>'+
  '<div class="stat-box"><div class="muted">Nettoyages validés</div><div class="big-number">'+done.size+' / '+data.tasks.length+'</div></div></div>'+
  '<div class="grid" style="margin-bottom:18px">'+
  '<div class="action-card"><div><span class="eyebrow">Cuisson</span><h2>Remise en température</h2><p>Départ de la chambre froide, lancement du four et mesure finale à cœur.</p></div><button class="btn btn-primary" type="button" data-go="reheat">Ouvrir les fours · '+open.length+' en cours</button></div>'+
- '<div class="action-card"><div><span class="eyebrow">Contrôle quotidien</span><h2>Chambres froides</h2><p>Saisissez la température réellement lue dans chaque chambre froide.</p></div><button class="btn btn-accent" type="button" data-go="cold">Faire un relevé · '+(data.rooms.length-checked.size)+' restant(s)</button></div>'+
+ '<div class="action-card"><div><span class="eyebrow">Contrôle quotidien</span><h2>Chambres froides</h2><p>Saisissez la température réellement lue dans chaque chambre froide.</p></div><button class="btn btn-accent" type="button" data-go="cold">Faire un relevé · '+(rooms.length-checked.size)+' restant(s)</button></div>'+
  '<div class="action-card"><div><span class="eyebrow">Fin de service</span><h2>Nettoyage</h2><p>Cochez les tâches uniquement lorsqu’elles ont été effectuées.</p></div><button class="btn btn-outline" type="button" data-go="tasks">Voir les tâches</button></div>'+
  '<div class="action-card"><div><span class="eyebrow">Historique</span><h2>Suivi des contrôles</h2><p>Consultez les températures enregistrées et les alertes dans les pages correspondantes.</p></div><button class="btn btn-outline" type="button" data-go="reheat">Voir les remises en température</button></div></div>'+
  (alarms?'<div class="card info-warn"><strong>'+alarms+' anomalie(s) signalée(s) aujourd’hui.</strong> Prévenez le responsable et appliquez la procédure corrective prévue.</div>':'')+
@@ -67,10 +68,10 @@ function renderDashboard(){
 }
 
 function renderCold(){
- const day=today(),last=latestByRoom(),todayIds=new Set(data.cold.filter(r=>dayOf(r.measured_at)===day).map(r=>r.room_id));
+ const day=today(),rooms=activeRooms(),last=latestByRoom(),todayIds=new Set(data.cold.filter(r=>dayOf(r.measured_at)===day&&rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
  $("content").innerHTML=
- '<div class="section-heading"><div><div class="eyebrow">Contrôle des équipements</div><h1>Chambres froides</h1><p>Une température par chambre, relevée directement sur l’équipement.</p></div><span class="tag">'+todayIds.size+' / '+data.rooms.length+' contrôlées aujourd’hui</span></div>'+
- '<div class="grid">'+data.rooms.map(r=>{
+ '<div class="section-heading"><div><div class="eyebrow">Contrôle des équipements</div><h1>Chambres froides</h1><p>Une température par chambre, relevée directement sur l’équipement.</p></div><span class="tag">'+todayIds.size+' / '+rooms.length+' contrôlées aujourd’hui</span></div>'+
+ '<div class="grid">'+rooms.map(r=>{
  const current=last.get(r.id),done=todayIds.has(r.id),sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.room_id===r.id&&d.provider==="govee");
  const threshold=r.min_c===null?'≤ '+number(r.max_c)+' °C':number(r.min_c)+' à '+number(r.max_c)+' °C';
  return '<div class="tile"><div class="row between"><h3>'+esc(r.label)+'</h3><span class="tag '+(done?'tag-ok':'tag-warn')+'">'+(done?'Relevée aujourd’hui':'À contrôler')+'</span></div>'+
@@ -86,7 +87,7 @@ function renderCold(){
 function remaining(iso){const n=Math.ceil((new Date(iso).getTime()-Date.now())/1000);if(n<=0)return"Contrôle attendu";return Math.floor(n/60)+" min "+String(n%60).padStart(2,"0")+" s";}
 function renderReheat(){
  const open=data.reheats.filter(x=>x.status==="en_cours"),recent=data.reheats.filter(x=>x.status!=="en_cours").slice(0,12);
- const d=data.defaults||{},roomOptions=data.rooms.map(r=>'<option value="'+esc(r.id)+'" '+(d.default_cold_room_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
+ const d=data.defaults||{},roomOptions=activeRooms().map(r=>'<option value="'+esc(r.id)+'" '+(d.default_cold_room_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
  const ovenOptions=(data.ovens||[]).map(r=>'<option value="'+esc(r.id)+'" '+(d.default_oven_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
  const dishOptions=(data.dishes||[]).map(r=>'<option value="'+esc(r.id)+'" '+(d.default_dish_type_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
  const equipment=r=>esc(r.cold_room_label_snapshot||roomName(r.cold_room_id))+' → '+esc(ovenName(r));
