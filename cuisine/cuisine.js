@@ -101,7 +101,7 @@ function renderDashboard(){
  const day=today(),rooms=activeRooms(),coldToday=data.cold.filter(r=>dayOf(r.measured_at)===day),checked=new Set(coldToday.filter(r=>rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
  const done=new Set(data.checks.filter(r=>r.performed_on===day).map(r=>r.task_id));
  const open=data.reheats.filter(r=>r.status==="en_cours");
- const alarms=data.cold.filter(r=>dayOf(r.measured_at)===day&&r.is_alert).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
+ const alarms=[...latestByRoom().values()].filter(r=>r.is_alert&&rooms.some(room=>room.id===r.room_id)).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
  $("content").innerHTML=
  '<div class="banner"><div class="eyebrow">Aujourd’hui en cuisine</div><h1>Que voulez-vous faire ?</h1><p>Choisissez une action. Vous n’avez besoin que de quelques saisies pour enregistrer chaque contrôle.</p></div>'+
  '<div class="grid-3" style="margin-bottom:20px">'+
@@ -113,7 +113,7 @@ function renderDashboard(){
  '<div class="action-card"><div><span class="eyebrow">Contrôle quotidien</span><h2>Chambres froides</h2><p>Saisissez la température réellement lue dans chaque chambre froide.</p></div><button class="btn btn-accent" type="button" data-go="cold">Faire un relevé · '+(rooms.length-checked.size)+' restant(s)</button></div>'+
  '<div class="action-card"><div><span class="eyebrow">Fin de service</span><h2>Nettoyage</h2><p>Cochez les tâches uniquement lorsqu’elles ont été effectuées.</p></div><button class="btn btn-outline" type="button" data-go="tasks">Voir les tâches</button></div>'+
  '<div class="action-card"><div><span class="eyebrow">Historique</span><h2>Suivi des contrôles</h2><p>Consultez les températures enregistrées et les alertes dans les pages correspondantes.</p></div><button class="btn btn-outline" type="button" data-go="reheat">Voir les remises en température</button></div></div>'+
- (alarms?'<div class="card info-warn"><strong>'+alarms+' anomalie(s) signalée(s) aujourd’hui.</strong> Prévenez le responsable et appliquez la procédure corrective prévue.</div>':'')+
+ (alarms?'<div class="card info-warn"><strong>'+alarms+' anomalie(s) nécessitant une vérification.</strong> Prévenez le responsable et appliquez la procédure corrective prévue.</div>':'')+
  (open.length?'<div class="card"><div class="section-heading"><div><h2>Fours en cours</h2><p>Le compte à rebours continue même si vous changez de rubrique.</p></div><button type="button" class="btn btn-small btn-outline" data-go="reheat">Voir les cycles</button></div>'+
  open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">'+esc(r.cold_room_label_snapshot||roomName(r.cold_room_id))+'</div></div><strong>'+remaining(r.due_at)+'</strong></div>').join("")+'</div>':'');
 }
