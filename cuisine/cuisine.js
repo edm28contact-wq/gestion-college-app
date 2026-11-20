@@ -57,12 +57,12 @@ async function refreshColdHistory(offset=0){
  }catch(err){status(err.message,true)}finally{coldLoading=false}
 }
 async function exportCold(format){
- const rooms=data.rooms,staff=data.staff,label=coldRoomSelected?roomName(coldRoomSelected):"Toutes les chambres";
+ const rooms=data.rooms,staff=data.staff,exportRoom=coldRoomSelected,label=exportRoom?roomName(exportRoom):"Toutes les chambres";
  const buttons=document.querySelectorAll("[data-cold-export]");buttons.forEach(b=>b.disabled=true);
  try{
   const count=await window.CuisineReports[format]({
    rooms,staff,roomLabel:label,
-   fetchPage:(offset,limit)=>fetchColdPage(offset,limit),
+   fetchPage:(offset,limit)=>fetchColdPage(offset,limit,exportRoom),
    notify:(done,total)=>status("Préparation de l’export : "+done+" / "+total+" relevés…")
   });
   status("Export "+format.toUpperCase()+" généré : "+count+" relevé(s).");
