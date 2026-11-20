@@ -156,7 +156,7 @@ test("Cuisine : exporter le suivi des tâches ménagères en PDF à une date cho
  assert.match(admin,/action:"task-report"/);
  assert.match(admin,/CuisineReports\.tasksPdf/);
  assert.match(pdf,/async function tasksPdf/);
- assert.match(pdf,/kitchen_task/);
+ assert.match(pdf,/const byTask=new Map/);
  assert.match(pdf,/Non validee/);
  assert.match(pdf,/Validee/);
  assert.match(pdf,/Une tache non validee/);
