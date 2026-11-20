@@ -12,7 +12,7 @@ function activateSound(){unlockAlarm();alarmEnabled=!!alarmAudio;alarmSilenced=f
 function silenceAlarm(){alarmSilenced=true;lastSirenAt=Date.now();updateCriticalAlert()}
 const remainingMs=due=>new Date(due).getTime()-Date.now();
 const canFinish=due=>Number.isFinite(new Date(due).getTime())&&remainingMs(due)<5*60*1000;
-function unlockAlarm(){try{alarmAudio??=new (window.AudioContext||window.webkitAudioContext)();if(alarmAudio.state==="suspended")alarmAudio.resume().catch(()=>{});}catch{}}
+function unlockAlarm(){try{alarmAudio??=new (window.AudioContext||window.webkitAudioContext)();alarmEnabled=true;if(alarmAudio.state==="suspended")alarmAudio.resume().catch(()=>{});}catch{alarmEnabled=false;}}
 function soundAlarm(){try{
  if(!alarmEnabled||alarmSilenced||!alarmAudio||alarmAudio.state!=="running")return;
  // Five strong alternating alarm pulses, under four seconds per series.
@@ -214,14 +214,14 @@ function checkReheatAlarms(){
    }
   }
  }
- if(alarmEnabled&&!alarmSilenced&&now-lastSirenAt>=12000){
+ if(alarmEnabled&&!alarmSilenced&&alarmAudio?.state==="running"&&now-lastSirenAt>=12000){
   lastSirenAt=now;
   soundAlarm();
   if(navigator.vibrate)navigator.vibrate([300,180,300,180,300]);
  }
 }
 document.addEventListener("click",e=>{
- if(e.target.closest?.("#enableKitchenAlarm")){activateSound();if(activeCriticalCycles().length===0){soundAlarm();status("Son activé. Laissez la page ouverte pour les prochains contrôles.")}}
+ if(e.target.closest?.("#enableKitchenAlarm")){activateSound();if(activeCriticalCycles().length===0){if(alarmAudio?.state==="running")soundAlarm();else alarmAudio?.resume?.().then(()=>soundAlarm()).catch(()=>{});status("Son activé. Laissez la page ouverte pour les prochains contrôles.")}}
  if(e.target.closest?.("#kitchenAlertEnable"))activateSound();
  if(e.target.closest?.("#kitchenAlertMute")){if(alarmSilenced)activateSound();else silenceAlarm()}
  if(e.target.closest?.("#kitchenAlertGo")){
