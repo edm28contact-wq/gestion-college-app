@@ -2,7 +2,7 @@
 const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/kitchen-api";
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="dashboard",busy=false;
+let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="dashboard",busy=false,coldRoomSelected="",coldHistory=[],coldTotal=0,coldOffset=0,coldLoading=false;
 let alarmAudio=null,alarmEnabled=false,alarmSilenced=false,lastSirenAt=0;
 const alarmed=new Set();
 const initialTitle=document.title;
@@ -37,13 +37,45 @@ async function request(action,method="GET",body,authorized=true){
  const json=await res.json().catch(()=>({error:"Réponse du serveur invalide"}));
  if(!res.ok)throw Error(json.error||"Erreur du serveur");return json;
 }
+async function fetchColdPage(offset=0,limit=100,roomId=coldRoomSelected){
+ const query=new URLSearchParams({action:"cold-history",offset:String(offset),limit:String(limit)});
+ if(roomId)query.set("room_id",roomId);
+ const res=await fetch(API+"?"+query,{headers:{"x-admin-session":token},cache:"no-store"});
+ const json=await res.json().catch(()=>({error:"Réponse invalide"}));
+ if(!res.ok)throw Error(json.error||"Impossible de charger les relevés");
+ return json;
+}
+async function refreshColdHistory(offset=0){
+ if(coldLoading)return;
+ coldLoading=true;
+ try{
+  const room=coldRoomSelected;
+  const result=await fetchColdPage(offset,25,room);
+  if(room!==coldRoomSelected)return;
+  coldHistory=result.readings;coldTotal=result.total;coldOffset=offset;
+  if(page==="cold")renderCold();
+ }catch(err){status(err.message,true)}finally{coldLoading=false}
+}
+async function exportCold(format){
+ const rooms=data.rooms,staff=data.staff,label=coldRoomSelected?roomName(coldRoomSelected):"Toutes les chambres";
+ const buttons=document.querySelectorAll("[data-cold-export]");buttons.forEach(b=>b.disabled=true);
+ try{
+  const count=await window.CuisineReports[format]({
+   rooms,staff,roomLabel:label,
+   fetchPage:(offset,limit)=>fetchColdPage(offset,limit),
+   notify:(done,total)=>status("Préparation de l’export : "+done+" / "+total+" relevés…")
+  });
+  status("Export "+format.toUpperCase()+" généré : "+count+" relevé(s).");
+ }catch(err){status("Export impossible : "+err.message,true)}
+ finally{buttons.forEach(b=>b.disabled=false)}
+}
 async function staffList(){try{const v=await request("staff-list","GET",undefined,false);$("agent").innerHTML='<option value="">Sélectionner un agent</option>'+v.staff.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("");if(!v.staff.length)status("Aucun agent créé. Ouvrez Administration Collège → Gestion Cuisine.",true,"loginStatus")}catch(e){status(e.message,true,"loginStatus")}}
 async function login(){if(busy)return;busy=true;$("connect").disabled=true;try{
  const v=await request("login","POST",{staff_id:$("agent").value,pin:$("pin").value},false);
  token=v.token;sessionStorage.setItem("kitchen_token",token);$("pin").value="";await load();
 }catch(e){status(e.message,true,"loginStatus")}finally{busy=false;$("connect").disabled=false}}
 function logout(){token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
-async function load(){try{data=await request("list");$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
+async function load(){try{data=await request("list");$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();if(page==="cold")refreshColdHistory(coldOffset);checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
 function switchPage(next){
  if(!["dashboard","reheat","cold","tasks"].includes(next))return;
  page=next;render();
@@ -53,7 +85,7 @@ function render(){
  if(!data)return;
  document.querySelectorAll("[data-page]").forEach(b=>{b.classList.toggle("active",b.dataset.page===page);if(b.dataset.page===page)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
  if(page==="dashboard")renderDashboard();
- else if(page==="cold")renderCold();
+ else if(page==="cold"){renderCold();if(coldHistory.length===0&&coldTotal===0&&!coldLoading)refreshColdHistory(0);}
  else if(page==="reheat"){renderReheat();updateReheatControls();}
  else renderTasks();
  updateCriticalAlert();
@@ -88,21 +120,27 @@ function renderDashboard(){
 
 function renderCold(){
  const day=today(),rooms=activeRooms(),last=latestByRoom(),todayIds=new Set(data.cold.filter(r=>dayOf(r.measured_at)===day&&rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
+ const selected=coldRoomSelected,visibleRooms=selected?rooms.filter(r=>r.id===selected):rooms;
+ const options='<option value="">Toutes les chambres froides</option>'+rooms.map(r=>'<option value="'+esc(r.id)+'" '+(selected===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
+ const historical=coldHistory||[];
  $("content").innerHTML=
- '<div class="section-heading"><div><div class="eyebrow">Contrôle des équipements</div><h1>Chambres froides</h1><p>Une température par chambre, relevée directement sur l’équipement.</p></div><span class="tag">'+todayIds.size+' / '+rooms.length+' contrôlées aujourd’hui</span></div>'+
- '<div class="grid">'+rooms.map(r=>{
+ '<div class="section-heading"><div><div class="eyebrow">Contrôle des équipements</div><h1>Chambres froides</h1><p>Choisissez une chambre pour saisir sa température et retrouver les relevés correspondants.</p></div><span class="tag">'+todayIds.size+' / '+rooms.length+' contrôlées aujourd’hui</span></div>'+
+ '<div class="card"><div class="field" style="max-width:440px"><label for="coldRoomSelector">Chambre froide à consulter</label><select id="coldRoomSelector">'+options+'</select></div>'+
+ '<div class="row"><button class="btn btn-outline btn-small" type="button" data-cold-export="csv">Exporter les relevés en CSV</button><button class="btn btn-outline btn-small" type="button" data-cold-export="pdf">Exporter en PDF</button></div>'+
+ '<p class="help">Les exports contiennent l’historique complet des chambres sélectionnées, même si la liste n’affiche qu’une page.</p></div>'+
+ '<div class="grid">'+visibleRooms.map(r=>{
  const current=last.get(r.id),done=todayIds.has(r.id),sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.room_id===r.id&&d.provider==="govee");
  const threshold=r.min_c===null?'≤ '+number(r.max_c)+' °C':number(r.min_c)+' à '+number(r.max_c)+' °C';
  return '<div class="tile"><div class="row between"><h3>'+esc(r.label)+'</h3><span class="tag '+(done?'tag-ok':'tag-warn')+'">'+(done?'Relevée aujourd’hui':'À contrôler')+'</span></div>'+
- '<div class="subline">Plage autorisée : '+esc(threshold)+'</div>'+
+ '<div class="subline">Plage configurée : '+esc(threshold)+'</div>'+
  (sensor?'<p class="help">Capteur Govee : <strong>'+esc(sensor.status==='online'?'Dernière valeur reçue':'Non connecté')+'</strong>'+(sensor.last_temperature_c==null?'':' · '+number(sensor.last_temperature_c)+' °C')+(sensor.last_checked_at?' · '+clock(sensor.last_checked_at):'')+'</p>':'')+
  (current?'<p class="help">Dernier relevé : <strong>'+number(current.temperature_c)+' °C</strong> · '+clock(current.measured_at)+' <span class="tag '+(current.is_alert?'tag-alert':'tag-ok')+'">'+(current.is_alert?'Hors seuil':'Dans la plage')+'</span></p>':'<p class="help">Aucun relevé enregistré.</p>')+
  '<form data-cold="'+esc(r.id)+'"><div class="field"><label>Température mesurée (°C)</label><input type="number" required step="0.1" min="-60" max="60" name="temperature_c" inputmode="decimal" placeholder="Ex. 2,5"></div>'+
  '<button class="btn btn-primary" type="submit">Enregistrer la mesure</button></form></div>'}).join("")+'</div>'+
- '<div class="card" style="margin-top:17px"><div class="section-heading"><div><h2>Derniers relevés</h2><p>Mesures horodatées et conservées automatiquement.</p></div></div>'+
- (data.cold.length?data.cold.slice(0,12).map(r=>'<div class="line"><div><strong>'+esc(roomName(r.room_id))+'</strong><div class="subline">'+clock(r.measured_at)+' · '+(r.source==='govee_cloud'?'Capteur Govee':esc(staffName(r.taken_by)))+'</div></div><div class="row"><strong>'+number(r.temperature_c)+' °C</strong><span class="tag '+(r.is_alert?'tag-alert':'tag-ok')+'">'+(r.is_alert?'Hors seuil':'Conforme au seuil')+'</span></div></div>').join(""):'<div class="empty"><strong>Pas encore de relevé</strong>Les mesures apparaîtront ici.</div>')+'</div>';
+ '<div class="card" style="margin-top:17px"><div class="section-heading"><div><h2>Historique des relevés</h2><p>'+coldTotal+' résultat(s) · page '+(Math.floor(coldOffset/25)+1)+'</p></div></div>'+
+ (historical.length?historical.map(r=>'<div class="line"><div><strong>'+esc(roomName(r.room_id))+'</strong><div class="subline">'+clock(r.measured_at)+' · '+(r.source==='govee_cloud'?'Capteur Govee':esc(staffName(r.taken_by)))+'</div></div><div class="row"><strong>'+number(r.temperature_c)+' °C</strong><span class="tag '+(r.is_alert?'tag-alert':'tag-ok')+'">'+(r.is_alert?'Hors seuil':'Dans la plage')+'</span></div></div>').join(""):'<div class="empty"><strong>Aucun relevé pour cette sélection</strong>Les mesures apparaîtront ici.</div>')+
+ '<div class="row between" style="margin-top:15px"><button type="button" class="btn btn-outline btn-small" data-cold-page="prev" '+(coldOffset===0?'disabled':'')+'>Page précédente</button><button type="button" class="btn btn-outline btn-small" data-cold-page="next" '+(coldOffset+25>=coldTotal?'disabled':'')+'>Page suivante</button></div></div>';
 }
-
 function remaining(iso){const n=Math.ceil((new Date(iso).getTime()-Date.now())/1000);if(n<=0)return"Contrôle attendu";return Math.floor(n/60)+" min "+String(n%60).padStart(2,"0")+" s";}
 function renderReheat(){
  const open=data.reheats.filter(x=>x.status==="en_cours"),recent=data.reheats.filter(x=>x.status!=="en_cours").slice(0,12);
@@ -153,6 +191,18 @@ document.addEventListener("click",e=>{const b=e.target.closest?.("button[data-ta
 $("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
 document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.page)));
 document.addEventListener("click",e=>{const b=e.target.closest?.("[data-go]");if(b)switchPage(b.dataset.go)});
+document.addEventListener("change",event=>{
+ if(event.target?.id==="coldRoomSelector"){
+  coldRoomSelected=event.target.value;coldHistory=[];coldOffset=0;coldTotal=0;
+  refreshColdHistory(0);
+ }
+});
+document.addEventListener("click",event=>{
+ const exp=event.target.closest?.("[data-cold-export]");
+ if(exp){exportCold(exp.dataset.coldExport);return}
+ const pg=event.target.closest?.("[data-cold-page]");
+ if(pg){refreshColdHistory(Math.max(0,coldOffset+(pg.dataset.coldPage==="next"?25:-25)));return}
+});
 function updateReheatControls(){
  if(!data)return;
  for(const form of document.querySelectorAll("form[data-finish][data-due]")){
