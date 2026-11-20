@@ -96,5 +96,57 @@
   doc.save("releves_chambres_froides_"+safeName(roomLabel)+"_"+new Date().toISOString().slice(0,10)+".pdf");
   return rows.length;
  }
- window.CuisineReports={csv,pdf,headings,lineValues};
+
+ async function tasksPdf({date,tasks,checks,staff}){
+  const jsPDF=await ensurePDF();
+  const doc=new jsPDF({unit:"mm",format:"a4"});
+  const margin=16,wide=178;
+  const dateLabel=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",year:"numeric",month:"long",day:"numeric"}).format(new Date(date+"T12:00:00Z"));
+  const byTask=new Map(checks.map(c=>[c.task_id,c]));
+  const existing=tasks.filter(t=>t.active||byTask.has(t.id));
+  const completed=existing.filter(t=>byTask.has(t.id)).length;
+  const byId=id=>staff.find(u=>u.id===id)?.name||"Agent non renseigné";
+  let page=0,y=0;
+  function header(){
+   if(page)doc.addPage();page++;y=17;
+   doc.setFillColor(32,52,71);doc.rect(0,0,210,29,"F");
+   doc.setFont("helvetica","bold");doc.setFontSize(16);doc.setTextColor(255,255,255);
+   doc.text("Cours Chambertin - Suivi du nettoyage",margin,13);
+   doc.setFont("helvetica","normal");doc.setFontSize(10);doc.text(normalizePDF(dateLabel),margin,21);
+   y=38;doc.setFont("helvetica","bold");doc.setTextColor(32,52,71);doc.setFontSize(11);
+   doc.text("Taches du jour - "+completed+" validee(s) sur "+existing.length,margin,y);y+=9;
+   doc.setFillColor(234,240,244);doc.rect(margin,y-5,wide,9,"F");
+   doc.setFontSize(8);doc.text("Tache",margin+3,y);doc.text("Statut",margin+86,y);
+   doc.text("Responsable",margin+115,y);y+=8;
+  }
+  header();
+  for(let i=0;i<existing.length;i++){
+   const task=existing[i],check=byTask.get(task.id),owner=task.assigned_to?byId(task.assigned_to):"Commune";
+   const dateTime=check?formatDate(check.performed_at):"";
+   const st=check?"Validee":"Non validee";
+   const person=check?byId(check.performed_by):owner;
+   doc.setFontSize(9);
+   const title=doc.splitTextToSize(normalizePDF(task.label),80);
+   const responsible=doc.splitTextToSize(normalizePDF(person),57);
+   const h=Math.max(12,6+Math.max(title.length,responsible.length)*4.8+(check?5:0));
+   if(y+h>275)header();
+   if(i%2===0){doc.setFillColor(246,248,250);doc.rect(margin,y-5,wide,h,"F")}
+   doc.setFont("helvetica","normal");doc.setTextColor(34,54,70);
+   doc.text(title,margin+3,y);
+   doc.setTextColor(check?20:155,check?100:98,check?55:45);
+   doc.text(st,margin+86,y);
+   doc.setTextColor(34,54,70);doc.text(responsible,margin+115,y);
+   if(check){doc.setFontSize(8);doc.setTextColor(90,105,118);doc.text(normalizePDF(dateTime),margin+115,y+Math.max(...responsible.map((_,i)=>i+1))*4.8)}
+   y+=h;
+  }
+  if(!existing.length){doc.setTextColor(90,105,118);doc.text("Aucune tache configuree.",margin,y+8)}
+  if(y>263)header();y+=8;doc.setFontSize(8);doc.setTextColor(90,105,118);
+  const note=doc.splitTextToSize("Une tache non validee dans l'application n'est pas necessairement une tache non effectuee. Rapport etabli a partir des validations horodatees.",wide);
+  doc.text(note,margin,y);
+  const n=doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(110,120,130);doc.text("Rapport de suivi - "+date,margin,289);doc.text("Page "+i+" / "+n,180,289)}
+  doc.save("nettoyage_cuisine_"+date+".pdf");
+  return {total:existing.length,completed};
+ }
+ window.CuisineReports={csv,pdf,tasksPdf,headings,lineValues};
 })();
