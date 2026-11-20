@@ -34,9 +34,9 @@
   const busyButtons=document.querySelectorAll("[data-admin-cold-export]");
   busyButtons.forEach(b=>b.disabled=true);
   try{
-   const label=selectedColdRoom?snapshot.rooms.find(r=>r.id===selectedColdRoom)?.label||"Chambre":"Toutes les chambres";
+   const exportRoom=selectedColdRoom,label=exportRoom?snapshot.rooms.find(r=>r.id===exportRoom)?.label||"Chambre":"Toutes les chambres";
    const count=await window.CuisineReports[format]({
-    fetchPage:(offset,limit)=>fetchColdHistoryPage(offset,limit),
+    fetchPage:(offset,limit)=>fetchColdHistoryPage(offset,limit,exportRoom),
     rooms:snapshot.rooms,staff:snapshot.staff,roomLabel:label,
     notify:(done,total)=>notify("Export en cours : "+done+" / "+total+" relevés")
    });
