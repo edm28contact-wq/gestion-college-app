@@ -58,7 +58,7 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
  assert.match(html,/cuisine\.js\?v=20261120-11/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-11/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-12/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -83,7 +83,7 @@ test("Cuisine : l’archivage et la suppression conservent les contrôles histor
  assert.match(admin,/delete-room/);
  assert.match(kitchen,/function activeRooms\(\)/);
  assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-11/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-12/);
 });
 
 test("Cuisine : alerte prioritaire persistante et son répétitif sans faux contrôle",()=>{
@@ -138,4 +138,36 @@ test("Cuisine : une mesure froide recontrôlée ne déclenche pas une alerte act
  assert.match(admin,/Ancien écart/);
  assert.match(agent,/\.\.\.latestByRoom\(\)\.values\(\)/);
  assert.match(agent,/nécessitant une vérification/);
+});
+
+test("Cuisine : chaque thermomètre Govee est affectable à une seule chambre",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ assert.match(admin,/data-govee-room/);
+ assert.match(admin,/govee-reassign-sensor/);
+ assert.match(admin,/other\.room_id===r\.id/);
+ assert.match(admin,/r\.id===d\.room_id/);
+ assert.match(admin,/data-govee-associate/);
+});
+test("Cuisine : exporter le suivi des tâches ménagères en PDF à une date choisie",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ const pdf=read("cuisine/releve-export.js");
+ assert.match(admin,/id="kitchenTasksReportDate"/);
+ assert.match(admin,/id="kitchenTasksPdf"/);
+ assert.match(admin,/action:"task-report"/);
+ assert.match(admin,/CuisineReports\.tasksPdf/);
+ assert.match(pdf,/async function tasksPdf/);
+ assert.match(pdf,/kitchen_task/);
+ assert.match(pdf,/Non validee/);
+ assert.match(pdf,/Validee/);
+ assert.match(pdf,/Une tache non validee/);
+ assert.match(read("college/admin/index.html"),/releve-export\.js\?v=20261120-2/);
+});
+test("Cuisine : l’admin invalide les fautes de saisie avec conservation de l’audit",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ assert.match(admin,/kitchenCorrectionDialog/);
+ assert.match(admin,/invalidate-cold-reading/);
+ assert.match(admin,/Journal des relevés invalidés/);
+ assert.match(admin,/invalidation_reason/);
+ assert.match(admin,/Documenter sans invalider/);
+ assert.match(admin,/valeur originale/);
 });
