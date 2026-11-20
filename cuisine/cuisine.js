@@ -3,12 +3,30 @@ const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/kitchen-api";
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="dashboard",busy=false;
-let alarmAudio=null;
+let alarmAudio=null,alarmEnabled=false,alarmSilenced=false,lastSirenAt=0;
 const alarmed=new Set();
+const initialTitle=document.title;
+function activeCriticalCycles(){return (data?.reheats||[]).filter(r=>r.status==="en_cours"&&canFinish(r.due_at)).sort((a,b)=>new Date(a.due_at)-new Date(b.due_at))}
+function alarmLabel(r){return ovenName(r)+" — "+dishName(r)}
+function activateSound(){unlockAlarm();alarmEnabled=!!alarmAudio;alarmSilenced=false;lastSirenAt=0;checkReheatAlarms()}
+function silenceAlarm(){alarmSilenced=true;lastSirenAt=Date.now();updateCriticalAlert()}
 const remainingMs=due=>new Date(due).getTime()-Date.now();
 const canFinish=due=>Number.isFinite(new Date(due).getTime())&&remainingMs(due)<5*60*1000;
 function unlockAlarm(){try{alarmAudio??=new (window.AudioContext||window.webkitAudioContext)();if(alarmAudio.state==="suspended")alarmAudio.resume().catch(()=>{});}catch{}}
-function soundAlarm(){try{if(!alarmAudio||alarmAudio.state!=="running")return;for(let i=0;i<3;i++){const oscillator=alarmAudio.createOscillator(),gain=alarmAudio.createGain(),at=alarmAudio.currentTime+i*.38;oscillator.frequency.value=760;gain.gain.setValueAtTime(.0001,at);gain.gain.exponentialRampToValueAtTime(.16,at+.02);gain.gain.exponentialRampToValueAtTime(.0001,at+.25);oscillator.connect(gain);gain.connect(alarmAudio.destination);oscillator.start(at);oscillator.stop(at+.26)}}catch{}}
+function soundAlarm(){try{
+ if(!alarmEnabled||alarmSilenced||!alarmAudio||alarmAudio.state!=="running")return;
+ // Five strong alternating alarm pulses, under four seconds per series.
+ for(let i=0;i<6;i++){
+  const osc=alarmAudio.createOscillator(),gain=alarmAudio.createGain(),start=alarmAudio.currentTime+i*.56;
+  osc.type="square";osc.frequency.setValueAtTime(i%2?660:880,start);
+  gain.gain.setValueAtTime(.0001,start);
+  gain.gain.linearRampToValueAtTime(.12,start+.025);
+  gain.gain.setValueAtTime(.12,start+.33);
+  gain.gain.exponentialRampToValueAtTime(.0001,start+.43);
+  osc.connect(gain);gain.connect(alarmAudio.destination);osc.start(start);osc.stop(start+.44);
+ }
+}catch{}}
+
 const clock=v=>v?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
 const number=x=>Number(x).toLocaleString("fr-FR",{maximumFractionDigits:2});
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -24,8 +42,8 @@ async function login(){if(busy)return;busy=true;$("connect").disabled=true;try{
  const v=await request("login","POST",{staff_id:$("agent").value,pin:$("pin").value},false);
  token=v.token;sessionStorage.setItem("kitchen_token",token);$("pin").value="";await load();
 }catch(e){status(e.message,true,"loginStatus")}finally{busy=false;$("connect").disabled=false}}
-function logout(){token="";data=null;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");staffList()}
-async function load(){try{data=await request("list");$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
+function logout(){token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
+async function load(){try{data=await request("list");$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
 function switchPage(next){
  if(!["dashboard","reheat","cold","tasks"].includes(next))return;
  page=next;render();
@@ -38,6 +56,7 @@ function render(){
  else if(page==="cold")renderCold();
  else if(page==="reheat"){renderReheat();updateReheatControls();}
  else renderTasks();
+ updateCriticalAlert();
 }
 function dayOf(iso){return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(iso))}
 function latestByRoom(){const m=new Map();for(const r of data.cold)if(!m.has(r.room_id))m.set(r.room_id,r);return m}
@@ -155,22 +174,62 @@ function updateReheatControls(){
  }
  for(const el of document.querySelectorAll(".clock[data-due]"))el.textContent=remaining(el.dataset.due);
 }
+function updateCriticalAlert(){
+ const active=activeCriticalCycles(),panel=$("kitchenCriticalAlert");
+ panel.hidden=active.length===0;
+ document.title=active.length?"⚠ CONTRÔLE À FAIRE ("+active.length+") — Cuisine":initialTitle;
+ document.querySelectorAll('.nav [data-page="reheat"]').forEach(b=>{
+  b.classList.toggle("has-check",active.length>0);
+  b.textContent=active.length?"Remise en température · "+active.length+" contrôle(s)":"Remise en température";
+ });
+ if(!active.length)return;
+ const r=active[0],late=remainingMs(r.due_at)<=0;
+ $("kitchenAlertCount").textContent=active.length+" contrôle(s) à effectuer";
+ $("kitchenAlertTime").textContent=late?"DÉLAI DÉPASSÉ":remaining(r.due_at);
+ const title=late?"CONTRÔLE IMMÉDIAT — CHRONO TERMINÉ":"CONTRÔLE DE TEMPÉRATURE À EFFECTUER";
+ if($("kitchenAlertTitle").textContent!==title)$("kitchenAlertTitle").textContent=title;
+ const details=active.map(x=>alarmLabel(x)+(remainingMs(x.due_at)<=0?" (en retard)":"")).join(" · ");
+ if($("kitchenAlertContext").textContent!==details)$("kitchenAlertContext").textContent=details;
+ $("kitchenAlertMute").textContent=alarmSilenced?"Son coupé — reprendre":"Couper le son";
+ $("kitchenAlertEnable").hidden=alarmEnabled;
+ $("kitchenAlertAudioHelp").textContent=alarmSilenced?
+  "Son coupé. Le contrôle reste obligatoire et l’alerte reste affichée.":
+  alarmEnabled?"Son activé : rappel répété jusqu’au contrôle final. Laissez cette page ouverte.":
+  "Son inactif : appuyez sur « Activer le son ». Le navigateur peut limiter l’audio en arrière-plan.";
+}
 function checkReheatAlarms(){
  if(!data)return;
- for(const r of data.reheats.filter(x=>x.status==="en_cours")){
-   const ms=remainingMs(r.due_at);
-   for(const stage of ["five","zero"]){
-     if(stage==="five"&&ms>5*60000)continue;
-     if(stage==="zero"&&ms>0)continue;
-     const key=r.id+":"+stage;
-     if(alarmed.has(key))continue;
-     alarmed.add(key);
-     status(stage==="five"?"Plus que 5 minutes : préparez le contrôle à cœur.":"Chrono terminé : contrôlez immédiatement la température à cœur.",true);
-     soundAlarm();
-     if(navigator.vibrate)navigator.vibrate([200,100,200]);
+ const active=activeCriticalCycles(),now=Date.now();
+ updateCriticalAlert();
+ if(!active.length){alarmSilenced=false;lastSirenAt=0;return}
+ for(const r of active){
+  const ms=remainingMs(r.due_at);
+  for(const stage of ["five","zero"]){
+   if(stage==="five"&&ms>5*60000)continue;
+   if(stage==="zero"&&ms>0)continue;
+   const key=r.id+":"+stage;
+   if(!alarmed.has(key)){
+    alarmed.add(key);
+    if(navigator.vibrate)navigator.vibrate([250,150,250]);
    }
+  }
+ }
+ if(alarmEnabled&&!alarmSilenced&&now-lastSirenAt>=12000){
+  lastSirenAt=now;
+  soundAlarm();
+  if(navigator.vibrate)navigator.vibrate([300,180,300,180,300]);
  }
 }
-document.addEventListener("click",e=>{if(e.target.closest?.("#enableKitchenAlarm")){unlockAlarm();soundAlarm();status("Alarme sonore testée. Gardez l’application ouverte.");}});
+document.addEventListener("click",e=>{
+ if(e.target.closest?.("#enableKitchenAlarm")){activateSound();if(activeCriticalCycles().length===0){soundAlarm();status("Son activé. Laissez la page ouverte pour les prochains contrôles.")}}
+ if(e.target.closest?.("#kitchenAlertEnable"))activateSound();
+ if(e.target.closest?.("#kitchenAlertMute")){if(alarmSilenced)activateSound();else silenceAlarm()}
+ if(e.target.closest?.("#kitchenAlertGo")){
+  const current=activeCriticalCycles()[0];if(!current)return;
+  switchPage("reheat");
+  document.querySelector('[data-reheat="'+current.id+'"] .finish-area')?.scrollIntoView?.({behavior:"smooth",block:"center"});
+  document.querySelector('[data-reheat="'+current.id+'"] input[name="temperature_c"]')?.focus?.({preventScroll:true});
+ }
+});
 setInterval(()=>{if(!data)return;if(page==="reheat")updateReheatControls();checkReheatAlarms();},1000);
 if(token)load();else staffList();
