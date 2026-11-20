@@ -40,7 +40,7 @@ test("Cuisine : les températures finales restent bloquées avant les cinq derni
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
  assert.match(script,/enableKitchenAlarm/);
- assert.match(html,/cuisine\.js\?v=20261120-8/);
+ assert.match(html,/cuisine\.js\?v=20261120-9/);
 });
 
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
@@ -57,8 +57,8 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchenTab="overview"/);
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
- assert.match(html,/cuisine\.js\?v=20261120-8/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-8/);
+ assert.match(html,/cuisine\.js\?v=20261120-9/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-9/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -83,5 +83,21 @@ test("Cuisine : l’archivage et la suppression conservent les contrôles histor
  assert.match(admin,/delete-room/);
  assert.match(kitchen,/function activeRooms\(\)/);
  assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-8/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-9/);
+});
+
+test("Cuisine : alerte prioritaire persistante et son répétitif sans faux contrôle",()=>{
+ const html=read("cuisine/index.html"),script=read("cuisine/cuisine.js");
+ assert.match(html,/id="kitchenCriticalAlert"/);
+ assert.match(html,/id="kitchenAlertGo"/);
+ assert.match(html,/id="kitchenAlertMute"/);
+ assert.match(html,/role="alert"/);
+ assert.match(script,/function activeCriticalCycles\(\)/);
+ assert.match(script,/function updateCriticalAlert\(\)/);
+ assert.match(script,/function silenceAlarm\(\)/);
+ assert.match(script,/now-lastSirenAt>=12000/);
+ assert.match(script,/alarmSilenced/);
+ assert.match(script,/switchPage\("reheat"\)/);
+ assert.match(script,/if\(!active\.length\)/);
+ assert.match(script,/status==="en_cours"&&canFinish/);
 });
