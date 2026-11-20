@@ -29,7 +29,9 @@
  '<div class="card"><h2>Gestion Cuisine</h2><p class="muted">Suivi HACCP : relevés manuels, remises en température, tâches et actions correctives. Les mesures enregistrées ne sont pas modifiables.</p><div class="actions"><a class="btn primary" href="../../cuisine/" target="_blank" rel="noopener">Ouvrir l’espace Cuisine</a><button class="btn secondary" id="kitchenReload">Actualiser les relevés</button><button class="btn secondary" id="kitchenCsv">Exporter CSV</button></div><p id="kitchenAdminMessage" class="status"></p></div>'+
  '<div class="card"><h2>Agents de cuisine</h2><p class="muted">Comptes rattachés aux salariés existants. Définissez un PIN individuel de 6 à 8 chiffres pour activer l’accès.</p>'+s.staff.map(x=>'<div class="data-row"><div><strong>'+e(x.name)+'</strong><div class="muted">Salarié : '+(x.personnel_id?"rattaché":"non rattaché")+' · '+(x.active?"Actif":"Inactif")+'</div></div><form data-kitchen-pin="'+attr(x,"id")+'"><label>Définir / renouveler le PIN</label><input name="pin" required type="password" inputmode="numeric" pattern="[0-9]{6,8}" minlength="6" maxlength="8" autocomplete="new-password"><button class="btn primary" type="submit">Enregistrer le PIN</button></form><button class="btn secondary" type="button" data-kitchen-active="'+attr(x,"id")+'" data-next="'+(!x.active)+'">'+(x.active?"Désactiver":"Activer")+'</button></div>').join("")+'</div>'+
  '<div class="card"><h2>Chambres froides — noms et seuils</h2><p class="muted">Le renommage ne change pas les mesures déjà enregistrées.</p>'+
- s.rooms.map(x=>'<form data-room-edit="'+attr(x,"id")+'" class="grid"><div><label>Chambre '+x.room_number+' · '+e(x.room_type)+'</label><input name="label" required maxlength="80" value="'+attr(x,"label")+'"></div><div><label>Minimum °C (facultatif)</label><input type="number" step="0.1" name="min_c" value="'+(x.min_c===null?"":e(x.min_c))+'"></div><div><label>Maximum °C</label><input type="number" step="0.1" name="max_c" required value="'+e(x.max_c)+'"></div><div><button type="submit" class="btn primary">Renommer / enregistrer</button></div></form>').join("")+
+ s.rooms.filter(x=>!x.deleted_at&&!x.archived_at).map(x=>'<form data-room-edit="'+attr(x,"id")+'" class="grid"><div><label>Chambre '+x.room_number+' · '+e(x.room_type)+'</label><input name="label" required maxlength="80" value="'+attr(x,"label")+'"></div><div><label>Minimum °C (facultatif)</label><input type="number" step="0.1" name="min_c" value="'+(x.min_c===null?"":e(x.min_c))+'"></div><div><label>Maximum °C</label><input type="number" step="0.1" name="max_c" required value="'+e(x.max_c)+'"></div><div><button type="submit" class="btn primary">Renommer / enregistrer</button></div><div><button type="button" class="btn secondary" data-archive-room="'+attr(x,"id")+'">Archiver cette chambre</button></div></form>').join("")+
+ '<h3>Chambres archivées et suppressions sécurisées</h3><p class="muted">Une chambre peut être supprimée moins de 24 heures après création OU après une année complète d’archivage. Un code temporaire envoyé à l’adresse autorisée est obligatoire. Les anciens relevés restent conservés.</p>'+
+ s.rooms.filter(x=>!x.deleted_at).map(x=>{const created=new Date(x.created_at).getTime(),archived=x.archived_at?new Date(x.archived_at):null,eligible=Date.now()-created<86400000||!!(archived&&Date.now()>=new Date(archived.setUTCFullYear(archived.getUTCFullYear()+1)).getTime());return '<div class="data-row"><div><strong>'+e(x.label)+'</strong><div class="muted">Créée le '+when(x.created_at)+(x.archived_at?' · Archivée le '+when(x.archived_at):' · Active')+'</div></div><button type="button" class="btn secondary" data-delete-room="'+attr(x,"id")+'" '+(eligible?'':'disabled title="Délai minimal non atteint"')+'>'+(eligible?'Demander la suppression':'Suppression indisponible')+'</button></div>'}).join("")+
  '<h3>Référencer une nouvelle chambre</h3><form id="kitchenAddRoom" class="grid"><div><label>Type</label><select name="room_type"><option value="positive">Positive</option><option value="negative">Négative</option></select></div><div><label>Numéro</label><input required name="room_number" type="number" min="1" max="99"></div><div><label>Désignation</label><input required name="label" maxlength="80"></div><div><label>Minimum °C (facultatif)</label><input name="min_c" type="number" step="0.1" min="-50" max="40"></div><div><label>Maximum °C</label><input required name="max_c" type="number" step="0.1" min="-50" max="40"></div><div><button class="btn primary" type="submit">Ajouter cette chambre</button></div></form></div>'+
  '<div class="card"><h2>Fours</h2><p class="muted">Ajoutez autant de fours que nécessaire (numéros 1 à 99) et modifiez leurs noms.</p>'+
  (s.ovens||[]).map(x=>'<form data-oven-edit="'+attr(x,"id")+'" class="grid"><div><label>Four n° '+x.oven_number+'</label><input name="label" required maxlength="80" value="'+attr(x,"label")+'"></div><div><button type="submit" class="btn primary">Renommer ce four</button></div></form>').join("")+
@@ -39,7 +41,7 @@
  '<form id="kitchenAddDish" class="grid"><div><label>Nouveau type de plat</label><input name="label" required maxlength="80" placeholder="Ex. Poisson"></div><div><button class="btn primary" type="submit">Ajouter un type de plat</button></div></form></div>'+
  '<div class="card"><h2>Valeurs par défaut</h2><p class="muted">Les équipements et catégories sont présélectionnés dans Cuisine. Les températures ci-dessous restent des cibles, jamais des mesures enregistrées automatiquement.</p>'+
  '<form id="kitchenSaveDefaults" class="grid">'+
- '<div><label>Chambre froide par défaut</label><select name="default_cold_room_id" required>'+s.rooms.map(x=>'<option value="'+attr(x,"id")+'" '+(s.defaults?.default_cold_room_id===x.id?"selected":"")+'>'+e(x.label)+'</option>').join("")+'</select></div>'+
+ '<div><label>Chambre froide par défaut</label><select name="default_cold_room_id" required>'+s.rooms.filter(x=>!x.archived_at&&!x.deleted_at).map(x=>'<option value="'+attr(x,"id")+'" '+(s.defaults?.default_cold_room_id===x.id?"selected":"")+'>'+e(x.label)+'</option>').join("")+'</select></div>'+
  '<div><label>Four par défaut</label><select name="default_oven_id" required>'+(s.ovens||[]).map(x=>'<option value="'+attr(x,"id")+'" '+(s.defaults?.default_oven_id===x.id?"selected":"")+'>'+e(x.label)+'</option>').join("")+'</select></div>'+
  '<div><label>Type de plat par défaut</label><select name="default_dish_type_id" required>'+(s.dishes||[]).map(x=>'<option value="'+attr(x,"id")+'" '+(s.defaults?.default_dish_type_id===x.id?"selected":"")+'>'+e(x.label)+'</option>').join("")+'</select></div>'+
  '<div><label>Cible au départ (°C)</label><input name="target_start_c" type="number" step="0.1" min="-10" max="20" required value="'+e(s.defaults?.target_start_c??2)+'"></div>'+
@@ -143,12 +145,34 @@
    const result=await api("govee-discover");
    const supported=result.devices.filter(d=>d.temperature_capability);
    if(!supported.length){output.textContent="Aucun capteur exposant sensorTemperature dans l’API Govee. Vérifiez votre modèle et la connexion Wi-Fi.";return;}
-   output.innerHTML=supported.map(d=>'<form class="grid" data-govee-associate="'+e(d.device)+'" data-sku="'+e(d.sku)+'"><div><strong>'+e(d.label)+'</strong><p class="muted">'+e(d.sku)+'</p></div><div><label>Chambre froide</label><select name="room_id" required>'+snapshot.rooms.map(r=>'<option value="'+e(r.id)+'">'+e(r.label)+'</option>').join("")+'</select></div><div><label>Unité RENVOYÉE par Govee</label><select name="raw_unit" required><option value="">Choisir l’unité du capteur</option><option value="C">Celsius (°C)</option><option value="F">Fahrenheit (°F)</option></select></div><div><button class="btn primary" type="submit">Associer ce capteur</button></div></form>').join("");
+   output.innerHTML=supported.map(d=>'<form class="grid" data-govee-associate="'+e(d.device)+'" data-sku="'+e(d.sku)+'"><div><strong>'+e(d.label)+'</strong><p class="muted">'+e(d.sku)+'</p></div><div><label>Chambre froide</label><select name="room_id" required>'+snapshot.rooms.filter(r=>!r.archived_at&&!r.deleted_at).map(r=>'<option value="'+e(r.id)+'">'+e(r.label)+'</option>').join("")+'</select></div><div><label>Unité RENVOYÉE par Govee</label><select name="raw_unit" required><option value="">Choisir l’unité du capteur</option><option value="C">Celsius (°C)</option><option value="F">Fahrenheit (°F)</option></select></div><div><button class="btn primary" type="submit">Associer ce capteur</button></div></form>').join("");
   }catch(err){output.textContent=err.message;}finally{discover.disabled=false}
  }
  const sync=evt.target.closest?.("button[data-govee-sync]");
  if(sync)action("govee-sync",{id:sync.dataset.goveeSync});
 });
+ document.addEventListener("click",async evt=>{
+ const archive=evt.target.closest?.("button[data-archive-room]");
+ if(archive){
+   const room=snapshot?.rooms?.find(r=>r.id===archive.dataset.archiveRoom);if(!room)return;
+   if(confirm('Archiver '+room.label+' ? Cette chambre ne pourra plus recevoir de nouveaux relevés.')){
+     await action("archive-room",{id:room.id});
+   }
+ }
+ const deletion=evt.target.closest?.("button[data-delete-room]");
+ if(deletion){
+   const room=snapshot?.rooms?.find(r=>r.id===deletion.dataset.deleteRoom);if(!room)return;
+   if(!confirm('Demander la suppression de '+room.label+' ? Les relevés HACCP seront conservés. Une authentification à enguerrand@danglade.net est obligatoire.'))return;
+   try{
+     const requested=await api("request-room-delete-code","POST",{id:room.id});
+     if(!requested.requested)return;
+     const code=prompt('Entrez le code temporaire reçu à enguerrand@danglade.net :');
+     if(!code)return;
+     const result=await api("delete-room","POST",{id:room.id,code:code.trim()});
+     if(result.deleted){await load();notify('Chambre retirée. Les relevés historiques ont été conservés.');}
+   }catch(err){notify(err.message,true);}
+ }
+ });
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-kitchen-active]");if(b)action("set-staff-active",{staff_id:b.dataset.kitchenActive,active:b.dataset.next==="true"});});
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-corrective]");if(!b)return;const note=prompt("Décrivez l’anomalie constatée, les mesures correctives réellement prises et le résultat du nouveau contrôle :");if(note&&note.trim().length>=3)action("corrective",{entity_type:b.dataset.corrective,entity_id:b.dataset.id,note:note.trim()})});
  window.kitchenAdminPage=function(){node("content").innerHTML='<div class="card">Chargement des relevés Cuisine…</div>';load()};
