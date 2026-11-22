@@ -1,0 +1,77 @@
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+const html=readFileSync(new URL('../admin/marne-invest/index.html',import.meta.url),'utf8');
+const match=html.match(/<script>([\s\S]*?)<\/script>/);
+if(!match)throw new Error('Script Marne Invest absent');
+const script=match[1];
+const start=script.indexOf('function bankNormalizeHeader(');
+const end=script.indexOf('function bankImportLabel(',start);
+if(start<0||end<start)throw new Error('Parser CSV bancaire absent');
+const bankCsvRows=new Function(script.slice(start,end)+'\nreturn bankCsvRows;')();
+
+test('La page JavaScript est syntaxiquement valide',()=>{
+ assert.doesNotThrow(()=>new Function(script));
+});
+test('La banque est toujours en validation manuelle',()=>{
+ assert.match(script,/window\.confirmBankMatch\s*=\s*async/);
+ assert.match(script,/confirmed:\s*true/);
+ assert.match(script,/bank-match-verified/);
+});
+test('Le CSV francais a colonnes debit/credit et quotes est analyse',()=>{
+ const rows=bankCsvRows('Date;Libellé;Débit;Crédit;Référence\n20/11/2026;"VIREMENT; LOCATAIRE";;850,00;REF-1\n21/11/2026;ASSURANCE;45,20;;REF-2');
+ assert.equal(rows.length,2);
+ assert.equal(rows[0].amount,'850.00');
+ assert.equal(rows[0].description,'VIREMENT; LOCATAIRE');
+ assert.equal(rows[1].amount,'-45.20');
+});
+test('Le CSV virgules et les montants entre guillemets sont lus',()=>{
+ const rows=bankCsvRows('Date,Description,Montant\n2026-11-20,LOYER,"950,20"');
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].amount,'950.20');
+});
+test('Le champ montant vide revient aux colonnes debit/credit',()=>{
+ const rows=bankCsvRows('Date d’opération;Libellé;Montant;Débit (EUR);Crédit (EUR)\n21/11/2026;ASSURANCE;;23,95;');
+ assert.equal(rows[0].amount,'-23.95');
+});
+test('Les retours ligne cites ne cassent pas le releve',()=>{
+ const rows=bankCsvRows('Date;Libellé;Montant\n2026-11-21;"VIREMENT\n MARCHAND";500,00');
+ assert.equal(rows[0].description,'VIREMENT MARCHAND');
+});
+test('Date impossible interdite',()=>{
+ assert.throws(()=>bankCsvRows('Date;Libellé;Montant\n31/02/2026;LOYER;600,00'));
+});
+test('Montant non ambigu a deux decimales requis',()=>{
+ assert.throws(()=>bankCsvRows('Date;Libellé;Montant\n20/11/2026;LOYER;1,234'));
+});
+test('Citation CSV incomplete interdite',()=>{
+ assert.throws(()=>bankCsvRows('Date;Libellé;Montant\n20/11/2026;"LOYER;600,00'));
+});
+test('Limite de 200 mouvements',()=>{
+ const lines=['Date;Libellé;Montant'];
+ for(let i=0;i<201;i++)lines.push('20/11/2026;LOYER '+i+';600,00');
+ assert.throws(()=>bankCsvRows(lines.join('\n')));
+});
+test('Version finale et ses blocs accessibles',()=>{
+ for(const route of ['pilotage','contracts','transactions','documents','works','mail','config']){
+  assert.ok(script.includes("'"+route+"'"),route+' absent');
+ }
+ assert.match(script,/const releaseMilestones=\[/);
+ assert.match(script,/function renderPilotage\(\)/);
+});
+test('Un changement IRL n est pas effectue dans le navigateur',()=>{
+ assert.match(script,/window\.prepareIrlProposal\s*=\s*async/);
+ assert.match(script,/Aucun loyer ni courriel modifié/);
+ assert.doesNotMatch(script,/supabase_service_role_key/i);
+});
+test('Les emails entrants sont affiches sous forme de texte protege',()=>{
+ assert.match(script,/function renderMail\(\)/);
+ assert.match(script,/window\.openFreeInboxMail\s*=\s*async/);
+ assert.match(script,/esc\(m\.plain_body/);
+});
+test('Archivage des documents soumis a session',()=>{
+ assert.match(script,/window\.uploadRentalDocument\s*=\s*async/);
+ assert.match(script,/action=document-download/);
+ assert.match(script,/authorization:'Bearer '\+token/);
+});
