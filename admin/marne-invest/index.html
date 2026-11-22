@@ -154,7 +154,7 @@ window.editLease=id=>{
  const tenant=(db.tenants||[]).find(t=>t.id===lease.tenant_row_id);
  const history=tenant?.data||{};
  const items=(db.installments||[]).filter(x=>x.lease_id===id);
- const locked=lease.status!=='draft';
+ const locked=lease.status!=='draft'||!db.current_user?.payment_access||!!db.current_user?.read_only;
  const leaseTypes=[['unverified','À qualifier'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']];
  const typeField='<div><label>Nature juridique du bail</label><select id="lease-kind" '+(locked?'disabled':'')+'>'+leaseTypes.map(([v,t])=>'<option value="'+v+'" '+(lease.lease_kind===v?'selected':'')+'>'+t+'</option>').join('')+'</select></div>';
  const emailConsent='<label class="payment-confirm"><input type="checkbox" id="lease-email-consent" '+(locked?'disabled':'')+' '+(lease.receipt_email_consent?'checked':'')+'> Accord exprès du locataire vérifié pour recevoir ses quittances par e-mail</label>';
@@ -169,8 +169,8 @@ window.editLease=id=>{
  field('charges','Provisions sur charges mensuelles (€)',lease.charges_amount,'number','min="0" step="0.01"')+
  field('day','Jour d’échéance (1 à 31)',lease.due_day,'number','min="1" max="31"')+
  typeField+
- field('issuer-name','Bailleur / mandataire émetteur',lease.issuer_name||'','text','maxlength="200"')+
- field('issuer-address','Adresse postale de l’émetteur',lease.issuer_address||'','text','maxlength="500"')+'</div>'+emailConsent+
+ field('issuer-name','Bailleur / mandataire émetteur',lease.issuer_name||(locked?'':String(setting('landlord_name',''))),'text','maxlength="200"')+
+ field('issuer-address','Adresse postale de l’émetteur',lease.issuer_address||(locked?'':String(setting('landlord_address',''))),'text','maxlength="500"')+'</div>'+emailConsent+
  '<div class="section-title">Notes</div><textarea id="lease-notes" '+(locked?'disabled':'')+'>'+esc(lease.notes||'')+'</textarea>'+
  (locked?'':'<div class="actions" style="margin-top:12px"><button class="btn secondary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,false)">Enregistrer le brouillon</button><button class="btn primary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,true)">Vérifier et activer</button></div>')+
  '<div class="section-title">Échéances mensuelles</div>'+
@@ -392,7 +392,7 @@ function reminderPlan(i,ledger,today){
  const days=reminderDayDiff(i.due_on,today);
  const drafts=(db.reminder_drafts||[]).filter(x=>x.installment_id===i.id);
  const first=drafts.find(x=>x.stage===7),second=drafts.find(x=>x.stage===14);
- const canAdvance=first?.status==='declared_sent'&&first.declared_sent_at&&reminderDayDiff(first.declared_sent_at.slice(0,10),today)>=7;
+ const canAdvance=first?.status==='declared_sent'&&first.declared_sent_at&&reminderDayDiff(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(first.declared_sent_at)),today)>=7;
  let stage=0,reason='';
  if(!l||l.status!=='active'||!l.verified_at)reason='Bail non vérifié';
  else if(outstanding<=0.005)reason='Échéance soldée';
