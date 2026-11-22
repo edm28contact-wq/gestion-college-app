@@ -155,6 +155,9 @@ window.editLease=id=>{
  const history=tenant?.data||{};
  const items=(db.installments||[]).filter(x=>x.lease_id===id);
  const locked=lease.status!=='draft';
+ const leaseTypes=[['unverified','À qualifier'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']];
+ const typeField='<div><label>Nature juridique du bail</label><select id="lease-kind" '+(locked?'disabled':'')+'>'+leaseTypes.map(([v,t])=>'<option value="'+v+'" '+(lease.lease_kind===v?'selected':'')+'>'+t+'</option>').join('')+'</select></div>';
+ const emailConsent='<label class="payment-confirm"><input type="checkbox" id="lease-email-consent" '+(locked?'disabled':'')+' '+(lease.receipt_email_consent?'checked':'')+'> Accord exprès du locataire vérifié pour recevoir ses quittances par e-mail</label>';
  const field=(key,title,value,type,attrs='')=>'<div><label>'+esc(title)+'</label><input id="lease-'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+(locked?'disabled':'')+' '+attrs+'></div>';
  const month=new Date().toISOString().slice(0,7);
  $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Bail : '+esc(property?.name||'Bien')+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
@@ -164,7 +167,10 @@ window.editLease=id=>{
  field('end','Date de fin facultative',lease.end_date,'date')+
  field('rent','Loyer mensuel hors charges (€)',lease.monthly_rent,'number','min="0" step="0.01"')+
  field('charges','Provisions sur charges mensuelles (€)',lease.charges_amount,'number','min="0" step="0.01"')+
- field('day','Jour d’échéance (1 à 31)',lease.due_day,'number','min="1" max="31"')+'</div>'+
+ field('day','Jour d’échéance (1 à 31)',lease.due_day,'number','min="1" max="31"')+
+ typeField+
+ field('issuer-name','Bailleur / mandataire émetteur',lease.issuer_name||'','text','maxlength="200"')+
+ field('issuer-address','Adresse postale de l’émetteur',lease.issuer_address||'','text','maxlength="500"')+'</div>'+emailConsent+
  '<div class="section-title">Notes</div><textarea id="lease-notes" '+(locked?'disabled':'')+'>'+esc(lease.notes||'')+'</textarea>'+
  (locked?'':'<div class="actions" style="margin-top:12px"><button class="btn secondary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,false)">Enregistrer le brouillon</button><button class="btn primary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,true)">Vérifier et activer</button></div>')+
  '<div class="section-title">Échéances mensuelles</div>'+
@@ -175,7 +181,7 @@ window.editLease=id=>{
 window.saveLease=async(id,activate)=>{
  if(activate&&!confirm('Avez-vous vérifié les clauses et montants dans le bail signé ?'))return;
  const raw=k=>document.getElementById('lease-'+k)?.value??'';
- const body={id,start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),due_day:raw('day'),notes:document.getElementById('lease-notes')?.value||'',activate};
+ const body={id,start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),due_day:raw('day'),lease_kind:$('lease-kind').value,issuer_name:raw('issuer-name'),issuer_address:raw('issuer-address'),receipt_email_consent:!!$('lease-email-consent')?.checked,notes:document.getElementById('lease-notes')?.value||'',activate};
  const status=$('modalStatus');status.textContent='Enregistrement…';status.className='status';
  try{await api('save-lease','POST',body);closeModal();await refresh();}catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
@@ -310,11 +316,51 @@ function renderWorks(){
  const props=(db.properties||[]).filter(p=>!p.is_example),rows=filtered(props,p=>JSON.stringify([p.name,p.data,p.current_tenant]));
  $('content').innerHTML=section('Travaux et entretien','Vue des biens pour préparer le suivi des interventions, sans inventer d’historique de travaux.','<button class="btn primary" onclick="newProperty()">Ajouter un bien</button>')+stats([['Biens suivis',props.length],['Travaux enregistrés','—','Aucune API travaux confirmée'],['Dépenses travaux','—','Aucune écriture associée']])+dataTable(['Bien','Adresse','Statut','Locataire','Dossier'],rows.map(p=>'<tr><td><b>'+esc(p.data?.['Nom du logement']||p.name)+'</b></td><td>'+esc(p.data?.['Adresse']||'—')+'</td><td>'+esc(p.data?.['Statut logement']||'—')+'</td><td>'+esc(p.current_tenant?.['Locataire actuel']||'—')+'</td><td><button class="btn secondary" onclick="openProperty(\''+esc(p.id)+'\')">Consulter</button></td></tr>'))+'<p class="module-note">L’ajout d’une intervention, de devis ou de factures exigera un stockage permanent côté serveur.</p>';
 }
-function renderDocuments(){
- const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example);
- $('content').innerHTML=section('Documents et exports','Exports des données réellement disponibles. Les pièces justificatives PDF ne sont pas encore stockées dans ce module.')+stats([['Locataires',tenants.length],['Biens',props.length],['Exports disponibles',5],['Documents PDF hébergés','—']])+'<div class="property-grid">'+[['Locataires','Données du suivi locataire','tenants'],['Biens','Inventaire et informations des biens','properties'],['Paiements historiques','Anciennes valeurs du suivi locataire — sans rapprochement','payments'],['Registre des paiements','Paiements saisis, affectations et annulations','ledger'],['Contrats','Champs disponibles sur les baux','contracts']].map(([name,desc,id])=>'<div class="card"><h3>'+name+'</h3><p class="muted">'+desc+'</p><button class="btn primary" onclick="exportMarne(\''+id+'\')">Télécharger CSV</button></div>').join('')+'</div>';
-}
 
+function renderDocuments(){
+ const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example),permitted=!!db.current_user?.payment_access;
+ const ledger=permitted?rentalLedger():null;
+ const bills=permitted?(db.installments||[]).filter(i=>i.status==='scheduled').map(i=>({...i,paid:ledger.byInstallment.get(i.id)||0})).filter(i=>i.paid>0.005):[];
+ const csvCards=[['Locataires','Données du suivi locataire','tenants'],['Biens','Inventaire et informations des biens','properties'],['Paiements historiques','Ancien suivi, sans rapprochement','payments'],['Registre des règlements','Encaissements et affectations','ledger'],['Contrats','Champs issus du suivi historique','contracts']];
+ const csvHtml='<div class="property-grid">'+csvCards.map(([name,desc,id])=>'<div class="card"><h3>'+esc(name)+'</h3><p class="muted">'+esc(desc)+'</p><button class="btn primary" onclick="exportMarne(\''+id+'\')">Télécharger CSV</button></div>').join('')+'</div>';
+ $('content').innerHTML=section('Quittances, reçus et exports','Documents imprimables depuis les paiements vérifiés du nouveau registre. Aucun PDF n’est transmis automatiquement.')+
+ stats([['Locataires',tenants.length],['Biens',props.length],['Échéances avec paiement',permitted?bills.length:'Accès limité'],['PDF envoyés automatiquement',0]])+
+ '<div class="section-head"><div><h2>Quittances et reçus</h2><p class="muted">Les quittances concernent les baux d’habitation et exigent le règlement intégral. Les paiements partiels produisent uniquement un reçu.</p></div></div>'+
+ (permitted?dataTable(['Période','Logement','Échéance','Sommes affectées','État','Document'],filtered(bills,i=>{const p=(db.properties||[]).find(p=>p.id===i.property_id);return [p?.name,i.period].join(' ')}).map(i=>{
+  const lease=(db.leases||[]).find(l=>l.id===i.lease_id),p=(db.properties||[]).find(p=>p.id===i.property_id);
+  const complete=Math.round(i.paid*100)>=Math.round(Number(i.total_due)*100);
+  return '<tr><td>'+esc(i.period)+'</td><td>'+esc(p?.name||'—')+'</td><td>'+money(Number(i.total_due))+'</td><td>'+money(i.paid)+'</td><td><span class="mini-tag '+(complete?'':'warn')+'">'+(complete?'Règlement intégral':'Paiement partiel')+'</span></td><td><button class="btn secondary" data-id="'+esc(i.id)+'" onclick="openPaymentDocument(this.dataset.id)">Aperçu / PDF</button>'+(lease?.lease_kind!=='residential'?' <span class="muted">Bail d’habitation requis</span>':'')+'</td></tr>';
+ })):'<div class="note">Vous ne disposez pas des droits pour consulter les pièces financières.</div>')+
+ '<div class="note" style="margin-top:14px">Pour produire un document, le bail doit être actif et vérifié, de type habitation, avec le nom et l’adresse du bailleur / mandataire et l’adresse du logement. Envoi électronique interdit sans accord exprès du locataire. La commande « Aperçu / PDF » ouvre une version imprimable ; choisissez « Enregistrer en PDF » dans le navigateur. Aucun PDF n’est encore archivé dans Supabase.</div>'+
+ '<div class="section-head" style="margin-top:22px"><div><h2>Exports de gestion</h2></div></div>'+csvHtml;
+}
+window.openPaymentDocument=async installmentId=>{
+ const printWindow=window.open('','_blank');
+ if(!printWindow){alert('Autorisez les fenêtres du site pour obtenir un aperçu PDF.');return;}
+ printWindow.document.write('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Préparation du document</title><body><p>Vérification des règlements…</p></body></html>');
+ try{
+  const d=await api('receipt-preview','POST',{installment_id:installmentId});
+  const title=d.document_type==='quittance'?'QUITTANCE DE LOYER':'REÇU DE PAIEMENT PARTIEL';
+  const pretty=v=>new Date(v+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric',timeZone:'UTC'});
+  const rows=d.document_type==='quittance'
+   ?'<tr><td>Loyer hors charges</td><td>'+money(Number(d.rent))+'</td></tr><tr><td>Charges</td><td>'+money(Number(d.charges))+'</td></tr><tr class="total"><td>Total réglé</td><td>'+money(Number(d.paid))+'</td></tr>'
+   :'<tr><td>Montant reçu et affecté à cette échéance</td><td>'+money(Number(d.paid))+'</td></tr><tr class="total"><td>Montant restant dû sur cette échéance</td><td>'+money(Number(d.remaining))+'</td></tr>';
+  const explanation=d.document_type==='quittance'
+   ?'Le bailleur atteste avoir reçu la totalité des sommes dues pour la période indiquée, au titre du loyer et des charges.'
+   :'Ce document atteste uniquement des paiements partiels affectés à la période. Il ne vaut pas quittance intégrale.';
+  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+' — '+esc(d.period)+'</title>'+
+  '<style>body{font:15px Arial,sans-serif;color:#1f2937;max-width:800px;margin:32px auto;padding:0 25px;line-height:1.5}h1{color:#1764eb;font-size:24px}header{border-bottom:3px solid #1764eb;padding-bottom:20px}p{margin:12px 0}.cols{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin:25px 0}.box{background:#f8fafc;border:1px solid #dce5ef;border-radius:8px;padding:18px}table{border-collapse:collapse;width:100%;margin:25px 0}td{border-bottom:1px solid #e2e8f0;padding:14px}td:last-child{text-align:right}.total{font-weight:bold;background:#f0f5ff}.note{font-size:12px;color:#64748b;margin-top:30px}.tools{margin:20px 0;text-align:right}.btn{background:#1764eb;border:0;color:#fff;padding:12px 18px;border-radius:8px;cursor:pointer;font-weight:bold}@media print{.tools{display:none}body{margin:20px auto}}@media(max-width:600px){.cols{grid-template-columns:1fr}}</style></head><body>'+
+  '<div class="tools"><button class="btn" onclick="window.print()">Imprimer / Enregistrer en PDF</button></div>'+
+  '<header><h1>'+esc(title)+'</h1><p>Marne Invest — Document préparé le '+esc(pretty(d.generated_on))+'</p></header>'+
+  '<div class="cols"><div class="box"><b>Bailleur ou mandataire</b><p>'+esc(d.issuer)+'</p><p>'+esc(d.issuer_address)+'</p></div><div class="box"><b>Locataire</b><p>'+esc(d.tenant)+'</p><p>'+esc(d.address)+'</p></div></div>'+
+  '<h2>Logement : '+esc(d.property_name||d.address)+'</h2><p>Période du '+esc(pretty(d.period_from))+' au '+esc(pretty(d.period_to))+'</p>'+
+  '<table>'+rows+'</table><p>'+esc(explanation)+'</p>'+
+  '<p>Établi le '+esc(pretty(d.generated_on))+'</p>'+
+  '<p class="note">Document généré à partir des règlements saisis et affectés dans Marne Invest. Ce document n’a pas été envoyé automatiquement et aucun exemplaire PDF n’a été archivé par ce traitement.</p>'+
+  '</body></html>';
+  printWindow.document.open();printWindow.document.write(html);printWindow.document.close();
+ }catch(e){printWindow.document.open();printWindow.document.write('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Document indisponible</title><body><h2>Le document ne peut pas être généré.</h2><p>'+esc(e.message||'Erreur serveur')+'</p><p>Vérifiez le bail, les paiements et les coordonnées de l’émetteur.</p></body></html>');printWindow.document.close();}
+};
 function renderReports(){
  const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example),ledger=rentalLedger(),active=[...ledger.valid.values()];
  const due=(db.installments||[]).filter(i=>i.status==='scheduled').reduce((n,i)=>n+Number(i.total_due),0);
