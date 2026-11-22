@@ -21,7 +21,8 @@ test("MEDJEBER et MOREL ne travaillent jamais le mercredi par défaut",()=>{
 test("Novembre 2026 : mercredi férié retiré de lundi-vendredi, et aucun mercredi pour MOREL",()=>{
  assert.equal(calc.workingDays("2026-11"),20);
  assert.equal(calc.workingDays("2026-11",[1,2,4,5]),17);
- assert.equal(calc.workingDays("2026-11",[3]),null);
+ assert.equal(calc.workingDays("2026-11",[3]),3);
+ assert.equal(calc.workingDays("2026-11",[]),null);
 });
 test("Taux et heures théoriques fondés sur les quatre jours hebdomadaires, pas cinq",()=>{
  const p={base_salary_gross:2400,bonus_gross:100,weekly_hours:28,working_days:[1,2,4,5],
