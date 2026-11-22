@@ -44,6 +44,11 @@
 .module-select{max-width:220px}
 @media(max-width:850px){.summary-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.summary-strip{grid-template-columns:1fr}.section-tools input,.section-tools select{width:100%}}
+
+.payment-confirm{display:flex;gap:10px;align-items:center;margin:14px 0;color:#334155;font-size:14px;font-weight:600}
+.payment-confirm input[type=checkbox]{width:auto;flex:none;min-width:18px;height:18px}
+#payment-save:disabled{opacity:.55;cursor:wait}
+@media print {.side,.top,.section-tools,.item-actions,.modal{display:none!important}.main{padding:0}}
 </style>
 </head>
 <body>
@@ -110,7 +115,14 @@ function stats(items){return '<div class="summary-strip">'+items.map(([name,valu
 function dataTable(headings,rows){if(!rows.length)return '<div class="card empty-state">Aucun élément à afficher.</div>';return '<div class="table-wrap"><table class="data-table"><thead><tr>'+headings.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>'}
 function csvExport(filename,headings,rows){const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const content='\uFEFF'+[headings,...rows].map(row=>row.map(quote).join(';')).join('\r\n');const blob=new Blob([content],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function csvSnapshot(type){const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example);if(type==='tenants'){const h=db.tenant_headers;csvExport('marne-invest-locataires.csv',h,tenants.map(t=>h.map(k=>t.data?.[k]??'')));return}if(type==='properties'){const keys=[...new Set(props.flatMap(p=>Object.keys(p.data||{})))];csvExport('marne-invest-biens.csv',keys,props.map(p=>keys.map(k=>p.data?.[k]??'')));return}if(type==='payments'){csvExport('marne-invest-paiements.csv',['Locataire','Bien','Paiement dû','Paiement reçu','Solde','Retard'],tenants.map(t=>[tenantName(t),dwellingName(t),lookup(t.data,['Paiement dû']),lookup(t.data,['Paiement reçu']),lookup(t.data,['Solde']),lookup(t.data,['Retard'])]));return}if(type==='contracts'){csvExport('marne-invest-contrats.csv',['Locataire','Bien','Début bail','Fin bail','Loyer de base','Charges'],tenants.map(t=>[tenantName(t),dwellingName(t),lookup(t.data,['Date entrée locataire']),lookup(t.data,['Date fin de bail']),lookup(t.data,['Loyer de base']),lookup(t.data,['Charge'])]));return}if(type==='reports'){csvExport('marne-invest-rapport.csv',['Indicateur','Valeur'],[['Biens réels',props.length],['Lignes locataires',tenants.length],['Paiements dus',tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement dû'])||0),0)],['Paiements reçus',tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement reçu'])||0),0)],['Lignes en retard',tenants.filter(t=>t.data?.['Retard']==='OUI').length]]);return}}
-window.exportMarne=csvSnapshot;
+const originalCsvSnapshot=csvSnapshot;
+window.exportMarne=type=>{
+ if(type!=='ledger')return originalCsvSnapshot(type);
+ const ledger=rentalLedger(),payments=db.payments||[],leases=db.leases||[];
+ csvExport('marne-invest-registre-paiements.csv',
+ ['Réception','Logement','Locataire','Montant','Mode','Référence','Émetteur','Affecté','Non affecté','Statut','Saisie par','Date de saisie','Motif annulation'],
+ payments.map(p=>{const lease=leases.find(l=>l.id===p.lease_id)||{},property=(db.properties||[]).find(x=>x.id===p.property_id);const allocated=p.status==='recorded'?(ledger.byPayment.get(p.id)||0):0;return [p.received_on,property?.name||'',lease.tenant_name||'',p.amount,p.payment_method,p.reference||'',p.payer_name||'',allocated,p.status==='recorded'?Math.max(0,Number(p.amount)-allocated):0,p.status,p.recorded_by||'',p.recorded_at||'',p.void_reason||''];}));
+};
 
 function renderContracts(){
  const leases=db.leases||[],tenants=db.tenants||[],installments=db.installments||[];
@@ -160,10 +172,126 @@ window.generateInstallment=async(id)=>{
  try{const result=await api('generate-installment','POST',{lease_id:id,period});await refresh();editLease(id);$('modalStatus').textContent=result.already_exists?'Échéance déjà existante, aucun doublon.':'Échéance créée, sans paiement supposé.';}
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
-function renderTransactions(){
- const tenants=db.tenants||[],due=tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement dû'])||0),0),paid=tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement reçu'])||0),0),late=tenants.filter(t=>t.data?.['Retard']==='OUI'),rows=filtered(tenants,t=>[tenantName(t),dwellingName(t),...Object.values(t.data||{})].join(' '));
- $('content').innerHTML=section('Transactions locatives','Montants de la dernière situation connue, sans reconstitution d’historique bancaire.','<button class="btn secondary" onclick="exportMarne(\'payments\')">Exporter CSV</button><a class="btn primary" href="./comptabilite/">Comptabilité</a>')+stats([['Paiements dus',money(due)],['Paiements reçus',money(paid)],['Écart dû / reçu',money(due-paid)],['Lignes en retard',late.length]])+dataTable(['Locataire','Bien','Dû','Reçu','Solde déclaré','Retard','Actions'],rows.map(t=>'<tr><td><b>'+esc(tenantName(t))+'</b></td><td>'+esc(dwellingName(t))+'</td><td>'+esc(lookup(t.data,['Paiement dû'])||'—')+'</td><td>'+esc(lookup(t.data,['Paiement reçu'])||'—')+'</td><td>'+esc(lookup(t.data,['Solde'])||'—')+'</td><td><span class="mini-tag '+(t.data?.['Retard']==='OUI'?'bad':'')+'">'+esc(t.data?.['Retard']||'Non renseigné')+'</span></td><td><button class="btn secondary" onclick="editTenant('+t.row_number+')">Modifier</button></td></tr>'))+'<p class="module-note">Le solde cumulé du classeur et l’écart dû/reçu sont deux indicateurs distincts. Aucun rapprochement bancaire n’est simulé.</p>';
+
+function rentalLedger(){
+ const payments=db.payments||[],valid=new Map(payments.filter(p=>p.status==='recorded').map(p=>[p.id,p]));
+ const byPayment=new Map(),byInstallment=new Map();
+ for(const a of db.payment_allocations||[]){
+  if(!valid.has(a.payment_id))continue;
+  const amount=Number(a.amount)||0;
+  byPayment.set(a.payment_id,(byPayment.get(a.payment_id)||0)+amount);
+  byInstallment.set(a.installment_id,(byInstallment.get(a.installment_id)||0)+amount);
+ }
+ return {payments,valid,byPayment,byInstallment};
 }
+function todayParis(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+function activeLeaseName(lease){const p=(db.properties||[]).find(x=>x.id===lease.property_id);return (p?.name||'Logement')+' — '+(lease.tenant_name||'Locataire')}
+function pendingInstallments(leaseId,ledger){return (db.installments||[]).filter(i=>i.lease_id===leaseId&&i.status==='scheduled'&&Number(i.total_due)-(ledger.byInstallment.get(i.id)||0)>0.005).sort((a,b)=>a.period.localeCompare(b.period))}
+function renderTransactions(){
+ if(!db.current_user?.payment_access){$('content').innerHTML=section('Transactions','Accès financier réservé aux gestionnaires autorisés.')+'<div class="card empty-state">Votre compte ne dispose pas du droit de consultation du registre des paiements.</div>';return}
+ const ledger=rentalLedger(),active=[...ledger.valid.values()],payments=filtered(ledger.payments,p=>[activeLeaseName((db.leases||[]).find(l=>l.id===p.lease_id)||{}),p.reference,p.received_on,p.payment_method].join(' '));
+ const installments=(db.installments||[]).filter(i=>i.status==='scheduled');
+ const due=installments.reduce((s,i)=>s+Number(i.total_due||0),0);
+ const allocated=installments.reduce((s,i)=>s+(ledger.byInstallment.get(i.id)||0),0);
+ const received=active.reduce((s,p)=>s+Number(p.amount||0),0);
+ const unallocated=active.reduce((s,p)=>s+Math.max(0,Number(p.amount)- (ledger.byPayment.get(p.id)||0)),0);
+ const canWrite=!db.current_user?.read_only,canVoid=!!db.current_user?.payment_void_access;
+ const actions=(canWrite?'<button class="btn primary" onclick="openPaymentModal()">+ Enregistrer un paiement</button>':'')+
+ '<button class="btn secondary" onclick="exportMarne(&quot;ledger&quot;)">Exporter le registre CSV</button>';
+ $('content').innerHTML=section('Paiements et rapprochement','Registre autonome. Les anciens paiements du tableur ne sont pas importés automatiquement.',actions)+
+ stats([['Encaissements saisis',money(received),'Depuis la création du registre'],['Échéances enregistrées',money(due),'Baux validés uniquement'],['Solde des échéances',money(Math.max(0,due-allocated)),'Sans les anciens impayés'],['Paiements à affecter',money(unallocated),'Avances et montants en attente']])+
+ '<div class="section-head" style="margin-top:20px"><div><h2>Règlements enregistrés</h2><p class="muted">Les montants ne sont pris en compte que lorsqu’un paiement est confirmé.</p></div></div>'+
+ dataTable(['Réception','Logement / locataire','Montant','Mode','Référence','Affectation','Statut','Actions'],payments.map(p=>{
+  const lease=(db.leases||[]).find(l=>l.id===p.lease_id)||{};
+  const used=ledger.byPayment.get(p.id)||0,amount=Number(p.amount),available=Math.max(0,amount-used);
+  const tag=p.status==='void'?'<span class="mini-tag bad">Annulé</span>':available>0.005?'<span class="mini-tag warn">À affecter</span>':'<span class="mini-tag">Affecté</span>';
+  const buttons=p.status==='recorded'&&canWrite?'<button class="btn secondary" data-id="'+esc(p.id)+'" onclick="openAllocationModal(this.dataset.id)" '+(available<0.005?'disabled':'')+'>Affecter</button>':'';
+  const cancel=p.status==='recorded'&&canVoid?'<button class="btn danger" data-id="'+esc(p.id)+'" onclick="voidRentalPayment(this.dataset.id)">Annuler</button>':'';
+  return '<tr><td>'+esc(p.received_on)+'</td><td>'+esc(activeLeaseName(lease))+'</td><td><b>'+money(amount)+'</b></td><td>'+esc(p.payment_method)+'</td><td>'+esc(p.reference||'—')+'</td><td>'+money(used)+' / '+money(amount)+'</td><td>'+tag+'</td><td><div class="item-actions">'+buttons+cancel+'</div></td></tr>';
+ }))+
+ '<div class="section-head" style="margin-top:22px"><div><h2>Échéances et montants restants</h2><p class="muted">Rapprochement uniquement à partir des paiements saisis dans ce registre.</p></div></div>'+
+ dataTable(['Mois','Logement','Date d’échéance','Attendu','Affecté','Reste','État'],filtered(installments,i=>[i.period,activeLeaseName((db.leases||[]).find(l=>l.id===i.lease_id)||{})].join(' ')).sort((a,b)=>a.due_on.localeCompare(b.due_on)).map(i=>{
+  const done=ledger.byInstallment.get(i.id)||0,remaining=Math.max(0,Number(i.total_due)-done);
+  return '<tr><td>'+esc(i.period)+'</td><td>'+esc(activeLeaseName((db.leases||[]).find(l=>l.id===i.lease_id)||{}))+'</td><td>'+esc(i.due_on)+'</td><td>'+money(Number(i.total_due))+'</td><td>'+money(done)+'</td><td>'+money(remaining)+'</td><td><span class="mini-tag '+(remaining>0.005?'warn':'')+'">'+(remaining>0.005?'À régler':'Soldée')+'</span></td></tr>';
+ }))+
+ '<div class="note" style="margin-top:14px">La liaison bancaire automatique n’est pas encore activée. Un paiement saisi manuellement doit correspondre à une réception réellement constatée. Une avance non affectée n’est pas une quittance. Les montants « Paiement reçu » du tableur sont conservés séparément et ne sont jamais additionnés à ce registre.</div>'+
+ ((ledger.payments.length>=1000||(db.payment_allocations||[]).length>=1000)?'<div class="note">Seuls les 1 000 derniers mouvements sont chargés ; les totaux présentés ici peuvent être incomplets. Une pagination serveur sera nécessaire.</div>':'');
+}
+window.openPaymentModal=()=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const active=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
+ if(!active.length){alert('Aucun bail actif vérifié. Validez d’abord un bail dans Contrats.');showPage('contracts');return;}
+ const options=active.map(l=>'<option value="'+esc(l.id)+'">'+esc(activeLeaseName(l))+'</option>').join('');
+ const today=todayParis(),key=crypto.randomUUID();
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:750px"><div class="top"><h2>Enregistrer un règlement reçu</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note">Saisir uniquement un paiement effectivement constaté sur le compte ou reçu. Aucune connexion bancaire n’est encore active.</div>'+
+ '<div class="fields" style="margin-top:14px"><div><label>Bail et logement</label><select id="payment-lease" onchange="updatePaymentInstallments()">'+options+'</select></div>'+
+ '<div><label>Échéance à rapprocher (facultatif)</label><select id="payment-installment"></select></div>'+
+ '<div><label>Date de réception</label><input id="payment-date" type="date" max="'+today+'" value="'+today+'"></div>'+
+ '<div><label>Montant réellement reçu (€)</label><input id="payment-amount" type="number" min="0.01" step="0.01" placeholder="0,00"></div>'+
+ '<div><label>Mode de règlement</label><select id="payment-method"><option value="virement">Virement</option><option value="cheque">Chèque</option><option value="especes">Espèces</option><option value="carte">Carte</option><option value="autre">Autre</option></select></div>'+
+ '<div><label>Référence du paiement</label><input id="payment-reference" maxlength="120" placeholder="Référence bancaire ou de chèque"></div>'+
+ '<div><label>Émetteur (facultatif)</label><input id="payment-payer" maxlength="180"></div></div>'+
+ '<label style="margin-top:10px">Commentaire (facultatif)</label><textarea id="payment-note" maxlength="2000"></textarea>'+
+ '<label class="payment-confirm"><input id="payment-confirmed" type="checkbox"> Je confirme avoir vérifié que ce règlement a réellement été reçu.</label>'+
+ '<input id="payment-key" type="hidden" value="'+key+'">'+
+ '<div class="actions"><button id="payment-save" class="btn primary" onclick="saveRentalPayment()">Enregistrer le règlement</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div>'+
+ '<div id="modalStatus" class="status"></div></div></div>';
+ updatePaymentInstallments();
+};
+window.updatePaymentInstallments=()=>{
+ const lease=$('payment-lease')?.value,selector=$('payment-installment');if(!selector)return;
+ const items=pendingInstallments(lease,rentalLedger());
+ selector.innerHTML='<option value="">Non affecté — avance ou attente</option>'+items.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.period)+' — reste '+money(Number(i.total_due)- (rentalLedger().byInstallment.get(i.id)||0))+'</option>').join('');
+};
+window.saveRentalPayment=async()=>{
+ const status=$('modalStatus'),button=$('payment-save');
+ if(!$('payment-confirmed')?.checked){status.className='status err';status.textContent='Confirmez la réception réelle du paiement.';return;}
+ const body={idempotency_key:$('payment-key')?.value,lease_id:$('payment-lease')?.value,installment_id:$('payment-installment')?.value||null,received_on:$('payment-date')?.value,amount:$('payment-amount')?.value,payment_method:$('payment-method')?.value,reference:$('payment-reference')?.value,payer_name:$('payment-payer')?.value,note:$('payment-note')?.value,confirmed:true};
+ if(!body.amount||Number(body.amount)<=0){status.className='status err';status.textContent='Montant positif obligatoire.';return;}
+ button.disabled=true;status.className='status';status.textContent='Enregistrement sécurisé…';
+ try{const result=await api('record-payment','POST',body);closeModal();await refresh();alert(result.duplicate?'Paiement déjà enregistré : aucun doublon créé.':'Paiement enregistré : '+money(Number(result.allocated||0))+' affecté(s), '+money(Number(result.unallocated||0))+' en attente.');}
+ catch(e){button.disabled=false;status.className='status err';status.textContent=e.message||'Erreur du serveur';}
+};
+window.openAllocationModal=id=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const ledger=rentalLedger(),payment=ledger.valid.get(id);if(!payment)return;
+ const available=Math.max(0,Number(payment.amount)-(ledger.byPayment.get(id)||0));
+ const installments=pendingInstallments(payment.lease_id,ledger);
+ if(!installments.length){alert('Aucune échéance non soldée pour ce bail. Le montant reste une avance ou un paiement à affecter.');return;}
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:580px"><div class="top"><h2>Affecter un paiement</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<p>Montant non affecté : <b>'+money(available)+'</b></p><label>Échéance</label><select id="allocation-installment" onchange="updateAllocationAmount()">'+installments.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.period)+' — reste '+money(Number(i.total_due)-(ledger.byInstallment.get(i.id)||0))+'</option>').join('')+'</select>'+
+ '<label style="margin-top:12px">Montant à affecter (€)</label><input type="number" min="0.01" step="0.01" id="allocation-amount">'+
+ '<div class="note" style="margin:12px 0">Le total affecté ne peut dépasser ni le paiement disponible ni le montant restant sur l’échéance.</div>'+
+ '<button class="btn primary" data-id="'+esc(id)+'" onclick="submitPaymentAllocation(this.dataset.id)">Confirmer l’affectation</button><div id="modalStatus" class="status"></div></div></div>';
+ updateAllocationAmount();
+};
+window.updateAllocationAmount=()=>{
+ const i=(db.installments||[]).find(x=>x.id===$('allocation-installment')?.value);
+ const paymentId=$('modal')?.querySelector('button[data-id]')?.dataset.id;
+ const p=(db.payments||[]).find(x=>x.id===paymentId);
+ const ledger=rentalLedger();
+ if(!i||!p)return;
+ const remaining=Math.max(0,Number(i.total_due)-(ledger.byInstallment.get(i.id)||0));
+ const available=Math.max(0,Number(p.amount)-(ledger.byPayment.get(p.id)||0));
+ $('allocation-amount').value=Math.min(available,remaining).toFixed(2);
+};
+window.submitPaymentAllocation=async(id)=>{
+ const status=$('modalStatus'),amount=$('allocation-amount')?.value,installment_id=$('allocation-installment')?.value;
+ if(!amount||Number(amount)<=0){status.className='status err';status.textContent='Montant invalide.';return;}
+ if(!confirm('Confirmer cette affectation sur l’échéance sélectionnée ?'))return;
+ status.className='status';status.textContent='Enregistrement…';
+ try{await api('allocate-payment','POST',{payment_id:id,installment_id,amount,confirmed:true});closeModal();await refresh();}
+ catch(e){status.className='status err';status.textContent=e.message||'Erreur du serveur';}
+};
+window.voidRentalPayment=async(id)=>{
+ if(!db.current_user?.payment_void_access)return;
+ const reason=prompt('Motif précis de l’annulation (obligatoire) :');if(reason===null)return;
+ if(reason.trim().length<6){alert('Motif trop court.');return;}
+ if(!confirm('Annuler ce règlement ? Il restera visible dans l’historique, mais ses affectations ne compteront plus.'))return;
+ try{await api('void-payment','POST',{payment_id:id,reason:reason.trim(),confirmed:true});await refresh();}catch(e){alert(e.message||'Erreur du serveur')}
+};
+
 function renderWorks(){
  const props=(db.properties||[]).filter(p=>!p.is_example),rows=filtered(props,p=>JSON.stringify([p.name,p.data,p.current_tenant]));
  $('content').innerHTML=section('Travaux et entretien','Vue des biens pour préparer le suivi des interventions, sans inventer d’historique de travaux.','<button class="btn primary" onclick="newProperty()">Ajouter un bien</button>')+stats([['Biens suivis',props.length],['Travaux enregistrés','—','Aucune API travaux confirmée'],['Dépenses travaux','—','Aucune écriture associée']])+dataTable(['Bien','Adresse','Statut','Locataire','Dossier'],rows.map(p=>'<tr><td><b>'+esc(p.data?.['Nom du logement']||p.name)+'</b></td><td>'+esc(p.data?.['Adresse']||'—')+'</td><td>'+esc(p.data?.['Statut logement']||'—')+'</td><td>'+esc(p.current_tenant?.['Locataire actuel']||'—')+'</td><td><button class="btn secondary" onclick="openProperty(\''+esc(p.id)+'\')">Consulter</button></td></tr>'))+'<p class="module-note">L’ajout d’une intervention, de devis ou de factures exigera un stockage permanent côté serveur.</p>';
