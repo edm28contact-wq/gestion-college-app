@@ -182,6 +182,7 @@ async function salaryOpenStaffProfile(id){
  if(!staff)return;
  if(salaryProfileEmployeeId!==id)salaryProfileMonth=salaryCurrentMonth();
  salaryProfileEmployeeId=id;salaryProfileEvents=[];salaryProfileLoaded=false;salaryProfileError="";salaryProfileLoading=true;
+ void salaryPayrollOpen(id,salaryProfileMonth);
  const version=++salaryProfileRequestVersion;
  if(page==="salaires"){
   salaryPage();
@@ -221,6 +222,7 @@ function salaryCloseStaffProfile(){
  salaryProfileRequestVersion++;
  salaryProfileEmployeeId="";salaryProfileEvents=[];salaryProfileError="";salaryProfileLoading=false;
  salaryProfileLoaded=false;
+ salaryPayrollClose();
  if(page==="salaires")salaryPage();
 }
 
@@ -284,12 +286,13 @@ async function salaryUpdateStaff(id,archived,visible){
  finally{salaryStaffSaving=false;await salaryLoadStaff()}
 }
 function salaryWireStaff(){
+ salaryPayrollWire();
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
  document.querySelectorAll('[data-salary-staff-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryStaffProfile)));
  const close=$('salaryProfileClose');if(close)close.addEventListener('click',salaryCloseStaffProfile);
  const refresh=$('salaryProfileRefresh');if(refresh)refresh.addEventListener('click',()=>void salaryOpenStaffProfile(salaryProfileEmployeeId));
  const month=$('salaryProfileMonth');if(month)month.addEventListener('change',()=>{
-  if(/^\d{4}-(0[1-9]|1[0-2])$/.test(month.value)){salaryProfileMonth=month.value;salaryPage()}
+  if(/^\d{4}-(0[1-9]|1[0-2])$/.test(month.value)){salaryProfileMonth=month.value;salaryPage();void salaryPayrollOpen(salaryProfileEmployeeId,month.value)}
  });
  document.querySelectorAll('[data-salary-profile-pdf]').forEach(button=>button.addEventListener('click',()=>void salaryOpenIncidentPdf(button.dataset.salaryProfilePdf)));
  document.querySelectorAll('[data-salary-staff-id]').forEach(box=>box.addEventListener('change',()=>{
@@ -307,7 +310,7 @@ function salaryPage(){
  const groups=salaryGroups(),shown=groups.filter(([key])=>salaryPerson==="all"||salaryPerson===key);
  const total=shown.reduce((n,[,g])=>n+g.items.length,0);
  const option=(val,label)=>'<option value="'+esc(val)+'"'+(salaryPerson===val?' selected':'')+'>'+esc(label)+'</option>';
- $('content').innerHTML=salaryOverview()+salaryStaffPanel()+salaryStaffProfilePanel()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
+ $('content').innerHTML='<section class="card salary-page-hero"><div><h2>Gestion des salaires</h2><p>Contrats, rémunérations mensuelles, jours ouvrés, primes et suivi des événements du personnel.</p></div><a class="btn secondary" href="../../secretariat/planning/">Voir le planning</a></section>'+salaryPayrollOverview()+salaryStaffPanel()+salaryPayrollPanel()+salaryStaffProfilePanel()+salaryOverview()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
  (salaryLoading?'<div class="card">Chargement des événements…</div>':'')+
  (salaryError?'<div class="card" style="color:#a32929">'+esc(salaryError)+'</div>':'')+
  (!salaryLoading&&!salaryError?'<div class="card"><b>'+shown.length+' salarié(s) · '+total+' événement(s) · '+shown.reduce((n,[,g])=>n+g.items.filter(e=>e.event_type==="incident").length,0)+' incident(s)</b></div>':'')+
@@ -322,6 +325,7 @@ async function salaryLoad(){
  if(!salaryMonth)salaryMonth=salaryCurrentMonth();
  if(!salaryHistoryLoaded&&!salaryHistoryLoading)void salaryLoadHistory();
  if(!salaryStaffLoaded&&!salaryStaffLoading)void salaryLoadStaff();
+ if(salaryPayrollMonth!==salaryMonth&&!salaryPayrollListLoading)void salaryPayrollLoadMonth(salaryMonth);
  const request=++salaryRequestVersion,month=salaryMonth;
  salaryLoading=true;salaryError="";salaryPage();
  try{
