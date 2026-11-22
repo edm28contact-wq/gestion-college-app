@@ -497,7 +497,9 @@ function bankUniqueSuggestion(line){
 function renderBankReconciliation(){
  if(!db.current_user?.bank_access)return '';
  const lines=db.bank_lines||[],imports=db.bank_imports||[];
- const matches=lines.filter(l=>l.status==='matched').length;
+ const verifiedPayments=new Map((db.payments||[]).map(p=>[p.id,p]));
+ const anomalies=lines.filter(l=>l.status==='matched'&&verifiedPayments.get(l.matched_payment_id)?.status==='void').length;
+ const matches=lines.filter(l=>l.status==='matched'&&verifiedPayments.get(l.matched_payment_id)?.status==='recorded').length;
  const pendingCredit=lines.filter(l=>l.status==='pending'&&Number(l.amount)>0).length;
  const pendingDebits=lines.filter(l=>l.status==='pending'&&Number(l.amount)<0).length;
  const canWrite=!db.current_user?.read_only;
@@ -505,10 +507,11 @@ function renderBankReconciliation(){
  return '<div class="bank-box"><div class="section-head"><div><h2>Import et rapprochement bancaire</h2>'+
  '<p class="muted">Importez un relevé CSV. Les virements sont proposés au rapprochement, jamais comptabilisés sans validation.</p></div>'+
  (canWrite?'<button class="btn primary" onclick="openBankCsvImporter()">Importer un relevé CSV</button>':'')+'</div>'+
- stats([['Mouvements importés',lines.length],['Crédits à vérifier',pendingCredit],['Débits non affectés',pendingDebits],['Rapprochements confirmés',matches]])+
+ stats([['Mouvements importés',lines.length],['Crédits à vérifier',pendingCredit],['Rapprochements valides',matches],['Paiements annulés à vérifier',anomalies]])+
  dataTable(['Date','Compte','Libellé','Montant','État','Action'],rows.map(l=>{
   const amount=Number(l.amount),overlap=bankOverlappingLines(l),alreadyMatched=overlap.some(x=>x.status==='matched');
-  const source=l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':alreadyMatched?'Doublon déjà rapproché':overlap.length?'Doublon potentiel':amount>0?'Crédit à vérifier':'Débit informatif';
+  const linkedVoided=l.status==='matched'&&verifiedPayments.get(l.matched_payment_id)?.status==='void';
+  const source=linkedVoided?'Paiement annulé : à vérifier':l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':alreadyMatched?'Doublon déjà rapproché':overlap.length?'Doublon potentiel':amount>0?'Crédit à vérifier':'Débit informatif';
   return '<tr><td>'+esc(l.booking_date)+'</td><td>'+esc(bankImportLabel(l.import_id))+'</td><td><b>'+esc(l.description)+'</b>'+
   (l.bank_reference?'<div class="muted">Réf. '+esc(l.bank_reference)+'</div>':'')+'</td><td><b>'+money(amount)+'</b></td>'+
   '<td><span class="mini-tag '+(l.status==='pending'?'warn':'')+'">'+esc(source)+'</span></td>'+
