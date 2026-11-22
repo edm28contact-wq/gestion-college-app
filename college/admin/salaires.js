@@ -416,6 +416,7 @@ function salarySwitchView(view){if(["staff","events","settings"].includes(view))
 function salarySettingsPanel(){
  const month=salaryMonth||salaryCurrentMonth();
  return '<section class="card"><h2>Paramètres du personnel</h2><p class="muted">Les horaires et avantages en nature se modifient dans chaque fiche salarié.</p>'+
+ '<div class="actions"><label for="salarySettingsMonth">Mois de référence</label><input id="salarySettingsMonth" type="month" value="'+esc(month)+'" style="max-width:200px"><button id="salarySettingsCalendarReload" type="button" class="btn secondary">Actualiser les calendriers</button></div>'+
  (salaryStaffLoading?'<p>Chargement…</p>':salaryStaffError?'<p class="err">'+esc(salaryStaffError)+'</p>':
  '<div class="table"><table><thead><tr><th>Salarié</th><th>Jours travaillés</th><th>Jours théoriques du mois</th><th>Avantages / mois</th><th>Action</th></tr></thead><tbody>'+
  salaryStaff.filter(p=>!p.archived).map(p=>{
@@ -440,6 +441,8 @@ function salaryPage(){
  (!salaryLoading&&!salaryError?(shown.length?shown.map(([,g])=>'<div class="card"><h3>'+esc(g.name)+' <span class="muted">('+g.items.length+' événement(s), '+g.items.filter(e=>e.event_type==="incident").length+' incident(s))</span></h3><div class="table"><table><thead><tr><th>Date</th><th>Type</th><th>Durée</th><th>Justificatif</th><th>PDF</th><th>Observation</th><th>Statut</th></tr></thead><tbody>'+g.items.map(e=>'<tr><td>'+esc(e.event_date)+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td><td>'+esc(salaryDuration(e))+'</td><td>'+esc(salaryJust[e.justification_status]||"")+'</td><td>'+(e.attachment_path?'<button class="btn secondary compact" type="button" onclick="salaryOpenIncidentPdf(\''+esc(e.id)+'\')">Voir le PDF</button>':'—')+'</td><td>'+esc(e.details)+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td></tr>').join("")+'</tbody></table></div></div>').join(""):'<div class="card"><p>Aucun événement enregistré pour cette période.</p></div>'):'');
  }
  document.querySelectorAll('[data-salary-view]').forEach(button=>button.addEventListener('click',()=>salarySwitchView(button.dataset.salaryView)));
+ $('salarySettingsMonth')?.addEventListener('change',e=>{if(/^20[2-9][0-9]-(0[1-9]|1[0-2])$/.test(e.target.value)){salaryMonth=e.target.value;salaryPage()}});
+ $('salarySettingsCalendarReload')?.addEventListener('click',()=>void salaryCalendarEnsure(salaryMonth,true));
  salaryWireStaff();
  document.querySelectorAll('[data-salary-month]').forEach(button=>button.addEventListener('click',()=>salarySelectMonth(button.dataset.salaryMonth)));
  const month=$('salaryMonth');if(month)month.addEventListener('change',e=>salarySelectMonth(e.target.value));
