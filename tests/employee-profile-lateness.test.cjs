@@ -38,7 +38,7 @@ test("Fiche individuelle réservée à la page des salaires; toutes les période
  assert.match(source,/salaryStaffKey\(e\.personnel_name\)===employeeKey/);
  assert.match(source,/data-salary-profile-pdf/);
  assert.match(admin,/salary-profile-kpis/);
- assert.match(admin,/salaires\.js\?v=20261119-global-hours-v3/);
+ assert.match(admin,/salaires\.js\?v=20261122-payroll-v4/);
 });
 
 test("Départs anticipés et incidents sont totalisés séparément sans fabriquer des retards",()=>{
