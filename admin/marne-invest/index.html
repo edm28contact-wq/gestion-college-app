@@ -140,7 +140,7 @@ const releaseMilestones=[
  ['Propositions IRL encadrées par bail','done','Calcul Insee avec clause, DPE et trimestre ; aucun loyer modifié'],
  ['Application IRL et notification au locataire','todo','Validation et date de prise d’effet contractuelle à sécuriser'],
  ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
- ['Recette de bout en bout en production','partial','14 tests du code passés, CI ajoutée ; tests navigateur et connexions réelles en attente']
+ ['Recette de bout en bout en production','partial','14 tests code et 4 tests HTTP de sécurité passés ; tests navigateur connecté encore nécessaires']
 ];
 function releaseStatus(){
  const total=releaseMilestones.length,done=releaseMilestones.filter(x=>x[1]==='done').length,partial=releaseMilestones.filter(x=>x[1]==='partial').length;
