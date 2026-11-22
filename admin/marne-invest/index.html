@@ -460,7 +460,7 @@ function bankCsvRows(csv){
  return rows.map((cells,i)=>{
   const get=n=>n>=0?String(cells[n]??'').trim():'';
   const booking_date=parseDate(get(dateIdx));
-  const description=get(labelIdx).replace(/[\r\n\t]+/g,' ').trim();
+  const description=get(labelIdx).replace(/\s+/g,' ').trim();
   const reference=get(refIdx);
   let amount;
   if(amountIdx>=0 && get(amountIdx)!==''){amount=parseMoney(get(amountIdx))}
@@ -476,6 +476,14 @@ function bankCsvRows(csv){
  });
 }
 function bankImportLabel(id){return (db.bank_imports||[]).find(x=>x.id===id)?.account_label||'Compte non identifié'}
+function bankOverlappingLines(line){
+ const account=bankImportLabel(line.import_id).toLowerCase().trim();
+ return (db.bank_lines||[]).filter(other=>other.id!==line.id
+  &&bankImportLabel(other.import_id).toLowerCase().trim()===account
+  &&other.booking_date===line.booking_date
+  &&Math.abs(Number(other.amount)-Number(line.amount))<0.005
+  &&String(other.description||'').trim().toLowerCase()===String(line.description||'').trim().toLowerCase());
+}
 function bankUniqueSuggestion(line){
  const leases=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
  const normalized=String(line.description||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -499,11 +507,12 @@ function renderBankReconciliation(){
  (canWrite?'<button class="btn primary" onclick="openBankCsvImporter()">Importer un relevé CSV</button>':'')+'</div>'+
  stats([['Mouvements importés',lines.length],['Crédits à vérifier',pendingCredit],['Débits non affectés',pendingDebits],['Rapprochements confirmés',matches]])+
  dataTable(['Date','Compte','Libellé','Montant','État','Action'],rows.map(l=>{
-  const amount=Number(l.amount),source=l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':amount>0?'Crédit à vérifier':'Débit informatif';
+  const amount=Number(l.amount),overlap=bankOverlappingLines(l),alreadyMatched=overlap.some(x=>x.status==='matched');
+  const source=l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':alreadyMatched?'Doublon déjà rapproché':overlap.length?'Doublon potentiel':amount>0?'Crédit à vérifier':'Débit informatif';
   return '<tr><td>'+esc(l.booking_date)+'</td><td>'+esc(bankImportLabel(l.import_id))+'</td><td><b>'+esc(l.description)+'</b>'+
   (l.bank_reference?'<div class="muted">Réf. '+esc(l.bank_reference)+'</div>':'')+'</td><td><b>'+money(amount)+'</b></td>'+
   '<td><span class="mini-tag '+(l.status==='pending'?'warn':'')+'">'+esc(source)+'</span></td>'+
-  '<td class="item-actions">'+(canWrite&&l.status==='pending'&&amount>0?
+  '<td class="item-actions">'+(canWrite&&l.status==='pending'&&amount>0&&!alreadyMatched?
    '<button class="btn primary" data-id="'+esc(l.id)+'" onclick="openBankMatch(this.dataset.id)">Rapprocher</button>':'')+
   (canWrite&&l.status==='pending'?'<button class="btn secondary" data-id="'+esc(l.id)+'" onclick="ignoreBankLine(this.dataset.id)">Ignorer</button>':'')+
   (l.status==='matched'?'<span class="muted">Paiement enregistré</span>':'')+'</td></tr>';
@@ -556,6 +565,9 @@ window.openBankMatch=id=>{
  if(!db.current_user?.bank_access||db.current_user?.read_only)return;
  const line=(db.bank_lines||[]).find(l=>l.id===id);
  if(!line||line.status!=='pending'||Number(line.amount)<=0)return;
+ if(bankOverlappingLines(line).some(x=>x.status==='matched')){
+  alert('Un mouvement identique a déjà été rapproché sur ce compte. Vérifiez le relevé avant toute autre saisie.');return;
+ }
  const leases=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
  if(!leases.length){alert('Aucun bail vérifié. Activez d’abord le bail concerné dans Contrats.');showPage('contracts');return}
  const suggestion=bankUniqueSuggestion(line);
