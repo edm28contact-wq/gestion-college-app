@@ -7,6 +7,20 @@ const numeric=(value:unknown,max:number,positive=false)=>{
  if(typeof value!=="number"||!Number.isFinite(value)||value<0||value>max||(positive&&value<=0))return null;
  return Math.round((value+Number.EPSILON)*100)/100;
 };
+const validWeekdays=(value:unknown)=>Array.isArray(value)&&value.length>=1&&value.length<=5&&
+ value.every(day=>Number.isInteger(day)&&day>=1&&day<=5)&&new Set(value).size===value.length;
+function benefits(value:unknown){
+ if(!Array.isArray(value)||value.length>20)return null;
+ const result:{label:string;amount:number}[]=[];
+ for(const item of value){
+  if(!item||typeof item!=="object")return null;
+  const label=(item as Record<string,unknown>).label;
+  const amount=numeric((item as Record<string,unknown>).amount,100000);
+  if(typeof label!=="string"||label.trim().length<2||label.trim().length>100||amount===null)return null;
+  result.push({label:label.trim(),amount});
+ }
+ return result;
+}
 function client(){
  const keys=JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS")??"{}") as Record<string,string>;
  return createClient(Deno.env.get("SUPABASE_URL")!,keys.default||Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,{auth:{persistSession:false,autoRefreshToken:false}});
@@ -39,7 +53,7 @@ Deno.serve(async(req:Request)=>{
    const month=url.searchParams.get("month");
    if(!isMonth(month))return json({error:"Mois invalide"},400);
    const found=await db.from("college_salary_monthly")
-    .select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,version")
+    .select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,working_days,benefits_in_kind,version")
     .eq("month",month).limit(500);
    if(found.error)throw found.error;
    if(found.data?.length===500)return json({error:"Trop de fiches mensuelles pour une réponse complète."},409);
@@ -52,8 +66,8 @@ Deno.serve(async(req:Request)=>{
    if(staff.error)throw staff.error;
    if(!staff.data)return json({error:"Salarié introuvable"},404);
    const [current,previous]=await Promise.all([
-    db.from("college_salary_monthly").select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,version").eq("employee_id",employeeId).eq("month",month).maybeSingle(),
-    db.from("college_salary_monthly").select("month,base_salary_gross,weekly_hours").eq("employee_id",employeeId).lt("month",month).order("month",{ascending:false}).limit(1).maybeSingle()
+    db.from("college_salary_monthly").select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,working_days,benefits_in_kind,version").eq("employee_id",employeeId).eq("month",month).maybeSingle(),
+    db.from("college_salary_monthly").select("month,base_salary_gross,weekly_hours,working_days").eq("employee_id",employeeId).lt("month",month).order("month",{ascending:false}).limit(1).maybeSingle()
    ]);
    if(current.error)throw current.error;
    if(previous.error)throw previous.error;
@@ -65,18 +79,21 @@ Deno.serve(async(req:Request)=>{
    if(!isId(employeeId)||!isMonth(month))return json({error:"Salarié ou mois invalide"},400);
    const base=numeric(body.base_salary_gross,1000000),
     bonus=numeric(body.bonus_gross,1000000),weekly=numeric(body.weekly_hours,60,true),
-    actual=body.actual_hours===null?null:numeric(body.actual_hours,744);
-   if(base===null||bonus===null||weekly===null||(body.actual_hours!==null&&actual===null))
+    actual=body.actual_hours===null?null:numeric(body.actual_hours,744),
+    days=body.working_days,extras=benefits(body.benefits_in_kind);
+   if(base===null||bonus===null||weekly===null||(body.actual_hours!==null&&actual===null)||
+      !validWeekdays(days)||extras===null)
     return json({error:"Champs invalides : salaire, prime, heures hebdomadaires ou heures réelles."},400);
    const staff=await db.from("college_personnel").select("id").eq("id",employeeId).maybeSingle();
    if(staff.error)throw staff.error;
    if(!staff.data)return json({error:"Salarié introuvable"},404);
    const data={base_salary_gross:base,bonus_gross:bonus,weekly_hours:weekly,actual_hours:actual,
+    working_days:[...days].sort((a,b)=>a-b),benefits_in_kind:extras,
     updated_by:user,updated_at:new Date().toISOString()};
    if(body.version===null){
     const inserted=await db.from("college_salary_monthly").insert({
      ...data,employee_id:employeeId,month,version:1
-    }).select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,version").single();
+    }).select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,working_days,benefits_in_kind,version").single();
     if(inserted.error?.code==="23505")return json({error:"Une autre session a créé la fiche. Actualisez avant d'enregistrer."},409);
     if(inserted.error)throw inserted.error;
     return json({ok:true,record:inserted.data});
@@ -84,7 +101,7 @@ Deno.serve(async(req:Request)=>{
    if(!Number.isInteger(body.version)||body.version<1)return json({error:"Version de fiche invalide"},400);
    const updated=await db.from("college_salary_monthly").update({...data,version:body.version+1})
     .eq("employee_id",employeeId).eq("month",month).eq("version",body.version)
-    .select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,version").maybeSingle();
+    .select("employee_id,month,base_salary_gross,bonus_gross,weekly_hours,actual_hours,working_days,benefits_in_kind,version").maybeSingle();
    if(updated.error)throw updated.error;
    if(!updated.data)return json({error:"La fiche a été modifiée dans une autre session. Actualisez avant de réessayer."},409);
    return json({ok:true,record:updated.data});
