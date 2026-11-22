@@ -87,6 +87,12 @@
 .archive-toolbar{display:flex;align-items:end;gap:15px;flex-wrap:wrap;margin:12px 0 14px}
 .archive-count{padding:12px;background:#f8fafc;border:1px solid #dbe4ef;border-radius:10px}
 @media(max-width:700px){.archive-block{padding:12px}}
+
+.bank-box{padding:20px;border:1px solid #dce6f1;border-radius:12px;background:white;margin:18px 0 24px}
+.bank-box .kpis{margin-top:13px}.bank-preview{max-height:260px;overflow:auto;margin-top:12px}
+.bank-preview-lines{max-height:120px;overflow:auto;font-size:12px}
+.bank-preview-lines p{margin:5px 0;padding:4px 0;border-bottom:1px solid #eef2f7}
+@media(max-width:700px){.bank-box{padding:12px}}
 </style>
 </head>
 <body>
@@ -383,6 +389,212 @@ function rentalLedger(){
 function todayParis(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
 function activeLeaseName(lease){const p=(db.properties||[]).find(x=>x.id===lease.property_id);return (p?.name||'Logement')+' — '+(lease.tenant_name||'Locataire')}
 function pendingInstallments(leaseId,ledger){return (db.installments||[]).filter(i=>i.lease_id===leaseId&&i.status==='scheduled'&&Number(i.total_due)-(ledger.byInstallment.get(i.id)||0)>0.005).sort((a,b)=>a.period.localeCompare(b.period))}
+
+let bankCsvPreview=null;
+function bankNormalizeHeader(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+function bankCsvRows(csv){
+ const clean=String(csv||'').replace(/^\uFEFF/,'');
+ const first=clean.split(/\r?\n/,1)[0];
+ const score=sep=>first.split(sep).length-1;
+ const sep=[';','\t',','].sort((a,b)=>score(b)-score(a))[0];
+ if(!score(sep))throw Error('Séparateur CSV non reconnu (; , ou tabulation).');
+ let rows=[],row=[],field='',quoted=false;
+ for(let i=0;i<clean.length;i++){
+  const c=clean[i];
+  if(c==='"'){
+   if(quoted&&clean[i+1]==='"'){field+='"';i++}
+   else if(!quoted&&field.trim()!=='')throw Error('Guillemet CSV mal placé.');
+   else quoted=!quoted;
+  }else if(c===sep&&!quoted){row.push(field.trim());field=''}
+  else if((c==='\r'||c==='\n')&&!quoted){
+   if(c==='\r'&&clean[i+1]==='\n')i++;
+   row.push(field.trim());
+   if(row.some(v=>v!==''))rows.push(row);
+   row=[];field='';
+   if(rows.length>202)throw Error('Un relevé doit contenir au maximum 200 mouvements.');
+  }else{field+=c}
+ }
+ if(quoted)throw Error('Fichier CSV : guillemets non fermés.');
+ row.push(field.trim());if(row.some(v=>v!==''))rows.push(row);
+ if(rows.length<2)throw Error('Le CSV doit contenir une ligne d’en-tête et au moins un mouvement.');
+ if(rows.length>201)throw Error('Maximum 200 mouvements par relevé.');
+ const headers=rows.shift().map(bankNormalizeHeader);
+ const index=aliases=>headers.findIndex(h=>aliases.includes(h));
+ const dateIdx=index(['date','dateoperation','datecomptable','datecomptabilisation','datevaleur','bookingdate']);
+ const labelIdx=index(['libelle','libelleoperation','libelledeloperation','description','details','operation','intitule','motif','objet']);
+ const amountIdx=index(['montant','montanteur','montantoperation','amount']);
+ const creditIdx=index(['credit','montantcredit','recette','entree','versement']);
+ const debitIdx=index(['debit','montantdebit','depense','sortie','retrait']);
+ const refIdx=index(['reference','ref','referenceoperation','idoperation','identifiant','transactionid']);
+ if(dateIdx<0||labelIdx<0||(amountIdx<0&&(creditIdx<0||debitIdx<0)))
+  throw Error('Colonnes obligatoires : Date, Libellé et Montant, ou Date, Libellé, Débit et Crédit.');
+ function parseDate(v){
+  const raw=String(v||'').trim();
+  let y,m,d,match;
+  if(match=raw.match(/^(20\d{2})-(\d{2})-(\d{2})$/)){y=+match[1];m=+match[2];d=+match[3]}
+  else if(match=raw.match(/^(\d{2})[\/-](\d{2})[\/-](20\d{2})$/)){d=+match[1];m=+match[2];y=+match[3]}
+  else throw Error('Date non reconnue : '+raw+'. Utilisez JJ/MM/AAAA ou AAAA-MM-JJ.');
+  const date=new Date(Date.UTC(y,m-1,d));
+  if(date.getUTCFullYear()!==y||date.getUTCMonth()!==m-1||date.getUTCDate()!==d)
+   throw Error('Date bancaire inexistante : '+raw);
+  return [y,String(m).padStart(2,'0'),String(d).padStart(2,'0')].join('-');
+ }
+ function parseMoney(v){
+  let raw=String(v??'').trim().replace(/[\u00a0\u202f\s€]/g,'');
+  if(!raw)return null;
+  let negative=false;
+  if(/^\(.*\)$/.test(raw)){negative=true;raw=raw.slice(1,-1)}
+  if(raw.startsWith('-')){negative=true;raw=raw.slice(1)}
+  else if(raw.startsWith('+'))raw=raw.slice(1);
+  if(raw.includes(',')&&raw.includes('.')){
+   const comma=raw.lastIndexOf(','),dot=raw.lastIndexOf('.');
+   raw=comma>dot?raw.replace(/\./g,'').replace(',','.'):raw.replace(/,/g,'');
+  }else if(raw.includes(','))raw=raw.replace(',','.');
+  if(!/^\d{1,9}(\.\d{1,2})?$/.test(raw))throw Error('Montant ambigu : '+String(v)+'. Vérifiez le format décimal.');
+  const amount=Number(raw)*(negative?-1:1);
+  if(!Number.isFinite(amount))throw Error('Montant invalide.');
+  return amount;
+ }
+ return rows.map((cells,i)=>{
+  const get=n=>n>=0?String(cells[n]??'').trim():'';
+  const booking_date=parseDate(get(dateIdx));
+  const description=get(labelIdx).replace(/[\r\n\t]+/g,' ').trim();
+  const reference=get(refIdx);
+  let amount;
+  if(amountIdx>=0){amount=parseMoney(get(amountIdx))}
+  else{
+   const credit=parseMoney(get(creditIdx)),debit=parseMoney(get(debitIdx));
+   if((credit!==null&&credit!==0)&&(debit!==null&&debit!==0))
+    throw Error('Ligne '+(i+2)+' : débit et crédit présents simultanément.');
+   amount=credit!==null&&credit!==0?Math.abs(credit):debit!==null?-Math.abs(debit):null;
+  }
+  if(amount===null||amount===0||description.length<2||description.length>500||reference.length>120)
+   throw Error('Ligne '+(i+2)+' : montant, libellé ou référence invalide.');
+  return {booking_date,amount:amount.toFixed(2),description,reference};
+ });
+}
+function bankImportLabel(id){return (db.bank_imports||[]).find(x=>x.id===id)?.account_label||'Compte non identifié'}
+function bankUniqueSuggestion(line){
+ const leases=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
+ const normalized=String(line.description||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ const candidates=leases.filter(l=>{
+  const name=String(l.tenant_name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const rent=Number(l.monthly_rent||0)+Number(l.charges_amount||0);
+  return name.length>=5&&normalized.includes(name)&&Math.abs(rent-Number(line.amount))<0.005;
+ });
+ return candidates.length===1?candidates[0]:null;
+}
+function renderBankReconciliation(){
+ if(!db.current_user?.bank_access)return '';
+ const lines=db.bank_lines||[],imports=db.bank_imports||[];
+ const matches=lines.filter(l=>l.status==='matched').length;
+ const pendingCredit=lines.filter(l=>l.status==='pending'&&Number(l.amount)>0).length;
+ const pendingDebits=lines.filter(l=>l.status==='pending'&&Number(l.amount)<0).length;
+ const canWrite=!db.current_user?.read_only;
+ const rows=filtered(lines,l=>[l.description,l.booking_date,l.bank_reference,bankImportLabel(l.import_id)].join(' '));
+ return '<div class="bank-box"><div class="section-head"><div><h2>Import et rapprochement bancaire</h2>'+
+ '<p class="muted">Importez un relevé CSV. Les virements sont proposés au rapprochement, jamais comptabilisés sans validation.</p></div>'+
+ (canWrite?'<button class="btn primary" onclick="openBankCsvImporter()">Importer un relevé CSV</button>':'')+'</div>'+
+ stats([['Mouvements importés',lines.length],['Crédits à vérifier',pendingCredit],['Débits non affectés',pendingDebits],['Rapprochements confirmés',matches]])+
+ dataTable(['Date','Compte','Libellé','Montant','État','Action'],rows.map(l=>{
+  const amount=Number(l.amount),source=l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':amount>0?'Crédit à vérifier':'Débit informatif';
+  return '<tr><td>'+esc(l.booking_date)+'</td><td>'+esc(bankImportLabel(l.import_id))+'</td><td><b>'+esc(l.description)+'</b>'+
+  (l.bank_reference?'<div class="muted">Réf. '+esc(l.bank_reference)+'</div>':'')+'</td><td><b>'+money(amount)+'</b></td>'+
+  '<td><span class="mini-tag '+(l.status==='pending'?'warn':'')+'">'+esc(source)+'</span></td>'+
+  '<td class="item-actions">'+(canWrite&&l.status==='pending'&&amount>0?
+   '<button class="btn primary" data-id="'+esc(l.id)+'" onclick="openBankMatch(this.dataset.id)">Rapprocher</button>':'')+
+  (canWrite&&l.status==='pending'?'<button class="btn secondary" data-id="'+esc(l.id)+'" onclick="ignoreBankLine(this.dataset.id)">Ignorer</button>':'')+
+  (l.status==='matched'?'<span class="muted">Paiement enregistré</span>':'')+'</td></tr>';
+ }))+
+ '<p class="module-note">Les extraits CSV sont importés sans connexion au compte bancaire. La réimportation du même contenu pour le même compte est bloquée. Les mouvements proches ou identiques de différents relevés doivent être contrôlés. Les anciens soldes ne sont pas importés.</p>'+
+ (lines.length>=800?'<p class="note">Seuls les 800 derniers mouvements sont chargés : pagination à prévoir.</p>':'')+
+ '<div class="muted">'+imports.length+' relevé(s) enregistré(s).</div></div>';
+}
+window.openBankCsvImporter=()=>{
+ if(!db.current_user?.bank_access||db.current_user?.read_only)return;
+ bankCsvPreview=null;
+ const current=String(setting('bank_account_label','')||'');
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:750px"><div class="top"><h2>Importer un relevé bancaire CSV</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note"><b>Aucun accès à la banque n’est demandé.</b> Exportez le relevé CSV depuis votre banque, puis importez-le ici. Colonnes acceptées : Date ; Libellé ; Montant ; Référence (facultative), ou Date ; Libellé ; Débit ; Crédit.</div>'+
+ '<label style="margin-top:12px">Compte bancaire (libellé interne)</label><input id="bank-account-label" maxlength="80" value="'+esc(current)+'" placeholder="Ex. : Compte de gestion 1">'+
+ '<label style="margin-top:12px">Relevé CSV (maximum 200 lignes)</label><input id="bank-csv-file" type="file" accept=".csv,text/csv,text/plain">'+
+ '<div class="actions"><button class="btn secondary" onclick="analyseBankCsv()">Analyser le relevé</button>'+
+ '<button class="btn primary" id="bank-import-save" disabled onclick="saveBankCsv()">Enregistrer les mouvements</button></div>'+
+ '<div id="bank-csv-summary" class="bank-preview"></div><div class="status" id="modalStatus"></div></div></div>';
+};
+window.analyseBankCsv=async()=>{
+ const state=$('modalStatus'),file=$('bank-csv-file')?.files?.[0];
+ bankCsvPreview=null;$('bank-import-save').disabled=true;
+ if(!file){state.className='status err';state.textContent='Sélectionnez un fichier CSV.';return}
+ if(file.size>550000||file.size<1){state.className='status err';state.textContent='Fichier vide ou supérieur à 550 Ko.';return}
+ try{
+  const rows=bankCsvRows(await file.text());
+  bankCsvPreview={account:$('bank-account-label').value.trim(),filename:file.name,rows};
+  if(bankCsvPreview.account.length<2||bankCsvPreview.account.length>80)throw Error('Nommez le compte bancaire (2 à 80 caractères).');
+  const credits=rows.filter(x=>Number(x.amount)>0),debits=rows.filter(x=>Number(x.amount)<0);
+  $('bank-csv-summary').innerHTML='<div class="note">Aperçu : <b>'+rows.length+' mouvement(s)</b> · '+credits.length+' crédit(s) · '+debits.length+' débit(s)'+
+   '<div class="muted">Crédits : '+money(credits.reduce((n,x)=>n+Number(x.amount),0))+' · Débits : '+money(debits.reduce((n,x)=>n+Number(x.amount),0))+'</div>'+
+   '<div class="bank-preview-lines">'+rows.slice(0,6).map(x=>'<p>'+esc(x.booking_date)+' · '+esc(x.description)+' · <b>'+money(Number(x.amount))+'</b></p>').join('')+'</div></div>';
+  state.className='status ok';state.textContent='CSV analysé. Aucun paiement n’a été enregistré.';
+  $('bank-import-save').disabled=false;
+ }catch(e){state.className='status err';state.textContent=e.message||'CSV invalide.'}
+};
+window.saveBankCsv=async()=>{
+ const state=$('modalStatus'),btn=$('bank-import-save'),draft=bankCsvPreview;
+ if(!draft||draft.account!==$('bank-account-label').value.trim()){state.className='status err';state.textContent='Réanalysez le fichier après modification du nom de compte.';return}
+ if(!confirm('Importer '+draft.rows.length+' mouvements sur « '+draft.account+' » ? Aucun loyer ne sera comptabilisé sans confirmation.'))return;
+ btn.disabled=true;state.className='status';state.textContent='Enregistrement du relevé…';
+ try{
+  const result=await api('bank-import','POST',{account_label:draft.account,filename:draft.filename,rows:draft.rows});
+  bankCsvPreview=null;closeModal();await refresh();
+  alert(result.duplicate?'Relevé déjà enregistré : aucun doublon créé.':result.rows+' mouvements importés. À rapprocher individuellement dans Transactions.');
+ }catch(e){btn.disabled=false;state.className='status err';state.textContent=e.message||'Import impossible.'}
+};
+window.openBankMatch=id=>{
+ if(!db.current_user?.bank_access||db.current_user?.read_only)return;
+ const line=(db.bank_lines||[]).find(l=>l.id===id);
+ if(!line||line.status!=='pending'||Number(line.amount)<=0)return;
+ const leases=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
+ if(!leases.length){alert('Aucun bail vérifié. Activez d’abord le bail concerné dans Contrats.');showPage('contracts');return}
+ const suggestion=bankUniqueSuggestion(line);
+ const leaseOptions='<option value="">Sélectionner un bail après vérification</option>'+leases.map(l=>'<option value="'+esc(l.id)+'"'+(suggestion?.id===l.id?' selected':'')+'>'+esc(activeLeaseName(l))+'</option>').join('');
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:720px"><div class="top"><h2>Rapprocher un crédit bancaire</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note"><b>'+money(Number(line.amount))+'</b> · '+esc(line.booking_date)+'<p>'+esc(line.description)+'</p>'+
+ '<p class="muted">Compte : '+esc(bankImportLabel(line.import_id))+(line.bank_reference?' · Réf. '+esc(line.bank_reference):'')+'</p></div>'+
+ '<label style="margin-top:13px">Bail bénéficiaire</label><select id="bank-match-lease" onchange="updateBankMatchInstallments()">'+leaseOptions+'</select>'+
+ (suggestion?'<p class="muted">Correspondance suggérée par le nom et le montant. Elle doit être vérifiée avant validation.</p>':'<p class="muted">Aucune correspondance certaine trouvée : sélectionnez le bail manuellement.</p>')+
+ '<label style="margin-top:12px">Échéance à régler (facultatif)</label><select id="bank-match-installment"></select>'+
+ '<label class="payment-confirm"><input id="bank-match-verified" type="checkbox"> J’ai vérifié le relevé, le bénéficiaire et l’absence de doublon avant de comptabiliser ce crédit.</label>'+
+ '<div class="actions"><button class="btn primary" id="bank-match-confirm" data-id="'+esc(id)+'" onclick="confirmBankMatch(this.dataset.id)">Valider le rapprochement</button></div>'+
+ '<div id="modalStatus" class="status"></div></div></div>';
+ updateBankMatchInstallments();
+};
+window.updateBankMatchInstallments=()=>{
+ const select=$('bank-match-installment');if(!select)return;
+ const lease=$('bank-match-lease')?.value;
+ const ledger=rentalLedger(),items=pendingInstallments(lease,ledger);
+ select.innerHTML='<option value="">Sans échéance — paiement en attente / avance</option>'+
+ items.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.period)+' — reste '+money(Number(i.total_due)-(ledger.byInstallment.get(i.id)||0))+'</option>').join('');
+};
+window.confirmBankMatch=async id=>{
+ const status=$('modalStatus'),btn=$('bank-match-confirm'),lease=$('bank-match-lease')?.value;
+ if(!$('bank-match-verified')?.checked||!lease){status.className='status err';status.textContent='Choisissez le bail et cochez la vérification bancaire.';return}
+ if(!confirm('Confirmer l’encaissement sur le bail sélectionné ? Cette opération modifiera le registre des loyers.'))return;
+ btn.disabled=true;status.className='status';status.textContent='Rapprochement et écriture comptable…';
+ try{
+  const result=await api('bank-confirm','POST',{bank_line_id:id,lease_id:lease,installment_id:$('bank-match-installment')?.value||null,confirmed:true});
+  closeModal();await refresh();
+  alert(result.duplicate?'Ce crédit est déjà rapproché, aucune écriture supplémentaire.':'Crédit comptabilisé : '+money(Number(result.allocated||0))+' affecté, '+money(Number(result.unallocated||0))+' en attente.');
+ }catch(e){btn.disabled=false;status.className='status err';status.textContent=e.message||'Rapprochement impossible'}
+};
+window.ignoreBankLine=async id=>{
+ const reason=prompt('Motif d’exclusion du relevé (au moins 6 caractères) :');if(reason===null)return;
+ if(reason.trim().length<6){alert('Motif trop court.');return}
+ if(!confirm('Exclure ce mouvement du rapprochement des loyers ? Il restera visible dans l’historique.'))return;
+ try{await api('bank-ignore','POST',{bank_line_id:id,reason:reason.trim(),confirmed:true});await refresh()}
+ catch(e){alert(e.message||'Exclusion impossible')}
+};
+
 function renderTransactions(){
  if(!db.current_user?.payment_access){$('content').innerHTML=section('Transactions','Accès financier réservé aux gestionnaires autorisés.')+'<div class="card empty-state">Votre compte ne dispose pas du droit de consultation du registre des paiements.</div>';return}
  const ledger=rentalLedger(),active=[...ledger.valid.values()],payments=filtered(ledger.payments,p=>[activeLeaseName((db.leases||[]).find(l=>l.id===p.lease_id)||{}),p.reference,p.received_on,p.payment_method].join(' '));
@@ -396,6 +608,7 @@ function renderTransactions(){
  '<button class="btn secondary" onclick="exportMarne(&quot;ledger&quot;)">Exporter le registre CSV</button>';
  $('content').innerHTML=section('Paiements et rapprochement','Registre autonome. Les anciens paiements du tableur ne sont pas importés automatiquement.',actions)+
  stats([['Encaissements saisis',money(received),'Depuis la création du registre'],['Échéances enregistrées',money(due),'Baux validés uniquement'],['Solde des échéances',money(Math.max(0,due-allocated)),'Sans les anciens impayés'],['Paiements à affecter',money(unallocated),'Avances et montants en attente']])+
+ renderBankReconciliation()+
  '<div class="section-head" style="margin-top:20px"><div><h2>Règlements enregistrés</h2><p class="muted">Les montants ne sont pris en compte que lorsqu’un paiement est confirmé.</p></div></div>'+
  dataTable(['Réception','Logement / locataire','Montant','Mode','Référence','Affectation','Statut','Actions'],payments.map(p=>{
   const lease=(db.leases||[]).find(l=>l.id===p.lease_id)||{};
