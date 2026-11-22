@@ -1,0 +1,26 @@
+name: Marne Invest - verifications automatiques
+on:
+  push:
+    paths:
+      - 'admin/marne-invest/index.html'
+      - 'tests/marne-invest-ui.test.mjs'
+      - '.github/workflows/marne-invest-qa.yml'
+  pull_request:
+    paths:
+      - 'admin/marne-invest/index.html'
+      - 'tests/marne-invest-ui.test.mjs'
+      - '.github/workflows/marne-invest-qa.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Controle du site et des imports bancaires
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Executer les tests sans connexion ni secrets
+        run: node --test tests/marne-invest-ui.test.mjs
