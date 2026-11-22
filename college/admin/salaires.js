@@ -227,6 +227,7 @@ function salaryStaffProfilePanel(){
   '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryPayrollPanel(staff,month)+content+'</section>';
 }
 async function salaryOpenStaffProfile(id){
+ if(salaryView==="events")salaryView="staff";
  const staff=salaryStaff.find(p=>p.id===id);
  if(!staff)return;
  if(salaryProfileEmployeeId!==id)salaryProfileMonth=salaryCurrentMonth();
@@ -358,16 +359,35 @@ function salaryWireStaff(){
  }));
 }
 
+let salaryView="staff";
+function salarySwitchView(view){if(["staff","events","settings"].includes(view)){salaryView=view;salaryPage()}}
+function salarySettingsPanel(){
+ const month=salaryMonth||salaryCurrentMonth();
+ return '<section class="card"><h2>Paramètres du personnel</h2><p class="muted">Les horaires et avantages en nature se modifient dans chaque fiche salarié.</p>'+
+ (salaryStaffLoading?'<p>Chargement…</p>':salaryStaffError?'<p class="err">'+esc(salaryStaffError)+'</p>':
+ '<div class="table"><table><thead><tr><th>Salarié</th><th>Jours travaillés</th><th>Jours théoriques du mois</th><th>Avantages / mois</th><th>Action</th></tr></thead><tbody>'+
+ salaryStaff.filter(p=>!p.archived).map(p=>{
+ const days=Array.isArray(p.working_weekdays)?p.working_weekdays:[1,2,3,4,5],benefits=Array.isArray(p.benefits_in_kind)?p.benefits_in_kind:[];
+ return '<tr><td>'+esc(p.name)+'</td><td>'+esc(days.map(d=>salaryWeekdayNames[d]).join(", ")||"Aucun")+'</td><td>'+salaryWorkingDays(month,days)+'</td><td>'+esc(benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"}))+' ('+benefits.length+')</td><td><button type="button" class="btn secondary compact" data-salary-staff-profile="'+esc(p.id)+'">Configurer</button></td></tr>';
+ }).join("")+'</tbody></table></div>')+
+ '<p class="muted">Jours théoriques hors jours fériés, congés et absences. Aucun calcul de paie automatique.</p><p><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></p></section>';
+}
 function salaryPage(){
  if(!salaryMonth)salaryMonth=salaryCurrentMonth();
  const groups=salaryGroups(),shown=groups.filter(([key])=>salaryPerson==="all"||salaryPerson===key);
  const total=shown.reduce((n,[,g])=>n+g.items.length,0);
  const option=(val,label)=>'<option value="'+esc(val)+'"'+(salaryPerson===val?' selected':'')+'>'+esc(label)+'</option>';
- $('content').innerHTML=salaryOverview()+salaryStaffPanel()+salaryStaffProfilePanel()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
+ const nav='<nav class="card" aria-label="Rubriques Salaires" style="display:flex;gap:8px;flex-wrap:wrap">'+[['staff','Liste des salariés'],['events','Événements'],['settings','Paramètres']].map(([key,label])=>'<button type="button" class="btn '+(salaryView===key?'primary':'secondary')+'" data-salary-view="'+key+'" aria-pressed="'+(salaryView===key)+'">'+label+'</button>').join('')+'</nav>';
+ if(salaryView==="staff")$('content').innerHTML=nav+salaryStaffPanel()+salaryStaffProfilePanel();
+ else if(salaryView==="settings")$('content').innerHTML=nav+salarySettingsPanel()+salaryStaffProfilePanel();
+ else{
+ $('content').innerHTML=nav+salaryOverview()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
  (salaryLoading?'<div class="card">Chargement des événements…</div>':'')+
  (salaryError?'<div class="card" style="color:#a32929">'+esc(salaryError)+'</div>':'')+
  (!salaryLoading&&!salaryError?'<div class="card"><b>'+shown.length+' salarié(s) · '+total+' événement(s) · '+shown.reduce((n,[,g])=>n+g.items.filter(e=>e.event_type==="incident").length,0)+' incident(s)</b></div>':'')+
  (!salaryLoading&&!salaryError?(shown.length?shown.map(([,g])=>'<div class="card"><h3>'+esc(g.name)+' <span class="muted">('+g.items.length+' événement(s), '+g.items.filter(e=>e.event_type==="incident").length+' incident(s))</span></h3><div class="table"><table><thead><tr><th>Date</th><th>Type</th><th>Durée</th><th>Justificatif</th><th>PDF</th><th>Observation</th><th>Statut</th></tr></thead><tbody>'+g.items.map(e=>'<tr><td>'+esc(e.event_date)+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td><td>'+esc(salaryDuration(e))+'</td><td>'+esc(salaryJust[e.justification_status]||"")+'</td><td>'+(e.attachment_path?'<button class="btn secondary compact" type="button" onclick="salaryOpenIncidentPdf(\''+esc(e.id)+'\')">Voir le PDF</button>':'—')+'</td><td>'+esc(e.details)+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td></tr>').join("")+'</tbody></table></div></div>').join(""):'<div class="card"><p>Aucun événement enregistré pour cette période.</p></div>'):'');
+ }
+ document.querySelectorAll('[data-salary-view]').forEach(button=>button.addEventListener('click',()=>salarySwitchView(button.dataset.salaryView)));
  salaryWireStaff();
  document.querySelectorAll('[data-salary-month]').forEach(button=>button.addEventListener('click',()=>salarySelectMonth(button.dataset.salaryMonth)));
  const month=$('salaryMonth');if(month)month.addEventListener('change',e=>salarySelectMonth(e.target.value));
