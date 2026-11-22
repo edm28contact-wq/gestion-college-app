@@ -82,7 +82,7 @@ function renderDashboard(){
  const types=new Map(),cities=new Map();
  for(const p of properties){const d=p.data||{},type=String(d['Type de bien']||d['Type logement']||'').trim(),city=String(d['Ville']||'').trim();if(type)types.set(type,(types.get(type)||0)+1);if(city)cities.set(city,(cities.get(city)||0)+1)}
  const rentItems=activeLeases.map(l=>[(db.properties||[]).find(p=>p.id===l.property_id)?.name||'Logement',Number(l.monthly_rent||0)]);
- const statsData=[['Total Biens',String(properties.length),'▥','Biens réels'],['Valeur Patrimoine','—','€','Valorisations non renseignées'],['Revenus Mensuels',money(receivedThisMonth),'↗','Paiements saisis en '+currentMonth],['Rendement Moyen','—','◷','Valorisation et charges nécessaires'],['Revenus Annuels Projetés',activeLeases.length?money(annualRent):'—','▦','Loyers hors charges des baux vérifiés × 12']];
+ const statsData=[['Total Biens',String(properties.length),'▥','Biens réels'],['Valeur Patrimoine','—','€','Valorisations non renseignées'],['Encaissements du mois',money(receivedThisMonth),'↗','Paiements saisis en '+currentMonth],['Rendement Moyen','—','◷','Valorisation et charges nécessaires'],['Revenus Annuels Projetés',activeLeases.length?money(annualRent):'—','▦','Loyers hors charges des baux vérifiés × 12']];
  const [y,m]=currentMonth.split('-').map(Number);
  const periods=Array.from({length:6},(_,i)=>{const d=new Date(Date.UTC(y,m-1-(5-i),1));return d.toISOString().slice(0,7)});
  const months=periods.map(k=>[k,[...ledger.valid.values()].filter(p=>String(p.received_on).slice(0,7)===k).reduce((sum,p)=>sum+Number(p.amount||0),0)]);
