@@ -593,7 +593,7 @@ function renderDocumentArchive(){
  const options='<option value="">Tous les logements</option>'+props.map(p=>'<option value="'+esc(p.id)+'"'+(documentPropertyFilter===p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('');
  return '<section class="archive-block"><div class="section-head"><div><h2>Archives privées par logement</h2>'+
  '<p class="muted">Stockage privé Supabase : PDF, JPG et PNG jusqu’à 4 Mo par fichier. Documents téléchargés sur demande.</p></div>'+
- '<button class="btn primary" onclick="openDocumentUploader()">+ Déposer un document</button></div>'+
+ '<button class="btn primary" onclick="openDocumentUploader()" '+(db.current_user?.read_only?'disabled':'')+'>+ Déposer un document</button></div>'+
  '<div class="archive-toolbar"><label style="min-width:200px">Filtrer par logement<select aria-label="Filtrer les documents" onchange="selectArchiveProperty(this.value)">'+options+'</select></label>'+
  '<div class="archive-count"><b>'+docs.length+'</b> document(s) dans la sélection</div></div>'+
  dataTable(['Date','Logement','Catégorie','Document','Taille','Action'],rows.map(d=>{
