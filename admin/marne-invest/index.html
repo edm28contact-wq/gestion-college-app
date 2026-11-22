@@ -49,6 +49,16 @@
 .payment-confirm input[type=checkbox]{width:auto;flex:none;min-width:18px;height:18px}
 #payment-save:disabled{opacity:.55;cursor:wait}
 @media print {.side,.top,.section-tools,.item-actions,.modal{display:none!important}.main{padding:0}}
+
+.mail-split{display:grid;grid-template-columns:minmax(270px,38%) minmax(0,1fr);min-height:300px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;overflow:hidden}
+.mail-list{border-right:1px solid #e2e8f0;overflow:auto;max-height:475px}
+.mail-item{border:0;border-bottom:1px solid #e2e8f0;background:white;text-align:left;width:100%;padding:13px 16px;cursor:pointer}
+.mail-item.unread{border-left:4px solid #1764eb;background:#f7fbff}.mail-item:hover{background:#eff6ff}
+.mail-item b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-item small{display:block;color:#64748b;margin-top:4px}
+.mail-reader{padding:18px;min-width:0}.mail-text{font:14px/1.6 Inter,system-ui,sans-serif;white-space:pre-wrap;word-break:break-word;max-height:470px;overflow:auto}
+.mail-banner{margin-bottom:15px}
+@media(max-width:800px){.mail-split{grid-template-columns:1fr}.mail-list{max-height:200px;border-right:0;border-bottom:1px solid #e2e8f0}}
 </style>
 </head>
 <body>
@@ -57,8 +67,8 @@
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
-const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false;
-const pages=[['dashboard','Dashboard','⌂'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false;
+const pages=[['dashboard','Dashboard','⌂'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
 async function api(action,method='GET',body){const r=await fetch(API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401&&action!=='login'){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
@@ -67,7 +77,7 @@ window.logout=()=>{token='';db=null;selectedRow=null;localStorage.removeItem('ma
 function initNav(){$('nav').innerHTML=pages.map(([k,l,i])=>`<button data-p="${k}" onclick="showPage('${k}')"><span class="nav-icon">${i}</span>${l}</button>`).join('')}
 window.showPage=p=>{page=p;searchQuery='';$('globalSearch').value='';render()};window.searchAll=q=>{searchQuery=String(q||'').trim().toLocaleLowerCase('fr');render()};
 window.refresh=async()=>{try{db=await api('data');$('serverTime').textContent='Données actualisées : '+new Date(db.server_time).toLocaleString('fr-FR');render();if(!irlChecked)fetchIrl()}catch(e){alert(e.message)}};
-function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,works:renderWorks,documents:renderDocuments,reports:renderReports}[page]||renderDashboard)()}
+function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,mail:renderMail,works:renderWorks,documents:renderDocuments,reports:renderReports}[page]||renderDashboard)()}
 function setting(key,fallback){return db.settings.find(x=>x.setting_key===key)?.value??fallback}
 
 function renderModule(title,message,link){$('content').innerHTML='<div class="card"><h2>'+esc(title)+'</h2><p class="muted">'+esc(message)+'</p>'+(link?'<a class="btn primary" href="'+link+'">Ouvrir la comptabilité</a>':'')+'</div>'}
@@ -465,6 +475,86 @@ window.confirmRentalReminderSent=async id=>{
   await refresh();
  }catch(e){alert(e.message||'Confirmation impossible')}
 };
+
+function renderMail(){
+ if(!db.current_user?.mail_access){$('content').innerHTML=section('Messagerie Free','Accès restreint')+'<div class="card empty-state">Compte non autorisé à consulter cette boîte.</div>';return}
+ const inbox=filtered(db.mail_inbox||[],m=>m.subject+' '+m.sender_email),outbox=filtered(db.mail_outbox||[],m=>m.subject+' '+m.recipient_email);
+ const connected=!!db.current_user.mail_configured;
+ const tools='<button class="btn secondary" onclick="testMailConnection()">Tester IMAP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
+ const setup=connected?'<div class="note mail-banner">Identifiants Free présents côté serveur, connexion à tester. Envois autorisés uniquement après confirmation manuelle.</div>':
+ '<div class="note mail-banner"><b>Configuration nécessaire :</b> dans Supabase → Edge Functions → Secrets, créez <code>MARNE_FREE_MAIL_PASSWORD</code> avec le mot de passe de cette boîte. Ne l’inscrivez jamais dans le site ou dans le chat. <a target="_blank" rel="noopener noreferrer" href="https://supabase.com/dashboard/project/zreegtzfpwrjgdhhunxx/functions">Ouvrir Supabase</a></div>';
+ $('content').innerHTML=section('Messagerie Free','ph.danglade@free.fr — réception IMAP 993 et envoi SMTP 465.',tools)+
+ stats([['Reçus importés',(db.mail_inbox||[]).length],['Non lus',(db.mail_inbox||[]).filter(m=>!m.is_seen).length],['Brouillons',(db.mail_outbox||[]).filter(m=>m.status==='draft').length],['Connexion',connected?'À tester':'À configurer']])+setup+
+ '<div class="section-head"><div><h2>Boîte de réception</h2><p class="muted">Lecture en texte seul ; les pièces jointes ne sont pas encore téléchargeables.</p></div></div>'+
+ '<div class="mail-split"><div class="mail-list">'+(inbox.length?inbox.map(m=>
+ '<button class="mail-item '+(m.is_seen?'':'unread')+'" data-id="'+esc(m.id)+'" onclick="openFreeInboxMail(this.dataset.id)"><b>'+esc(m.sender_email||'Expéditeur inconnu')+'</b><b>'+esc(m.subject||'(Sans objet)')+'</b><small>'+esc(m.received_at?new Date(m.received_at).toLocaleString('fr-FR'):'Date inconnue')+(m.has_attachments?' · Pièces jointes':'')+'</small></button>').join(''):'<div class="empty-state">Aucun courriel synchronisé.</div>')+
+ '</div><div class="mail-reader" id="mailReader"><p class="muted">Sélectionnez un message pour le lire. Aucun contenu reçu ne déclenche d’action automatiquement.</p></div></div>'+
+ '<div class="section-head" style="margin-top:20px"><div><h2>Brouillons et messages envoyés</h2><p class="muted">Envoi manuel explicite ; aucun renvoi automatique des messages incertains.</p></div></div>'+
+ dataTable(['Date','Destinataire','Objet','Statut','Actions'],outbox.map(m=>{
+ const labels={draft:'Brouillon',sending:'En cours',sent:'Envoyé',uncertain:'À vérifier',cancelled:'Annulé'};
+ return '<tr><td>'+esc(m.created_at?.slice(0,10)||'—')+'</td><td>'+esc(m.recipient_email)+'</td><td>'+esc(m.subject)+'</td><td><span class="mini-tag '+(m.status==='uncertain'?'warn':'')+'">'+esc(labels[m.status]||m.status)+'</span></td>'+
+ '<td class="item-actions"><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="viewMailDraft(this.dataset.id)">Lire</button>'+
+ (m.status==='draft'?'<button class="btn primary" data-id="'+esc(m.id)+'" onclick="sendFreeMail(this.dataset.id)" '+(connected?'':'disabled')+'>Envoyer</button><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="cancelFreeMailDraft(this.dataset.id)">Annuler</button>':'')+'</td></tr>';
+ }))+
+ '<p class="module-note">Les 150 derniers courriels sont affichés. Les messages sont synchronisés sur demande et restent présents sur les serveurs de Free.</p>';
+}
+window.testMailConnection=async()=>{
+ try{const x=await api('mail-test','POST',{});alert(x.imap_authenticated?'Connexion IMAP confirmée. Messages disponibles sur Free : '+x.mailbox_total:'Connexion non confirmée.')}
+ catch(e){alert('Test non abouti : '+e.message)}
+};
+window.syncFreeMail=async()=>{
+ if(!db.current_user?.mail_configured){alert('Configurez la clé MARNE_FREE_MAIL_PASSWORD dans les secrets Supabase.');return}
+ if(!confirm('Importer les derniers courriels en lecture seule depuis Free ?'))return;
+ try{const x=await api('mail-sync','POST',{});await refresh();alert((x.imported||0)+' message(s) importé(s), '+(x.skipped_large||0)+' trop volumineux ignoré(s).')}
+ catch(e){alert('Synchronisation indisponible : '+e.message)}
+};
+window.openFreeInboxMail=async id=>{
+ const pane=$('mailReader');if(!pane)return;pane.textContent='Chargement…';
+ try{
+  const r=await fetch(API+'?action=mail-message&id='+encodeURIComponent(id),{headers:{authorization:'Bearer '+token},cache:'no-store'});
+  const j=await r.json();if(!r.ok)throw Error(j.error||'Lecture impossible');const m=j.item;
+  pane.innerHTML='<h3>'+esc(m.subject||'(Sans objet)')+'</h3><p class="muted">De : '+esc(m.sender_email||'')+'</p>'+
+  '<pre class="mail-text">'+esc(m.plain_body||'Corps texte non disponible')+'</pre>'+
+  (m.has_attachments?'<p class="note">'+Number(m.attachment_count||0)+' pièce(s) jointe(s) détectée(s), téléchargement non activé.</p>':'')+
+  '<button class="btn primary" id="reply-free-mail">Répondre</button>';
+  $('reply-free-mail').onclick=()=>composeMail(m.sender_email,'Re: '+m.subject,'',m.id);
+  if(!m.is_seen){await api('mail-mark-read','POST',{id});const local=(db.mail_inbox||[]).find(x=>x.id===id);if(local)local.is_seen=true;}
+ }catch(e){pane.innerHTML='<p class="muted">'+esc(e.message||'Erreur')+'</p>'}
+};
+window.composeMail=(to='',subject='',body='',replyId='')=>{
+ const key=crypto.randomUUID();
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:740px"><div class="top"><h2>Rédiger un courriel</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<p class="muted">De : ph.danglade@free.fr — Sauvegarde d’abord en brouillon, sans envoi.</p>'+
+ '<label>À</label><input id="mailTo" type="email" value="'+esc(to)+'" maxlength="254">'+
+ '<label style="margin-top:12px">Objet</label><input id="mailSubject" value="'+esc(subject)+'" maxlength="250">'+
+ '<label style="margin-top:12px">Message</label><textarea id="mailBody" maxlength="20000" rows="12">'+esc(body)+'</textarea>'+
+ '<input type="hidden" id="mailKey" value="'+key+'"><input type="hidden" id="mailReplyId" value="'+esc(replyId)+'">'+
+ '<div class="actions"><button class="btn primary" id="mailSave" onclick="saveFreeMailDraft()">Enregistrer brouillon</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div>'+
+ '<p id="modalStatus" class="status"></p></div></div>';
+};
+window.saveFreeMailDraft=async()=>{
+ const b=$('mailSave'),status=$('modalStatus');b.disabled=true;status.textContent='Enregistrement…';
+ try{
+  await api('mail-create-draft','POST',{client_key:$('mailKey').value,recipient_email:$('mailTo').value,subject:$('mailSubject').value,plain_body:$('mailBody').value,in_reply_to_message_id:$('mailReplyId').value||null});
+  closeModal();await refresh();alert('Brouillon créé. Aucun courriel envoyé.');
+ }catch(e){b.disabled=false;status.className='status err';status.textContent=e.message||'Erreur'}
+};
+window.viewMailDraft=id=>{
+ const m=(db.mail_outbox||[]).find(x=>x.id===id);if(!m)return;
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>'+esc(m.subject)+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div><p class="muted">À : '+esc(m.recipient_email)+' · '+esc(m.status)+'</p><pre class="mail-text">'+esc(m.plain_body)+'</pre></div></div>';
+};
+window.sendFreeMail=async id=>{
+ const m=(db.mail_outbox||[]).find(x=>x.id===id);
+ if(!m||m.status!=='draft')return;
+ if(!confirm('Envoyer maintenant « '+m.subject+' » à '+m.recipient_email+' depuis ph.danglade@free.fr ?'))return;
+ try{await api('mail-send','POST',{id,confirmed:true});await refresh();alert('Envoi accepté par le serveur SMTP.');}
+ catch(e){await refresh();alert('Envoi non confirmé : '+e.message)}
+};
+window.cancelFreeMailDraft=async id=>{
+ if(!confirm('Annuler ce brouillon sans l’envoyer ?'))return;
+ try{await api('mail-cancel-draft','POST',{id});await refresh()}catch(e){alert(e.message||'Erreur')}
+};
+
 function renderGuide(){$('content').innerHTML=`<div class="card"><h3>Commandes reproduites</h3>${db.commands.map(c=>`<div class="kv"><b>${esc(c.label)}</b><div><code>${esc(c.function)}</code><div class="muted">${esc(c.description)}</div></div></div>`).join('')}</div><br><div class="card"><h3>Organisation du classeur reproduite</h3><p>Suivi_Locataires : ${db.tenant_headers.length} colonnes, avec les listes OUI/NON et les états d’alerte conservés dans les données.</p><p>Config : paramètres IRL, seuil de révision, délais de relance, liens INSEE et préfixe des dossiers.</p><p>Modele_Dossier_Logement : informations logement, locataire actuel, historique, échéancier et synthèse.</p><p>Dossier_Exemple : les valeurs du classeur sont présentes dans l’onglet « Dossiers logement ».</p></div>`}
 window.closeModal=()=>{$('modal').innerHTML=''};
 if(token){$('login').classList.add('hide');$('app').classList.remove('hide');initNav();refresh()}else $('login').classList.remove('hide');
