@@ -62,7 +62,7 @@ Deno.serve(async(req:Request)=>{
   if(action==="employee-month"&&req.method==="GET"){
    const employeeId=url.searchParams.get("employee_id"),month=url.searchParams.get("month");
    if(!isId(employeeId)||!isMonth(month))return json({error:"Salarié ou mois invalide"},400);
-   const staff=await db.from("college_personnel").select("id").eq("id",employeeId).maybeSingle();
+   const staff=await db.from("college_personnel").select("id,name").eq("id",employeeId).maybeSingle();
    if(staff.error)throw staff.error;
    if(!staff.data)return json({error:"Salarié introuvable"},404);
    const [current,previous]=await Promise.all([
@@ -84,9 +84,12 @@ Deno.serve(async(req:Request)=>{
    if(base===null||bonus===null||weekly===null||(body.actual_hours!==null&&actual===null)||
       !validWeekdays(days)||extras===null)
     return json({error:"Champs invalides : salaire, prime, heures hebdomadaires ou heures réelles."},400);
-   const staff=await db.from("college_personnel").select("id").eq("id",employeeId).maybeSingle();
+   const staff=await db.from("college_personnel").select("id,name").eq("id",employeeId).maybeSingle();
    if(staff.error)throw staff.error;
    if(!staff.data)return json({error:"Salarié introuvable"},404);
+   const worker=String(staff.data.name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+   if(/\b(MEDJEBER|MOREL)\b/.test(worker)&&days.includes(3))
+    return json({error:"Ce salarié ne travaille pas le mercredi. Décochez ce jour."},400);
    const data={base_salary_gross:base,bonus_gross:bonus,weekly_hours:weekly,actual_hours:actual,
     working_days:[...days].sort((a,b)=>a-b),benefits_in_kind:extras,
     updated_by:user,updated_at:new Date().toISOString()};
