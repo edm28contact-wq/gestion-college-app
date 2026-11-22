@@ -121,7 +121,7 @@ const releaseMilestones=[
  ['Messagerie Free opérationnelle','partial','Module installé ; authentification et test réel à effectuer'],
  ['Synchronisation IMAP récurrente','todo','À automatiser après validation de la connexion'],
  ['Connexion bancaire et rapprochement','todo','Aucune connexion bancaire active'],
- ['Suivi des travaux et prestataires','todo','Écritures travaux et processus à créer'],
+ ['Suivi des travaux et prestataires','done','Tickets, devis, validation et historique ; aucune commande automatique'],
  ['Révisions IRL conformes aux baux','todo','Moteur de révision à valider juridiquement'],
  ['Archivage sécurisé des PDF et pièces','todo','Stockage documentaire à intégrer'],
  ['Recette de bout en bout en production','todo','Essais réels sur les parcours complets']
@@ -483,10 +483,94 @@ window.voidRentalPayment=async(id)=>{
  try{await api('void-payment','POST',{payment_id:id,reason:reason.trim(),confirmed:true});await refresh();}catch(e){alert(e.message||'Erreur du serveur')}
 };
 
+
+const workStatusLabels={open:'Signalé',in_review:'Évaluation',quoted:'Devis reçu',approved:'Devis approuvé',in_progress:'En cours',completed:'Terminé',cancelled:'Annulé'};
+const workTransitions={open:['in_review','cancelled'],in_review:['quoted','cancelled'],quoted:['approved','cancelled'],approved:['in_progress','cancelled'],in_progress:['completed','cancelled']};
+const workCategories={plomberie:'Plomberie',electricite:'Électricité',chauffage:'Chauffage',serrurerie:'Serrurerie',entretien:'Entretien',autre:'Autre'};
+function workProperty(id){return (db.properties||[]).find(p=>p.id===id)}
 function renderWorks(){
- const props=(db.properties||[]).filter(p=>!p.is_example),rows=filtered(props,p=>JSON.stringify([p.name,p.data,p.current_tenant]));
- $('content').innerHTML=section('Travaux et entretien','Vue des biens pour préparer le suivi des interventions, sans inventer d’historique de travaux.','<button class="btn primary" onclick="newProperty()">Ajouter un bien</button>')+stats([['Biens suivis',props.length],['Travaux enregistrés','—','Aucune API travaux confirmée'],['Dépenses travaux','—','Aucune écriture associée']])+dataTable(['Bien','Adresse','Statut','Locataire','Dossier'],rows.map(p=>'<tr><td><b>'+esc(p.data?.['Nom du logement']||p.name)+'</b></td><td>'+esc(p.data?.['Adresse']||'—')+'</td><td>'+esc(p.data?.['Statut logement']||'—')+'</td><td>'+esc(p.current_tenant?.['Locataire actuel']||'—')+'</td><td><button class="btn secondary" onclick="openProperty(\''+esc(p.id)+'\')">Consulter</button></td></tr>'))+'<p class="module-note">L’ajout d’une intervention, de devis ou de factures exigera un stockage permanent côté serveur.</p>';
+ if(!db.current_user?.work_access){$('content').innerHTML=section('Travaux et interventions','Accès réservé aux gestionnaires autorisés.')+'<div class="card empty-state">Accès aux interventions indisponible.</div>';return}
+ const orders=db.work_orders||[],active=orders.filter(o=>!['completed','cancelled'].includes(o.status));
+ const urgent=active.filter(o=>o.priority==='urgent').length;
+ const estimates=orders.filter(o=>o.status!=='cancelled').reduce((sum,o)=>sum+Number(o.estimate_amount||0),0);
+ const actual=orders.filter(o=>o.status==='completed').reduce((sum,o)=>sum+Number(o.actual_amount||0),0);
+ const rows=filtered(orders,o=>[o.title,o.description,o.provider_name,workProperty(o.property_id)?.name].join(' '));
+ const canWrite=!db.current_user?.read_only;
+ $('content').innerHTML=section('Travaux et interventions','Signalements, devis, validations et historique des interventions par logement.',
+ canWrite?'<button class="btn primary" onclick="newWorkOrder()">+ Signaler une intervention</button>':'')+
+ stats([['Interventions en cours',active.length],['Urgentes',urgent],['Devis saisis',money(estimates),'Montants indicatifs, non payés'],['Coût terminé saisi',money(actual),'Pas d’écriture comptable créée']])+
+ dataTable(['Logement','Intervention','Priorité','Prestataire','Devis','État','Actions'],rows.map(o=>{
+  const p=workProperty(o.property_id),state=workStatusLabels[o.status]||o.status;
+  return '<tr><td><b>'+esc(p?.name||'Logement')+'</b></td><td><b>'+esc(o.title)+'</b><div class="muted">'+esc(workCategories[o.category]||o.category)+'</div></td>'+
+  '<td><span class="mini-tag '+(o.priority==='urgent'?'bad':'')+'">'+esc(o.priority==='urgent'?'Urgent':'Standard')+'</span></td>'+
+  '<td>'+esc(o.provider_name||'Non désigné')+'</td><td>'+ (o.estimate_amount===null?'—':money(Number(o.estimate_amount)))+'</td>'+
+  '<td><span class="mini-tag '+(['open','in_review'].includes(o.status)?'warn':'')+'">'+esc(state)+'</span></td>'+
+  '<td><button class="btn secondary" data-id="'+esc(o.id)+'" onclick="openWorkOrder(this.dataset.id)">Voir la fiche</button></td></tr>';
+ }))+
+ '<div class="note" style="margin-top:14px">Les devis et interventions sont enregistrés dans Supabase, avec historique des opérations. L’approbation d’un devis ne commande rien au prestataire, ne déclenche aucun paiement et ne crée aucune facture.</div>';
 }
+window.newWorkOrder=()=>{
+ if(!db.current_user?.work_access||db.current_user?.read_only)return;
+ const props=(db.properties||[]).filter(x=>!x.is_example);
+ if(!props.length){alert('Créez d’abord un bien dans Mes Biens.');return;}
+ const options=props.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+ const categories=Object.entries(workCategories).map(([id,name])=>'<option value="'+id+'">'+esc(name)+'</option>').join('');
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:760px"><div class="top"><h2>Signaler un problème / travaux</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="fields"><div><label>Bien concerné</label><select id="work-property">'+options+'</select></div>'+
+ '<div><label>Catégorie</label><select id="work-category">'+categories+'</select></div>'+
+ '<div><label>Priorité</label><select id="work-priority"><option value="standard">Standard</option><option value="urgent">Urgent</option></select></div></div>'+
+ '<label style="margin-top:10px">Objet du signalement</label><input id="work-title" maxlength="180" placeholder="Ex. : radiateur qui ne chauffe plus">'+
+ '<label style="margin-top:12px">Description</label><textarea id="work-description" maxlength="4000" placeholder="Faits constatés, pièces concernées…"></textarea>'+
+ '<input id="work-key" type="hidden" value="'+crypto.randomUUID()+'">'+
+ '<div class="actions"><button id="work-save-new" class="btn primary" onclick="saveNewWorkOrder()">Créer le ticket</button></div><div class="status" id="modalStatus"></div></div></div>';
+};
+window.saveNewWorkOrder=async()=>{
+ const title=$('work-title')?.value.trim()||'',description=$('work-description')?.value.trim()||'',status=$('modalStatus'),button=$('work-save-new');
+ if(title.length<5){status.className='status err';status.textContent='Un titre d’au moins cinq caractères est nécessaire.';return}
+ button.disabled=true;status.className='status';status.textContent='Création du ticket…';
+ try{
+  await api('work-create','POST',{client_key:$('work-key').value,property_id:$('work-property').value,title,description,
+    category:$('work-category').value,priority:$('work-priority').value});
+  closeModal();await refresh();
+ }catch(e){button.disabled=false;status.className='status err';status.textContent=e.message||'Erreur'}
+};
+window.openWorkOrder=id=>{
+ const o=(db.work_orders||[]).find(x=>x.id===id);if(!o)return;
+ const p=workProperty(o.property_id),readonly=db.current_user?.read_only||['cancelled','completed'].includes(o.status);
+ const detailsLocked=readonly||['approved','in_progress'].includes(o.status);
+ const field=(id,label,val,type='text',disabled=false)=>'<div><label>'+esc(label)+'</label><input id="work-'+id+'" type="'+type+'" value="'+esc(val??'')+'" '+(disabled?'disabled':'')+'></div>';
+ const options=(workTransitions[o.status]||[]).map(next=>'<option value="'+next+'">'+esc(workStatusLabels[next]||next)+'</option>').join('');
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:790px"><div class="top"><div><h2>'+esc(o.title)+'</h2><p class="muted">'+esc(p?.name||'—')+' · '+esc(workStatusLabels[o.status]||o.status)+'</p></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note">Catégorie : '+esc(workCategories[o.category]||'Autre')+' · Priorité : '+esc(o.priority==='urgent'?'Urgent':'Standard')+' · Ticket créé le '+esc(o.created_at?.slice(0,10)||'—')+'</div>'+
+ '<h3 style="margin-top:15px">Description</h3><p>'+esc(o.description||'Aucune description')+'</p>'+
+ '<div class="section-title">Prestataire et suivi financier</div><div class="fields">'+
+ field('provider','Prestataire',o.provider_name,'text',detailsLocked)+field('contact','Contact du prestataire',o.provider_contact,'text',detailsLocked)+
+ field('estimate','Devis estimé (€)',o.estimate_amount,'number',detailsLocked)+
+ field('actual','Coût réel constaté (€)',o.actual_amount,'number',readonly)+
+ field('scheduled','Intervention prévue le',o.scheduled_for,'date',readonly)+'</div>'+
+ (o.approved_at?'<p class="muted">Devis approuvé le '+esc(o.approved_at.slice(0,10))+' par '+esc(o.approved_by||'gestionnaire')+'.</p>':'')+
+ (o.completed_on?'<p class="muted">Travaux terminés le '+esc(o.completed_on)+'.</p>':'')+
+ (readonly?'<p class="muted">Dossier clôturé ou compte en lecture seule.</p>':
+ '<div class="actions"><button class="btn secondary" data-id="'+esc(id)+'" onclick="saveWorkDetails(this.dataset.id)">Enregistrer les informations</button>'+
+ (options?'<select id="work-next" style="width:auto">'+options+'</select><button class="btn primary" data-id="'+esc(id)+'" onclick="advanceWorkOrder(this.dataset.id)">Changer le statut</button>':'')+'</div>')+
+ '<div id="modalStatus" class="status"></div></div></div>';
+};
+window.saveWorkDetails=async id=>{
+ const status=$('modalStatus');status.className='status';status.textContent='Mise à jour…';
+ try{
+  await api('work-details','POST',{id,provider_name:$('work-provider')?.value||'',provider_contact:$('work-contact')?.value||'',
+    estimate_amount:$('work-estimate')?.value||null,actual_amount:$('work-actual')?.value||null,scheduled_for:$('work-scheduled')?.value||null});
+  closeModal();await refresh();openWorkOrder(id);
+ }catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
+};
+window.advanceWorkOrder=async id=>{
+ const next=$('work-next')?.value,o=(db.work_orders||[]).find(x=>x.id===id);
+ if(!next||!o)return;
+ if(!confirm('Passer le ticket « '+o.title+' » de « '+(workStatusLabels[o.status]||o.status)+' » à « '+(workStatusLabels[next]||next)+' » ? Aucune commande n’est envoyée au prestataire.'))return;
+ const status=$('modalStatus');status.className='status';status.textContent='Modification du statut…';
+ try{await api('work-transition','POST',{id,next,confirmed:true});closeModal();await refresh();openWorkOrder(id)}
+ catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
+};
 
 function renderDocuments(){
  const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example),permitted=!!db.current_user?.payment_access;
