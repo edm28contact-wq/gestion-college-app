@@ -422,11 +422,11 @@ function bankCsvRows(csv){
  if(rows.length>201)throw Error('Maximum 200 mouvements par relevé.');
  const headers=rows.shift().map(bankNormalizeHeader);
  const index=aliases=>headers.findIndex(h=>aliases.includes(h));
- const dateIdx=index(['date','dateoperation','datecomptable','datecomptabilisation','datevaleur','bookingdate']);
+ const dateIdx=index(['date','dateoperation','datedoperation','datedeoperation','datecomptable','datecomptabilisation','datevaleur','datedecriture','bookingdate']);
  const labelIdx=index(['libelle','libelleoperation','libelledeloperation','description','details','operation','intitule','motif','objet']);
  const amountIdx=index(['montant','montanteur','montantoperation','amount']);
- const creditIdx=index(['credit','montantcredit','recette','entree','versement']);
- const debitIdx=index(['debit','montantdebit','depense','sortie','retrait']);
+ const creditIdx=index(['credit','crediteur','crediteneuros','montantcredit','recette','entree','versement']);
+ const debitIdx=index(['debit','debiteur','debiteneuros','montantdebit','depense','sortie','retrait']);
  const refIdx=index(['reference','ref','referenceoperation','idoperation','identifiant','transactionid']);
  if(dateIdx<0||labelIdx<0||(amountIdx<0&&(creditIdx<0||debitIdx<0)))
   throw Error('Colonnes obligatoires : Date, Libellé et Montant, ou Date, Libellé, Débit et Crédit.');
@@ -463,7 +463,7 @@ function bankCsvRows(csv){
   const description=get(labelIdx).replace(/[\r\n\t]+/g,' ').trim();
   const reference=get(refIdx);
   let amount;
-  if(amountIdx>=0){amount=parseMoney(get(amountIdx))}
+  if(amountIdx>=0 && get(amountIdx)!==''){amount=parseMoney(get(amountIdx))}
   else{
    const credit=parseMoney(get(creditIdx)),debit=parseMoney(get(debitIdx));
    if((credit!==null&&credit!==0)&&(debit!==null&&debit!==0))
