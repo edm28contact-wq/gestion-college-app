@@ -63,16 +63,35 @@
 .config-layout{display:grid;gap:15px}.config-section{padding:20px}
 .config-section .fields{margin-top:15px;margin-bottom:15px}.config-section .fields p{margin-top:5px;line-height:1.45}
 .config-section #central-config-save:disabled{opacity:.6;cursor:wait}
+
+.release-mini{padding:10px 13px;margin:8px 10px;border:1px solid #dae4f0;border-radius:10px;background:#f7faff;font-size:12px;color:#31445b}
+.release-mini-button{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.release-track{height:8px;background:#dfe7f4;border-radius:999px;overflow:hidden;margin:9px 0 6px}
+.release-fill{height:100%;background:#1764eb;border-radius:999px;transition:width .2s ease}
+.release-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}
+.release-progress-card{padding:17px;border:1px solid #e2e8f0;background:#fff;border-radius:10px}
+.release-progress-card .metric{font-size:23px;font-weight:800;margin:7px 0}
+.release-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:15px}
+.release-entry{display:flex;gap:12px;align-items:flex-start;border:1px solid #e2e8f0;padding:14px;border-radius:10px;background:#fff}
+.release-state{display:inline-block;padding:4px 9px;border-radius:12px;background:#eef2f7;color:#475569;font-size:11px;white-space:nowrap}
+.release-state.done{background:#e7f8ee;color:#166534}
+.release-state.partial{background:#fff3db;color:#946200}
+.release-block{border:1px solid #dce5ef;background:#fff;padding:20px;border-radius:12px;margin-bottom:14px}
+.release-block h3{font-size:16px;margin:0}
+.release-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+@media(max-width:1000px){.release-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.release-list{grid-template-columns:1fr}}
+@media(max-width:620px){.release-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <section id="login" class="login"><div class="box"><h1>Marne Invest</h1><p class="muted">Administration — gestion locative IRL</p><label>Utilisateur</label><input id="user" value="holding-admin" autocomplete="username"><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div id="loginStatus" class="status"></div></div></section>
-<section id="app" class="shell hide"><aside class="side"><div class="brand">Marne Invest</div><div class="brand-sub">Gestion locative</div><div id="nav" class="nav"></div><div class="side-profile"><b>Marne Invest</b>Gestion immobilière</div></aside><main class="main"><div class="top"><div><h1 id="pageTitle">Tableau de bord</h1><div id="serverTime" class="muted"></div></div><div class="actions"><input id="globalSearch" type="search" class="top-search" placeholder="⌕ Rechercher..." aria-label="Rechercher" oninput="searchAll(this.value)"><a class="btn secondary" href="../holding/">Holding</a><a class="btn secondary" href="./comptabilite/">Comptabilité</a><a class="btn secondary" href="./locataires/">Gestion locataire</a><a class="btn secondary" href="./studios/">Gestion studio</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><div id="content"></div></main></section><div id="modal"></div>
+<section id="app" class="shell hide"><aside class="side"><div class="brand">Marne Invest</div><div class="brand-sub">Gestion locative</div><div id="nav" class="nav"></div><div id="releaseMini" class="release-mini"></div><div class="side-profile"><b>Marne Invest</b>Gestion immobilière</div></aside><main class="main"><div class="top"><div><h1 id="pageTitle">Tableau de bord</h1><div id="serverTime" class="muted"></div></div><div class="actions"><input id="globalSearch" type="search" class="top-search" placeholder="⌕ Rechercher..." aria-label="Rechercher" oninput="searchAll(this.value)"><a class="btn secondary" href="../holding/">Holding</a><a class="btn secondary" href="./comptabilite/">Comptabilité</a><a class="btn secondary" href="./locataires/">Gestion locataire</a><a class="btn secondary" href="./studios/">Gestion studio</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><div id="content"></div></main></section><div id="modal"></div>
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
-const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false;
-const pages=[['dashboard','Dashboard','⌂'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false;
+const pages=[['dashboard','Dashboard','⌂'],['pilotage','Version finale','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
 async function api(action,method='GET',body){const r=await fetch(API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401&&action!=='login'){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
@@ -81,13 +100,96 @@ window.logout=()=>{token='';db=null;selectedRow=null;localStorage.removeItem('ma
 function initNav(){$('nav').innerHTML=pages.map(([k,l,i])=>`<button data-p="${k}" onclick="showPage('${k}')"><span class="nav-icon">${i}</span>${l}</button>`).join('')}
 window.showPage=p=>{page=p;searchQuery='';$('globalSearch').value='';render()};window.searchAll=q=>{searchQuery=String(q||'').trim().toLocaleLowerCase('fr');render()};
 window.refresh=async()=>{try{db=await api('data');$('serverTime').textContent='Données actualisées : '+new Date(db.server_time).toLocaleString('fr-FR');render();if(!irlChecked)fetchIrl()}catch(e){alert(e.message)}};
-function render(){if(!db)return;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,mail:renderMail,works:renderWorks,documents:renderDocuments,reports:renderReports}[page]||renderDashboard)()}
+function render(){if(!db)return;if($('releaseMini'))$('releaseMini').innerHTML=releaseMini();document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,mail:renderMail,works:renderWorks,documents:renderDocuments,reports:renderReports,pilotage:renderPilotage}[page]||renderDashboard)()}
 function setting(key,fallback){return db.settings.find(x=>x.setting_key===key)?.value??fallback}
 
 function renderModule(title,message,link){$('content').innerHTML='<div class="card"><h2>'+esc(title)+'</h2><p class="muted">'+esc(message)+'</p>'+(link?'<a class="btn primary" href="'+link+'">Ouvrir la comptabilité</a>':'')+'</div>'}
 function valueOf(data,keys){for(const k of keys){let v=data?.[k];if(typeof v==='number'&&Number.isFinite(v))return v;if(typeof v==='string'&&v.trim()){v=Number(v.replace(/[\\s\\u00a0\\u202f€]/g,'').replace(',','.'));if(Number.isFinite(v))return v}}return null}
 function bars(items,green){if(!items.length)return '<div class="chart-empty">Données non disponibles pour ce graphique.</div>';const max=Math.max(1,...items.map(x=>x[1]));return '<div class="chart-bars">'+items.slice(0,8).map(x=>'<div class="chart-bar '+(green?'green':'')+'" title="'+esc(x[0])+' : '+fmt(x[1])+'"><i style="height:'+Math.max(2,Math.round(x[1]/max*90))+'%"></i><small>'+esc(x[0])+'</small></div>').join('')+'</div>'}
 function pie(items){const total=items.reduce((n,x)=>n+x[1],0);if(!total)return '<div class="chart-empty">Type des logements non renseigné.</div>';const colors=['#1764eb','#60a5fa','#3b82f6','#a8c9ff','#93c5fd'];let pct=0;const seg=items.slice(0,5).map((x,i)=>{const a=pct;pct+=x[1]/total*100;return colors[i]+' '+a+'% '+pct+'%'});return '<div class="donut" style="background:conic-gradient('+seg.join(',')+')"></div><div class="legend">'+items.slice(0,5).map((x,i)=>'<span><i style="background:'+colors[i]+'"></i>'+esc(x[0])+' ('+Math.round(x[1]/total*100)+' %)</span>').join('')+'</div>'}
+
+
+const releaseMilestones=[
+ ['Portefeuille et liaison des logements','done','13 biens reliés au suivi locatif'],
+ ['Fiches locataires et recherche','done','Consultation et modification des dossiers'],
+ ['Validation des baux','done','Brouillons et confirmation explicite des conditions'],
+ ['Échéances mensuelles automatiques','done','Mois complets, sans doublons, chaque jour'],
+ ['Registre financier des paiements','done','Règlements partiels, affectations et annulations'],
+ ['Reçus et aperçus de quittances','done','Impression depuis les règlements vérifiés'],
+ ['Brouillons de relances programmés','done','J+7 et J+14 sans envoi automatique'],
+ ['Paramètres centralisés et secrets','done','Coordonnées communes et chiffrement des mots de passe'],
+ ['Messagerie Free opérationnelle','partial','Module installé ; authentification et test réel à effectuer'],
+ ['Synchronisation IMAP récurrente','todo','À automatiser après validation de la connexion'],
+ ['Connexion bancaire et rapprochement','todo','Aucune connexion bancaire active'],
+ ['Suivi des travaux et prestataires','todo','Écritures travaux et processus à créer'],
+ ['Révisions IRL conformes aux baux','todo','Moteur de révision à valider juridiquement'],
+ ['Archivage sécurisé des PDF et pièces','todo','Stockage documentaire à intégrer'],
+ ['Recette de bout en bout en production','todo','Essais réels sur les parcours complets']
+];
+function releaseStatus(){
+ const total=releaseMilestones.length,done=releaseMilestones.filter(x=>x[1]==='done').length,partial=releaseMilestones.filter(x=>x[1]==='partial').length;
+ return {total,done,partial,percent:Math.round(done/total*100)};
+}
+function releaseMini(){
+ const x=releaseStatus();
+ return '<button class="release-mini-button" onclick="showPage(&quot;pilotage&quot;)" aria-label="Voir l’avancement vers la version finale"><b>Version finale · '+x.percent+' %</b>'+
+ '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+x.percent+'"><div class="release-fill" style="width:'+x.percent+'%"></div></div>'+
+ '<span>'+x.done+'/'+x.total+' lots livrés · '+x.partial+' partiel(s)</span></button>';
+}
+function releaseBanner(){
+ const x=releaseStatus();
+ return '<section class="release-block" style="margin-bottom:18px"><div class="section-head"><div><h3>Avancement vers la version finale</h3>'+
+ '<p class="muted">Indicateur de développement : '+x.done+' lots livrés sur '+x.total+'. Ce n’est pas une validation de production.</p></div>'+
+ '<button class="btn secondary" onclick="showPage(&quot;pilotage&quot;)">Voir la feuille de route</button></div>'+
+ '<div style="display:flex;align-items:center;gap:15px"><div style="font-size:27px;font-weight:800">'+x.percent+' %</div>'+
+ '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+x.percent+'" style="flex:1;height:11px"><div class="release-fill" style="width:'+x.percent+'%"></div></div></div></section>';
+}
+function renderPilotage(){
+ const x=releaseStatus(),props=(db.properties||[]).filter(p=>!p.is_example),tenants=db.tenants||[],leases=db.leases||[];
+ const linked=props.filter(p=>tenants.some(t=>t.property_id===p.id)).length;
+ const active=leases.filter(l=>l.status==='active'&&l.verified_at).length;
+ const draft=leases.filter(l=>l.status==='draft').length;
+ const emails=tenants.filter(t=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(t.data?.['Mail locataire']||''))).length;
+ const recent=(db.automation_runs||[])[0],lastRun=recent?.run_at?new Date(recent.run_at):null;
+ const runStatus=lastRun?lastRun.toLocaleString('fr-FR'):'Aucune exécution connue';
+ const locked=!!db.current_user?.read_only||!db.current_user?.payment_access;
+ const health='<div class="release-grid">'+
+ [['Biens reliés',linked+'/'+props.length,'Liaison technique des dossiers'],
+ ['Baux vérifiés',active+'/'+leases.length,draft+' brouillon(s)'],
+ ['E-mails locataires',emails+'/'+tenants.length,'Renseignés dans les fiches'],
+ ['Messagerie Free',db.current_user?.mail_configured?'Secret présent':'Non configurée','Authentification réelle à tester']].map(([label,value,sub])=>
+ '<div class="release-progress-card"><div class="muted">'+esc(label)+'</div><div class="metric">'+esc(String(value))+'</div><p class="muted">'+esc(sub)+'</p></div>').join('')+'</div>';
+ const monitoring='<section class="release-block"><h3>Automatisation des loyers</h3><p class="muted">La génération fonctionne quotidiennement pour les mois complets des baux actifs validés. Ni paiement ni augmentation de loyer n’est déclenché.</p>'+
+ '<div class="kv"><b>Dernier contrôle</b><span>'+esc(runStatus)+'</span></div>'+
+ '<div class="kv"><b>Résultat du dernier contrôle</b><span>'+ (recent?esc(recent.created+' échéance(s) créée(s), '+recent.skipped+' ignorée(s)'):'Aucun')+'</span></div>'+
+ '<div class="kv"><b>Prochains contrôles</b><span>Chaque jour à 05h10 UTC (échéances) et 07h20 UTC (brouillons de relance)</span></div>'+
+ '<div class="release-actions"><button class="btn primary" onclick="runAutomaticInstallments()" '+(locked?'disabled':'')+'>Vérifier / générer les échéances</button>'+
+ '<button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Contrôler les baux</button></div>'+
+ '<div class="status" id="installmentAutoStatus"></div></section>';
+ const blockers='<section class="release-block"><h3>À compléter avant la mise en production finale</h3><p class="muted">Ce sont des blocages réels, pas des bugs supposés.</p>'+
+ '<div class="kv"><b>Baux à valider</b><span>'+draft+' · <button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Ouvrir Contrats</button></span></div>'+
+ '<div class="kv"><b>Adresses e-mail locataires manquantes</b><span>'+Math.max(0,tenants.length-emails)+' · <button class="btn secondary" onclick="showPage(&quot;tenants&quot;)">Ouvrir Locataires</button></span></div>'+
+ '<div class="kv"><b>Messagerie Free</b><span>'+(db.current_user?.mail_configured?'Test IMAP/SMTP requis':'Mot de passe à configurer')+' · <button class="btn secondary" onclick="showPage(&quot;config&quot;)">Paramètres</button></span></div></section>';
+ const checklist='<section class="release-block"><h3>Feuille de route de la version finale</h3>'+
+ '<p class="muted">Méthode de calcul : 1 point par lot livré ; un lot partiel ou planifié n’est pas compté. Le pourcentage évolue lors des prochaines livraisons vérifiées.</p>'+
+ '<div class="release-list">'+releaseMilestones.map(([label,state,desc])=>{
+ const name=state==='done'?'Livré':state==='partial'?'Partiel':'À développer';
+ return '<div class="release-entry"><span class="release-state '+(state==='done'?'done':state==='partial'?'partial':'')+'">'+name+'</span>'+
+ '<div><b>'+esc(label)+'</b><div class="muted">'+esc(desc)+'</div></div></div>';
+ }).join('')+'</div></section>';
+ $('content').innerHTML=section('Version finale et contrôles','Suivi transparent du développement et des données à compléter.')+
+ releaseBanner()+health+monitoring+blockers+checklist;
+}
+window.runAutomaticInstallments=async()=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ if(!confirm('Vérifier les échéances du mois courant et du mois suivant pour les baux validés ? Aucun paiement ne sera créé.'))return;
+ const status=$('installmentAutoStatus');if(status){status.className='status';status.textContent='Contrôle des échéances en cours…'}
+ try{
+  const result=await api('run-installments','POST',{});
+  await refresh();
+  const next=$('installmentAutoStatus');if(next){next.className='status ok';next.textContent=result.created+' échéance(s) créée(s) et '+result.skipped+' ignorée(s).'}
+ }catch(e){const next=$('installmentAutoStatus');if(next){next.className='status err';next.textContent=e.message||'Échec du contrôle'}else alert(e.message||'Échec du contrôle')}
+};
 
 function renderDashboard(){
  const properties=(db.properties||[]).filter(p=>!p.is_example),ledger=rentalLedger(),today=todayParis(),currentMonth=today.slice(0,7);
@@ -102,7 +204,7 @@ function renderDashboard(){
  const months=periods.map(k=>[k,[...ledger.valid.values()].filter(p=>String(p.received_on).slice(0,7)===k).reduce((sum,p)=>sum+Number(p.amount||0),0)]);
  const chart=(label,html)=>'<section class="card chart-card"><h3>'+label+'</h3>'+html+'</section>';
  const monthlyChart=months.some(x=>x[1]>0)?bars(months,false):'<div class="chart-empty">Aucun paiement saisi dans le nouveau registre pour ces six mois.</div>';
- $('content').innerHTML='<div class="kpis">'+statsData.map(([label,value,icon,sub])=>'<div class="card stat"><div class="muted">'+esc(label)+'</div><div class="symbol">'+icon+'</div><div class="kpi">'+esc(String(value))+'</div><div class="muted">'+esc(sub)+'</div></div>').join('')+'</div><div class="charts">'+
+ $('content').innerHTML=releaseBanner()+'<div class="kpis">'+statsData.map(([label,value,icon,sub])=>'<div class="card stat"><div class="muted">'+esc(label)+'</div><div class="symbol">'+icon+'</div><div class="kpi">'+esc(String(value))+'</div><div class="muted">'+esc(sub)+'</div></div>').join('')+'</div><div class="charts">'+
  chart('Encaissements enregistrés — 6 derniers mois',monthlyChart)+
  chart('Répartition par Type de Bien',pie([...types]))+
  chart('Répartition Géographique',bars([...cities],false))+
