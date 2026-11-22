@@ -30,6 +30,8 @@ function salaryPayrollPrepare(staff,record,previous){
   benefits_in_kind:Array.isArray(record.benefits_in_kind)?record.benefits_in_kind.map(x=>({label:String(x.label),amount:String(x.amount)})):[],
  };
  const draft=salaryPayrollDefault(staff,previous);
+ if(CollegeSalaryCalc.defaultWeekdays(staff?.name).length===4)
+  draft.working_days=[1,2,4,5];
  return {...draft,base_salary_gross:String(draft.base_salary_gross),weekly_hours:String(draft.weekly_hours),bonus_gross:"0"};
 }
 function salaryPayrollValidate(draft){
@@ -144,6 +146,8 @@ function salaryPayrollPanel(){
  return '<section class="card salary-payroll" id="salaryPayrollPanel"><div class="salary-section-head"><div><h2>Rémunération — '+esc(staff.name)+'</h2><p class="muted">'+esc(salaryMonthLabel(month))+' · accès administrateur uniquement</p></div><button type="button" id="salaryPayrollClose" class="btn secondary">Fermer</button></div>'+message+body+'</section>';
 }
 function salaryPayrollEditor(draft,month){
+ const staff=salaryStaff.find(s=>s.id===salaryPayrollEmployeeId);
+ const noWednesday=CollegeSalaryCalc.defaultWeekdays(staff?.name).length===4;
  const weekdays=[["Lun",1],["Mar",2],["Mer",3],["Jeu",4],["Ven",5]];
  const normalized={
   base_salary_gross:salaryPayrollDecimal(draft.base_salary_gross),
@@ -174,8 +178,8 @@ function salaryPayrollEditor(draft,month){
   '<label>Heures contractuelles / semaine<input name="weekly_hours" inputmode="decimal" required placeholder="Ex. 35" value="'+esc(draft.weekly_hours)+'"></label>'+
   '<label>Heures réellement travaillées ce mois (saisie manuelle)<input name="actual_hours" inputmode="decimal" placeholder="Vide si non pointées" value="'+esc(draft.actual_hours)+'"></label></div>'+
   '<fieldset class="salary-workdays"><legend>Jours habituels de travail</legend><div class="salary-workdays-buttons">'+weekdays.map(([label,n])=>
-   '<label><input type="checkbox" data-salary-workday="'+n+'" '+(draft.working_days.includes(n)?"checked":"")+'><span>'+label+'</span></label>').join("")+'</div>'+
-   '<p class="muted">Jours ouvrés = jours cochés hors jours fériés nationaux. Les vacances scolaires et fermetures exceptionnelles ne sont pas déduites automatiquement.</p></fieldset>'+
+   '<label><input type="checkbox" data-salary-workday="'+n+'" '+(draft.working_days.includes(n)?"checked":"")+(noWednesday&&n===3?" disabled":"")+'><span>'+label+'</span></label>').join("")+'</div>'+
+   '<p class="muted">'+(noWednesday?'<b>Mercredi non travaillé pour ce salarié.</b> ':'')+'Jours ouvrés = jours cochés hors jours fériés nationaux. Les vacances scolaires et fermetures exceptionnelles ne sont pas déduites automatiquement.</p></fieldset>'+
   '<div class="salary-benefits"><div class="salary-section-head"><h3>Avantages en nature</h3><button type="button" id="salaryBenefitAdd" class="btn secondary" '+(draft.benefits_in_kind.length>=20?"disabled":"")+'>Ajouter un avantage</button></div>'+
   (benefitRows||'<p class="muted">Aucun avantage en nature déclaré pour ce mois.</p>')+
   '<p class="muted">Plusieurs avantages possibles. Leur valorisation est présentée séparément du salaire versé ; les règles sociales de paie restent à vérifier.</p></div>'+
