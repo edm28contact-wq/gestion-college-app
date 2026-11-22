@@ -144,6 +144,55 @@ function salaryFormatLate(minutes){
  const n=Number(minutes)||0;
  return Math.floor(n/60)+" h "+String(n%60).padStart(2,"0");
 }
+const salaryWeekdayNames=["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
+let salaryPayrollDraft=null,salaryPayrollMessage="";
+function salaryWorkingDays(month,days){
+ const [year,m]=month.split("-").map(Number);
+ let count=0;
+ for(let d=1;d<=new Date(Date.UTC(year,m,0)).getUTCDate();d++){
+  if(days.includes(new Date(Date.UTC(year,m-1,d)).getUTCDay()))count++;
+ }
+ return count;
+}
+function salaryPayrollPanel(staff,month){
+ const days=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.days:(Array.isArray(staff.working_weekdays)?staff.working_weekdays:[1,2,3,4,5]);
+ const benefits=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.benefits:(Array.isArray(staff.benefits_in_kind)?staff.benefits_in_kind:[]);
+ const total=benefits.reduce((n,b)=>n+(Number(b.amount)||0),0);
+ return '<section class="card" style="margin:12px 0"><h3>Planning et avantages en nature</h3>'+
+  '<p class="muted">Jours théoriquement travaillés du mois (hors jours fériés, congés et absences). Les mercredis non travaillés ne sont pas des absences.</p>'+
+  '<div style="display:flex;gap:12px;flex-wrap:wrap">'+salaryWeekdayNames.map((name,i)=>'<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" style="width:auto" data-payroll-day="'+i+'" '+(days.includes(i)?'checked':'')+'>'+name+'</label>').join("")+'</div>'+
+  '<p><b id="salaryPayrollWorkingCount">'+salaryWorkingDays(month,days)+'</b> jours théoriques travaillés en '+esc(salaryMonthLabel(month))+'</p>'+
+  '<h4>Avantages en nature</h4><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>'<div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input data-benefit-label="'+i+'" aria-label="Désignation de l’avantage '+(i+1)+'" maxlength="100" value="'+esc(b.label)+'" placeholder="Repas, logement, véhicule…" style="flex:2;min-width:150px"><input data-benefit-amount="'+i+'" aria-label="Montant mensuel en euros" type="number" min="0" max="100000" step="0.01" value="'+esc(b.amount)+'" style="flex:1;min-width:100px"><button type="button" class="btn secondary" data-benefit-remove="'+i+'">Supprimer</button></div>').join("")+'</div>'+
+  '<button type="button" class="btn secondary" id="salaryBenefitAdd">+ Ajouter un avantage</button>'+
+  '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
+  '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving?'disabled':'')+'>Enregistrer le planning et les avantages</button>'+
+  (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
+}
+function salaryPayrollReadDraft(){
+ const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
+ if(!staff)return;
+ const days=[...document.querySelectorAll("[data-payroll-day]:checked")].map(x=>Number(x.dataset.payrollDay));
+ const benefits=[...document.querySelectorAll("[data-benefit-label]")].map(x=>({label:x.value,amount:Number(document.querySelector('[data-benefit-amount="'+x.dataset.benefitLabel+'"]')?.value)}));
+ salaryPayrollDraft={id:staff.id,days,benefits};
+}
+function salaryPayrollRefreshDraft(){
+ salaryPayrollReadDraft();
+ salaryPage();
+}
+async function salaryPayrollSave(){
+ if(salaryStaffSaving||!salaryPayrollDraft)return;
+ const {id,days,benefits}=salaryPayrollDraft;
+ if(benefits.some(b=>!b.label.trim()||!Number.isFinite(b.amount)||b.amount<0||!Number.isInteger(b.amount*100))){salaryPayrollMessage="Vérifiez les désignations et montants des avantages.";salaryPage();return}
+ salaryStaffSaving=true;salaryPayrollMessage="";salaryPage();
+ try{
+  await call(ROOT+'/personnel-planning','staff-payroll-update','POST',{id,working_weekdays:days,benefits_in_kind:benefits});
+  salaryPayrollDraft=null;salaryStaffLoaded=false;
+  await salaryLoadStaff();
+  salaryPayrollMessage="Planning et avantages enregistrés.";
+ }catch(e){salaryPayrollMessage=frError(e.message)}
+ finally{salaryStaffSaving=false;if(page==="salaires")salaryPage()}
+}
+
 function salaryStaffProfilePanel(){
  if(!salaryProfileEmployeeId)return "";
  const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
@@ -175,12 +224,13 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryPayrollPanel(staff,month)+content+'</section>';
 }
 async function salaryOpenStaffProfile(id){
  const staff=salaryStaff.find(p=>p.id===id);
  if(!staff)return;
  if(salaryProfileEmployeeId!==id)salaryProfileMonth=salaryCurrentMonth();
+ salaryPayrollDraft=null;salaryPayrollMessage="";
  salaryProfileEmployeeId=id;salaryProfileEvents=[];salaryProfileLoaded=false;salaryProfileError="";salaryProfileLoading=true;
  const version=++salaryProfileRequestVersion;
  if(page==="salaires"){
@@ -219,6 +269,7 @@ async function salaryOpenStaffProfile(id){
 }
 function salaryCloseStaffProfile(){
  salaryProfileRequestVersion++;
+ salaryPayrollDraft=null;salaryPayrollMessage="";
  salaryProfileEmployeeId="";salaryProfileEvents=[];salaryProfileError="";salaryProfileLoading=false;
  salaryProfileLoaded=false;
  if(page==="salaires")salaryPage();
@@ -286,6 +337,11 @@ async function salaryUpdateStaff(id,archived,visible){
 function salaryWireStaff(){
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
  document.querySelectorAll('[data-salary-staff-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryStaffProfile)));
+ document.querySelectorAll("[data-payroll-day]").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();const count=$("salaryPayrollWorkingCount");if(count)count.textContent=salaryWorkingDays(salaryProfileMonth||salaryCurrentMonth(),salaryPayrollDraft.days)}));
+ document.querySelectorAll("[data-benefit-label],[data-benefit-amount]").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();const total=$("salaryBenefitTotal");if(total)total.textContent=salaryPayrollDraft.benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"})}));
+ $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push({label:"",amount:0});salaryPage()});
+ document.querySelectorAll("[data-benefit-remove]").forEach(x=>x.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.splice(Number(x.dataset.benefitRemove),1);salaryPage()}));
+ $("salaryPayrollSave")?.addEventListener("click",()=>{salaryPayrollReadDraft();void salaryPayrollSave()});
  const close=$('salaryProfileClose');if(close)close.addEventListener('click',salaryCloseStaffProfile);
  const refresh=$('salaryProfileRefresh');if(refresh)refresh.addEventListener('click',()=>void salaryOpenStaffProfile(salaryProfileEmployeeId));
  const month=$('salaryProfileMonth');if(month)month.addEventListener('change',()=>{
