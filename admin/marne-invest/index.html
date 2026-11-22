@@ -82,6 +82,11 @@
 @media(max-width:1000px){.release-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.release-list{grid-template-columns:1fr}}
 @media(max-width:620px){.release-grid{grid-template-columns:1fr}}
+
+.archive-block{padding:20px;border:1px solid #dce5ef;border-radius:12px;background:#fff;margin-top:18px}
+.archive-toolbar{display:flex;align-items:end;gap:15px;flex-wrap:wrap;margin:12px 0 14px}
+.archive-count{padding:12px;background:#f8fafc;border:1px solid #dbe4ef;border-radius:10px}
+@media(max-width:700px){.archive-block{padding:12px}}
 </style>
 </head>
 <body>
@@ -90,7 +95,7 @@
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
-const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false;
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='';
 const pages=[['dashboard','Dashboard','⌂'],['pilotage','Version finale','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
@@ -123,7 +128,7 @@ const releaseMilestones=[
  ['Connexion bancaire et rapprochement','todo','Aucune connexion bancaire active'],
  ['Suivi des travaux et prestataires','done','Tickets, devis, validation et historique ; aucune commande automatique'],
  ['Révisions IRL conformes aux baux','todo','Moteur de révision à valider juridiquement'],
- ['Archivage sécurisé des PDF et pièces','todo','Stockage documentaire à intégrer'],
+ ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
  ['Recette de bout en bout en production','todo','Essais réels sur les parcours complets']
 ];
 function releaseStatus(){
@@ -230,7 +235,7 @@ const linked=props.filter(p=>!!linkedTenant(p.id)).length;
 $('content').innerHTML='<div class="section-head"><div><h2>Patrimoine immobilier</h2><p class="muted">'+props.length+' biens réels · '+linked+' liés à une ligne locataire</p></div><button class="btn primary" onclick="newProperty()">+ Ajouter un logement</button></div><div class="property-grid">'+filteredProperties.map(p=>{const t=linkedTenant(p.id),d=t?.data||{},quality=propertyCompleteness(p,t),rent=d['Loyer actualisé']??d['Loyer de base']??p.data?.['Loyer appliqué'],balance=d['Solde']??p.data?.['Solde cumulé logement'];return '<div class="card property-card" onclick="openProperty(\''+esc(p.id)+'\')"><div style="display:flex;justify-content:space-between;gap:8px"><h3>'+esc(p.data?.['Nom du logement']||p.name)+'</h3><span class="mini-tag '+(quality.missing.length?'warn':'')+'">'+quality.complete+'/5 champs</span></div><div class="muted">'+esc(p.data?.['Adresse']||d['Adresse logement']||'Adresse non renseignée')+'</div><p><b>'+esc(d['Locataire']||p.current_tenant?.['Locataire actuel']||'Aucun locataire')+'</b> · '+esc(d['Locataire']?'Occupé':(p.data?.['Statut logement']||'À caractériser'))+'</p><div class="muted">Loyer : '+(rent!==null&&rent!==undefined&&rent!==''?esc(String(rent))+' €':'—')+' · Solde : '+(balance!==null&&balance!==undefined&&balance!==''?esc(String(balance))+' €':'—')+'</div>'+(quality.missing.length?'<div class="muted" style="margin-top:8px">À compléter : '+esc(quality.missing.join(', '))+'</div>':'')+'</div>'}).join('')+'</div>'+(filteredProperties.length?'':'<div class="card empty-state">Aucun bien correspondant.</div>');
 }
 function kv(obj){return Object.entries(obj||{}).map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v??'')}</span></div>`).join('')}
-window.openProperty=id=>{const p=db.properties.find(x=>x.id===id);if(!p)return;const t=linkedTenant(p.id),quality=propertyCompleteness(p,t),current=t?{'Locataire actuel':t.data?.['Locataire']||'','Mail locataire':t.data?.['Mail locataire']||'','Date entrée locataire':t.data?.['Date entrée locataire']||'','Date fin de bail':t.data?.['Date fin de bail']||'','Loyer de base':t.data?.['Loyer de base']??'','Charges':t.data?.['Charge']??'','Solde':t.data?.['Solde']??''}:p.current_tenant;$('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2>${esc(p.data?.['Nom du logement']||p.name)}</h2><div class="muted">${esc(p.source_sheet||'')}</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="section-title">Informations logement</div><div class="card">${kv(p.data)}</div><div class="section-title">Locataire actuel</div><div class="card">${kv(current)}</div>${quality.missing.length?`<div class="note" style="margin-top:8px">Informations à compléter : ${esc(quality.missing.join(', '))}</div>`:''}${t?`<div class="actions" style="margin-top:10px"><button class="btn primary" onclick="closeModal();editTenant(${t.row_number})">Modifier la fiche locataire</button></div>`:''}<div class="section-title">Historique anciens locataires</div>${renderObjectTable(p.tenant_history)}<div class="section-title">Échéancier des paiements du logement</div>${renderObjectTable(p.payment_schedule)}</div></div>`};
+window.openProperty=id=>{const p=db.properties.find(x=>x.id===id);if(!p)return;const t=linkedTenant(p.id),quality=propertyCompleteness(p,t),current=t?{'Locataire actuel':t.data?.['Locataire']||'','Mail locataire':t.data?.['Mail locataire']||'','Date entrée locataire':t.data?.['Date entrée locataire']||'','Date fin de bail':t.data?.['Date fin de bail']||'','Loyer de base':t.data?.['Loyer de base']??'','Charges':t.data?.['Charge']??'','Solde':t.data?.['Solde']??''}:p.current_tenant;$('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2>${esc(p.data?.['Nom du logement']||p.name)}</h2><div class="muted">${esc(p.source_sheet||'')}</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="actions" style="margin:6px 0 12px"><button class="btn primary" data-property="${esc(p.id)}" onclick="showPropertyDocuments(this.dataset.property)">Documents du logement (${(db.documents||[]).filter(x=>x.property_id===p.id).length})</button></div><div class="section-title">Informations logement</div><div class="card">${kv(p.data)}</div><div class="section-title">Locataire actuel</div><div class="card">${kv(current)}</div>${quality.missing.length?`<div class="note" style="margin-top:8px">Informations à compléter : ${esc(quality.missing.join(', '))}</div>`:''}${t?`<div class="actions" style="margin-top:10px"><button class="btn primary" onclick="closeModal();editTenant(${t.row_number})">Modifier la fiche locataire</button></div>`:''}<div class="section-title">Historique anciens locataires</div>${renderObjectTable(p.tenant_history)}<div class="section-title">Échéancier des paiements du logement</div>${renderObjectTable(p.payment_schedule)}</div></div>`};
 function renderObjectTable(rows){if(!rows?.length)return '<div class="card muted">Aucune ligne.</div>';const hs=[...new Set(rows.flatMap(Object.keys))];return `<div class="table-wrap" style="max-height:320px"><table><thead><tr>${hs.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${hs.map(h=>`<td>${cellHtml(h,r[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
 
 function configInput(key,title,hint,type='text',max=500,allowed=true){
@@ -572,13 +577,118 @@ window.advanceWorkOrder=async id=>{
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 
+
+const archiveCategories={
+ bail:'Bail signé',diagnostic:'Diagnostic',assurance:'Assurance',
+ facture:'Facture',etat_des_lieux:'État des lieux',
+ quittance_importee:'Quittance ou reçu importé',travaux:'Travaux',autre:'Autre'
+};
+function renderDocumentArchive(){
+ if(!db.current_user?.document_access){
+  return '<section class="archive-block"><h3>Archives privées</h3><p class="muted">Accès réservé à la gestion immobilière autorisée.</p></section>';
+ }
+ const props=(db.properties||[]).filter(p=>!p.is_example);
+ const docs=(db.documents||[]).filter(d=>!documentPropertyFilter||d.property_id===documentPropertyFilter);
+ const rows=filtered(docs,d=>[d.label,d.original_name,d.category,(db.properties||[]).find(p=>p.id===d.property_id)?.name].join(' '));
+ const options='<option value="">Tous les logements</option>'+props.map(p=>'<option value="'+esc(p.id)+'"'+(documentPropertyFilter===p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('');
+ return '<section class="archive-block"><div class="section-head"><div><h2>Archives privées par logement</h2>'+
+ '<p class="muted">Stockage privé Supabase : PDF, JPG et PNG jusqu’à 4 Mo par fichier. Documents téléchargés sur demande.</p></div>'+
+ '<button class="btn primary" onclick="openDocumentUploader()">+ Déposer un document</button></div>'+
+ '<div class="archive-toolbar"><label style="min-width:200px">Filtrer par logement<select aria-label="Filtrer les documents" onchange="selectArchiveProperty(this.value)">'+options+'</select></label>'+
+ '<div class="archive-count"><b>'+docs.length+'</b> document(s) dans la sélection</div></div>'+
+ dataTable(['Date','Logement','Catégorie','Document','Taille','Action'],rows.map(d=>{
+ const p=(db.properties||[]).find(x=>x.id===d.property_id);
+ return '<tr><td>'+esc(d.created_at?new Date(d.created_at).toLocaleDateString('fr-FR'):'—')+'</td>'+
+ '<td>'+esc(p?.name||'Logement inconnu')+'</td><td>'+esc(archiveCategories[d.category]||d.category)+'</td>'+
+ '<td><b>'+esc(d.label)+'</b><div class="muted">'+esc(d.original_name)+'</div></td>'+
+ '<td>'+esc((Number(d.byte_size)/1048576).toFixed(2))+' Mo</td>'+
+ '<td><button class="btn secondary" data-doc="'+esc(d.id)+'" onclick="downloadRentalDocument(this.dataset.doc)">Télécharger</button></td></tr>';
+ }))+
+ '<p class="module-note">Le stockage est privé. Les liens de téléchargement expirent au bout de 60 secondes. Les fichiers importés ne sont pas vérifiés par antivirus ; n’ouvrez que des pièces de confiance. Suppression désactivée afin de préserver l’historique.</p>'+
+ '</section>';
+}
+window.showPropertyDocuments=id=>{
+ documentPropertyFilter=id||'';
+ closeModal();showPage('documents');
+};
+window.selectArchiveProperty=id=>{
+ documentPropertyFilter=id;
+ renderDocuments();
+};
+window.openDocumentUploader=(requestedId='')=>{
+ if(!db.current_user?.document_access||db.current_user?.read_only)return;
+ const props=(db.properties||[]).filter(p=>!p.is_example);
+ if(!props.length){alert('Aucun bien à documenter.');return}
+ const chosen=requestedId||documentPropertyFilter||props[0].id;
+ const options=props.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===chosen?' selected':'')+'>'+esc(p.name)+'</option>').join('');
+ const categories=Object.entries(archiveCategories).map(([id,label])=>'<option value="'+esc(id)+'">'+esc(label)+'</option>').join('');
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:720px"><div class="top"><h2>Archiver un document privé</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note">Le fichier restera accessible uniquement aux utilisateurs autorisés de Marne Invest. Il ne sera ni envoyé par courriel ni rendu public.</div>'+
+ '<div class="fields" style="margin-top:15px"><div><label>Logement</label><select id="document-property" onchange="refreshArchiveLeaseOptions()">'+options+'</select></div>'+
+ '<div><label>Catégorie</label><select id="document-category">'+categories+'</select></div>'+
+ '<div><label>Bail associé (facultatif)</label><select id="document-lease"></select></div></div>'+
+ '<label>Intitulé du document</label><input id="document-label" maxlength="180" placeholder="Ex. : diagnostic électrique 2026">'+
+ '<label style="margin-top:13px">Fichier PDF, JPEG ou PNG (4 Mo maximum)</label><input type="file" id="document-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">'+
+ '<p class="muted">Vérifiez les informations personnelles avant le dépôt. Le fichier ne sera pas supprimable depuis cette interface.</p>'+
+ '<div class="actions"><button class="btn primary" id="document-upload-button" onclick="uploadRentalDocument()">Enregistrer dans les archives privées</button></div>'+
+ '<div class="status" id="modalStatus" role="status"></div></div></div>';
+ refreshArchiveLeaseOptions();
+};
+window.refreshArchiveLeaseOptions=()=>{
+ const propId=$('document-property')?.value;
+ const select=$('document-lease');if(!select)return;
+ select.innerHTML='<option value="">Sans bail associé</option>'+
+ (db.leases||[]).filter(l=>l.property_id===propId).map(l=>
+ '<option value="'+esc(l.id)+'">'+esc(l.tenant_name||'Bail')+' ('+esc(l.status||'')+')</option>').join('');
+};
+window.uploadRentalDocument=async()=>{
+ const status=$('modalStatus'),button=$('document-upload-button');
+ const file=$('document-file')?.files?.[0],property_id=$('document-property')?.value;
+ const label=$('document-label')?.value?.trim()||'',category=$('document-category')?.value;
+ if(!file){status.className='status err';status.textContent='Choisissez un fichier PDF, JPEG ou PNG.';return}
+ if(file.size>4194304||file.size<1){status.className='status err';status.textContent='Le fichier doit contenir entre 1 octet et 4 Mo.';return}
+ if(label.length<3){status.className='status err';status.textContent='Un intitulé de trois caractères minimum est requis.';return}
+ const data=new FormData();
+ data.append('property_id',property_id);
+ data.append('lease_id',$('document-lease')?.value||'');
+ data.append('category',category);
+ data.append('label',label);
+ data.append('file',file,file.name);
+ button.disabled=true;status.className='status';status.textContent='Contrôle du format et archivage sécurisé…';
+ try{
+  const r=await fetch(API+'?action=document-upload',{
+    method:'POST',headers:{authorization:'Bearer '+token},body:data,cache:'no-store'
+  });
+  const result=await r.json().catch(()=>({error:'Réponse serveur illisible'}));
+  if(!r.ok)throw Error(result.error||'Échec du dépôt');
+  closeModal();await refresh();
+  documentPropertyFilter=property_id;
+  showPage('documents');
+ }catch(e){button.disabled=false;status.className='status err';status.textContent=e.message||'Enregistrement impossible'}
+};
+window.downloadRentalDocument=async id=>{
+ const target=window.open('about:blank','_blank');
+ if(!target){alert('Autorisez l’ouverture d’un onglet pour télécharger ce document.');return}
+ target.document.body.textContent='Préparation du téléchargement privé…';
+ try{
+  const result=await fetch(API+'?action=document-download&id='+encodeURIComponent(id),{
+    method:'GET',headers:{authorization:'Bearer '+token},cache:'no-store'
+  });
+  const payload=await result.json().catch(()=>({error:'Réponse serveur illisible'}));
+  if(!result.ok)throw Error(payload.error||'Accès au document refusé');
+  target.location.assign(payload.url);
+ }catch(e){
+  target.document.body.textContent='Téléchargement impossible : '+(e.message||'Erreur');
+ }
+};
+
 function renderDocuments(){
  const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example),permitted=!!db.current_user?.payment_access;
  const ledger=permitted?rentalLedger():null;
  const bills=permitted?(db.installments||[]).filter(i=>i.status==='scheduled').map(i=>({...i,paid:ledger.byInstallment.get(i.id)||0})).filter(i=>i.paid>0.005):[];
  const csvCards=[['Locataires','Données du suivi locataire','tenants'],['Biens','Inventaire et informations des biens','properties'],['Paiements historiques','Ancien suivi, sans rapprochement','payments'],['Registre des règlements','Encaissements et affectations','ledger'],['Contrats','Champs issus du suivi historique','contracts']];
  const csvHtml='<div class="property-grid">'+csvCards.map(([name,desc,id])=>'<div class="card"><h3>'+esc(name)+'</h3><p class="muted">'+esc(desc)+'</p><button class="btn primary" onclick="exportMarne(\''+id+'\')">Télécharger CSV</button></div>').join('')+'</div>';
- $('content').innerHTML=section('Quittances, reçus et exports','Documents imprimables depuis les paiements vérifiés du nouveau registre. Aucun PDF n’est transmis automatiquement.')+
+ $('content').innerHTML=section('Documents, quittances et archives','Documents privés liés à chaque logement et quittances imprimables. Aucun PDF n’est transmis automatiquement.')+
  stats([['Locataires',tenants.length],['Biens',props.length],['Échéances avec paiement',permitted?bills.length:'Accès limité'],['PDF envoyés automatiquement',0]])+
  '<div class="section-head"><div><h2>Quittances et reçus</h2><p class="muted">Les quittances concernent les baux d’habitation et exigent le règlement intégral. Les paiements partiels produisent uniquement un reçu.</p></div></div>'+
  (permitted?dataTable(['Période','Logement','Échéance','Sommes affectées','État','Document'],filtered(bills,i=>{const p=(db.properties||[]).find(p=>p.id===i.property_id);return [p?.name,i.period].join(' ')}).map(i=>{
@@ -586,8 +696,8 @@ function renderDocuments(){
   const complete=Math.round(i.paid*100)>=Math.round(Number(i.total_due)*100);
   return '<tr><td>'+esc(i.period)+'</td><td>'+esc(p?.name||'—')+'</td><td>'+money(Number(i.total_due))+'</td><td>'+money(i.paid)+'</td><td><span class="mini-tag '+(complete?'':'warn')+'">'+(complete?'Règlement intégral':'Paiement partiel')+'</span></td><td><button class="btn secondary" data-id="'+esc(i.id)+'" onclick="openPaymentDocument(this.dataset.id)">Aperçu / PDF</button>'+(lease?.lease_kind!=='residential'?' <span class="muted">Bail d’habitation requis</span>':'')+'</td></tr>';
  })):'<div class="note">Vous ne disposez pas des droits pour consulter les pièces financières.</div>')+
- '<div class="note" style="margin-top:14px">Pour produire un document, le bail doit être actif et vérifié, de type habitation, avec le nom et l’adresse du bailleur / mandataire et l’adresse du logement. Envoi électronique interdit sans accord exprès du locataire. La commande « Aperçu / PDF » ouvre une version imprimable ; choisissez « Enregistrer en PDF » dans le navigateur. Aucun PDF n’est encore archivé dans Supabase.</div>'+
- '<div class="section-head" style="margin-top:22px"><div><h2>Exports de gestion</h2></div></div>'+csvHtml;
+ '<div class="note" style="margin-top:14px">Pour produire un document, le bail doit être actif et vérifié, de type habitation, avec le nom et l’adresse du bailleur / mandataire et l’adresse du logement. Envoi électronique interdit sans accord exprès du locataire. La commande « Aperçu / PDF » ouvre une version imprimable ; choisissez « Enregistrer en PDF » dans le navigateur. L’aperçu généré par le navigateur ne s’archive pas seul : enregistrez son PDF puis déposez-le dans les archives privées si nécessaire.</div>'+
+ renderDocumentArchive()+'<div class="section-head" style="margin-top:22px"><div><h2>Exports de gestion</h2></div></div>'+csvHtml;
 }
 window.openPaymentDocument=async installmentId=>{
  const printWindow=window.open('','_blank');
