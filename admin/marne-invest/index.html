@@ -488,7 +488,7 @@ function renderMail(){
  if(!db.current_user?.mail_access){$('content').innerHTML=section('Messagerie Free','Accès restreint')+'<div class="card empty-state">Compte non autorisé à consulter cette boîte.</div>';return}
  const inbox=filtered(db.mail_inbox||[],m=>m.subject+' '+m.sender_email),outbox=filtered(db.mail_outbox||[],m=>m.subject+' '+m.recipient_email);
  const connected=!!db.current_user.mail_configured;
- const tools='<button class="btn secondary" onclick="testMailConnection()">Tester IMAP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
+ const tools='<button class="btn secondary" onclick="testMailConnection()">Tester IMAP / SMTP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
  const setup=connected?'<div class="note mail-banner">Identifiants Free présents côté serveur, connexion à tester. Envois autorisés uniquement après confirmation manuelle.</div>':
  '<div class="note mail-banner"><b>Configuration nécessaire :</b> dans Supabase → Edge Functions → Secrets, créez <code>MARNE_FREE_MAIL_PASSWORD</code> avec le mot de passe de cette boîte. Ne l’inscrivez jamais dans le site ou dans le chat. <a target="_blank" rel="noopener noreferrer" href="https://supabase.com/dashboard/project/zreegtzfpwrjgdhhunxx/functions">Ouvrir Supabase</a></div>';
  $('content').innerHTML=section('Messagerie Free','ph.danglade@free.fr — réception IMAP 993 et envoi SMTP 465.',tools)+
