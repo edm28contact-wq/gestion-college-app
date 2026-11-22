@@ -325,7 +325,7 @@ async function salaryLoad(){
  if(!salaryMonth)salaryMonth=salaryCurrentMonth();
  if(!salaryHistoryLoaded&&!salaryHistoryLoading)void salaryLoadHistory();
  if(!salaryStaffLoaded&&!salaryStaffLoading)void salaryLoadStaff();
- if(salaryPayrollMonth!==salaryMonth&&!salaryPayrollListLoading)void salaryPayrollLoadMonth(salaryMonth);
+ if(salaryPayrollMonth!==salaryMonth)void salaryPayrollLoadMonth(salaryMonth);
  const request=++salaryRequestVersion,month=salaryMonth;
  salaryLoading=true;salaryError="";salaryPage();
  try{
