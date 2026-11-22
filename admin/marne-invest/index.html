@@ -59,6 +59,10 @@
 .mail-reader{padding:18px;min-width:0}.mail-text{font:14px/1.6 Inter,system-ui,sans-serif;white-space:pre-wrap;word-break:break-word;max-height:470px;overflow:auto}
 .mail-banner{margin-bottom:15px}
 @media(max-width:800px){.mail-split{grid-template-columns:1fr}.mail-list{max-height:200px;border-right:0;border-bottom:1px solid #e2e8f0}}
+
+.config-layout{display:grid;gap:15px}.config-section{padding:20px}
+.config-section .fields{margin-top:15px;margin-bottom:15px}.config-section .fields p{margin-top:5px;line-height:1.45}
+.config-section #central-config-save:disabled{opacity:.6;cursor:wait}
 </style>
 </head>
 <body>
@@ -126,9 +130,64 @@ $('content').innerHTML='<div class="section-head"><div><h2>Patrimoine immobilier
 function kv(obj){return Object.entries(obj||{}).map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v??'')}</span></div>`).join('')}
 window.openProperty=id=>{const p=db.properties.find(x=>x.id===id);if(!p)return;const t=linkedTenant(p.id),quality=propertyCompleteness(p,t),current=t?{'Locataire actuel':t.data?.['Locataire']||'','Mail locataire':t.data?.['Mail locataire']||'','Date entrée locataire':t.data?.['Date entrée locataire']||'','Date fin de bail':t.data?.['Date fin de bail']||'','Loyer de base':t.data?.['Loyer de base']??'','Charges':t.data?.['Charge']??'','Solde':t.data?.['Solde']??''}:p.current_tenant;$('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2>${esc(p.data?.['Nom du logement']||p.name)}</h2><div class="muted">${esc(p.source_sheet||'')}</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="section-title">Informations logement</div><div class="card">${kv(p.data)}</div><div class="section-title">Locataire actuel</div><div class="card">${kv(current)}</div>${quality.missing.length?`<div class="note" style="margin-top:8px">Informations à compléter : ${esc(quality.missing.join(', '))}</div>`:''}${t?`<div class="actions" style="margin-top:10px"><button class="btn primary" onclick="closeModal();editTenant(${t.row_number})">Modifier la fiche locataire</button></div>`:''}<div class="section-title">Historique anciens locataires</div>${renderObjectTable(p.tenant_history)}<div class="section-title">Échéancier des paiements du logement</div>${renderObjectTable(p.payment_schedule)}</div></div>`};
 function renderObjectTable(rows){if(!rows?.length)return '<div class="card muted">Aucune ligne.</div>';const hs=[...new Set(rows.flatMap(Object.keys))];return `<div class="table-wrap" style="max-height:320px"><table><thead><tr>${hs.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${hs.map(h=>`<td>${cellHtml(h,r[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
-function renderConfig(){$('content').innerHTML=irlPanel()+emailAutomationPanel()+`<div class="card"><div class="note">Les valeurs ci-dessous proviennent directement de la feuille Config du classeur importé.</div><br>${db.settings.map(s=>`<div class="kv"><div><b>${esc(s.label)}</b><div class="muted">${esc(s.comment||'')}</div></div><div><input id="cfg-${esc(s.setting_key)}" value="${esc(s.value??'')}"><button class="btn secondary" style="margin-top:6px" onclick="saveSetting('${esc(s.setting_key)}')">Enregistrer</button></div></div>`).join('')}</div>`}
-window.saveSetting=async key=>{try{const el=$('cfg-'+key),raw=el.value;let value=raw;if(['current_irl','revision_threshold','reminder_7_days','reminder_14_days'].includes(key)){const x=Number(raw);if(!Number.isFinite(x))throw new Error('Valeur numérique invalide');value=x}await api('save-setting','POST',{setting_key:key,value});await refresh()}catch(e){alert(e.message)}};
 
+function configInput(key,title,hint,type='text',max=500,allowed=true){
+ const current=key==='owner_email'&&setting(key,'')==='proprietaire@example.com'?'':String(setting(key,'')??'');
+ return '<div><label for="central-'+key+'">'+esc(title)+'</label><input id="central-'+key+'" type="'+type+'" value="'+esc(current)+'" maxlength="'+max+'" '+(allowed?'':'disabled')+'><p class="muted">'+esc(hint)+'</p></div>';
+}
+function renderConfig(){
+ const allowed=!!db.current_user?.mail_access&&!db.current_user?.read_only;
+ const configured=!!db.current_user?.mail_configured;
+ const general='<section class="card config-section"><h3>1. Informations générales</h3><p class="muted">Renseigne tes coordonnées une fois : elles préremplissent les futurs baux et les documents préparés. Les baux déjà validés restent inchangés.</p><div class="fields">'+
+ configInput('landlord_name','Nom du bailleur ou mandataire','Nom exact figurant sur les nouveaux documents.','text',200,allowed)+
+ configInput('landlord_address','Adresse du bailleur ou mandataire','Adresse postale de référence.','text',500,allowed)+
+ configInput('owner_email','E-mail du propriétaire','Adresse de contact de référence, sans envoi automatique.','email',254,allowed)+
+ configInput('sender_email','Adresse de messagerie Free','Compte utilisé dans la messagerie Marne Invest (@free.fr).','email',254,allowed)+
+ '</div></section>';
+ const mail='<section class="card config-section"><h3>2. Messagerie Free</h3><p><span class="mini-tag '+(configured?'':'warn')+'">'+(configured?'Identifiants enregistrés — test requis':'Mot de passe non configuré')+'</span></p>'+
+ '<p class="muted">Le mot de passe est stocké chiffré dans Supabase Vault, pas dans les paramètres ordinaires. Il ne sera jamais réaffiché.</p>'+
+ '<div class="fields"><div><label for="central-mail-password">Mot de passe de la boîte Free</label>'+
+ '<input id="central-mail-password" type="password" maxlength="256" autocomplete="new-password" placeholder="'+(configured?'Laisser vide pour conserver le mot de passe':'Saisir le mot de passe de la boîte Free')+'" '+(allowed?'':'disabled')+'><p class="muted">Laisser vide si le mot de passe n’a pas changé.</p></div>'+
+ '<div><label>Configuration du serveur</label><div class="note">IMAP : <code>imap.free.fr:993</code> (TLS)<br>SMTP : <code>smtp.free.fr:465</code> (TLS)</div></div></div>'+
+ '<div class="actions"><button class="btn secondary" onclick="testMailConnection()" '+(configured?'':'disabled')+'>Tester IMAP / SMTP</button>'+
+ '<button class="btn secondary" onclick="showPage(&quot;mail&quot;)">Ouvrir la messagerie</button></div>'+
+ '<p class="muted">L’enregistrement n’envoie aucun e-mail. Une validation distincte reste obligatoire pour expédier un message.</p></section>';
+ const historical=['current_irl','irl_label','revision_threshold','reminder_7_days','reminder_14_days','irl_url_1','irl_url_2','main_sheet_name','property_sheet_prefix'];
+ const legacy='<details class="card config-section"><summary style="cursor:pointer;font-weight:700">Paramètres historiques du classeur (lecture seule)</summary><p class="muted">Ces valeurs ne commandent pas les nouvelles échéances ni les révisions de loyer. Les modifier directement serait trompeur.</p>'+
+ historical.map(key=>{const item=(db.settings||[]).find(x=>x.setting_key===key);return item?'<div class="kv"><b>'+esc(item.label)+'</b><span>'+esc(String(item.value??'—'))+'</span></div>':''}).join('')+'</details>';
+ const automation='<section class="card config-section"><h3>3. Automatisations</h3><p class="muted">Les brouillons de relance sont préparés à J+7 puis J+14, sans envoi automatique. Les révisions de loyers nécessitent la vérification des baux.</p>'+
+ irlPanel()+'</section>';
+ const save='<section class="card config-section"><div class="section-head"><div><h3>Appliquer les paramètres</h3><p class="muted">Un seul enregistrement met à jour les coordonnées et, si renseigné, le secret de la boîte Free.</p></div>'+
+ (allowed?'<button id="central-config-save" class="btn primary" onclick="saveCentralConfig()">Enregistrer et appliquer</button>':'<span class="mini-tag warn">Accès administrateur requis</span>')+
+ '</div><div id="central-config-status" class="status" role="status"></div></section>';
+ $('content').innerHTML=section('Paramètres centralisés','Une seule saisie pour les informations communes aux modules, avec préservation des contrats validés.')+
+ '<div class="config-layout">'+general+mail+automation+save+legacy+'</div>';
+}
+window.saveCentralConfig=async()=>{
+ if(!db.current_user?.mail_access||db.current_user?.read_only)return;
+ const keys=['landlord_name','landlord_address','owner_email','sender_email'];
+ const settings=Object.fromEntries(keys.map(k=>[k,String($('central-'+k)?.value||'').trim()]));
+ const password=$('central-mail-password')?.value||'',status=$('central-config-status'),button=$('central-config-save');
+ if(!status||!button)return;
+ if(!/^[^\s@]+@free\.fr$/i.test(settings.sender_email)){status.className='status err';status.textContent='Une adresse @free.fr valide est obligatoire.';return}
+ if(settings.owner_email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(settings.owner_email)){status.className='status err';status.textContent='Adresse du propriétaire invalide.';return}
+ if(password&&password.length<6){status.className='status err';status.textContent='Le mot de passe Free est trop court.';return}
+ button.disabled=true;status.className='status';status.textContent='Enregistrement des coordonnées…';
+ let saved=false;
+ try{
+  await api('save-site-config','POST',{settings});saved=true;
+  if(password){
+   status.textContent='Coordonnées enregistrées. Chiffrement du mot de passe…';
+   await api('mail-configure','POST',{password});
+   $('central-mail-password').value='';
+  }
+  await refresh();
+  const done=$('central-config-status');if(done){done.className='status ok';done.textContent='Paramètres enregistrés. Les pages concernées utilisent maintenant ces informations. Testez IMAP / SMTP avant tout envoi.'}
+ }catch(e){
+  status.className='status err';
+  status.textContent=(saved?'Les coordonnées sont enregistrées, mais la messagerie reste à configurer : ':'Enregistrement impossible : ')+(e.message||'Erreur serveur');
+ }finally{const latest=$('central-config-save');if(latest)latest.disabled=false}
+};
 function lookup(data,keys){for(const k of keys){const v=data?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return String(v)}return ''}
 function money(n){return Number.isFinite(n)?fmt(n)+' €':'—'}
 function tenantName(t){return lookup(t.data,['Locataire','Nom locataire','Nom du locataire','Locataire actuel','Nom','Nom et prénom','Prénom Nom','Corps locataire'])||'Locataire ligne '+t.row_number}
