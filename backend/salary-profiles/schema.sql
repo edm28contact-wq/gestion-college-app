@@ -6,6 +6,12 @@ create table if not exists public.college_salary_monthly (
   bonus_gross numeric(12,2) not null default 0 check (bonus_gross between 0 and 1000000),
   weekly_hours numeric(6,2) not null check (weekly_hours > 0 and weekly_hours <= 60),
   actual_hours numeric(7,2) null check (actual_hours >= 0 and actual_hours <= 744),
+  working_days smallint[] not null default array[1,2,3,4,5]::smallint[]
+    check (array_length(working_days,1) between 1 and 5
+      and working_days <@ array[1,2,3,4,5]::smallint[]
+),
+  benefits_in_kind jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(benefits_in_kind)='array' and jsonb_array_length(benefits_in_kind)<=20),
   version integer not null default 1 check (version >= 1),
   updated_by text not null,
   created_at timestamptz not null default now(),
