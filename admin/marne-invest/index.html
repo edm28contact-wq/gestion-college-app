@@ -131,7 +131,8 @@ const releaseMilestones=[
  ['Paramètres centralisés et secrets','done','Coordonnées communes et chiffrement des mots de passe'],
  ['Messagerie Free opérationnelle','partial','Module installé ; authentification et test réel à effectuer'],
  ['Synchronisation IMAP récurrente','todo','À automatiser après validation de la connexion'],
- ['Connexion bancaire et rapprochement','todo','Aucune connexion bancaire active'],
+ ['Import bancaire CSV et rapprochement','done','Import idempotent, suggestions et confirmation des écritures de loyer'],
+ ['Connexion bancaire directe','todo','Accès bancaire automatisé non connecté'],
  ['Suivi des travaux et prestataires','done','Tickets, devis, validation et historique ; aucune commande automatique'],
  ['Révisions IRL conformes aux baux','todo','Moteur de révision à valider juridiquement'],
  ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
@@ -256,6 +257,7 @@ function renderConfig(){
  configInput('landlord_address','Adresse du bailleur ou mandataire','Adresse postale de référence.','text',500,allowed)+
  configInput('owner_email','E-mail du propriétaire','Adresse de contact de référence, sans envoi automatique.','email',254,allowed)+
  configInput('sender_email','Adresse de messagerie Free','Compte utilisé dans la messagerie Marne Invest (@free.fr).','email',254,allowed)+
+ configInput('bank_account_label','Libellé du compte bancaire','Nom utilisé pour identifier les relevés CSV ; ne saisissez pas vos identifiants bancaires.','text',80,allowed)+
  '</div></section>';
  const mail='<section class="card config-section"><h3>2. Messagerie Free</h3><p><span class="mini-tag '+(configured?'':'warn')+'">'+(configured?'Identifiants enregistrés — test requis':'Mot de passe non configuré')+'</span></p>'+
  '<p class="muted">Le mot de passe est stocké chiffré dans Supabase Vault, pas dans les paramètres ordinaires. Il ne sera jamais réaffiché.</p>'+
@@ -278,7 +280,7 @@ function renderConfig(){
 }
 window.saveCentralConfig=async()=>{
  if(!db.current_user?.mail_access||db.current_user?.read_only)return;
- const keys=['landlord_name','landlord_address','owner_email','sender_email'];
+ const keys=['landlord_name','landlord_address','owner_email','sender_email','bank_account_label'];
  const settings=Object.fromEntries(keys.map(k=>[k,String($('central-'+k)?.value||'').trim()]));
  const password=$('central-mail-password')?.value||'',status=$('central-config-status'),button=$('central-config-save');
  if(!status||!button)return;
@@ -623,7 +625,7 @@ function renderTransactions(){
   const done=ledger.byInstallment.get(i.id)||0,remaining=Math.max(0,Number(i.total_due)-done);
   return '<tr><td>'+esc(i.period)+'</td><td>'+esc(activeLeaseName((db.leases||[]).find(l=>l.id===i.lease_id)||{}))+'</td><td>'+esc(i.due_on)+'</td><td>'+money(Number(i.total_due))+'</td><td>'+money(done)+'</td><td>'+money(remaining)+'</td><td><span class="mini-tag '+(remaining>0.005?'warn':'')+'">'+(remaining>0.005?'À régler':'Soldée')+'</span></td></tr>';
  }))+
- '<div class="note" style="margin-top:14px">La liaison bancaire automatique n’est pas encore activée. Un paiement saisi manuellement doit correspondre à une réception réellement constatée. Une avance non affectée n’est pas une quittance. Les montants « Paiement reçu » du tableur sont conservés séparément et ne sont jamais additionnés à ce registre.</div>'+
+ '<div class="note" style="margin-top:14px">La liaison bancaire directe n’est pas encore activée. Vous pouvez importer un relevé CSV et rapprocher chaque crédit après vérification. Un paiement saisi manuellement doit correspondre à une réception réellement constatée. Une avance non affectée n’est pas une quittance. Les montants « Paiement reçu » du tableur sont conservés séparément et ne sont jamais additionnés à ce registre.</div>'+
  ((ledger.payments.length>=1000||(db.payment_allocations||[]).length>=1000)?'<div class="note">Seuls les 1 000 derniers mouvements sont chargés ; les totaux présentés ici peuvent être incomplets. Une pagination serveur sera nécessaire.</div>':'');
 }
 window.openPaymentModal=()=>{
