@@ -390,8 +390,15 @@ window.refreshIrl=()=>{irlChecked=false;fetchIrl()};
 function irlPanel(){const ok=irlLive?.ok;const live=ok?'Indice INSEE vérifié : '+fmt(irlLive.index)+' — '+irlLive.period:irlLive?.loading?'Vérification INSEE en cours…':'Dernière valeur vérifiée publiquement : 148,06 — T3 2026 (métropole)';const source='<a href="https://www.insee.fr/fr/statistiques/serie/001515333" target="_blank" rel="noopener noreferrer">Consulter la série officielle INSEE</a>';return '<div class="card" style="margin-bottom:15px"><div class="section-head"><div><h3>Indice de référence des loyers (IRL)</h3><p class="muted">Consultation de la dernière publication INSEE, sans modification des baux.</p></div><button class="btn primary" onclick="refreshIrl()">Actualiser depuis l’INSEE</button></div><div class="kpi">'+esc(live)+'</div><p class="muted">'+(ok?'Dernier contrôle : '+esc(new Date(irlLive.checked_at).toLocaleString('fr-FR')):irlLive?.error?'Actualisation indisponible : '+esc(irlLive.error):'Référence du 15 octobre 2026. Actualisation en ligne non confirmée.')+'</p><p>'+source+'</p><div class="note"><b>Révision des loyers :</b> l’indice de base dépend du trimestre prévu au bail, avec contrôle de la date de révision, du DPE et des restrictions applicables. Le recalcul automatique des loyers reste désactivé pour éviter des montants erronés.</div></div>'}
 function emailAutomationPanel(){const sender=setting('sender_email','');return '<div class="card" style="margin-bottom:15px"><h3>Envois automatiques de courriels</h3><p><span class="mini-tag warn">Envoi automatique désactivé</span></p><p class="muted">Adresse d’expédition prévue : <b>'+esc(String(sender||'Non configurée'))+'</b>. Cette adresse n’est pas encore connectée à un service SMTP et aucune identité d’expéditeur n’a été vérifiée.</p><button class="btn secondary" onclick="showPage(\'emails\')">Voir les courriels à préparer</button></div>'}
 function mailUrl(to,subject,body){return 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)}
-window.openTenantEmail=row=>{const t=(db.tenants||[]).find(x=>x.row_number===row);if(!t)return;const to=lookup(t.data,['Mail locataire']);if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){alert('Adresse e-mail du locataire manquante ou invalide');return}const subject=lookup(t.data,['Sujet locataire'])||'Suivi de votre logement — Marne Invest';const body=lookup(t.data,['Corps locataire'])||'Bonjour,\n\nNous vous contactons au sujet de votre logement.\\n\\nCordialement,\\nMarne Invest';location.href=mailUrl(to,subject,body)};
-
+window.openTenantEmail=row=>{
+ const t=(db.tenants||[]).find(x=>x.row_number===row);if(!t)return;
+ const to=lookup(t.data,['Mail locataire']);
+ if(!isEmailAddress(to)){alert('Adresse e-mail du locataire manquante ou invalide.');return}
+ const subject=lookup(t.data,['Sujet locataire'])||'Suivi de votre logement — Marne Invest';
+ const body=lookup(t.data,['Corps locataire'])||['Bonjour,','','Nous vous contactons au sujet de votre logement.','','Cordialement,','Marne Invest'].join('\n');
+ if(db.current_user?.mail_access){showPage('mail');composeMail(to,subject,body)}
+ else location.href=mailUrl(to,subject,body);
+};
 function isEmailAddress(value){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||''))}
 function reminderDayDiff(due,today){return Math.floor((Date.parse(today+'T00:00:00Z')-Date.parse(due+'T00:00:00Z'))/86400000)}
 function reminderPlan(i,ledger,today){
@@ -464,7 +471,8 @@ window.composeRentalReminder=async(id)=>{
   await api('prepare-reminder','POST',{installment_id:draft.installment_id,stage:draft.stage});
   const to=draft.recipient_email;
   if(!isEmailAddress(to)){alert('Adresse e-mail invalide.');return;}
-  location.href=mailUrl(to,draft.subject,draft.body);
+  if(db.current_user?.mail_access){showPage('mail');composeMail(to,draft.subject,draft.body)}
+  else location.href=mailUrl(to,draft.subject,draft.body);
  }catch(e){alert('Brouillon non utilisable : '+(e.message||'situation à vérifier'))}
 };
 window.confirmRentalReminderSent=async id=>{
@@ -499,7 +507,7 @@ function renderMail(){
  '<p class="module-note">Les 150 derniers courriels sont affichés. Les messages sont synchronisés sur demande et restent présents sur les serveurs de Free.</p>';
 }
 window.testMailConnection=async()=>{
- try{const x=await api('mail-test','POST',{});alert(x.imap_authenticated?'Connexion IMAP confirmée. Messages disponibles sur Free : '+x.mailbox_total:'Connexion non confirmée.')}
+ try{const x=await api('mail-test','POST',{});alert('Réception IMAP : '+(x.imap_authenticated?'OK':'Non vérifiée')+'\nEnvoi SMTP : '+(x.smtp_authenticated?'OK':'Non vérifié')+'\nMessages sur Free : '+(x.mailbox_total??'—'))}
  catch(e){alert('Test non abouti : '+e.message)}
 };
 window.syncFreeMail=async()=>{
