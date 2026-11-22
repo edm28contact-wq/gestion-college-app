@@ -111,11 +111,55 @@ function dataTable(headings,rows){if(!rows.length)return '<div class="card empty
 function csvExport(filename,headings,rows){const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const content='\uFEFF'+[headings,...rows].map(row=>row.map(quote).join(';')).join('\r\n');const blob=new Blob([content],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function csvSnapshot(type){const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example);if(type==='tenants'){const h=db.tenant_headers;csvExport('marne-invest-locataires.csv',h,tenants.map(t=>h.map(k=>t.data?.[k]??'')));return}if(type==='properties'){const keys=[...new Set(props.flatMap(p=>Object.keys(p.data||{})))];csvExport('marne-invest-biens.csv',keys,props.map(p=>keys.map(k=>p.data?.[k]??'')));return}if(type==='payments'){csvExport('marne-invest-paiements.csv',['Locataire','Bien','Paiement dû','Paiement reçu','Solde','Retard'],tenants.map(t=>[tenantName(t),dwellingName(t),lookup(t.data,['Paiement dû']),lookup(t.data,['Paiement reçu']),lookup(t.data,['Solde']),lookup(t.data,['Retard'])]));return}if(type==='contracts'){csvExport('marne-invest-contrats.csv',['Locataire','Bien','Début bail','Fin bail','Loyer de base','Charges'],tenants.map(t=>[tenantName(t),dwellingName(t),lookup(t.data,['Date entrée locataire']),lookup(t.data,['Date fin de bail']),lookup(t.data,['Loyer de base']),lookup(t.data,['Charge'])]));return}if(type==='reports'){csvExport('marne-invest-rapport.csv',['Indicateur','Valeur'],[['Biens réels',props.length],['Lignes locataires',tenants.length],['Paiements dus',tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement dû'])||0),0)],['Paiements reçus',tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement reçu'])||0),0)],['Lignes en retard',tenants.filter(t=>t.data?.['Retard']==='OUI').length]]);return}}
 window.exportMarne=csvSnapshot;
+
 function renderContracts(){
- const tenants=db.tenants||[],rows=filtered(tenants,t=>[tenantName(t),dwellingName(t),...Object.values(t.data||{})].join(' '));
- const withDates=tenants.filter(t=>lookup(t.data,['Date entrée locataire','Date fin de bail'])).length;
- $('content').innerHTML=section('Contrats et baux','Synthèse des informations présentes dans le suivi locataire. Aucun bail n’est généré automatiquement.','<button class="btn secondary" onclick="exportMarne(\'contracts\')">Exporter CSV</button>')+stats([['Locataires suivis',tenants.length],['Dossiers avec une date de bail',withDates],['Dates non renseignées',tenants.length-withDates]])+dataTable(['Locataire','Logement','Entrée','Fin de bail','Loyer de base','Charges','Actions'],rows.map(t=>'<tr><td><b>'+esc(tenantName(t))+'</b></td><td>'+esc(dwellingName(t))+'</td><td>'+esc(lookup(t.data,['Date entrée locataire'])||'—')+'</td><td>'+esc(lookup(t.data,['Date fin de bail'])||'—')+'</td><td>'+esc(lookup(t.data,['Loyer de base'])||'—')+'</td><td>'+esc(lookup(t.data,['Charge'])||'—')+'</td><td><button class="btn secondary" onclick="editTenant('+t.row_number+')">Voir la fiche</button></td></tr>'))+'<p class="module-note">Un contrat juridiquement exploitable requiert un modèle de bail, des parties identifiées et un document signé.</p>';
+ const leases=db.leases||[],tenants=db.tenants||[],installments=db.installments||[];
+ const rows=filtered(leases,l=>[(db.properties||[]).find(p=>p.id===l.property_id)?.name,l.tenant_name,l.status].join(' '));
+ $('content').innerHTML=section('Baux et échéances','Les baux importés sont des brouillons. Vérifiez les conditions contractuelles avant activation.')+
+ stats([['Baux suivis',leases.length],['À vérifier',leases.filter(l=>l.status==='draft').length],['Actifs',leases.filter(l=>l.status==='active').length],['Échéances',installments.length]])+
+ dataTable(['Logement','Locataire','Date début','Loyer','Charges','Jour','Statut','Action'],rows.map(l=>{
+ const p=(db.properties||[]).find(p=>p.id===l.property_id);
+ return '<tr><td><b>'+esc(p?.name||'—')+'</b></td><td>'+esc(l.tenant_name||'—')+'</td><td>'+esc(l.start_date||'À vérifier')+'</td><td>'+money(l.monthly_rent===null?NaN:Number(l.monthly_rent))+'</td><td>'+money(l.charges_amount===null?NaN:Number(l.charges_amount))+'</td><td>'+esc(l.due_day??'—')+'</td><td><span class="mini-tag '+(l.status==='draft'?'warn':'')+'">'+esc(l.status==='active'?'Actif':l.status==='draft'?'À vérifier':'Clôturé')+'</span></td><td><button class="btn secondary" data-id="'+esc(l.id)+'" onclick="editLease(this.dataset.id)">Ouvrir</button></td></tr>';
+ }))+'<p class="module-note">Les montants historiques sont conservés séparément. Aucun paiement antérieur n’est importé comme un règlement actuel.</p>';
 }
+window.editLease=id=>{
+ const lease=(db.leases||[]).find(l=>l.id===id);if(!lease)return;
+ const property=(db.properties||[]).find(p=>p.id===lease.property_id);
+ const tenant=(db.tenants||[]).find(t=>t.id===lease.tenant_row_id);
+ const history=tenant?.data||{};
+ const items=(db.installments||[]).filter(x=>x.lease_id===id);
+ const locked=lease.status!=='draft';
+ const field=(key,title,value,type,attrs='')=>'<div><label>'+esc(title)+'</label><input id="lease-'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+(locked?'disabled':'')+' '+attrs+'></div>';
+ const month=new Date().toISOString().slice(0,7);
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Bail : '+esc(property?.name||'Bien')+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note">Valeurs indicatives du suivi historique : entrée '+esc(history['Date entrée locataire']||'—')+', loyer '+esc(history['Loyer de base']??'—')+' €, charges '+esc(history['Charge']??'—')+' €. Vérifiez le bail signé.</div>'+
+ '<div class="section-title">Informations contractuelles</div><div class="fields">'+
+ field('start','Date de début',lease.start_date,'date')+
+ field('end','Date de fin facultative',lease.end_date,'date')+
+ field('rent','Loyer mensuel hors charges (€)',lease.monthly_rent,'number','min="0" step="0.01"')+
+ field('charges','Provisions sur charges mensuelles (€)',lease.charges_amount,'number','min="0" step="0.01"')+
+ field('day','Jour d’échéance (1 à 31)',lease.due_day,'number','min="1" max="31"')+'</div>'+
+ '<div class="section-title">Notes</div><textarea id="lease-notes" '+(locked?'disabled':'')+'>'+esc(lease.notes||'')+'</textarea>'+
+ (locked?'':'<div class="actions" style="margin-top:12px"><button class="btn secondary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,false)">Enregistrer le brouillon</button><button class="btn primary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,true)">Vérifier et activer</button></div>')+
+ '<div class="section-title">Échéances mensuelles</div>'+
+ (lease.status==='active'?'<div class="toolbar"><input id="installment-month" type="month" value="'+month+'" style="width:180px"><button class="btn primary" data-id="'+esc(id)+'" onclick="generateInstallment(this.dataset.id)">Créer une échéance</button></div>':'<div class="muted">Validez le bail pour pouvoir créer une échéance.</div>')+
+ renderObjectTable(items.map(x=>({'Mois':x.period,'Échéance':x.due_on,'Loyer':money(Number(x.rent_amount)),'Charges':money(Number(x.charges_amount)),'Total':money(Number(x.total_due)),'État':x.status})))+
+ '<div class="status" id="modalStatus"></div></div></div>';
+};
+window.saveLease=async(id,activate)=>{
+ if(activate&&!confirm('Avez-vous vérifié les clauses et montants dans le bail signé ?'))return;
+ const raw=k=>document.getElementById('lease-'+k)?.value??'';
+ const body={id,start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),due_day:raw('day'),notes:document.getElementById('lease-notes')?.value||'',activate};
+ const status=$('modalStatus');status.textContent='Enregistrement…';status.className='status';
+ try{await api('save-lease','POST',body);closeModal();await refresh();}catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
+};
+window.generateInstallment=async(id)=>{
+ const period=$('installment-month')?.value,status=$('modalStatus');if(!period)return;
+ if(!confirm('Créer une échéance de '+period+' à partir du bail validé ?'))return;
+ status.className='status';status.textContent='Enregistrement…';
+ try{const result=await api('generate-installment','POST',{lease_id:id,period});await refresh();editLease(id);$('modalStatus').textContent=result.already_exists?'Échéance déjà existante, aucun doublon.':'Échéance créée, sans paiement supposé.';}
+ catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
+};
 function renderTransactions(){
  const tenants=db.tenants||[],due=tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement dû'])||0),0),paid=tenants.reduce((s,t)=>s+(valueOf(t.data,['Paiement reçu'])||0),0),late=tenants.filter(t=>t.data?.['Retard']==='OUI'),rows=filtered(tenants,t=>[tenantName(t),dwellingName(t),...Object.values(t.data||{})].join(' '));
  $('content').innerHTML=section('Transactions locatives','Montants de la dernière situation connue, sans reconstitution d’historique bancaire.','<button class="btn secondary" onclick="exportMarne(\'payments\')">Exporter CSV</button><a class="btn primary" href="./comptabilite/">Comptabilité</a>')+stats([['Paiements dus',money(due)],['Paiements reçus',money(paid)],['Écart dû / reçu',money(due-paid)],['Lignes en retard',late.length]])+dataTable(['Locataire','Bien','Dû','Reçu','Solde déclaré','Retard','Actions'],rows.map(t=>'<tr><td><b>'+esc(tenantName(t))+'</b></td><td>'+esc(dwellingName(t))+'</td><td>'+esc(lookup(t.data,['Paiement dû'])||'—')+'</td><td>'+esc(lookup(t.data,['Paiement reçu'])||'—')+'</td><td>'+esc(lookup(t.data,['Solde'])||'—')+'</td><td><span class="mini-tag '+(t.data?.['Retard']==='OUI'?'bad':'')+'">'+esc(t.data?.['Retard']||'Non renseigné')+'</span></td><td><button class="btn secondary" onclick="editTenant('+t.row_number+')">Modifier</button></td></tr>'))+'<p class="module-note">Le solde cumulé du classeur et l’écart dû/reçu sont deux indicateurs distincts. Aucun rapprochement bancaire n’est simulé.</p>';
