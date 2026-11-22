@@ -425,6 +425,27 @@ function salarySettingsPanel(){
  }).join("")+'</tbody></table></div>')+
  '<p class="muted">Jours théoriques selon jours habituels, jours fériés et vacances scolaires de la zone C, suivant les options de chaque salarié. Les congés individuels ne sont pas déduits. Aucun calcul de paie automatique.</p><p><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></p></section>';
 }
+function salaryEventEmployeeSummary(name,events,month){
+ const staff=salaryStaff.find(p=>salaryStaffKey(p.name)===salaryStaffKey(name));
+ const totals=salaryProfileTotals(events,month);
+ const metrics='<span><b>'+salaryFormatLate(totals.totalMonthMinutes)+'</b> d’écarts horaires'+
+  (totals.totalMonthMissing?' · '+totals.totalMonthMissing+' durée(s) non renseignée(s)':'')+'</span>'+
+  '<span>'+totals.absenceMonthCount+' absence(s)</span>'+
+  '<span>'+totals.monthCount+' retard(s)</span>'+
+  '<span>'+totals.earlyMonthCount+' départ(s) anticipé(s)</span>'+
+  '<span>'+totals.incidentMonthCount+' autre(s) incident(s)</span>';
+ let workdays='<span>Calendrier salarié non disponible</span>';
+ if(staff){
+  const calculation=salaryCalendarBreakdown(staff,month);
+  workdays=calculation.net===null?
+   '<span>'+calculation.base+' jour(s) planifié(s) · calendrier à vérifier</span>':
+   '<span><b>'+calculation.net+'</b> jour(s) théoriques travaillés</span>'+
+    '<span>'+calculation.publicDays+' jour(s) férié(s) déduit(s)</span>'+
+    (calculation.excludedSchool?'<span>'+calculation.schoolDays+' jour(s) de vacances déduit(s)</span>':'<span>Vacances scolaires non déduites</span>');
+ }
+ return '<div class="muted" style="display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap;margin:6px 0 12px">'+
+ workdays+metrics+'</div>';
+}
 function salaryPage(){
  if(!salaryMonth)salaryMonth=salaryCurrentMonth();
  const groups=salaryGroups(),shown=groups.filter(([key])=>salaryPerson==="all"||salaryPerson===key);
@@ -438,7 +459,7 @@ function salaryPage(){
  (salaryLoading?'<div class="card">Chargement des événements…</div>':'')+
  (salaryError?'<div class="card" style="color:#a32929">'+esc(salaryError)+'</div>':'')+
  (!salaryLoading&&!salaryError?'<div class="card"><b>'+shown.length+' salarié(s) · '+total+' événement(s) · '+shown.reduce((n,[,g])=>n+g.items.filter(e=>e.event_type==="incident").length,0)+' incident(s)</b></div>':'')+
- (!salaryLoading&&!salaryError?(shown.length?shown.map(([,g])=>'<div class="card"><h3>'+esc(g.name)+' <span class="muted">('+g.items.length+' événement(s), '+g.items.filter(e=>e.event_type==="incident").length+' incident(s))</span></h3><div class="table"><table><thead><tr><th>Date</th><th>Type</th><th>Durée</th><th>Justificatif</th><th>PDF</th><th>Observation</th><th>Statut</th></tr></thead><tbody>'+g.items.map(e=>'<tr><td>'+esc(e.event_date)+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td><td>'+esc(salaryDuration(e))+'</td><td>'+esc(salaryJust[e.justification_status]||"")+'</td><td>'+(e.attachment_path?'<button class="btn secondary compact" type="button" onclick="salaryOpenIncidentPdf(\''+esc(e.id)+'\')">Voir le PDF</button>':'—')+'</td><td>'+esc(e.details)+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td></tr>').join("")+'</tbody></table></div></div>').join(""):'<div class="card"><p>Aucun événement enregistré pour cette période.</p></div>'):'');
+ (!salaryLoading&&!salaryError?(shown.length?shown.map(([,g])=>'<div class="card"><h3>'+esc(g.name)+' <span class="muted">('+g.items.length+' événement(s))</span></h3>'+salaryEventEmployeeSummary(g.name,g.items,salaryMonth)+'<div class="table"><table><thead><tr><th>Date</th><th>Type</th><th>Durée</th><th>Justificatif</th><th>PDF</th><th>Observation</th><th>Statut</th></tr></thead><tbody>'+g.items.map(e=>'<tr><td>'+esc(e.event_date)+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td><td>'+esc(salaryDuration(e))+'</td><td>'+esc(salaryJust[e.justification_status]||"")+'</td><td>'+(e.attachment_path?'<button class="btn secondary compact" type="button" onclick="salaryOpenIncidentPdf(\''+esc(e.id)+'\')">Voir le PDF</button>':'—')+'</td><td>'+esc(e.details)+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td></tr>').join("")+'</tbody></table></div></div>').join(""):'<div class="card"><p>Aucun événement enregistré pour cette période.</p></div>'):'');
  }
  document.querySelectorAll('[data-salary-view]').forEach(button=>button.addEventListener('click',()=>salarySwitchView(button.dataset.salaryView)));
  $('salarySettingsMonth')?.addEventListener('change',e=>{if(/^20[2-9][0-9]-(0[1-9]|1[0-2])$/.test(e.target.value)){salaryMonth=e.target.value;salaryPage()}});
@@ -447,7 +468,7 @@ function salaryPage(){
  document.querySelectorAll('[data-salary-month]').forEach(button=>button.addEventListener('click',()=>salarySelectMonth(button.dataset.salaryMonth)));
  const month=$('salaryMonth');if(month)month.addEventListener('change',e=>salarySelectMonth(e.target.value));
  const person=$('salaryPerson');if(person)person.addEventListener('change',e=>{salaryPerson=e.target.value;salaryPage()});
- if(salaryView==="settings"||salaryProfileEmployeeId){
+ if(salaryView==="settings"||salaryView==="events"||salaryProfileEmployeeId){
   void salaryCalendarEnsure(salaryMonth);
   if(salaryProfileEmployeeId)void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth());
  }
