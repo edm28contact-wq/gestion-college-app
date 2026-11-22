@@ -58,7 +58,7 @@
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
 const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false;
-const pages=[['dashboard','Dashboard','⌂'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Emails automatiques','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
+const pages=[['dashboard','Dashboard','⌂'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
 async function api(action,method='GET',body){const r=await fetch(API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401&&action!=='login'){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
@@ -381,7 +381,90 @@ function irlPanel(){const ok=irlLive?.ok;const live=ok?'Indice INSEE vérifié :
 function emailAutomationPanel(){const sender=setting('sender_email','');return '<div class="card" style="margin-bottom:15px"><h3>Envois automatiques de courriels</h3><p><span class="mini-tag warn">Envoi automatique désactivé</span></p><p class="muted">Adresse d’expédition prévue : <b>'+esc(String(sender||'Non configurée'))+'</b>. Cette adresse n’est pas encore connectée à un service SMTP et aucune identité d’expéditeur n’a été vérifiée.</p><button class="btn secondary" onclick="showPage(\'emails\')">Voir les courriels à préparer</button></div>'}
 function mailUrl(to,subject,body){return 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)}
 window.openTenantEmail=row=>{const t=(db.tenants||[]).find(x=>x.row_number===row);if(!t)return;const to=lookup(t.data,['Mail locataire']);if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){alert('Adresse e-mail du locataire manquante ou invalide');return}const subject=lookup(t.data,['Sujet locataire'])||'Suivi de votre logement — Marne Invest';const body=lookup(t.data,['Corps locataire'])||'Bonjour,\n\nNous vous contactons au sujet de votre logement.\\n\\nCordialement,\\nMarne Invest';location.href=mailUrl(to,subject,body)};
-function renderEmails(){const tenants=db.tenants||[],withEmail=tenants.filter(t=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lookup(t.data,['Mail locataire']))),rows=filtered(tenants,t=>[tenantName(t),dwellingName(t),...Object.values(t.data||{})].join(' '));$('content').innerHTML=section('Courriels et relances','Préparation des messages locataires. Aucun envoi automatique n’est actuellement déclenché.')+stats([['Locataires',tenants.length],['Adresses valides',withEmail.length],['En retard',tenants.filter(t=>t.data?.['Retard']==='OUI').length],['Automatisation','Désactivée']])+dataTable(['Locataire','Adresse e-mail','Situation','Relance 7 jours','Relance 14 jours','Message'],rows.map(t=>'<tr><td><b>'+esc(tenantName(t))+'</b></td><td>'+esc(lookup(t.data,['Mail locataire'])||'—')+'</td><td><span class="mini-tag '+(t.data?.['Retard']==='OUI'?'bad':'')+'">'+esc(lookup(t.data,['Type d’alerte'])||'—')+'</span></td><td>'+esc(lookup(t.data,['Relance 7 jours envoyée'])||'Non renseigné')+'</td><td>'+esc(lookup(t.data,['Relance 14 jours envoyée'])||'Non renseigné')+'</td><td><button class="btn secondary" onclick="openTenantEmail('+t.row_number+')">Préparer un e-mail</button></td></tr>'))+'<div class="note" style="margin-top:15px">Les liens de rédaction ouvrent votre logiciel de messagerie et demandent une validation humaine. Ils ne déclenchent pas d’envoi ni ne marquent un message comme envoyé. Une programmation serveur avec journal et anti-doublon sera nécessaire pour les relances automatiques.</div>'}
+
+function isEmailAddress(value){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||''))}
+function reminderDayDiff(due,today){return Math.floor((Date.parse(today+'T00:00:00Z')-Date.parse(due+'T00:00:00Z'))/86400000)}
+function reminderPlan(i,ledger,today){
+ const l=(db.leases||[]).find(x=>x.id===i.lease_id);
+ const t=(db.tenants||[]).find(x=>x.id===l?.tenant_row_id),p=(db.properties||[]).find(x=>x.id===i.property_id);
+ const outstanding=Math.max(0,Number(i.total_due)-(ledger.byInstallment.get(i.id)||0));
+ const pending=[...ledger.valid.values()].filter(x=>x.lease_id===i.lease_id).reduce((sum,x)=>sum+Math.max(0,Number(x.amount)-(ledger.byPayment.get(x.id)||0)),0);
+ const days=reminderDayDiff(i.due_on,today);
+ const drafts=(db.reminder_drafts||[]).filter(x=>x.installment_id===i.id);
+ const first=drafts.find(x=>x.stage===7),second=drafts.find(x=>x.stage===14);
+ const canAdvance=first?.status==='declared_sent'&&first.declared_sent_at&&reminderDayDiff(first.declared_sent_at.slice(0,10),today)>=7;
+ let stage=0,reason='';
+ if(!l||l.status!=='active'||!l.verified_at)reason='Bail non vérifié';
+ else if(outstanding<=0.005)reason='Échéance soldée';
+ else if(pending>0.005)reason='Règlement à rapprocher';
+ else if(days<7)reason='Délai J+7 non atteint';
+ else if(!isEmailAddress(t?.data?.['Mail locataire']))reason='E-mail manquant';
+ else if(!first){stage=7;reason='Rappel J+7 prêt à préparer'}
+ else if(first.status==='prepared')reason='Brouillon J+7 préparé';
+ else if(first.status==='declared_sent'&&days>=14&&canAdvance&&!second){stage=14;reason='Rappel J+14 prêt à préparer'}
+ else if(second?.status==='prepared')reason='Brouillon J+14 préparé';
+ else if(second?.status==='declared_sent')reason='Rappel J+14 déclaré envoyé';
+ else if(first.status==='declared_sent'&&!canAdvance)reason='Attente de 7 jours après le premier rappel';
+ else reason='Premier rappel déclaré envoyé';
+ return {i,l,t,p,outstanding,pending,days,stage,reason,drafts};
+}
+function renderEmails(){
+ if(!db.current_user?.payment_access){
+  $('content').innerHTML=section('Relances et courriels','Accès financier nécessaire.')+'<div class="card empty-state">Votre compte ne dispose pas de l’accès aux relances liées aux impayés.</div>';return;
+ }
+ const ledger=rentalLedger(),today=todayParis();
+ const plans=(db.installments||[]).filter(i=>i.status==='scheduled').map(i=>reminderPlan(i,ledger,today));
+ const cases=filtered(plans.filter(x=>x.outstanding>0.005),x=>[(x.p?.name||''),x.l?.tenant_name,x.reason].join(' '));
+ const drafts=db.reminder_drafts||[],ready=plans.filter(x=>x.stage>0).length;
+ const withPending=plans.filter(x=>x.outstanding>0.005&&x.pending>0.005).length;
+ const verified=plans.filter(x=>x.outstanding>0.005&&x.days>=7&&x.stage===0).length;
+ const output=section('Relances locatives','Les délais J+7 et J+14 créent des propositions, jamais un envoi automatique.','<button class="btn secondary" onclick="refresh()">Actualiser les règlements</button>')+
+ stats([['Échéances à suivre',plans.filter(x=>x.outstanding>0.005).length],['Rappels préparables',ready],['Règlements à rapprocher',withPending],['Relances en attente',verified]])+
+ '<div class="note">Le logiciel ne relance pas un locataire lorsque des paiements non affectés existent sur son bail. Il bloque aussi les rappels avant l’échéance et exige sept jours entre deux relances. Aucun SMTP Free n’est connecté : seules des préparations et des déclarations manuelles sont possibles.</div>'+
+ '<div class="section-head" style="margin-top:18px"><div><h2>Échéances et situations</h2></div></div>'+
+ dataTable(['Bien / locataire','Échéance','En retard de','Reste dû','Situation','Action'],cases.sort((a,b)=>a.i.due_on.localeCompare(b.i.due_on)).map(x=>
+ '<tr><td><b>'+esc(x.p?.name||'—')+'</b><div class="muted">'+esc(x.l?.tenant_name||'—')+'</div></td><td>'+esc(x.i.due_on)+'</td><td>'+Math.max(0,x.days)+' j</td><td><b>'+money(x.outstanding)+'</b></td><td><span class="mini-tag '+(x.stage>0?'warn':'')+'">'+esc(x.reason)+'</span></td><td>'+
+ (x.stage>0&&!db.current_user?.read_only?'<button class="btn primary" data-id="'+esc(x.i.id)+'" data-stage="'+x.stage+'" onclick="prepareRentalReminder(this.dataset.id,Number(this.dataset.stage))">Préparer J+'+x.stage+'</button>':'—')+
+ '</td></tr>'))+
+ '<div class="section-head" style="margin-top:22px"><div><h2>Brouillons et relances déclarées</h2><p class="muted">Les confirmations manuelles ne constituent pas une preuve technique de distribution.</p></div></div>'+
+ dataTable(['Bien','Niveau','Destinataire','Préparé le','Statut','Action'],drafts.map(r=>{
+  const l=(db.leases||[]).find(x=>x.id===r.lease_id);
+  const p=(db.properties||[]).find(x=>x.id===l?.property_id);
+  const plan=plans.find(x=>x.i.id===r.installment_id);
+  const safe=plan&&plan.outstanding>0.005&&plan.pending<=0.005;
+  return '<tr><td>'+esc(p?.name||'—')+'</td><td>J+'+esc(r.stage)+'</td><td>'+esc(r.recipient_email||'—')+'</td><td>'+esc(r.prepared_at?.slice(0,10)||'—')+'</td><td><span class="mini-tag '+(r.status==='declared_sent'?'':'warn')+'">'+esc(r.status==='prepared'?(safe?'À envoyer manuellement':'À revérifier'):r.status==='declared_sent'?'Déclaré envoyé':'Annulé')+'</span></td><td><div class="item-actions">'+
+ (r.status==='prepared'&&safe?'<button class="btn secondary" data-id="'+esc(r.id)+'" onclick="composeRentalReminder(this.dataset.id)">Ouvrir le brouillon</button><button class="btn secondary" data-id="'+esc(r.id)+'" onclick="confirmRentalReminderSent(this.dataset.id)">Déclarer envoyé</button>':'—')+
+ '</div></td></tr>';
+ }))+
+ '<div class="section-head" style="margin-top:22px"><div><h2>Courriels ponctuels</h2><p class="muted">Ouvrir une rédaction manuelle, sans envoi automatique.</p></div></div>'+
+ dataTable(['Locataire','Logement','Adresse e-mail','Action'],filtered(db.tenants||[],t=>[tenantName(t),dwellingName(t),t.data?.['Mail locataire']].join(' ')).map(t=>
+ '<tr><td>'+esc(tenantName(t))+'</td><td>'+esc(dwellingName(t))+'</td><td>'+esc(t.data?.['Mail locataire']||'À renseigner')+'</td><td><button class="btn secondary" onclick="openTenantEmail('+t.row_number+')" '+(isEmailAddress(t.data?.['Mail locataire'])?'':'disabled')+'>Rédiger</button></td></tr>'));
+ $('content').innerHTML=output;
+}
+window.prepareRentalReminder=async(id,stage)=>{
+ try{
+  const reply=await api('prepare-reminder','POST',{installment_id:id,stage});
+  await refresh();
+  alert(reply.already_exists?'Ce rappel existe déjà, aucun doublon créé.':'Brouillon J+'+stage+' préparé. Aucun e-mail n’a été envoyé.');
+ }catch(e){alert(e.message||'Relance indisponible')}
+};
+window.composeRentalReminder=async(id)=>{
+ const draft=(db.reminder_drafts||[]).find(r=>r.id===id);if(!draft||draft.status!=='prepared')return;
+ try{
+  await api('prepare-reminder','POST',{installment_id:draft.installment_id,stage:draft.stage});
+  const to=draft.recipient_email;
+  if(!isEmailAddress(to)){alert('Adresse e-mail invalide.');return;}
+  location.href=mailUrl(to,draft.subject,draft.body);
+ }catch(e){alert('Brouillon non utilisable : '+(e.message||'situation à vérifier'))}
+};
+window.confirmRentalReminderSent=async id=>{
+ const draft=(db.reminder_drafts||[]).find(r=>r.id===id);if(!draft||draft.status!=='prepared')return;
+ if(!confirm('Avez-vous réellement envoyé ce courriel depuis votre messagerie ? Le logiciel ne peut pas vérifier sa distribution.'))return;
+ try{
+  await api('declare-reminder-sent','POST',{id,confirmed:true});
+  await refresh();
+ }catch(e){alert(e.message||'Confirmation impossible')}
+};
 function renderGuide(){$('content').innerHTML=`<div class="card"><h3>Commandes reproduites</h3>${db.commands.map(c=>`<div class="kv"><b>${esc(c.label)}</b><div><code>${esc(c.function)}</code><div class="muted">${esc(c.description)}</div></div></div>`).join('')}</div><br><div class="card"><h3>Organisation du classeur reproduite</h3><p>Suivi_Locataires : ${db.tenant_headers.length} colonnes, avec les listes OUI/NON et les états d’alerte conservés dans les données.</p><p>Config : paramètres IRL, seuil de révision, délais de relance, liens INSEE et préfixe des dossiers.</p><p>Modele_Dossier_Logement : informations logement, locataire actuel, historique, échéancier et synthèse.</p><p>Dossier_Exemple : les valeurs du classeur sont présentes dans l’onglet « Dossiers logement ».</p></div>`}
 window.closeModal=()=>{$('modal').innerHTML=''};
 if(token){$('login').classList.add('hide');$('app').classList.remove('hide');initNav();refresh()}else $('login').classList.remove('hide');
