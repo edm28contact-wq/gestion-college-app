@@ -837,7 +837,7 @@ test('Navigateur : paramètres, bien et locataire permettent de préparer puis a
   await app.page.locator('[data-property-key="Ville"]').fill('Paris');
   await app.page.locator('[data-property-key="Code postal"]').fill('75002');
   await app.page.locator('[data-property-key="Type de bien"]').fill('Studio');
-  await app.page.locator('[data-property-key="Notes"]').fill('Dossier de test uniquement');
+  await app.page.locator('#property-notes').fill('Dossier de test uniquement');
   await app.page.locator('#property-save').click();
   await app.page.locator('#property-save').waitFor({ state: 'detached' });
   assert.equal(scenario.data.properties[0].data.Adresse, '2 rue fictive');
