@@ -245,6 +245,21 @@ test('Navigateur : sans session, seul le formulaire de connexion est visible', a
   assert.deepEqual(app.unexpected, []);
 });
 
+test('Navigateur : les tests IMAP et SMTP réussis sont affichés sans demander un nouveau test', async t => {
+  const data = fixture();
+  data.current_user.mail_configured = true;
+  data.mail_sync_state = { imap_verified_at: data.server_time, smtp_verified_at: data.server_time, last_sync_at: data.server_time };
+  const app = await openApp(t, { data, pageName: 'config' });
+  assert.equal(await app.page.getByText('IMAP et SMTP vérifiés', { exact: true }).count(), 1);
+  await visit(app.page, 'pilotage');
+  assert.match(await app.page.locator('#content').innerText(), /IMAP vérifié ; SMTP vérifié/);
+  await visit(app.page, 'mail');
+  assert.match(await app.page.locator('.mail-banner').innerText(), /IMAP : Vérifié · SMTP : Vérifié/);
+  assert.ok(app.requests.every(req => req.method === 'GET'));
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+});
+
 test('Navigateur : un diagnostic absent ou périmé ne confirme jamais le succès actuel', async t => {
   const data = fixture();
   data.health_reports = [];

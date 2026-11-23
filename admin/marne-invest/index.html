@@ -424,6 +424,7 @@ window.approveIrlCandidate=async id=>{
 function renderConfig(){
  const allowed=!!db.current_user?.mail_access&&!db.current_user?.read_only;
  const configured=!!db.current_user?.mail_configured;
+ const mailVerified=configured&&!!db.mail_sync_state?.imap_verified_at&&!!db.mail_sync_state?.smtp_verified_at;
  const general='<section class="card config-section"><h3>1. Informations générales</h3><p class="muted">Renseigne tes coordonnées une fois : elles préremplissent les futurs baux et les documents préparés. Les baux déjà validés restent inchangés.</p><div class="fields">'+
  configInput('landlord_name','Nom du bailleur ou mandataire','Nom exact figurant sur les nouveaux documents.','text',200,allowed)+
  configInput('landlord_address','Adresse du bailleur ou mandataire','Adresse postale de référence.','text',500,allowed)+
@@ -431,7 +432,7 @@ function renderConfig(){
  configInput('sender_email','Adresse de messagerie Free','Compte utilisé dans la messagerie Marne Invest (@free.fr).','email',254,allowed)+
  configInput('bank_account_label','Libellé du compte bancaire','Nom utilisé pour identifier les relevés CSV ; ne saisissez pas vos identifiants bancaires.','text',80,allowed)+
  '</div></section>';
- const mail='<section class="card config-section"><h3>2. Messagerie Free</h3><p><span class="mini-tag '+(configured?'':'warn')+'">'+(configured?'Identifiants enregistrés — test requis':'Mot de passe non configuré')+'</span></p>'+
+ const mail='<section class="card config-section"><h3>2. Messagerie Free</h3><p><span class="mini-tag '+(mailVerified?'':'warn')+'">'+(mailVerified?'IMAP et SMTP vérifiés':configured?'Identifiants enregistrés — test requis':'Mot de passe non configuré')+'</span></p>'+
  '<p class="muted">Le mot de passe est stocké chiffré dans Supabase Vault, pas dans les paramètres ordinaires. Il ne sera jamais réaffiché.</p>'+
  '<div class="fields"><div><label for="central-mail-password">Mot de passe de la boîte Free</label>'+
  '<input id="central-mail-password" type="password" maxlength="256" autocomplete="new-password" placeholder="'+(configured?'Laisser vide pour conserver le mot de passe':'Saisir le mot de passe de la boîte Free')+'" '+(allowed?'':'disabled')+'><p class="muted">Laisser vide si le mot de passe n’a pas changé.</p></div>'+
@@ -1309,7 +1310,11 @@ function renderReports(){
 async function fetchIrl(){irlChecked=true;irlLive={loading:true};if(page==='config')render();try{const r=await fetch('https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/marne-irl',{cache:'no-store'});const d=await r.json();if(!r.ok||!d.ok||!Number.isFinite(d.index))throw Error(d.error||'IRL non disponible');irlLive=d}catch(e){irlLive={error:e.message||'IRL non disponible'}}if(page==='config')render()}
 window.refreshIrl=()=>{irlChecked=false;fetchIrl()};
 function irlPanel(){const ok=irlLive?.ok;const live=ok?'Indice INSEE vérifié : '+fmt(irlLive.index)+' — '+irlLive.period:irlLive?.loading?'Vérification INSEE en cours…':'IRL non vérifié dans cette session — actualisez depuis l’INSEE';const source='<a href="https://www.insee.fr/fr/statistiques/serie/001515333" target="_blank" rel="noopener noreferrer">Consulter la série officielle INSEE</a>';return '<div class="card" style="margin-bottom:15px"><div class="section-head"><div><h3>Indice de référence des loyers (IRL)</h3><p class="muted">Consultation de la dernière publication INSEE, sans modification des baux.</p></div><button class="btn primary" onclick="refreshIrl()">Actualiser depuis l’INSEE</button></div><div class="kpi">'+esc(live)+'</div><p class="muted">'+(ok?'Dernier contrôle : '+esc(new Date(irlLive.checked_at).toLocaleString('fr-FR')):irlLive?.error?'Actualisation indisponible : '+esc(irlLive.error):'Référence du 15 octobre 2026. Actualisation en ligne non confirmée.')+'</p><p>'+source+'</p><div class="note"><b>Révision des loyers :</b> l’indice de base dépend du trimestre prévu au bail, avec contrôle de la date de révision, du DPE et des restrictions applicables. Le recalcul automatique des loyers reste désactivé pour éviter des montants erronés.</div></div>'}
-function emailAutomationPanel(){const sender=setting('sender_email','');return '<div class="card" style="margin-bottom:15px"><h3>Envois automatiques de courriels</h3><p><span class="mini-tag warn">Envoi automatique désactivé</span></p><p class="muted">Adresse d’expédition prévue : <b>'+esc(String(sender||'Non configurée'))+'</b>. Cette adresse n’est pas encore connectée à un service SMTP et aucune identité d’expéditeur n’a été vérifiée.</p><button class="btn secondary" onclick="showPage(\'emails\')">Voir les courriels à préparer</button></div>'}
+function emailAutomationPanel(){
+ const sender=setting('sender_email',''),configured=!!db.current_user?.mail_configured,verified=configured&&!!db.mail_sync_state?.smtp_verified_at;
+ const state=verified?'Authentification SMTP vérifiée. Les envois restent soumis à une confirmation manuelle.':configured?'Identifiants enregistrés. Vérifiez la connexion SMTP dans Paramètres.':'Configurez ce compte dans Paramètres puis vérifiez la connexion SMTP.';
+ return '<div class="card" style="margin-bottom:15px"><h3>Envois automatiques de courriels</h3><p><span class="mini-tag warn">Envoi automatique désactivé</span></p><p class="muted">Adresse d’expédition prévue : <b>'+esc(String(sender||'Non configurée'))+'</b>. '+esc(state)+'</p><button class="btn secondary" onclick="showPage(\'emails\')">Voir les courriels à préparer</button></div>';
+}
 function mailUrl(to,subject,body){return 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)}
 window.openTenantEmail=row=>{
  const t=(db.tenants||[]).find(x=>x.row_number===row);if(!t)return;
