@@ -58,7 +58,7 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
  assert.match(html,/cuisine\.js\?v=20261120-11/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261120-12/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=20261123-govee-one-key-v1/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -83,7 +83,7 @@ test("Cuisine : l’archivage et la suppression conservent les contrôles histor
  assert.match(admin,/delete-room/);
  assert.match(kitchen,/function activeRooms\(\)/);
  assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261120-12/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261123-govee-one-key-v1/);
 });
 
 test("Cuisine : alerte prioritaire persistante et son répétitif sans faux contrôle",()=>{
@@ -170,4 +170,18 @@ test("Cuisine : l’admin invalide les fautes de saisie avec conservation de l�
  assert.match(admin,/invalidation_reason/);
  assert.match(admin,/Documenter sans invalider/);
  assert.match(admin,/valeur originale/);
+});
+
+test("Cuisine : une seule clé Govee et diagnostic immédiat après saisie",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ assert.match(admin,/id="kitchenGoveeApiKey"/);
+ assert.match(admin,/id="kitchenGoveeSaveAndTest"/);
+ assert.match(admin,/id="kitchenGoveeQuickTest"/);
+ assert.match(admin,/function saveGoveeKeyAndTest/);
+ assert.match(admin,/await api\("govee-save-key","POST"/);
+ assert.match(admin,/await testGoveeConnection\(\)/);
+ assert.match(admin,/await api\("govee-test"\)/);
+ assert.match(admin,/id="kitchenGoveeTestResult"/);
+ assert.match(admin,/\["govee","Connexion Govee"\]/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261123-govee-one-key-v1/);
 });
