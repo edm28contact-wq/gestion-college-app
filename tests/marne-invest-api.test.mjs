@@ -442,3 +442,32 @@ test('L’action data renvoie 503 si une liste dépasse la limite vérifiée', a
   assert.match(result.body.error, /aucun total partiel/);
   assert.equal(result.body.payments, undefined);
 });
+
+for (const [label, lastUid, pending] of [['en cours', 30, true], ['terminé', 80, false], ['non démarré', null, null]]) {
+  test('Le rattrapage des mails est ' + label + ' sans exposer le verrou interne', async () => {
+    const account = 'fixture@free.fr', progressedAt = '2026-11-23T08:00:00Z';
+    const cursor = { account_email: account, folder: 'INBOX', last_uid: lastUid, target_uid: 80,
+      last_progress_at: progressedAt, lock_token: 'synthetic-private-lock', locked_until: '2026-11-23T09:00:00Z' };
+    const client = mockClient({
+      rental_settings: [{ setting_key: 'sender_email', value: account }],
+      rental_mail_sync_state: [{ account_email: account, imap_verified_at: progressedAt }],
+      rental_mail_sync_cursors: [
+        { ...cursor, account_email: 'other@free.fr', last_uid: 80 },
+        ...(lastUid === null ? [] : [cursor]),
+      ],
+    });
+    const result = await request(runtime(client), 'data', undefined, 'GET');
+    assert.equal(result.status, 200);
+    assert.equal(result.body.mail_sync_state.catchup_pending, pending);
+    assert.equal(result.body.mail_sync_state.last_progress_at, lastUid === null ? null : progressedAt);
+    assert.doesNotMatch(JSON.stringify(result.body), /lock_token|locked_until|last_uid|target_uid|synthetic-private-lock/);
+  });
+}
+
+test('Un compte sans droit de messagerie ne lit pas les curseurs IMAP', async () => {
+  const client = mockClient();
+  const result = await request(runtime(client, { username: 'fixture-reader', role: 'marne_invest', permissions: {} }), 'data', undefined, 'GET');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.mail_sync_state, null);
+  assert.equal(client.calls.some(call => call.table === 'rental_mail_sync_cursors'), false);
+});

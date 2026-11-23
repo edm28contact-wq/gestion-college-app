@@ -251,10 +251,13 @@ async function loadData(client: any, account:any) {
     ? loadCompleteRows(()=>client.from("rental_reminder_drafts").select("id,lease_id,installment_id,stage,recipient_email,subject,body,due_at_preparation,status,prepared_at,declared_sent_at,declared_sent_by,cancelled_at,cancelled_reason",{count:"exact"}).order("prepared_at",{ascending:false}).order("id"),"relances")
     : Promise.resolve({data:[],error:null});
   const inboxQuery=mailAllowed(account)
-    ? client.from("rental_mail_messages").select("id,sender_email,recipient_email,subject,received_at,is_seen,has_attachments,attachment_count,imported_at").eq("account_email",currentMailAccount).order("received_at",{ascending:false,nullsFirst:false}).limit(150)
+    ? client.from("rental_mail_messages").select("id,sender_email,recipient_email,subject,received_at,is_seen,has_attachments,attachment_count,imported_at,body_status,source_size,body_note").eq("account_email",currentMailAccount).order("received_at",{ascending:false,nullsFirst:false}).limit(150)
     : Promise.resolve({data:[],error:null});
   const syncStateQuery=mailAllowed(account)
     ? client.from("rental_mail_sync_state").select("account_email,imap_verified_at,smtp_verified_at,last_sync_at,last_imported,last_checked,last_error_at,last_error_code").eq("account_email",currentMailAccount).maybeSingle()
+    : Promise.resolve({data:null,error:null});
+  const syncCursorQuery=mailAllowed(account)
+    ? client.from("rental_mail_sync_cursors").select("last_uid,target_uid,last_progress_at").eq("account_email",currentMailAccount).eq("folder","INBOX").maybeSingle()
     : Promise.resolve({data:null,error:null});
   const outboxQuery=mailAllowed(account)
     ? client.from("rental_mail_outbox").select("id,recipient_email,subject,plain_body,in_reply_to_message_id,status,created_at,created_by,approved_at,sent_at,provider_message_id,last_error").eq("account_email",currentMailAccount).order("created_at",{ascending:false}).limit(150)
@@ -266,7 +269,7 @@ async function loadData(client: any, account:any) {
   const automationQuery=financeAccess
     ? client.from("rental_automation_runs").select("job_key,run_at,run_for,inspected,created,skipped").eq("job_key","monthly_installments").order("run_at",{ascending:false}).limit(12)
     : Promise.resolve({data:[],error:null});
-  const [s,t,p,l,e,pay,alloc,reminders,inbox,outbox,automations,works,documents,bankImports,bankLines,syncState,irlRules,irlProposals,irlIndices,irlCandidates,irlApplications,healthReports] = await Promise.all([
+  const [s,t,p,l,e,pay,alloc,reminders,inbox,outbox,automations,works,documents,bankImports,bankLines,syncState,irlRules,irlProposals,irlIndices,irlCandidates,irlApplications,healthReports,syncCursor] = await Promise.all([
     client.from("rental_settings").select("setting_key,label,value,comment,sort_order,updated_at").order("sort_order"),
     loadCompleteRows(()=>client.from("rental_tenant_rows").select("id,row_number,property_id,data,created_at,updated_at",{count:"exact"}).order("row_number").order("id"),"locataires"),
     loadCompleteRows(()=>client.from("rental_properties").select("id,name,data,current_tenant,tenant_history,payment_schedule,source_sheet,is_example,created_at,updated_at",{count:"exact"}).order("is_example",{ascending:false}).order("name").order("id"),"biens immobiliers"),
@@ -289,10 +292,12 @@ async function loadData(client: any, account:any) {
     irlCandidatesQuery,
     irlApplicationsQuery,
     healthReportsQuery,
+    syncCursorQuery,
   ]);
-  for (const q of [s,t,p,l,e,pay,alloc,reminders,inbox,outbox,automations,works,documents,bankImports,bankLines,syncState,irlRules,irlProposals,irlIndices,irlCandidates,irlApplications,healthReports]) if (q.error) throw q.error;
+  for (const q of [s,t,p,l,e,pay,alloc,reminders,inbox,outbox,automations,works,documents,bankImports,bankLines,syncState,irlRules,irlProposals,irlIndices,irlCandidates,irlApplications,healthReports,syncCursor]) if (q.error) throw q.error;
   const mailConfigured=mailAllowed(account)?await freePasswordConfigured(client,currentMailAccount):false;
-  return { current_user:{username:account.username,role:account.role,display_name:account.display_name||account.username,permissions:account.permissions||{},read_only:account.role!=="admin"&&account.permissions?.readonly===true,payment_access:financeAccess,payment_void_access:paymentVoidAllowed(account),work_access:worksAccess,document_access:documentsAccess,bank_access:financeAccess,mail_access:mailAllowed(account),mail_configured:mailConfigured,mail_account:currentMailAccount}, mail_sync_state:syncState.data||null, settings:s.data||[], tenants:t.data||[], properties:p.data||[], leases:l.data||[], installments:e.data||[], payments:pay.data||[], payment_allocations:alloc.data||[], reminder_drafts:reminders.data||[], mail_inbox:inbox.data||[], mail_outbox:outbox.data||[], automation_runs:automations.data||[], work_orders:works.data||[], documents:documents.data||[], bank_imports:bankImports.data||[], bank_lines:bankLines.data||[], irl_rules:irlRules.data||[], irl_proposals:irlProposals.data||[], irl_indices:irlIndices.data||[], irl_candidates:irlCandidates.data||[], irl_applications:irlApplications.data||[], health_reports:healthReports.data||[], tenant_headers:tenantHeaders, comments, commands, server_time:new Date().toISOString() };
+  const mailSyncState=syncState.data||syncCursor.data?{...(syncState.data||{}),catchup_pending:syncCursor.data?Number(syncCursor.data.target_uid)>Number(syncCursor.data.last_uid):null,last_progress_at:syncCursor.data?.last_progress_at||null}:null;
+  return { current_user:{username:account.username,role:account.role,display_name:account.display_name||account.username,permissions:account.permissions||{},read_only:account.role!=="admin"&&account.permissions?.readonly===true,payment_access:financeAccess,payment_void_access:paymentVoidAllowed(account),work_access:worksAccess,document_access:documentsAccess,bank_access:financeAccess,mail_access:mailAllowed(account),mail_configured:mailConfigured,mail_account:currentMailAccount}, mail_sync_state:mailSyncState, settings:s.data||[], tenants:t.data||[], properties:p.data||[], leases:l.data||[], installments:e.data||[], payments:pay.data||[], payment_allocations:alloc.data||[], reminder_drafts:reminders.data||[], mail_inbox:inbox.data||[], mail_outbox:outbox.data||[], automation_runs:automations.data||[], work_orders:works.data||[], documents:documents.data||[], bank_imports:bankImports.data||[], bank_lines:bankLines.data||[], irl_rules:irlRules.data||[], irl_proposals:irlProposals.data||[], irl_indices:irlIndices.data||[], irl_candidates:irlCandidates.data||[], irl_applications:irlApplications.data||[], health_reports:healthReports.data||[], tenant_headers:tenantHeaders, comments, commands, server_time:new Date().toISOString() };
 }
 
 Deno.serve(async (req) => {
@@ -1099,7 +1104,7 @@ Deno.serve(async (req) => {
       const id=String(url.searchParams.get("id")||"");
       if(!apiUuid(id))return json({error:"Identifiant invalide"},400);
       const q=await client.from("rental_mail_messages")
-        .select("id,sender_email,recipient_email,subject,plain_body,received_at,is_seen,has_attachments,attachment_count,message_id")
+        .select("id,sender_email,recipient_email,subject,plain_body,received_at,is_seen,has_attachments,attachment_count,message_id,body_status,source_size,body_note")
         .eq("id",id).eq("account_email",await configuredFreeAccount(client)).maybeSingle();
       if(q.error)throw q.error;
       if(!q.data)return json({error:"Courriel introuvable"},404);
@@ -1135,7 +1140,7 @@ Deno.serve(async (req) => {
       if(!await freePasswordConfigured(client,await configuredFreeAccount(client)))return json({error:"La boîte Free n’est pas encore connectée : renseignez le mot de passe dans Paramètres."},409);
       try{
         const result=await callMailTransport({action:"sync"});
-        await audit(client,account.username,"rental-mail-sync",undefined,undefined,{imported:result.imported||0,checked:result.checked||0,skipped_large:result.skipped_large||0});
+        await audit(client,account.username,"rental-mail-sync",undefined,undefined,{imported:result.imported||0,checked:result.checked||0,metadata_only:result.metadata_only||0,has_more:result.has_more===true,busy:result.busy===true});
         return json(result);
       }catch{return json({error:"Synchronisation IMAP non aboutie. Aucun courriel existant n’a été supprimé."},502)}
     }

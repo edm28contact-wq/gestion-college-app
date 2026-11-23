@@ -1425,14 +1425,15 @@ function renderMail(){
  const imapVerified=!!sync?.imap_verified_at&&connected;
  const smtpVerified=!!sync?.smtp_verified_at&&connected;
  const recentSync=sync?.last_sync_at?new Date(sync.last_sync_at).toLocaleString('fr-FR'):'Aucune synchronisation vérifiée';
+ const catchup=sync?.catchup_pending===true?'<p class="note">Rattrapage en cours : d’autres messages restent à examiner. Les prochains passages reprendront au dernier message traité.</p>':sync?.catchup_pending===false?'<p class="muted">Rattrapage terminé pour les messages disponibles au début du dernier passage.</p>':'';
  const tools=db.current_user?.read_only?'<span class="mini-tag">Lecture seule</span>':'<button class="btn secondary" onclick="testMailConnection()">Tester IMAP / SMTP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
  const setup=connected?'<div class="note mail-banner">Identifiants enregistrés côté serveur. IMAP : <b>'+(imapVerified?'Vérifié':'À tester')+'</b> · SMTP : <b>'+(smtpVerified?'Vérifié':'À tester')+'</b>.<p class="muted">Réception automatique programmée de 06h à 21h UTC, une fois par heure, et déclenchée uniquement après vérification IMAP. Dernière réception réussie : '+esc(recentSync)+'. Aucun envoi automatique.</p></div>':
  '<div class="note mail-banner"><b>Connexion à effectuer :</b> ouvre <b>Paramètres</b>, saisis l’adresse du compte Free et son mot de passe, puis enregistre. Le mot de passe est chiffré dans Vault. <button class="btn primary" onclick="showPage(&quot;config&quot;)">Configurer la messagerie</button></div>';
  $('content').innerHTML=section('Messagerie Free',esc(db.current_user?.mail_account||setting('sender_email','ph.danglade@free.fr'))+' — réception IMAP 993 et envoi SMTP 465.',tools)+
- stats([['Reçus importés',(db.mail_inbox||[]).length],['Non lus',(db.mail_inbox||[]).filter(m=>!m.is_seen).length],['Brouillons',(db.mail_outbox||[]).filter(m=>m.status==='draft').length],['Connexion',imapVerified?'IMAP vérifié':connected?'Test requis':'À configurer']])+setup+
+ stats([['Reçus affichés',(db.mail_inbox||[]).length],['Non lus affichés',(db.mail_inbox||[]).filter(m=>!m.is_seen).length],['Brouillons affichés',(db.mail_outbox||[]).filter(m=>m.status==='draft').length],['Connexion',imapVerified?'IMAP vérifié':connected?'Test requis':'À configurer']])+setup+catchup+
  '<div class="section-head"><div><h2>Boîte de réception</h2><p class="muted">Lecture en texte seul ; les pièces jointes ne sont pas encore téléchargeables.</p></div></div>'+
  '<div class="mail-split"><div class="mail-list">'+(inbox.length?inbox.map(m=>
- '<button class="mail-item '+(m.is_seen?'':'unread')+'" data-id="'+esc(m.id)+'" onclick="openFreeInboxMail(this.dataset.id)"><b>'+esc(m.sender_email||'Expéditeur inconnu')+'</b><b>'+esc(m.subject||'(Sans objet)')+'</b><small>'+esc(m.received_at?new Date(m.received_at).toLocaleString('fr-FR'):'Date inconnue')+(m.has_attachments?' · Pièces jointes':'')+'</small></button>').join(''):'<div class="empty-state">Aucun courriel synchronisé.</div>')+
+ '<button class="mail-item '+(m.is_seen?'':'unread')+'" data-id="'+esc(m.id)+'" onclick="openFreeInboxMail(this.dataset.id)"><b>'+esc(m.sender_email||'Expéditeur inconnu')+'</b><b>'+esc(m.subject||'(Sans objet)')+'</b><small>'+esc(m.received_at?new Date(m.received_at).toLocaleString('fr-FR'):'Date inconnue')+(m.body_status==='metadata_only'?' · En-têtes seuls':m.body_status==='truncated'?' · Texte tronqué':'')+(m.has_attachments?' · Pièces jointes':'')+'</small></button>').join(''):'<div class="empty-state">Aucun courriel synchronisé.</div>')+
  '</div><div class="mail-reader" id="mailReader"><p class="muted">Sélectionnez un message pour le lire. Aucun contenu reçu ne déclenche d’action automatiquement.</p></div></div>'+
  '<div class="section-head" style="margin-top:20px"><div><h2>Brouillons et messages envoyés</h2><p class="muted">Envoi manuel explicite ; aucun renvoi automatique des messages incertains.</p></div></div>'+
  dataTable(['Date','Destinataire','Objet','Statut','Actions'],outbox.map(m=>{
@@ -1441,7 +1442,7 @@ function renderMail(){
  '<td class="item-actions"><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="viewMailDraft(this.dataset.id)">Lire</button>'+
  (m.status==='draft'&&!db.current_user?.read_only?'<button class="btn primary" data-id="'+esc(m.id)+'" onclick="sendFreeMail(this.dataset.id)" '+(connected?'':'disabled')+'>Envoyer</button><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="cancelFreeMailDraft(this.dataset.id)">Annuler</button>':'')+'</td></tr>';
  }))+
- '<p class="module-note">Les 150 derniers courriels importés sont affichés. Chaque synchronisation examine au plus les 30 derniers messages de moins de 700 Ko : cette vue n’est pas une archive complète de la boîte Free. Après authentification IMAP réussie, la boîte est consultée chaque heure entre 06h et 21h UTC. Les messages restent conservés sur Free ; aucun message reçu ne déclenche une opération comptable ou un envoi automatique.</p>';
+ '<p class="module-note">Les 150 derniers courriels importés sont affichés. Le rattrapage progresse par lots de 30 messages au maximum et reprend au dernier message traité. Au-delà de 700 Ko, ou si leur texte est indisponible, seuls les en-têtes sont importés. Un texte dépassant 30 000 caractères est signalé comme tronqué. Consultez Free pour le contenu complet et les pièces jointes. Après authentification IMAP réussie, la boîte est consultée chaque heure entre 06h et 21h UTC. Les messages restent conservés sur Free ; aucun message reçu ne déclenche une opération comptable ou un envoi automatique.</p>';
 }
 window.testMailConnection=async()=>{
  if(!db?.current_user?.mail_access||db.current_user?.read_only)return;
@@ -1451,17 +1452,22 @@ window.testMailConnection=async()=>{
 window.syncFreeMail=async()=>{
  if(!db?.current_user?.mail_access||db.current_user?.read_only)return;
  if(!db.current_user?.mail_configured){alert('Renseignez le compte Free et son mot de passe dans Paramètres, puis testez IMAP / SMTP.');showPage('config');return}
- if(!confirm('Importer les derniers courriels en lecture seule depuis Free ?'))return;
- try{const x=await api('mail-sync','POST',{});await refresh();alert((x.imported||0)+' message(s) importé(s), '+(x.skipped_large||0)+' trop volumineux ignoré(s).')}
+ if(!confirm('Importer le prochain lot de courriels depuis Free, en lecture seule ?'))return;
+ try{const x=await api('mail-sync','POST',{});if(!await refresh())return;if(x.busy){alert('Une synchronisation est déjà en cours. Réessayez une fois terminée.');return}alert('Messages ajoutés : '+(x.imported||0)+'. Contenus limités à leurs en-têtes dans ce lot : '+(x.metadata_only||0)+'.'+(x.has_more===true?' Rattrapage en cours ; le prochain passage reprendra la suite.':x.has_more===false?' Tous les messages disponibles au début de ce passage ont été examinés.':''))}
  catch(e){alert('Synchronisation indisponible : '+e.message)}
 };
+function mailContentNote(m){
+ const notes={size_limit:'Message trop volumineux : seuls les en-têtes ont été importés. Consultez le contenu dans Free.',invalid_size:'La taille du message est inconnue : seuls les en-têtes ont été importés. Consultez le contenu dans Free.',parse_failed:'Le contenu du message n’a pas pu être lu. Seuls les en-têtes ont été importés ; consultez le message dans Free.',no_text_part:'Ce message ne contient pas de version texte. Seuls les en-têtes sont affichés ; consultez sa version HTML dans Free.',text_limit:'Texte tronqué après 30 000 caractères. Consultez le message complet dans Free.'};
+ const message=notes[m.body_note]||(m.body_status==='metadata_only'?'Seuls les en-têtes ont été importés. Consultez le message complet dans Free.':m.body_status==='truncated'?'Texte tronqué. Consultez le message complet dans Free.':'');
+ return message?'<p class="note">'+esc(message)+'</p>':'';
+}
 window.openFreeInboxMail=async id=>{
  const pane=$('mailReader'),generation=++mailReaderGeneration,session=sessionGeneration;if(!pane)return;pane.textContent='Chargement…';
  const current=()=>generation===mailReaderGeneration&&session===sessionGeneration&&pane.isConnected;
  try{
   const j=await api('mail-message','GET',undefined,{id});if(!current())return;const m=j.item;
   pane.innerHTML='<h3>'+esc(m.subject||'(Sans objet)')+'</h3><p class="muted">De : '+esc(m.sender_email||'')+'</p>'+
-  '<pre class="mail-text">'+esc(m.plain_body||'Corps texte non disponible')+'</pre>'+
+  mailContentNote(m)+(m.body_status==='metadata_only'?'':'<pre class="mail-text">'+esc(m.plain_body||'Corps texte non disponible')+'</pre>')+
   (m.has_attachments?'<p class="note">'+Number(m.attachment_count||0)+' pièce(s) jointe(s) détectée(s), téléchargement non activé.</p>':'')+
   '<button class="btn primary" id="reply-free-mail">Répondre</button>';
   $('reply-free-mail').onclick=()=>composeMail(m.sender_email,'Re: '+m.subject,'',m.id);

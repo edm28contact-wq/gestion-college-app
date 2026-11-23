@@ -591,3 +591,53 @@ test('Navigateur : un dépôt autorisé conserve les champs et la frontière mul
   assert.deepEqual(app.errors, []);
   assert.deepEqual(app.unexpected, []);
 });
+
+test('Navigateur : la messagerie distingue un rattrapage en cours de sa fin', async t => {
+  const data = fixture();
+  data.current_user.mail_configured = true;
+  data.mail_sync_state = { imap_verified_at: data.server_time, smtp_verified_at: data.server_time,
+    last_sync_at: data.server_time, catchup_pending: true };
+  const app = await openApp(t, { data, pageName: 'mail' });
+  assert.match(await app.page.locator('#content').innerText(), /Rattrapage en cours/);
+  assert.doesNotMatch(await app.page.locator('#content').innerText(), /Rattrapage terminé/);
+  data.mail_sync_state.catchup_pending = false;
+  await app.page.evaluate(() => window.refresh());
+  assert.match(await app.page.locator('#content').innerText(), /Rattrapage terminé pour les messages disponibles au début du dernier passage/);
+  assert.doesNotMatch(await app.page.locator('#content').innerText(), /Rattrapage en cours/);
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+  assert.ok(app.requests.every(req => req.method === 'GET'));
+});
+
+test('Navigateur : les en-têtes seuls et le texte tronqué sont signalés dans la liste et le lecteur', { timeout: 30000 }, async t => {
+  const data = fixture();
+  const app = await openApp(t, { data, pageName: 'mail' });
+  for (const [bodyStatus, bodyNote, label, reason] of [
+    ['metadata_only', 'size_limit', /En-têtes seuls/, /trop volumineux.*en-têtes/i],
+    ['metadata_only', 'no_text_part', /En-têtes seuls/, /ne contient pas de version texte.*en-têtes/i],
+    ['truncated', 'text_limit', /Texte tronqué/, /Texte tronqué après 30 000 caractères/],
+  ]) {
+    Object.assign(data.mail_inbox[0], { body_status: bodyStatus, body_note: bodyNote });
+    await app.page.evaluate(() => window.refresh());
+    assert.match(await app.page.locator('.mail-item').innerText(), label);
+    const held = app.delayAction('mail-message', { status: 200, body: { item: {
+      ...data.mail_inbox[0], subject: 'Contenu limité de test',
+      plain_body: bodyStatus === 'truncated' ? 'EXTRAIT_LIMITE_FIXTURE' : 'TEXTE_A_NE_PAS_AFFICHER_FIXTURE',
+    } } });
+    try {
+      held.release();
+      await app.page.evaluate(id => window.openFreeInboxMail(id), mailId);
+      assert.match(await app.page.locator('#mailReader .note').innerText(), reason);
+      assert.match(await app.page.locator('#mailReader .note').innerText(), /Free/);
+      if (bodyStatus === 'metadata_only') {
+        assert.equal(await app.page.locator('#mailReader .mail-text').count(), 0);
+        assert.doesNotMatch(await app.page.locator('#mailReader').innerText(), /TEXTE_A_NE_PAS_AFFICHER_FIXTURE/);
+      } else {
+        assert.equal(await app.page.locator('#mailReader .mail-text').innerText(), 'EXTRAIT_LIMITE_FIXTURE');
+      }
+    } finally { held.release(); }
+  }
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+  assert.ok(app.requests.every(req => req.method === 'GET'));
+});

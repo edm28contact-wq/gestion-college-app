@@ -6,6 +6,7 @@ on:
       - 'tests/marne-invest-*.test.mjs'
       - 'tests/employee-profile-lateness.test.cjs'
       - 'supabase/functions/rental-admin-api/**'
+      - 'supabase/functions/marne-mail-transport/**'
       - 'supabase/migrations/**'
       - '.github/workflows/marne-invest-qa.yml'
   pull_request:
@@ -14,6 +15,7 @@ on:
       - 'tests/marne-invest-*.test.mjs'
       - 'tests/employee-profile-lateness.test.cjs'
       - 'supabase/functions/rental-admin-api/**'
+      - 'supabase/functions/marne-mail-transport/**'
       - 'supabase/migrations/**'
       - '.github/workflows/marne-invest-qa.yml'
 permissions:
@@ -29,7 +31,7 @@ jobs:
         with:
           node-version: '22'
       - name: Executer les tests sans connexion ni secrets
-        run: node --test tests/marne-invest-ui.test.mjs tests/marne-invest-bank.test.mjs tests/marne-invest-api.test.mjs tests/*.test.cjs
+        run: node --test tests/marne-invest-ui.test.mjs tests/marne-invest-bank.test.mjs tests/marne-invest-api.test.mjs tests/marne-invest-mail.test.mjs tests/*.test.cjs
   browser:
     name: Recette navigateur sur donnees fictives
     runs-on: ubuntu-latest
