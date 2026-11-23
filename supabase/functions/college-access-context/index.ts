@@ -37,7 +37,7 @@ function computeAccess(account:any){
   const p:Record<string,unknown>=account.permissions&&typeof account.permissions==="object"?account.permissions:{};
   const superAdmin=account.username==="admin"&&account.is_super_admin===true;
   const college=superAdmin||has(p,"college_admin","dashboard.read","products.read","products.write","stock.read","stock.write","apps.read","apps.write","purchases.read","purchases.write","analytics.read","college.salaires.read","college.salaires.write","cuisine.manage","secretariat.orders.write");
-  const secretariat=superAdmin||has(p,"secretariat","secretariat.read","secretariat.orders.write","secretariat.invoices.write");
+  const secretariat=superAdmin||has(p,"secretariat","secretariat.read","secretariat.orders.write","secretariat.invoices.write","personnel.planning.read","personnel.planning.write","college.salaires.read","college.salaires.write","products.read","stock.read");
   const accounting=superAdmin||has(p,"accounting","accounting.read","accounting.write");
   const planning=superAdmin||has(p,"college.salaires.read","college.salaires.write","personnel.planning.read","personnel.planning.write","secretariat","secretariat.read");
   const cuisine=superAdmin||has(p,"cuisine","cuisine.read","cuisine.write","cuisine.manage","college_admin");
