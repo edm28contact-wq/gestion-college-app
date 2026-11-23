@@ -24,6 +24,7 @@
  const holding=[
   link("Accueil Holding","admin/holding/"),
   link("Utilisateurs et accès","admin/holding/utilisateurs/"),
+   link("Pouvoirs et autorisations","admin/holding/pouvoirs/"),
   link("Sociétés","admin/holding/societes/"),
   link("Centre de supervision","admin/holding/controle/"),
   link("Administration 9 Marne","admin/marne-invest/")
