@@ -27,7 +27,7 @@ function fixture({ readOnly = false, empty = false } = {}) {
   const data = {
     current_user: {
       username: 'qa-fixture', display_name: 'Compte de test', role: readOnly ? 'gestionnaire' : 'admin',
-      permissions: { readonly: readOnly }, read_only: readOnly, payment_access: true,
+      permissions: readOnly ? { readonly: true, marne_invest: true } : {}, read_only: readOnly, payment_access: true,
       payment_void_access: true, work_access: true, document_access: true, bank_access: true,
       mail_access: true, mail_configured: false, mail_account: 'fixture@free.fr',
     },
@@ -833,11 +833,11 @@ test('Navigateur : paramètres, bien et locataire permettent de préparer puis a
   assert.equal(scenario.data.leases.length, 0);
   await app.page.getByRole('button', { name: 'Ouvrir le bien', exact: true }).click();
   await app.page.locator('#modal [onclick*="openPropertyEditor"]').click();
-  await app.page.locator('#property-address').fill('2 rue fictive');
-  await app.page.locator('#property-city').fill('Paris');
-  await app.page.locator('#property-postcode').fill('75002');
-  await app.page.locator('#property-type').fill('Studio');
-  await app.page.locator('#property-notes').fill('Dossier de test uniquement');
+  await app.page.locator('[data-property-key="Adresse"]').fill('2 rue fictive');
+  await app.page.locator('[data-property-key="Ville"]').fill('Paris');
+  await app.page.locator('[data-property-key="Code postal"]').fill('75002');
+  await app.page.locator('[data-property-key="Type de bien"]').fill('Studio');
+  await app.page.locator('[data-property-key="Notes"]').fill('Dossier de test uniquement');
   await app.page.locator('#property-save').click();
   await app.page.locator('#property-save').waitFor({ state: 'detached' });
   assert.equal(scenario.data.properties[0].data.Adresse, '2 rue fictive');
