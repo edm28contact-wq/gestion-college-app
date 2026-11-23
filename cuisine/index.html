@@ -137,10 +137,22 @@ p{line-height:1.5}
  <div class="field"><label for="agent">Je suis</label><select id="agent" required><option value="">Chargement des agents…</option></select></div>
  <div class="field"><label for="pin">Mon code PIN</label><input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" minlength="6" maxlength="8" pattern="[0-9]{6,8}" required placeholder="6 à 8 chiffres"></div>
  <button id="connect" type="submit" class="btn btn-primary btn-block">Accéder à mon espace</button></form>
- <p id="loginStatus" class="status" role="status" aria-live="polite"></p><button id="connectAccount" type="button" class="btn btn-outline btn-block">Accéder avec mon compte autorisé</button><p class="muted">Réutilise une session Collège ou Holding déjà ouverte sur cet appareil. Les agents continuent à saisir leurs relevés avec leur PIN personnel.</p>
+ <p id="loginStatus" class="status" role="status" aria-live="polite"></p><button id="connectAccount" type="button" class="btn btn-outline btn-block">Réutiliser une session autorisée</button>
+ <form id="accountLoginForm" class="card" style="margin-top:16px">
+  <h3>Connexion avec un compte Gestion Collège</h3>
+  <div class="field"><label for="accountUsername">Identifiant</label><input id="accountUsername" type="text" autocomplete="username" required></div>
+  <div class="field"><label for="accountPassword">Mot de passe</label><input id="accountPassword" type="password" autocomplete="current-password" required></div>
+  <button class="btn btn-primary btn-block" type="submit">Se connecter avec mes pouvoirs</button>
+ </form>
+ <form id="kitchenFirstPassword" class="card hide">
+  <h3>Première connexion : changement de mot de passe</h3>
+  <div class="field"><label for="kitchenNewPassword">Nouveau mot de passe</label><input id="kitchenNewPassword" type="password" minlength="10" autocomplete="new-password" required></div>
+  <div class="field"><label for="kitchenConfirmPassword">Confirmer</label><input id="kitchenConfirmPassword" type="password" minlength="10" autocomplete="new-password" required></div>
+  <button class="btn btn-primary btn-block" type="submit">Enregistrer et terminer</button>
+ </form><p class="muted">Les comptes autorisés peuvent accéder à la cuisine selon leurs pouvoirs. Les agents utilisent toujours leur code PIN pour les relevés.</p>
  <p class="help">Si votre compte n'apparaît pas, demandez l'activation à l'administration.</p>
 </section>
-<section id="app" class="hide"><div id="readonlyNotice" class="banner" hidden><b>Consultation uniquement.</b><p>Pour saisir un relevé HACCP ou une intervention, connectez-vous avec votre code PIN personnel. Les réglages sont gérés dans Administration Collège.</p></div>
+<section id="app" class="hide"><div id="readonlyNotice" class="banner" hidden><b>Consultation uniquement.</b><p>Votre pouvoir autorise les relevés en lecture seule. Pour réaliser une saisie, un pouvoir de modification Cuisine ou une connexion agent autorisée est nécessaire.</p></div>
  <div class="session"><div><div class="eyebrow">Votre poste de travail</div><div class="agent" id="identity"></div><div class="subline" id="todayLabel"></div></div><div class="row"><button id="refresh" class="btn btn-outline btn-small" type="button">Actualiser</button><button id="logout" class="btn btn-light btn-small" type="button">Déconnexion</button></div></div>
  <aside id="kitchenCriticalAlert" class="critical-alert" role="region" aria-label="Alerte de contrôle de température" hidden>
   <div class="row between"><span id="kitchenAlertCount" class="alert-count"></span><strong id="kitchenAlertTime" class="alert-time" aria-hidden="true"></strong></div>
@@ -165,6 +177,6 @@ p{line-height:1.5}
 </section>
 </main>
 <script src="./releve-export.js?v=20261120-2" defer></script>
-<script src="./cuisine.js?v=20261123-roles-v2" defer></script>
+<script src="./cuisine.js?v=20261123-roles-v3" defer></script>
 </body>
 </html>

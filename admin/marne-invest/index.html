@@ -112,11 +112,11 @@
 .property-edit-actions{position:sticky;bottom:-18px;background:white;padding:14px 0;border-top:1px solid #e2e8f0;z-index:4}
 @media(max-width:850px){.property-charge-row{grid-template-columns:repeat(2,minmax(0,1fr))}.property-charge-row>:first-child,.property-charge-row>:last-child{grid-column:1/-1}}
 @media(max-width:620px){.property-custom-row,.property-charge-row{grid-template-columns:1fr}.property-charge-row>*{grid-column:auto!important}}
-</style>
+[hidden]{display:none!important}</style>
 </head>
 <body>
 <section id="login" class="login"><div class="box"><h1>Marne Invest</h1><p class="muted">Administration — gestion locative IRL</p><label>Utilisateur</label><input id="user" value="holding-admin" autocomplete="username"><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div id="loginStatus" class="status"></div></div></section>
-<section id="app" class="shell hide"><aside class="side"><div class="brand">Marne Invest</div><div class="brand-sub">Gestion locative</div><div id="nav" class="nav"></div><div id="releaseMini" class="release-mini"></div><div class="side-profile"><b>Marne Invest</b>Gestion immobilière</div></aside><main class="main"><div class="top"><div><h1 id="pageTitle">Tableau de bord</h1><div id="serverTime" class="muted"></div></div><div class="actions"><input id="globalSearch" type="search" class="top-search" placeholder="⌕ Rechercher..." aria-label="Rechercher" oninput="searchAll(this.value)"><a class="btn secondary" href="../holding/">Holding</a><a class="btn secondary" href="./comptabilite/">Comptabilité</a><a class="btn secondary" href="./locataires/">Gestion locataire</a><a class="btn secondary" href="./studios/">Gestion studio</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><div id="content"></div></main></section><div id="modal"></div>
+<section id="marneFirstPassword" class="login hide"><form class="box" onsubmit="event.preventDefault();finishMarneFirstPassword()"><h2>Changer votre mot de passe</h2><p class="muted">Pour votre première connexion, définissez un mot de passe personnel d’au moins 10 caractères.</p><label for="marneNewPassword">Nouveau mot de passe</label><input id="marneNewPassword" type="password" autocomplete="new-password" minlength="10" required><label for="marneConfirmPassword">Confirmation</label><input id="marneConfirmPassword" type="password" autocomplete="new-password" minlength="10" required><button class="btn primary" type="submit">Enregistrer</button><div id="marnePasswordStatus" class="status" role="status"></div></form></section><section id="app" class="shell hide"><aside class="side"><div class="brand">Marne Invest</div><div class="brand-sub">Gestion locative</div><div id="nav" class="nav"></div><div id="releaseMini" class="release-mini"></div><div class="side-profile"><b>Marne Invest</b>Gestion immobilière</div></aside><main class="main"><div class="top"><div><h1 id="pageTitle">Tableau de bord</h1><div id="serverTime" class="muted"></div></div><div class="actions"><input id="globalSearch" type="search" class="top-search" placeholder="⌕ Rechercher..." aria-label="Rechercher" oninput="searchAll(this.value)"><a class="btn secondary" data-marne-shortcut="holding" href="../holding/" hidden>Holding</a><a class="btn secondary" data-marne-shortcut="accounting" href="./comptabilite/" hidden>Comptabilité</a><a class="btn secondary" data-marne-shortcut="tenants" href="./locataires/" hidden>Gestion locataire</a><a class="btn secondary" data-marne-shortcut="studios" href="./studios/" hidden>Gestion studio</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><div id="content"></div></main></section><div id="modal"></div>
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
@@ -134,9 +134,34 @@ async function api(action,method='GET',body,query={}){
  if(r.status===401&&action!=='login'){logout();$('loginStatus').className='status err';$('loginStatus').textContent='Session expirée';throw new Error('Session expirée')}
  if(!r.ok)throw new Error(j.error||'Erreur serveur');return j
 }
-window.login=async()=>{const generation=++sessionGeneration;try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});if(generation!==sessionGeneration)return;token=j.token;localStorage.setItem('marne_invest_admin_token',token);localStorage.removeItem('marne_invest_logged_out');$('pass').value='';$('loginStatus').textContent='';$('login').classList.add('hide');$('app').classList.remove('hide');initNav();await refresh()}catch(e){if(generation!==sessionGeneration)return;$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
+window.login=async()=>{const generation=++sessionGeneration;try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});if(generation!==sessionGeneration)return;token=j.token;localStorage.setItem('marne_invest_admin_token',token);localStorage.removeItem('marne_invest_logged_out');$('pass').value='';$('loginStatus').textContent='';$('login').classList.add('hide');if(j.must_change_password===true){sessionStorage.setItem('marne_first_password_required','1');$('app').classList.add('hide');$('marneFirstPassword').classList.remove('hide');return}$('marneFirstPassword').classList.add('hide');sessionStorage.removeItem('marne_first_password_required');$('app').classList.remove('hide');initNav();await refresh()}catch(e){if(generation!==sessionGeneration)return;$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
+window.finishMarneFirstPassword=async()=>{
+ const a=$('marneNewPassword').value,b=$('marneConfirmPassword').value;
+ const status=$('marnePasswordStatus');
+ if(a.length<10||a.length>128){status.textContent='Le mot de passe doit contenir entre 10 et 128 caractères.';return}
+ if(a!==b){status.textContent='Les mots de passe sont différents.';return}
+ try{
+  status.textContent='Enregistrement…';
+  const r=await fetch('https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/admin-api?action=change-password',{
+   method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},
+   body:JSON.stringify({password:a}),cache:'no-store'});
+  const result=await r.json().catch(()=>({error:'Réponse invalide'}));
+  if(!r.ok)throw new Error(result.error||'Erreur lors du changement de mot de passe');
+  $('marneNewPassword').value='';$('marneConfirmPassword').value='';
+  sessionStorage.removeItem('marne_first_password_required');
+  logout();$('marneFirstPassword').classList.add('hide');
+  $('loginStatus').className='status ok';
+  $('loginStatus').textContent='Mot de passe enregistré. Reconnectez-vous avec le nouveau mot de passe.';
+ }catch(e){status.className='status err';status.textContent=e.message||'Enregistrement impossible'}
+};
 window.logout=()=>{sessionGeneration++;token='';db=null;selectedRow=null;bankCsvPreview=null;irlLive=null;irlChecked=false;refreshGeneration++;localStorage.removeItem('marne_invest_admin_token');localStorage.setItem('marne_invest_logged_out','1');for(const id of ['modal','content','releaseMini','serverTime'])$(id).textContent='';$('pass').value='';$('app').classList.add('hide');$('login').classList.remove('hide')};
 function marneCanPage(k){const a=db?.current_user;if(!a)return false;const p=a.permissions||{};if(a.role==='admin'||p.marne_admin===true||p.marne_invest===true)return true;if(['dashboard','guide'].includes(k))return true;if(k==='properties')return p.marne_studios===true;if(k==='tenants')return p.marne_tenants===true;if(['contracts','transactions','emails','reports'].includes(k))return a.payment_access===true;if(k==='works')return a.work_access===true;if(k==='documents')return a.document_access===true;if(k==='mail')return a.mail_access===true;return false}
+function updateMarneShortcuts(){
+ const a=db?.current_user||{},p=a.permissions||{},superAdmin=a.role==='admin';
+ const full=superAdmin||p.marne_admin===true||p.marne_invest===true;
+ const allow={holding:superAdmin,accounting:full||p.marne_accounting===true,tenants:full||p.marne_tenants===true,studios:full||p.marne_studios===true};
+ document.querySelectorAll('[data-marne-shortcut]').forEach(link=>link.hidden=allow[link.dataset.marneShortcut]!==true);
+}
 function initNav(){$('nav').innerHTML=pages.filter(([k])=>marneCanPage(k)).map(([k,l,i])=>`<button data-p="${k}" onclick="showPage('${k}')"><span class="nav-icon">${i}</span>${l}</button>`).join('')}
 window.showPage=p=>{if(db&&!marneCanPage(p)){alert('Cette fenêtre n’est pas autorisée pour votre compte.');return}page=p;searchQuery='';$('globalSearch').value='';render()};window.searchAll=q=>{searchQuery=String(q||'').trim().toLocaleLowerCase('fr');render()};
 window.refresh=async()=>{
@@ -151,7 +176,7 @@ window.refresh=async()=>{
   $('content').innerHTML='<section class="card" role="alert"><h2>Actualisation impossible</h2><p>'+esc(e.message||'Erreur serveur')+'</p><p class="muted">Les anciens soldes sont masqués jusqu’au prochain chargement réussi.</p><button class="btn primary" onclick="refresh()">Réessayer</button></section>';return false;
  }
 };
-function render(){if(!db)return;if(!marneCanPage(page))page='dashboard';initNav();if($('releaseMini'))$('releaseMini').innerHTML=releaseMini();document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,mail:renderMail,works:renderWorks,documents:renderDocuments,reports:renderReports,pilotage:renderPilotage}[page]||renderDashboard)()}
+function render(){if(!db)return;if(!marneCanPage(page))page='dashboard';updateMarneShortcuts();initNav();if($('releaseMini'))$('releaseMini').innerHTML=releaseMini();document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,mail:renderMail,works:renderWorks,documents:renderDocuments,reports:renderReports,pilotage:renderPilotage}[page]||renderDashboard)()}
 function setting(key,fallback){return db.settings.find(x=>x.setting_key===key)?.value??fallback}
 
 function renderModule(title,message,link){$('content').innerHTML='<div class="card"><h2>'+esc(title)+'</h2><p class="muted">'+esc(message)+'</p>'+(link?'<a class="btn primary" href="'+link+'">Ouvrir la comptabilité</a>':'')+'</div>'}
@@ -1984,7 +2009,7 @@ window.cancelFreeMailDraft=async id=>{
 
 function renderGuide(){$('content').innerHTML=`<div class="card"><h3>Commandes reproduites</h3>${db.commands.map(c=>`<div class="kv"><b>${esc(c.label)}</b><div><code>${esc(c.function)}</code><div class="muted">${esc(c.description)}</div></div></div>`).join('')}</div><br><div class="card"><h3>Organisation du classeur reproduite</h3><p>Suivi_Locataires : ${db.tenant_headers.length} colonnes, avec les listes OUI/NON et les états d’alerte conservés dans les données.</p><p>Config : paramètres IRL, seuil de révision, délais de relance, liens INSEE et préfixe des dossiers.</p><p>Modele_Dossier_Logement : informations logement, locataire actuel, historique, échéancier et synthèse.</p><p>Dossier_Exemple : les valeurs du classeur sont présentes dans l’onglet « Dossiers logement ».</p></div>`}
 window.closeModal=()=>{$('modal').innerHTML=''};
-if(token){$('login').classList.add('hide');$('app').classList.remove('hide');initNav();refresh()}else $('login').classList.remove('hide');
+if(token&&sessionStorage.getItem('marne_first_password_required')==='1'){$('login').classList.add('hide');$('app').classList.add('hide');$('marneFirstPassword').classList.remove('hide')}else if(token){$('login').classList.add('hide');$('app').classList.remove('hide');initNav();refresh()}else $('login').classList.remove('hide');
 })();
 </script>
 </body></html>
