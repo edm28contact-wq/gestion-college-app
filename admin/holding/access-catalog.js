@@ -38,9 +38,9 @@ function render(root,selected={},options={}){
    return '<details class="holding-rights-group" '+(active||idx===0?'open':'')+'><summary><span>'+escape(title)+'</span><span class="holding-rights-counter"><b data-group-count>'+active+'</b>/'+entries.length+'</span></summary>'
     +'<div class="holding-rights-items">'+entries.map(([key,label])=>'<label class="holding-right"><input type="checkbox" data-access-key="'+escape(key)+'" '+(checked.has(key)?'checked':'')+'><span>'+escape(label)+'</span></label>').join('')+'</div></details>';
   }).join('')+'</div>';
- root.addEventListener("change",function onChange(event){
+ root.onchange=event=>{
   if(event.target.matches('input[data-access-key]'))updateCounts(root);
- },{signal:root._holdingRightsController?.signal});
+ };
  const search=root.querySelector("[data-access-search]");
  search.addEventListener("input",()=>{
   const term=search.value.trim().toLocaleLowerCase("fr");
