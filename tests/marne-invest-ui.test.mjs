@@ -106,3 +106,23 @@ test('La préparation des logements est séparée du progrès logiciel',()=>{
  assert.match(script,/editLease\(this\.dataset\.id\)/);
  assert.match(script,/showPropertyDocuments\(this\.dataset\.property\)/);
 });
+
+test('Diagnostic opérationnel affiché dans la page version finale',()=>{
+ assert.match(script,/function renderOperationsHealth\(\)/);
+ assert.match(script,/releaseBanner\(\)\+health\+renderOperationsHealth\(\)/);
+ assert.match(script,/window\.runMarneHealth\s*=\s*async/);
+});
+test('Exécution du diagnostic réservée à administrateur',()=>{
+ assert.match(script,/db\.current_user\?\.payment_void_access/);
+ assert.match(script,/api\('health-run','POST',\{confirmed:true\}\)/);
+ assert.match(script,/read_only/);
+});
+test('Le diagnostic ne modifie aucun paiement ou bail dans le navigateur',()=>{
+ const start=script.indexOf('function renderOperationsHealth()');
+ const end=script.indexOf('function renderPilotage()',start);
+ assert.ok(start>=0&&end>start);
+ const part=script.slice(start,end);
+ assert.doesNotMatch(part,/api\('record-payment'/);
+ assert.doesNotMatch(part,/api\('save-lease'/);
+ assert.doesNotMatch(part,/api\('mail-send'/);
+});
