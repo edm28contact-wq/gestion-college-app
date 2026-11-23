@@ -160,6 +160,36 @@ function releaseBanner(){
  '<div style="display:flex;align-items:center;gap:15px"><div style="font-size:27px;font-weight:800">'+x.percent+' %</div>'+
  '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+x.percent+'" style="flex:1;height:11px"><div class="release-fill" style="width:'+x.percent+'%"></div></div></div></section>';
 }
+
+function renderPropertyReadiness(){
+ if(!db.current_user?.payment_access)return '';
+ const props=(db.properties||[]).filter(p=>!p.is_example);
+ const leases=db.leases||[],tenants=db.tenants||[],docs=db.documents||[];
+ const checks=props.map(p=>{
+  const relatedLeases=leases.filter(l=>l.property_id===p.id);
+  const active=relatedLeases.find(l=>l.status==='active'&&l.verified_at&&l.start_date&&
+    l.monthly_rent!==null&&l.charges_amount!==null&&l.due_day>=1&&l.due_day<=31);
+  const tenant=tenants.find(t=>t.property_id===p.id);
+  const archived=docs.filter(d=>d.property_id===p.id).length;
+  return {p,active,lease:active||relatedLeases.find(l=>l.status==='draft')||relatedLeases[0],tenant,archived,ready:!!active&&!!tenant};
+ });
+ const ready=checks.filter(x=>x.ready).length;
+ const percent=props.length?Math.round(100*ready/props.length):0;
+ return '<section class="release-block"><div class="section-head"><div><h3>Préparation des '+props.length+' logements</h3>'+
+ '<p class="muted">Contrôle individuel des données réelles : dossier locataire lié et bail actif vérifié. Ce taux n’est pas le pourcentage de développement.</p></div>'+
+ '<strong>'+ready+' / '+props.length+' prêts ('+percent+' %)</strong></div>'+
+ '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'">'+
+ '<div class="release-fill" style="width:'+percent+'%"></div></div>'+
+ dataTable(['Logement','Locataire','Bail','Archives','Action'],checks.map(x=>
+ '<tr><td><b>'+esc(x.p.name)+'</b></td>'+
+ '<td><span class="mini-tag '+(x.tenant?'':'warn')+'">'+(x.tenant?'Lié':'À relier')+'</span></td>'+
+ '<td><span class="mini-tag '+(x.active?'':'warn')+'">'+(x.active?'Vérifié et actif':x.lease?'Brouillon à vérifier':'Bail manquant')+'</span></td>'+
+ '<td>'+x.archived+' pièce(s)</td><td class="item-actions">'+
+ (x.lease?'<button class="btn secondary" data-id="'+esc(x.lease.id)+'" onclick="editLease(this.dataset.id)">Vérifier le bail</button>':'<button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Contrats</button>')+
+ '<button class="btn secondary" data-property="'+esc(x.p.id)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents</button></td></tr>'))+
+ '<p class="module-note">Les biens ne sont jamais activés automatiquement : vérifiez les contrats signés et les informations d’entrée. Les documents servent à l’archivage et ne constituent pas à eux seuls une validation contractuelle.</p></section>';
+}
+
 function renderPilotage(){
  const x=releaseStatus(),props=(db.properties||[]).filter(p=>!p.is_example),tenants=db.tenants||[],leases=db.leases||[];
  const linked=props.filter(p=>tenants.some(t=>t.property_id===p.id)).length;
@@ -195,7 +225,7 @@ function renderPilotage(){
  '<div><b>'+esc(label)+'</b><div class="muted">'+esc(desc)+'</div></div></div>';
  }).join('')+'</div></section>';
  $('content').innerHTML=section('Version finale et contrôles','Suivi transparent du développement et des données à compléter.')+
- releaseBanner()+health+monitoring+blockers+checklist;
+ releaseBanner()+health+renderPropertyReadiness()+monitoring+blockers+checklist;
 }
 window.runAutomaticInstallments=async()=>{
  if(!db.current_user?.payment_access||db.current_user?.read_only)return;
