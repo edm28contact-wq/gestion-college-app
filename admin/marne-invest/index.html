@@ -111,7 +111,7 @@
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
 const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_logged_out')==='1'?'':localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='',refreshGeneration=0,sessionGeneration=0,mailReaderGeneration=0;
-const pages=[['dashboard','Dashboard','⌂'],['pilotage','Version finale','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
+const pages=[['dashboard','Dashboard','⌂'],['pilotage','Mise en service','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
 async function api(action,method='GET',body,query={}){
@@ -149,74 +149,52 @@ function bars(items,green){if(!items.length)return '<div class="chart-empty">Don
 function pie(items){const total=items.reduce((n,x)=>n+x[1],0);if(!total)return '<div class="chart-empty">Type des logements non renseigné.</div>';const colors=['#1764eb','#60a5fa','#3b82f6','#a8c9ff','#93c5fd'];let pct=0;const seg=items.slice(0,5).map((x,i)=>{const a=pct;pct+=x[1]/total*100;return colors[i]+' '+a+'% '+pct+'%'});return '<div class="donut" style="background:conic-gradient('+seg.join(',')+')"></div><div class="legend">'+items.slice(0,5).map((x,i)=>'<span><i style="background:'+colors[i]+'"></i>'+esc(x[0])+' ('+Math.round(x[1]/total*100)+' %)</span>').join('')+'</div>'}
 
 
-const releaseMilestones=[
- ['Portefeuille et liaison des logements','done','13 biens reliés au suivi locatif'],
- ['Fiches locataires et recherche','done','Consultation et modification des dossiers'],
- ['Validation des baux','done','Brouillons et confirmation explicite des conditions'],
- ['Échéances mensuelles automatiques','done','Mois complets, sans doublons, chaque jour'],
- ['Registre financier des paiements','done','Règlements partiels, affectations et annulations'],
- ['Reçus et aperçus de quittances','done','Impression depuis les règlements vérifiés'],
- ['Brouillons de relances programmés','done','J+7 et J+14 sans envoi automatique'],
- ['Paramètres centralisés et secrets','done','Coordonnées communes et chiffrement des mots de passe'],
- ['Messagerie Free opérationnelle','partial','Module installé ; authentification et test réel à effectuer'],
- ['Synchronisation IMAP récurrente','partial','Planification toutes les heures installée ; activation après test réel Free'],
- ['Import bancaire CSV et rapprochement','done','Import idempotent, suggestions et confirmation des écritures de loyer'],
- ['Connexion bancaire directe','todo','Accès bancaire automatisé non connecté'],
- ['Suivi des travaux et prestataires','done','Tickets, devis, validation et historique ; aucune commande automatique'],
- ['Propositions IRL encadrées par bail','done','Calcul Insee avec clause, DPE et trimestre ; aucun loyer modifié'],
- ['Application IRL après notification vérifiée','done','Courrier préparé, date d’envoi attestée, prise d’effet différée ; aucun envoi automatique'],
- ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
- ['Diagnostic quotidien des anomalies','done','Vérification de 5 planifications, paiements, loyers, archives et réception Free, sans opérations automatiques'],
- ['Recette de bout en bout en production','partial','Tests de régression du site et de l’API, contrôles SQL et navigateur sur données de test ; recette avec les comptes réels à réaliser']
-];
-function releaseStatus(){
- const total=releaseMilestones.length,done=releaseMilestones.filter(x=>x[1]==='done').length,partial=releaseMilestones.filter(x=>x[1]==='partial').length;
- return {total,done,partial,percent:Math.round(done/total*100)};
+function setupState(){
+ const props=(db.properties||[]).filter(p=>!p.is_example),leases=db.leases||[],today=todayParis();
+ const parameters=['landlord_name','landlord_address'].filter(key=>!String(setting(key,'')).trim());
+ const addresses=props.filter(p=>!String(p.data?.Adresse||'').trim()).length;
+ const drafts=leases.filter(l=>l.status==='draft').length;
+ const current=leases.filter(l=>l.status==='active'&&l.verified_at&&l.start_date<=today&&(!l.end_date||l.end_date>=today)).length;
+ return {props,parameters,addresses,drafts,current};
 }
 function releaseMini(){
- const x=releaseStatus();
- return '<button class="release-mini-button" onclick="showPage(&quot;pilotage&quot;)" aria-label="Voir l’avancement vers la version finale"><b>Version finale · '+x.percent+' %</b>'+
- '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+x.percent+'"><div class="release-fill" style="width:'+x.percent+'%"></div></div>'+
- '<span>'+x.done+'/'+x.total+' lots livrés · '+x.partial+' partiel(s)</span></button>';
+ const x=setupState();
+ return '<button class="release-mini-button" onclick="showPage(&quot;pilotage&quot;)" aria-label="Ouvrir la mise en service"><b>Mise en service</b>'+
+ '<span>'+x.current+' bail(s) en cours · '+x.drafts+' à vérifier</span></button>';
 }
 function releaseBanner(){
- const x=releaseStatus();
- return '<section class="release-block" style="margin-bottom:18px"><div class="section-head"><div><h3>Avancement vers la version finale</h3>'+
- '<p class="muted">Indicateur de développement : '+x.done+' lots livrés sur '+x.total+'. Ce n’est pas une validation de production.</p></div>'+
- '<button class="btn secondary" onclick="showPage(&quot;pilotage&quot;)">Voir la feuille de route</button></div>'+
- '<div style="display:flex;align-items:center;gap:15px"><div style="font-size:27px;font-weight:800">'+x.percent+' %</div>'+
- '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+x.percent+'" style="flex:1;height:11px"><div class="release-fill" style="width:'+x.percent+'%"></div></div></div></section>';
+ const x=setupState();
+ return '<section class="release-block" style="margin-bottom:18px"><div class="section-head"><div><h3>Mise en service</h3>'+
+ '<p class="muted">Renseignez les paramètres communs, puis les fiches biens et locataires. Les échéances démarrent après validation du bail.</p></div>'+
+ '<button class="btn secondary" onclick="showPage(&quot;pilotage&quot;)">Voir les informations à compléter</button></div>'+
+ '<p>'+x.props.length+' bien(s) · '+x.current+' bail(s) vérifié(s) en cours · '+x.drafts+' brouillon(s) à compléter ou activer.</p></section>';
 }
-
 function renderPropertyReadiness(){
  if(!db.current_user?.payment_access)return '';
- const props=(db.properties||[]).filter(p=>!p.is_example);
- const leases=db.leases||[],tenants=db.tenants||[],docs=db.documents||[];
+ const props=(db.properties||[]).filter(p=>!p.is_example),leases=db.leases||[],tenants=db.tenants||[],today=todayParis();
  const checks=props.map(p=>{
-  const relatedLeases=leases.filter(l=>l.property_id===p.id);
-  const active=relatedLeases.find(l=>l.status==='active'&&l.verified_at&&l.start_date&&
-    l.start_date<=todayParis()&&(!l.end_date||l.end_date>=todayParis())&&
-    l.monthly_rent!=null&&Number.isFinite(Number(l.monthly_rent))&&Number(l.monthly_rent)>=0&&
-    l.charges_amount!=null&&Number.isFinite(Number(l.charges_amount))&&Number(l.charges_amount)>=0&&l.due_day>=1&&l.due_day<=31);
-  const tenant=active?tenants.find(t=>t.id===active.tenant_row_id&&t.property_id===p.id):null;
-  const archived=docs.filter(d=>d.property_id===p.id).length;
-  return {p,active,lease:active||relatedLeases.find(l=>l.status==='draft')||relatedLeases[0],tenant,archived,ready:!!active&&!!tenant};
+  const related=leases.filter(l=>l.property_id===p.id);
+  const lease=related.find(l=>l.status==='active')||related.find(l=>l.status==='draft')||related.filter(l=>l.status==='closed').sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')))[0];
+  const tenant=lease?tenants.find(t=>t.id===lease.tenant_row_id&&t.property_id===p.id):linkedTenant(p.id);
+  const values=lease?.status==='draft'?{...lease,issuer_name:lease.issuer_name||setting('landlord_name',''),issuer_address:lease.issuer_address||setting('landlord_address','')}:lease;
+  const missing=leaseMissing(values,p,tenant);
+  const current=lease?.status==='active'&&lease.verified_at&&lease.start_date<=today&&(!lease.end_date||lease.end_date>=today);
+  const ready=!!current&&!missing.length;
+  let state=ready?'Vérifié et en cours':!lease?'Bail à préparer':lease.status==='draft'?(missing.length?'Brouillon à compléter':'Prêt à vérifier et activer'):lease.status==='closed'?'Clôturé · historique conservé':lease.start_date>today?'Validé · début le '+lease.start_date:lease.end_date&&lease.end_date<today?'Date de fin dépassée · clôturer':'Informations à vérifier';
+  const detail=lease?.status==='closed'?'Créez une nouvelle fiche locataire pour la prochaine location.':missing.length?'À renseigner : '+missing.join(', ')+'.':lease?.status==='draft'?'Vérifiez les données du contrat puis confirmez son activation.':lease?.start_date>today?'Les échéances seront préparées pour les mois complets couverts par le bail.':'';
+  return {p,lease,tenant,ready,state,detail,archived:(db.documents||[]).filter(d=>d.property_id===p.id).length};
  });
- const ready=checks.filter(x=>x.ready).length;
- const percent=props.length?Math.round(100*ready/props.length):0;
+ const ready=checks.filter(x=>x.ready).length,percent=props.length?Math.round(100*ready/props.length):0;
  return '<section class="release-block"><div class="section-head"><div><h3>Préparation des '+props.length+' logements</h3>'+
- '<p class="muted">Contrôle individuel des données réelles : dossier du locataire du bail lié au logement et bail vérifié en cours. Ce taux n’est pas le pourcentage de développement.</p></div>'+
+ '<p class="muted">Chaque ligne indique les informations à compléter dans la fiche concernée. Un bail futur reste distinct d’un bail en cours.</p></div>'+
  '<strong>'+ready+' / '+props.length+' prêts ('+percent+' %)</strong></div>'+
- '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'">'+
- '<div class="release-fill" style="width:'+percent+'%"></div></div>'+
- dataTable(['Logement','Locataire','Bail','Archives','Action'],checks.map(x=>
- '<tr><td><b>'+esc(x.p.name)+'</b></td>'+
- '<td><span class="mini-tag '+(x.tenant?'':'warn')+'">'+(x.tenant?'Lié':'À relier')+'</span></td>'+
- '<td><span class="mini-tag '+(x.active?'':'warn')+'">'+(x.active?'Vérifié et en cours':x.lease?.status==='draft'?'Brouillon à vérifier':x.lease?'Dates et statut à vérifier':'Bail manquant')+'</span></td>'+
- '<td>'+x.archived+' pièce(s)</td><td class="item-actions">'+
- (x.lease?'<button class="btn secondary" data-id="'+esc(x.lease.id)+'" onclick="editLease(this.dataset.id)">Vérifier le bail</button>':'<button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Contrats</button>')+
- '<button class="btn secondary" data-property="'+esc(x.p.id)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents</button></td></tr>'))+
- '<p class="module-note">Les biens ne sont jamais activés automatiquement : vérifiez les contrats signés et les informations d’entrée. Les documents servent à l’archivage et ne constituent pas à eux seuls une validation contractuelle.</p></section>';
+ '<div class="release-track" role="progressbar" aria-label="Logements avec un bail vérifié en cours" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'"><div class="release-fill" style="width:'+percent+'%"></div></div>'+
+ (props.length?dataTable(['Bien et locataire','État du dossier','Archives','Action'],checks.map(x=>'<tr><td><b>'+esc(x.p.name)+'</b><br>'+esc(x.tenant?.data?.Locataire||'Locataire à renseigner')+'</td>'+
+ '<td><span class="mini-tag '+(x.ready?'':'warn')+'">'+esc(x.state)+'</span>'+(x.detail?'<p class="muted">'+esc(x.detail)+'</p>':'')+'</td><td>'+x.archived+' pièce(s)</td><td class="item-actions">'+
+ '<button class="btn secondary" data-id="'+esc(x.p.id)+'" onclick="openPropertyEditor(this.dataset.id)">Fiche bien</button>'+
+ '<button class="btn secondary" data-id="'+esc(x.p.id)+'" onclick="openPropertyTenant(this.dataset.id)">Fiche locataire et bail</button>'+
+ '<button class="btn secondary" data-property="'+esc(x.p.id)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents</button></td></tr>')):'<p class="muted">Créez votre premier bien pour préparer son dossier.</p>')+
+ '<p class="module-note">Un dossier incomplet peut être enregistré puis repris. Les premiers et derniers mois incomplets demandent un montant saisi et confirmé dans le bail.</p></section>';
 }
 
 
@@ -294,41 +272,34 @@ window.runMarneHealth=async()=>{
 };
 
 function renderPilotage(){
- const x=releaseStatus(),props=(db.properties||[]).filter(p=>!p.is_example),tenants=db.tenants||[],leases=db.leases||[];
- const linked=props.filter(p=>tenants.some(t=>t.property_id===p.id)).length;
- const active=leases.filter(l=>l.status==='active'&&l.verified_at).length;
- const draft=leases.filter(l=>l.status==='draft').length;
- const emails=tenants.filter(t=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(t.data?.['Mail locataire']||''))).length;
- const recent=(db.automation_runs||[])[0],lastRun=recent?.run_at?new Date(recent.run_at):null;
- const runStatus=lastRun?lastRun.toLocaleString('fr-FR'):'Aucune exécution connue';
+ const x=setupState(),tenants=db.tenants||[],leases=db.leases||[];
+ const named=tenants.filter(t=>String(t.data?.Locataire||'').trim()).length;
+ const recent=(db.automation_runs||[])[0],runStatus=recent?.run_at?new Date(recent.run_at).toLocaleString('fr-FR',{timeZone:'Europe/Paris'}):'Aucune exécution enregistrée';
  const locked=!!db.current_user?.read_only||!db.current_user?.payment_access;
- const health='<div class="release-grid">'+
- [['Biens reliés',linked+'/'+props.length,'Liaison technique des dossiers'],
- ['Baux vérifiés',active+'/'+leases.length,draft+' brouillon(s)'],
- ['E-mails locataires',emails+'/'+tenants.length,'Renseignés dans les fiches'],
- ['Messagerie Free',db.mail_sync_state?.imap_verified_at?'IMAP vérifié':db.current_user?.mail_configured?'Test requis':'Non configurée','Synchronisation horaire après vérification']].map(([label,value,sub])=>
- '<div class="release-progress-card"><div class="muted">'+esc(label)+'</div><div class="metric">'+esc(String(value))+'</div><p class="muted">'+esc(sub)+'</p></div>').join('')+'</div>';
- const monitoring='<section class="release-block"><h3>Automatisation des loyers</h3><p class="muted">La génération fonctionne quotidiennement pour les mois complets des baux actifs validés. Ni paiement ni augmentation de loyer n’est déclenché.</p>'+
- '<div class="kv"><b>Dernier contrôle</b><span>'+esc(runStatus)+'</span></div>'+
- '<div class="kv"><b>Résultat du dernier contrôle</b><span>'+ (recent?esc(recent.created+' échéance(s) créée(s), '+recent.skipped+' ignorée(s)'):'Aucun')+'</span></div>'+
- '<div class="kv"><b>Prochains contrôles</b><span>05h10 UTC (échéances) et 07h20 UTC (brouillons) ; réception IMAP toutes les heures entre 06h et 21h UTC, après authentification</span></div>'+
- '<div class="release-actions"><button class="btn primary" onclick="runAutomaticInstallments()" '+(locked?'disabled':'')+'>Vérifier / générer les échéances</button>'+
- '<button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Contrôler les baux</button></div>'+
- '<div class="status" id="installmentAutoStatus"></div></section>';
- const blockers='<section class="release-block"><h3>À compléter avant la mise en production finale</h3><p class="muted">Ce sont des blocages réels, pas des bugs supposés.</p>'+
- '<div class="kv"><b>Baux à valider</b><span>'+draft+' · <button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Ouvrir Contrats</button></span></div>'+
- '<div class="kv"><b>Adresses e-mail locataires manquantes</b><span>'+Math.max(0,tenants.length-emails)+' · <button class="btn secondary" onclick="showPage(&quot;tenants&quot;)">Ouvrir Locataires</button></span></div>'+
-  '<div class="kv"><b>Messagerie Free</b><span>'+(db.current_user?.mail_configured?('IMAP '+(db.mail_sync_state?.imap_verified_at?'vérifié':'à tester')+' ; SMTP '+(db.mail_sync_state?.smtp_verified_at?'vérifié':'à tester')):'Mot de passe à configurer')+' · <button class="btn secondary" onclick="showPage(&quot;config&quot;)">Paramètres</button></span></div></section>';
- const checklist='<section class="release-block"><h3>Feuille de route de la version finale</h3>'+
- '<div class="note">Les tests du site, de l’API et du navigateur sont exécutés dans GitHub Actions sur des données de test. Cela ne remplace pas la recette avec vos comptes Free, bancaires et les contrats signés.</div>'+
- '<p class="muted">Méthode de calcul : 1 point par lot livré ; un lot partiel ou planifié n’est pas compté. Le pourcentage évolue lors des prochaines livraisons vérifiées.</p>'+
- '<div class="release-list">'+releaseMilestones.map(([label,state,desc])=>{
- const name=state==='done'?'Livré':state==='partial'?'Partiel':'À développer';
- return '<div class="release-entry"><span class="release-state '+(state==='done'?'done':state==='partial'?'partial':'')+'">'+name+'</span>'+
- '<div><b>'+esc(label)+'</b><div class="muted">'+esc(desc)+'</div></div></div>';
- }).join('')+'</div></section>';
- $('content').innerHTML=section('Version finale et contrôles','Suivi transparent du développement et des données à compléter.')+
- releaseBanner()+health+renderOperationsHealth()+renderPropertyReadiness()+monitoring+blockers+checklist;
+ const mailConfigured=!!db.current_user?.mail_configured,imap=mailConfigured&&!!db.mail_sync_state?.imap_verified_at,smtp=mailConfigured&&!!db.mail_sync_state?.smtp_verified_at;
+ const parameterNames={landlord_name:'nom du bailleur ou mandataire',landlord_address:'adresse du bailleur ou mandataire'};
+ const sections=[
+  ['1. Paramètres communs',x.parameters.length?'À compléter':'Coordonnées du bailleur renseignées',x.parameters.length?'À renseigner : '+x.parameters.map(key=>parameterNames[key]).join(', ')+'.':'Ces coordonnées sont proposées dans les nouveaux baux. Vérifiez aussi les adresses e-mail et le libellé du compte bancaire.','config','Ouvrir Paramètres'],
+  ['2. Fiches biens',!x.props.length?'Premier bien à créer':x.addresses?x.addresses+' adresse(s) à compléter':x.props.length+' bien(s) avec une adresse','Renseignez le nom et l’adresse de chaque bien. Les pièces et l’historique restent accessibles depuis sa fiche.','properties','Ouvrir Mes biens'],
+  ['3. Fiches locataires et baux',named+' locataire(s) renseigné(s) · '+x.drafts+' brouillon(s)','Complétez les coordonnées, dates, loyer, charges et jour d’échéance dans la fiche locataire. Confirmez ensuite les conditions du bail.','tenants','Ouvrir Locataires']
+ ];
+ const checklist='<div class="release-grid">'+sections.map(([title,state,description,target,label])=>'<section class="release-block"><h3>'+esc(title)+'</h3><b>'+esc(state)+'</b><p class="muted">'+esc(description)+'</p><button class="btn secondary" data-page="'+target+'" onclick="showPage(this.dataset.page)">'+label+'</button></section>').join('')+'</div>';
+ const modules='<section class="release-block"><h3>Fonctions disponibles et informations attendues</h3>'+dataTable(['Fonction','Condition de démarrage','Accès'],[
+  ['Loyers et échéances',x.current?x.current+' bail(s) vérifié(s) en cours. Les mois complets sont préparés automatiquement.':'En attente d’un bail renseigné et activé depuis une fiche locataire.','contracts','Contrats'],
+  ['Règlements et rapprochement CSV','Saisissez un paiement réellement reçu ou importez un relevé CSV, puis confirmez son affectation.','transactions','Transactions'],
+  ['Quittances et reçus','Disponibles à partir des paiements affectés à une échéance, avec les coordonnées du bailleur et le type de bail vérifiés.','transactions','Règlements'],
+  ['Relances','Les échéances impayées produisent des brouillons à vérifier avant tout envoi.','emails','Relances'],
+  ['Messagerie Free',!mailConfigured?'Renseignez l’adresse Free et son mot de passe dans Paramètres, puis testez la connexion.':'Réception IMAP : '+(imap?'vérifiée':'à tester')+' · Envoi SMTP : '+(smtp?'vérifié':'à tester')+'.','config','Configurer / tester'],
+  ['Documents et travaux','Déposez les pièces et ouvrez les dossiers de travaux depuis le bien concerné.','properties','Mes biens'],
+  ['Révision IRL','Pour les baux d’habitation : renseignez la clause, le DPE et l’indice de référence avant de préparer une proposition.','contracts','Contrats']
+ ].map(([name,condition,target,label])=>'<tr><td><b>'+name+'</b></td><td>'+esc(condition)+'</td><td><button class="btn secondary" data-page="'+target+'" onclick="showPage(this.dataset.page)">'+label+'</button></td></tr>'))+
+ '<p class="module-note">L’import bancaire fonctionne avec un fichier CSV. Une connexion bancaire directe n’est pas configurée.</p></section>';
+ const monitoring='<section class="release-block"><h3>Suivi des échéances</h3><p class="muted">Les mois complets des baux actifs vérifiés sont contrôlés chaque jour. L’activation prépare aussi les échéances admissibles du mois courant et du suivant. Les montants des mois incomplets se renseignent séparément dans le bail.</p>'+
+ '<div class="kv"><b>Dernière exécution</b><span>'+esc(runStatus)+'</span></div>'+
+ '<div class="kv"><b>Résultat</b><span>'+(recent?esc(Number(recent.created||0)+' échéance(s) créée(s), '+Number(recent.skipped||0)+' ignorée(s)'):'En attente du premier passage')+'</span></div>'+
+ '<div class="release-actions"><button class="btn primary" onclick="runAutomaticInstallments()" '+(locked?'disabled':'')+'>Vérifier / générer les échéances</button><button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Ouvrir les baux</button></div><div class="status" id="installmentAutoStatus"></div></section>';
+ $('content').innerHTML='<div class="section-head"><div><h2>Mise en service</h2><p class="muted">Préparez votre gestion en trois rubriques. Les dossiers peuvent rester en brouillon tant que les informations ne sont pas disponibles.</p></div></div>'+
+ checklist+renderPropertyReadiness()+modules+monitoring+renderOperationsHealth();
 }
 window.runAutomaticInstallments=async()=>{
  if(!db.current_user?.payment_access||db.current_user?.read_only)return;
@@ -363,24 +334,203 @@ function renderDashboard(){
 }
 
 function cellHtml(h,v){if(v===undefined||v===null||v==='')return '<span class="muted">—</span>';if(h==='Retard'||h==='Révision détectée'||h==='Visal')return `<span class="pill ${v==='OUI'?'bad':'ok'}">${esc(v)}</span>`;return `<span class="clip" title="${esc(v)}">${esc(short(v))}</span>`}
-function renderTenants(){const heads=db.tenant_headers;const filteredTenants=db.tenants.filter(r=>!searchQuery||Object.values(r.data||{}).some(v=>String(v??'').toLocaleLowerCase('fr').includes(searchQuery)));$('content').innerHTML=`<div class="toolbar"><button class="btn primary" onclick="runSystem()">Actualiser système</button><button class="btn secondary" onclick="editTenant()">Nouveau locataire</button><button class="btn secondary" onclick="newProperty()">Nouveau logement</button><button class="btn secondary" onclick="createPropertySheet()" ${selectedRow?'':'disabled'}>Créer fiche logement</button></div><div class="muted" style="margin-bottom:8px">Cliquez une ligne pour la sélectionner. Double-cliquez pour la modifier.</div><div class="table-wrap"><table><thead><tr><th class="sticky-left">Ligne</th>${heads.map(h=>`<th title="${esc(db.comments?.[h]||'')}">${esc(h)}</th>`).join('')}</tr></thead><tbody>${filteredTenants.map(r=>`<tr class="tenant-row ${selectedRow===r.row_number?'selected':''}" onclick="selectRow(${r.row_number})" ondblclick="editTenant(${r.row_number})"><td class="sticky-left">${r.row_number}</td>${heads.map(h=>`<td>${cellHtml(h,r.data?.[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
-window.selectRow=r=>{selectedRow=r;renderTenants()};
-function fieldType(h){if(['Loyer de base','Charge','IRL','Écart révision','Montant révisé','Loyer actualisé','Paiement dû','Paiement reçu','Solde précédent','Solde'].includes(h))return 'number';if(h.startsWith('Date ')||h==='Dernière nouvelle'||h==='Dernier run'||h==='Date entrée locataire'||h==='Date fin de bail')return 'text';return 'text'}
-window.editTenant=rowNumber=>{const row=rowNumber?db.tenants.find(x=>x.row_number===rowNumber):null,data={...(row?.data||{})};$('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2>${row?'Modifier le locataire':'Nouveau locataire'}</h2><div class="muted">Colonnes identiques à Suivi_Locataires</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="editor-grid">${db.tenant_headers.map(h=>`<div class="${h==='Corps locataire'||h==='Notes'?'full':''}"><label>${esc(h)}</label>${h==='Corps locataire'||h==='Notes'?`<textarea data-field="${esc(h)}">${esc(data[h]??'')}</textarea>`:`<input data-field="${esc(h)}" type="${fieldType(h)}" step="any" value="${esc(data[h]??'')}">`}${db.comments?.[h]?`<div class="muted">${esc(db.comments[h])}</div>`:''}</div>`).join('')}</div><br><div class="actions"><button class="btn primary" onclick="saveTenant('${row?.id||''}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status"></div></div></div>`};
-window.saveTenant=async id=>{const status=$('modalStatus');try{const data={};document.querySelectorAll('#modal [data-field]').forEach(el=>{let v=el.value;if(v==='')return;if(el.type==='number'){const x=Number(v);v=Number.isFinite(x)?x:v}data[el.dataset.field]=v});status.textContent='Enregistrement…';await api('save-tenant','POST',{id,data});if(status.isConnected)closeModal();await refresh()}catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message}}};
+function formDate(value){
+ const text=String(value??'').trim(),match=text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/),iso=match?match[3]+'-'+match[2]+'-'+match[1]:text;
+ return /^(?!0000)\d{4}-\d{2}-\d{2}$/.test(iso)&&!Number.isNaN(Date.parse(iso+'T00:00:00Z'))&&new Date(iso+'T00:00:00Z').toISOString().slice(0,10)===iso?iso:'';
+}
+function formMoney(value){return value!==null&&value!==undefined&&/^\d{1,9}([.,]\d{1,2})?$/.test(String(value).trim())}
+function leaseForTenant(tenant){
+ if(!tenant)return null;
+ const rows=(db.leases||[]).filter(l=>l.tenant_row_id===tenant.id);
+ return rows.find(l=>l.status==='active')||rows.find(l=>l.status==='draft')||rows.filter(l=>l.status==='closed').sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')))[0]||null;
+}
+function leaseFields(lease,locked,history={}){
+ const field=(key,title,value,type,attrs='')=>'<div><label for="lease-'+key+'">'+esc(title)+'</label><input id="lease-'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+(locked?'disabled':'')+' '+attrs+'></div>';
+ const kinds=[['unverified','À renseigner'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']];
+ const value=(key,legacy)=>lease?lease[key]??'':history[legacy]??'';
+ const amount=(key,legacy)=>formMoney(value(key,legacy))?String(value(key,legacy)).trim().replace(',','.'):'';
+ return '<div class="fields">'+
+ field('start','Date de début du bail',formDate(value('start_date','Date entrée locataire')),'date')+
+ field('end','Date de fin prévue (facultative)',formDate(value('end_date','Date fin de bail')),'date')+
+ field('rent','Loyer mensuel hors charges (€)',amount('monthly_rent','Loyer de base'),'number','min="0" step="0.01"')+
+ field('charges','Charges mensuelles (€)',amount('charges_amount','Charge'),'number','min="0" step="0.01"')+
+ field('day','Jour d’échéance (1 à 31)',value('due_day','Jour d’échéance'),'number','min="1" max="31" step="1"')+
+ '<div><label for="lease-kind">Nature du bail</label><select id="lease-kind" '+(locked?'disabled':'')+'>'+kinds.map(([v,label])=>'<option value="'+v+'" '+((value('lease_kind','Nature du bail')||'unverified')===v?'selected':'')+'>'+label+'</option>').join('')+'</select></div>'+
+ field('issuer-name','Bailleur / mandataire',value('issuer_name','Bailleur du bail')||(locked?'':String(setting('landlord_name',''))),'text','maxlength="200"')+
+ field('issuer-address','Adresse du bailleur / mandataire',value('issuer_address','Adresse du bailleur')||(locked?'':String(setting('landlord_address',''))),'text','maxlength="500"')+
+ '</div><label class="payment-confirm"><input type="checkbox" id="lease-email-consent" '+(value('receipt_email_consent','Quittance par e-mail acceptée')===true?'checked':'')+' '+(locked?'disabled':'')+'> Accord du locataire vérifié pour recevoir ses quittances par e-mail</label>'+
+ '<label for="lease-notes">Notes du bail</label><textarea id="lease-notes" maxlength="2000" '+(locked?'disabled':'')+'>'+esc(value('notes','Notes du bail'))+'</textarea>';
+}
+function readLeaseFields(){
+ const raw=key=>$('lease-'+key)?.value??'';
+ return {start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),due_day:raw('day'),lease_kind:raw('kind'),issuer_name:raw('issuer-name').trim(),issuer_address:raw('issuer-address').trim(),receipt_email_consent:!!$('lease-email-consent')?.checked,notes:raw('notes')};
+}
+function leaseMissing(lease,property,tenant){
+ const missing=[];
+ if(!String(tenant?.data?.Locataire||'').trim())missing.push('nom du locataire');
+ if(!property||property.is_example)missing.push('bien associé');
+ if(!String(property?.data?.Adresse||'').trim())missing.push('adresse du bien');
+ if(!formDate(lease?.start_date))missing.push('date de début du bail');
+ if(!formMoney(lease?.monthly_rent))missing.push('loyer mensuel');
+ if(!formMoney(lease?.charges_amount))missing.push('charges mensuelles (0 si aucune)');
+ const day=Number(lease?.due_day);
+ if(!Number.isInteger(day)||day<1||day>31)missing.push('jour d’échéance');
+ if(!['residential','parking','commercial','other'].includes(lease?.lease_kind))missing.push('nature du bail');
+ if(!String(lease?.issuer_name||'').trim())missing.push('nom du bailleur');
+ if(!String(lease?.issuer_address||'').trim())missing.push('adresse du bailleur');
+ if(lease?.end_date&&(!formDate(lease.end_date)||lease.end_date<lease.start_date))missing.push('date de fin cohérente');
+ return missing;
+}
+function renderTenants(){
+ const rows=(db.tenants||[]).filter(t=>!searchQuery||JSON.stringify([t.data,(db.properties||[]).find(p=>p.id===t.property_id)?.name]).toLocaleLowerCase('fr').includes(searchQuery));
+ const readonly=!!db.current_user?.read_only;
+ $('content').innerHTML=section('Fiches locataires','Coordonnées, logement et conditions du bail se renseignent dans la même fiche.',
+ '<button class="btn primary" onclick="editTenant()" '+(readonly?'disabled':'')+'>+ Nouveau locataire</button><button class="btn secondary" onclick="newProperty()" '+(readonly?'disabled':'')+'>+ Nouveau bien</button>')+
+ dataTable(['Locataire','Bien','Contact','Bail','Action'],rows.map(t=>{
+  const p=(db.properties||[]).find(p=>p.id===t.property_id),l=leaseForTenant(t);
+  const label=l?.status==='active'?'Actif':l?.status==='closed'?'Clôturé':l?'Brouillon':'À préparer';
+  return '<tr><td><b>'+esc(t.data?.Locataire||'Fiche à compléter')+'</b></td><td>'+esc(p?.name||'Bien à sélectionner')+'</td><td>'+esc(t.data?.['Mail locataire']||'E-mail à renseigner')+(t.data?.['Téléphone locataire']?'<br>'+esc(t.data['Téléphone locataire']):'')+'</td><td><span class="mini-tag '+(l?.status==='active'?'':'warn')+'">'+label+'</span></td><td><button class="btn secondary" data-row="'+t.row_number+'" onclick="editTenant(Number(this.dataset.row))">Ouvrir la fiche</button></td></tr>';
+ }));
+}
+window.selectRow=row=>{selectedRow=row;renderTenants()};
+window.editTenant=(rowNumber,propertyId='')=>{
+ const row=rowNumber?(db.tenants||[]).find(t=>t.row_number===Number(rowNumber)):null,data=row?.data||{},lease=leaseForTenant(row);
+ const readonly=!!db.current_user?.read_only,financial=!!db.current_user?.payment_access;
+ const contractLocked=readonly||!financial||!!lease&&lease.status!=='draft';
+ const property=row?.property_id||propertyId,linkedLease=(db.leases||[]).some(l=>l.tenant_row_id===row?.id);
+ const field=(id,label,value,type='text',attrs='')=>'<div><label for="tenant-'+id+'">'+label+'</label><input id="tenant-'+id+'" type="'+type+'" value="'+esc(value??'')+'" '+(readonly?'disabled':'')+' '+attrs+'></div>';
+ const props=(db.properties||[]).filter(p=>!p.is_example);
+ const contract=financial?'<div class="section-title">Bail et loyers</div>'+
+ (lease?.status==='active'?'<p class="note">Bail actif : les conditions validées sont conservées. Vous pouvez mettre à jour les coordonnées du locataire.</p>':lease?.status==='closed'?'<p class="note">Bail clôturé : son historique est conservé. Pour une nouvelle location, créez une nouvelle fiche locataire.</p>':'<p class="muted">Les coordonnées du bailleur sont reprises depuis Paramètres. Vous pouvez enregistrer une fiche incomplète puis la terminer. L’activation demande une confirmation des informations du contrat.</p>')+
+ leaseFields(lease,contractLocked,data):'';
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><div><h2>'+(row?'Fiche locataire':'Nouveau locataire')+'</h2><p class="muted">Coordonnées et préparation de la location</p></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="fields">'+field('name','Nom et prénom / dénomination',data.Locataire,'text','maxlength="200"')+
+ field('email','E-mail du locataire',data['Mail locataire'],'email','maxlength="254"')+
+ field('phone','Téléphone du locataire',data['Téléphone locataire'],'tel','maxlength="40"')+
+ '<div><label for="tenant-property">Bien associé</label><select id="tenant-property" '+(readonly||linkedLease?'disabled':'')+'><option value="">À sélectionner</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===property?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div></div>'+
+ (linkedLease?'<p class="muted">Le bien est lié à l’historique du bail. Une nouvelle location dans un autre bien utilise une nouvelle fiche.</p>':'')+
+ '<label for="tenant-notes">Notes du dossier</label><textarea id="tenant-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea>'+contract+
+ '<div class="actions" style="margin-top:16px">'+(readonly?'':'<button class="btn primary" id="tenant-save" data-id="'+esc(row?.id||'')+'" onclick="saveTenant(this.dataset.id,false)">Enregistrer la fiche</button>')+
+ (!contractLocked?'<button class="btn secondary" id="tenant-activate" data-id="'+esc(row?.id||'')+'" onclick="saveTenant(this.dataset.id,true)">Vérifier et activer le bail</button>':'')+
+ (['active','closed'].includes(lease?.status)&&financial?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="editLease(this.dataset.id)">Échéances et règlements du bail</button>'+(lease.status==='active'&&lease.lease_kind==='residential'?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="openIrlLease(this.dataset.id)">Révision IRL</button>':'')+(!readonly&&lease.status==='active'?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="openLeaseClosure(this.dataset.id)">Clôturer le bail</button>':''):'')+
+ (property?'<button class="btn secondary" data-property="'+esc(property)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents du bien</button>':'')+'</div>'+
+ '<details style="margin-top:16px"><summary>Données historiques conservées</summary>'+kv(data)+'</details><div class="status" id="modalStatus" role="status"></div></div></div>';
+};
+window.saveTenant=async(id,activate=false)=>{
+ const status=$('modalStatus');if(!status||db.current_user?.read_only)return;
+ const original=(db.tenants||[]).find(t=>t.id===id),lease=leaseForTenant(original);
+ const financial=!!db.current_user?.payment_access,saveContract=financial&&(!lease||lease.status==='draft');
+ const property_id=$('tenant-property')?.value||null,property=(db.properties||[]).find(p=>p.id===property_id);
+ const data={Locataire:$('tenant-name').value.trim(),'Mail locataire':$('tenant-email').value.trim(),'Téléphone locataire':$('tenant-phone').value.trim(),Notes:$('tenant-notes').value};
+ const fields=[...$('modal').querySelectorAll('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')];
+ const invalid=fields.find(input=>!input.checkValidity());
+ if(invalid){status.className='status err';status.textContent='Corrigez le champ « '+($('modal').querySelector('label[for="'+invalid.id+'"]')?.textContent||'valeur saisie')+' ».';invalid.focus();return}
+ const contract=saveContract?readLeaseFields():null;
+ if(contract){
+  data['Date entrée locataire']=contract.start_date;data['Date fin de bail']=contract.end_date;
+  data['Loyer de base']=contract.monthly_rent;data.Charge=contract.charges_amount;
+  if(!lease)Object.assign(data,{'Jour d’échéance':contract.due_day,'Nature du bail':contract.lease_kind,'Bailleur du bail':contract.issuer_name,'Adresse du bailleur':contract.issuer_address,'Quittance par e-mail acceptée':contract.receipt_email_consent,'Notes du bail':contract.notes});
+ }
+ if(activate){
+  const missing=leaseMissing(contract,property,{data});
+  if(missing.length){status.className='status err';status.textContent='À compléter avant activation : '+missing.join(', ')+'.';return}
+  if(!confirm('Confirmez-vous avoir vérifié l’identité, les dates, les montants et les clauses dans le bail signé ?'))return;
+ }
+ const buttons=[...$('modal').querySelectorAll('#tenant-save,#tenant-activate')];buttons.forEach(b=>b.disabled=true);
+ let saved=false;
+ try{
+  status.className='status';status.textContent='Enregistrement de la fiche…';
+  const result=await api('save-tenant','POST',{id,property_id,data});saved=true;
+  if(!db)return;const index=db.tenants.findIndex(t=>t.id===result.item.id);if(index<0)db.tenants.push(result.item);else db.tenants[index]=result.item;
+  buttons.forEach(b=>{if(b.isConnected)b.dataset.id=result.item.id});
+  let leaseResult=null;
+  if(saveContract&&property_id&&data.Locataire){
+   status.textContent='Préparation du bail lié à cette fiche…';
+   const prepared=await api('prepare-lease','POST',{tenant_row_id:result.item.id});
+   if(!db)return;const leaseIndex=db.leases.findIndex(l=>l.id===prepared.lease.id);if(leaseIndex<0)db.leases.push(prepared.lease);else db.leases[leaseIndex]=prepared.lease;
+   leaseResult=await api('save-lease','POST',{...contract,id:prepared.lease.id,activate});
+  }
+  if(!await refresh())return;
+  editTenant(result.item.row_number);
+  const next=$('modalStatus');if(next){next.className='status ok';next.textContent=activate?'Fiche enregistrée et bail activé. '+Number(leaseResult?.installments_created||0)+' échéance(s) créée(s).'+(leaseResult?.skipped_partial_months?' Les mois incomplets restent à vérifier.':''):saveContract&&property_id&&data.Locataire?'Fiche et brouillon de bail enregistrés. Les informations manquantes peuvent être complétées plus tard.':'Fiche enregistrée.'}
+ }catch(e){if(status.isConnected){status.className='status err';status.textContent=(saved?'Fiche enregistrée ; la préparation du bail reste à terminer : ':'Enregistrement impossible : ')+(e.message||'Erreur serveur')}}
+ finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
+};
 window.newProperty=()=>{$('modal').innerHTML=`<div class="modal"><div class="box" style="max-width:600px"><h2>Nouveau logement</h2><div class="fields"><div><label>Nom du logement</label><input id="npName"></div><div><label>Adresse</label><input id="npAddress"></div></div><br><div class="actions"><button class="btn primary" onclick="saveNewProperty()">Créer le logement et sa ligne</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status"></div></div></div>`};
 window.saveNewProperty=async()=>{const status=$('modalStatus');try{status.textContent='Création…';const j=await api('new-property','POST',{name:$('npName').value,address:$('npAddress').value});selectedRow=j.row.row_number;if(status.isConnected)closeModal();if(!await refresh())return;page='properties';render()}catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message}}};
 window.createPropertySheet=async()=>{if(!selectedRow)return;try{await api('create-property-sheet','POST',{row_number:selectedRow});await refresh();page='properties';render()}catch(e){alert(e.message)}};
 window.runSystem=()=>{alert('Recalcul des loyers désactivé par sécurité : le calcul serveur existant utilise un indice de base fixe 100 et ne contrôle pas les clauses de chaque bail. Consultez l’IRL officiel dans Paramètres avant toute révision.');};
-function linkedTenant(propertyId){return (db.tenants||[]).find(t=>t.property_id===propertyId)||null}
-function propertyCompleteness(p,t){const d=p.data||{},td=t?.data||{};const needed=[['Adresse',d['Adresse']||td['Adresse logement']],['Loyer de base',td['Loyer de base']],['Date d’entrée',td['Date entrée locataire']],['E-mail locataire',td['Mail locataire']],['Charges',td['Charge']]];return {missing:needed.filter(([,v])=>v===undefined||v===null||String(v).trim()==='').map(([name])=>name),complete:needed.filter(([,v])=>v!==undefined&&v!==null&&String(v).trim()!=='').length}}
-function renderProperties(){
-const props=(db.properties||[]).filter(p=>!p.is_example),filteredProperties=props.filter(p=>{const t=linkedTenant(p.id);return !searchQuery||JSON.stringify([p.name,p.data,t?.data]).toLocaleLowerCase('fr').includes(searchQuery)});
-const linked=props.filter(p=>!!linkedTenant(p.id)).length;
-$('content').innerHTML='<div class="section-head"><div><h2>Patrimoine immobilier</h2><p class="muted">'+props.length+' biens réels · '+linked+' liés à une ligne locataire</p></div><button class="btn primary" onclick="newProperty()">+ Ajouter un logement</button></div><div class="property-grid">'+filteredProperties.map(p=>{const t=linkedTenant(p.id),d=t?.data||{},quality=propertyCompleteness(p,t),rent=d['Loyer actualisé']??d['Loyer de base']??p.data?.['Loyer appliqué'],balance=d['Solde']??p.data?.['Solde cumulé logement'];return '<div class="card property-card" onclick="openProperty(\''+esc(p.id)+'\')"><div style="display:flex;justify-content:space-between;gap:8px"><h3>'+esc(p.data?.['Nom du logement']||p.name)+'</h3><span class="mini-tag '+(quality.missing.length?'warn':'')+'">'+quality.complete+'/5 champs</span></div><div class="muted">'+esc(p.data?.['Adresse']||d['Adresse logement']||'Adresse non renseignée')+'</div><p><b>'+esc(d['Locataire']||p.current_tenant?.['Locataire actuel']||'Aucun locataire')+'</b> · '+esc(d['Locataire']?'Occupé':(p.data?.['Statut logement']||'À caractériser'))+'</p><div class="muted">Loyer : '+(rent!==null&&rent!==undefined&&rent!==''?esc(String(rent))+' €':'—')+' · Solde : '+(balance!==null&&balance!==undefined&&balance!==''?esc(String(balance))+' €':'—')+'</div>'+(quality.missing.length?'<div class="muted" style="margin-top:8px">À compléter : '+esc(quality.missing.join(', '))+'</div>':'')+'</div>'}).join('')+'</div>'+(filteredProperties.length?'':'<div class="card empty-state">Aucun bien correspondant.</div>');
+function linkedTenant(propertyId){
+ const tenants=(db.tenants||[]).filter(t=>t.property_id===propertyId);
+ const active=(db.leases||[]).find(l=>l.property_id===propertyId&&l.status==='active');
+ if(active)return tenants.find(t=>t.id===active.tenant_row_id)||null;
+ const drafts=(db.leases||[]).filter(l=>l.property_id===propertyId&&l.status==='draft'&&tenants.some(t=>t.id===l.tenant_row_id));
+ if(drafts.length===1)return tenants.find(t=>t.id===drafts[0].tenant_row_id);
+ const current=tenants.filter(t=>String(t.data?.Locataire||'').trim()&&!leaseForTenant(t)?.end_date);
+ if(current.length===1)return current[0];
+ const named=tenants.filter(t=>String(t.data?.Locataire||'').trim()&&leaseForTenant(t)?.status!=='closed');
+ return named.length===1?named[0]:tenants.length===1?tenants[0]:null;
 }
-function kv(obj){return Object.entries(obj||{}).map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v??'')}</span></div>`).join('')}
-window.openProperty=id=>{const p=db.properties.find(x=>x.id===id);if(!p)return;const t=linkedTenant(p.id),quality=propertyCompleteness(p,t),current=t?{'Locataire actuel':t.data?.['Locataire']||'','Mail locataire':t.data?.['Mail locataire']||'','Date entrée locataire':t.data?.['Date entrée locataire']||'','Date fin de bail':t.data?.['Date fin de bail']||'','Loyer de base':t.data?.['Loyer de base']??'','Charges':t.data?.['Charge']??'','Solde':t.data?.['Solde']??''}:p.current_tenant;$('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2>${esc(p.data?.['Nom du logement']||p.name)}</h2><div class="muted">${esc(p.source_sheet||'')}</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="actions" style="margin:6px 0 12px"><button class="btn primary" data-property="${esc(p.id)}" onclick="showPropertyDocuments(this.dataset.property)">Documents du logement (${(db.documents||[]).filter(x=>x.property_id===p.id).length})</button></div><div class="section-title">Informations logement</div><div class="card">${kv(p.data)}</div><div class="section-title">Locataire actuel</div><div class="card">${kv(current)}</div>${quality.missing.length?`<div class="note" style="margin-top:8px">Informations à compléter : ${esc(quality.missing.join(', '))}</div>`:''}${t?`<div class="actions" style="margin-top:10px"><button class="btn primary" onclick="closeModal();editTenant(${t.row_number})">Modifier la fiche locataire</button></div>`:''}<div class="section-title">Historique anciens locataires</div>${renderObjectTable(p.tenant_history)}<div class="section-title">Échéancier des paiements du logement</div>${renderObjectTable(p.payment_schedule)}</div></div>`};
+function propertyCompleteness(p,t){
+ const lease=leaseForTenant(t),data=t?.data||{};
+ const needed=[
+ ['Adresse du bien',!!String(p.data?.Adresse||'').trim()],
+ ['Loyer valide',formMoney(lease?.monthly_rent??data['Loyer de base'])],
+ ['Date d’entrée valide',!!formDate(lease?.start_date||data['Date entrée locataire'])],
+ ['E-mail locataire valide',/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(data['Mail locataire']||''))],
+ ['Charges valides',formMoney(lease?.charges_amount??data.Charge)]
+ ];
+ return {missing:needed.filter(([,valid])=>!valid).map(([label])=>label),complete:needed.filter(([,valid])=>valid).length};
+}
+function renderProperties(){
+ const props=(db.properties||[]).filter(p=>!p.is_example),filteredProperties=props.filter(p=>!searchQuery||JSON.stringify([p.name,p.data,(db.tenants||[]).filter(t=>t.property_id===p.id).map(t=>t.data)]).toLocaleLowerCase('fr').includes(searchQuery));
+ $('content').innerHTML=section('Patrimoine immobilier','Renseignez chaque bien puis ouvrez sa fiche locataire pour préparer la location.',
+ '<button class="btn primary" onclick="newProperty()" '+(db.current_user?.read_only?'disabled':'')+'>+ Ajouter un logement</button>')+
+ '<div class="property-grid">'+filteredProperties.map(p=>{
+  const t=linkedTenant(p.id),lease=leaseForTenant(t),quality=propertyCompleteness(p,t),rent=lease?.monthly_rent??t?.data?.['Loyer de base'];
+  return '<div class="card property-card"><div class="section-head"><h3>'+esc(p.name)+'</h3><span class="mini-tag '+(quality.missing.length?'warn':'')+'">'+quality.complete+'/5 champs vérifiés</span></div>'+
+  '<p class="muted">'+esc(p.data?.Adresse||'Adresse à renseigner')+'</p><p><b>'+esc(t?.data?.Locataire||((db.tenants||[]).filter(x=>x.property_id===p.id).length>1?'Plusieurs dossiers : choisir dans la fiche':'Fiche locataire à compléter'))+'</b></p>'+
+  '<p class="muted">'+(lease?.status==='active'?'Bail actif':lease?.status==='closed'?'Dernier bail clôturé':'Bail à préparer / valider')+' · Loyer : '+(formMoney(rent)?money(Number(String(rent).replace(',','.'))):'À renseigner')+'</p>'+
+  (quality.missing.length?'<p class="muted">À compléter : '+esc(quality.missing.join(', '))+'.</p>':'')+
+  '<div class="actions"><button class="btn primary" data-id="'+esc(p.id)+'" onclick="openProperty(this.dataset.id)">Ouvrir le bien</button><button class="btn secondary" data-id="'+esc(p.id)+'" onclick="openPropertyTenant(this.dataset.id)">Fiche locataire</button></div></div>';
+ }).join('')+'</div>'+(filteredProperties.length?'':'<div class="card empty-state">Ajoutez un bien pour commencer. Vous pourrez compléter ses informations progressivement.</div>');
+}
+function kv(obj){return Object.entries(obj||{}).map(([key,value])=>'<div class="kv"><b>'+esc(key)+'</b><span>'+esc(value??'')+'</span></div>').join('')}
+window.openProperty=id=>{
+ const p=(db.properties||[]).find(x=>x.id===id);if(!p)return;
+ const tenants=(db.tenants||[]).filter(t=>t.property_id===id),readonly=!!db.current_user?.read_only;
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>'+esc(p.name)+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="actions"><button class="btn primary" data-id="'+esc(id)+'" onclick="openPropertyEditor(this.dataset.id)" '+(readonly?'disabled':'')+'>Modifier le bien</button>'+
+ '<button class="btn secondary" data-property="'+esc(id)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents du bien ('+(db.documents||[]).filter(x=>x.property_id===id).length+')</button></div>'+
+ '<div class="section-title">Informations du bien</div><div class="card">'+kv(p.data)+'</div>'+
+ '<div class="section-title">Fiches locataires et baux</div>'+
+ (tenants.length?tenants.map(t=>{const l=leaseForTenant(t);return '<div class="kv"><span><b>'+esc(t.data?.Locataire||'Fiche à compléter')+'</b><br>'+esc(l?.status==='active'?'Bail actif':l?.status==='closed'?'Historique · bail clôturé':l?'Bail en brouillon':'Bail à préparer')+'</span><button class="btn secondary" data-row="'+t.row_number+'" onclick="editTenant(Number(this.dataset.row))">Ouvrir la fiche locataire</button></div>'}).join(''):'<p class="muted">Aucun locataire renseigné.</p>')+
+ (!readonly?'<div class="actions"><button class="btn secondary" data-id="'+esc(id)+'" onclick="editTenant(undefined,this.dataset.id)">+ Nouvelle fiche locataire</button></div>':'')+
+ '<details style="margin-top:15px"><summary>Historique du bien</summary>'+renderObjectTable(p.tenant_history)+renderObjectTable(p.payment_schedule)+'</details><div id="modalStatus" class="status"></div></div></div>';
+};
+window.openPropertyTenant=id=>{
+ const tenant=linkedTenant(id),related=(db.tenants||[]).filter(t=>t.property_id===id);
+ if(tenant)editTenant(tenant.row_number);else if(related.length>1)openProperty(id);else editTenant(undefined,id);
+};
+window.openPropertyEditor=id=>{
+ const p=(db.properties||[]).find(x=>x.id===id);if(!p)return;
+ const readonly=!!db.current_user?.read_only,data=p.data||{};
+ const field=(key,label,value,max)=>'<div><label for="property-'+key+'">'+label+'</label><input id="property-'+key+'" value="'+esc(value??'')+'" maxlength="'+max+'" '+(readonly?'disabled':'')+'></div>';
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Modifier le bien</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="fields">'+field('name','Nom du bien',p.name,180)+field('address','Adresse complète du bien',data.Adresse,500)+field('city','Ville',data.Ville,100)+field('postcode','Code postal',data['Code postal'],20)+field('type','Type de bien',data['Type de bien'],100)+'</div>'+
+ '<label for="property-notes">Notes du bien</label><textarea id="property-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea>'+
+ '<div class="actions" style="margin-top:15px"><button class="btn primary" id="property-save" data-id="'+esc(id)+'" onclick="saveProperty(this.dataset.id)" '+(readonly?'disabled':'')+'>Enregistrer le bien</button></div><div class="status" id="modalStatus" role="status"></div></div></div>';
+};
+window.saveProperty=async id=>{
+ const status=$('modalStatus'),button=$('property-save');if(!status||!button||db.current_user?.read_only)return;
+ const name=$('property-name').value.trim();
+ if(!name){status.className='status err';status.textContent='Renseignez le nom du bien.';return}
+ const data={Adresse:$('property-address').value.trim(),Ville:$('property-city').value.trim(),'Code postal':$('property-postcode').value.trim(),'Type de bien':$('property-type').value.trim(),Notes:$('property-notes').value};
+ button.disabled=true;status.className='status';status.textContent='Enregistrement du bien…';
+ try{await api('save-property','POST',{id,name,data});if(!await refresh())return;openProperty(id);$('modalStatus').className='status ok';$('modalStatus').textContent='Bien enregistré.'}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Enregistrement impossible'}}
+ finally{if(button.isConnected)button.disabled=false}
+};
 function renderObjectTable(rows){if(!rows?.length)return '<div class="card muted">Aucune ligne.</div>';const hs=[...new Set(rows.flatMap(Object.keys))];return `<div class="table-wrap" style="max-height:320px"><table><thead><tr>${hs.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${hs.map(h=>`<td>${cellHtml(h,r[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
 
 function configInput(key,title,hint,type='text',max=500,allowed=true){
@@ -442,7 +592,7 @@ function renderConfig(){
  configInput('bank_account_label','Libellé du compte bancaire','Nom utilisé pour identifier les relevés CSV ; ne saisissez pas vos identifiants bancaires.','text',80,allowed)+
  '</div></section>';
  const mail='<section class="card config-section"><h3>2. Messagerie Free</h3><p><span class="mini-tag '+(mailVerified?'':'warn')+'">'+(mailVerified?'IMAP et SMTP vérifiés':configured?'Identifiants enregistrés — test requis':'Mot de passe non configuré')+'</span></p>'+
- '<p class="muted">Le mot de passe est stocké chiffré dans Supabase Vault, pas dans les paramètres ordinaires. Il ne sera jamais réaffiché.</p>'+
+ '<p class="muted">La messagerie peut être configurée plus tard. Son mot de passe est chiffré et ne sera jamais réaffiché.</p>'+
  '<div class="fields"><div><label for="central-mail-password">Mot de passe de la boîte Free</label>'+
  '<input id="central-mail-password" type="password" maxlength="256" autocomplete="new-password" placeholder="'+(configured?'Laisser vide pour conserver le mot de passe':'Saisir le mot de passe de la boîte Free')+'" '+(allowed?'':'disabled')+'><p class="muted">Laisser vide si le mot de passe n’a pas changé.</p></div>'+
  '<div><label>Configuration du serveur</label><div class="note">IMAP : <code>imap.free.fr:993</code> (TLS)<br>SMTP : <code>smtp.free.fr:465</code> (TLS)</div></div></div>'+
@@ -453,7 +603,7 @@ function renderConfig(){
  const legacy='<details class="card config-section"><summary style="cursor:pointer;font-weight:700">Paramètres historiques du classeur (lecture seule)</summary><p class="muted">Ces valeurs ne commandent pas les nouvelles échéances ni les révisions de loyer. Les modifier directement serait trompeur.</p>'+
  historical.map(key=>{const item=(db.settings||[]).find(x=>x.setting_key===key);return item?'<div class="kv"><b>'+esc(item.label)+'</b><span>'+esc(String(item.value??'—'))+'</span></div>':''}).join('')+'</details>';
  const automation='<section class="card config-section"><h3>3. Automatisations</h3><p class="muted">Les brouillons de relance sont préparés à J+7 puis J+14, sans envoi automatique. Les révisions de loyers nécessitent la vérification des baux.</p>'+
- irlPanel()+renderIrlPublicationPanel()+'</section>';
+ '<div id="config-irl-live">'+irlPanel()+'</div>'+renderIrlPublicationPanel()+'</section>';
  const save='<section class="card config-section"><div class="section-head"><div><h3>Appliquer les paramètres</h3><p class="muted">Un seul enregistrement met à jour les coordonnées et, si renseigné, le secret de la boîte Free.</p></div>'+
  (allowed?'<button id="central-config-save" class="btn primary" onclick="saveCentralConfig()">Enregistrer et appliquer</button>':'<span class="mini-tag warn">Accès administrateur requis</span>')+
  '</div><div id="central-config-status" class="status" role="status"></div></section>';
@@ -466,7 +616,8 @@ window.saveCentralConfig=async()=>{
  const settings=Object.fromEntries(keys.map(k=>[k,String($('central-'+k)?.value||'').trim()]));
  const password=$('central-mail-password')?.value||'',status=$('central-config-status'),button=$('central-config-save');
  if(!status||!button)return;
- if(!/^[^\s@]+@free\.fr$/i.test(settings.sender_email)){status.className='status err';status.textContent='Une adresse @free.fr valide est obligatoire.';return}
+ if(settings.sender_email&&!/^[^\s@]+@free\.fr$/i.test(settings.sender_email)){status.className='status err';status.textContent='Renseignez une adresse @free.fr valide pour la messagerie.';return}
+ if(password&&!settings.sender_email){status.className='status err';status.textContent='Renseignez l’adresse Free correspondant au mot de passe avant de l’enregistrer.';return}
  if(settings.owner_email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(settings.owner_email)){status.className='status err';status.textContent='Adresse du propriétaire invalide.';return}
  if(password&&password.length<6){status.className='status err';status.textContent='Le mot de passe Free est trop court.';return}
  button.disabled=true;status.className='status';status.textContent='Enregistrement des coordonnées…';
@@ -521,7 +672,7 @@ function renderIrlManager(){
    '<td>'+money(Number(l.monthly_rent||0))+'</td>'+
    '<td>'+esc(r?(r.has_revision_clause?'Clause confirmée · ':'Clause absente · ')+'DPE '+r.dpe_rating:'À vérifier')+'</td>'+
    '<td>'+esc(r?.revision_due_on||'Non renseignée')+'</td>'+
-   '<td>'+esc(proposal?money(Number(proposal.proposed_monthly_rent))+' ('+(proposal.status==='applied'?'effectif':proposal.status==='scheduled'?'programmé':'à notifier')+')':'—')+'</td>'+
+   '<td>'+esc(proposal?money(Number(proposal.proposed_monthly_rent))+' ('+(proposal.status==='applied'?'effectif':proposal.status==='scheduled'?'programmé':proposal.status==='cancelled'?'annulé':'à notifier')+')':'—')+'</td>'+
    '<td><button class="btn secondary" data-id="'+esc(l.id)+'" onclick="openIrlLease(this.dataset.id)">Configurer / calculer</button></td></tr>';
  }))+
  '<p class="module-note">'+proposals.length+' proposition(s) conservée(s), '+(db.irl_applications||[]).filter(a=>a.status==='scheduled').length+
@@ -554,10 +705,10 @@ window.openIrlLease=id=>{
  '<div class="actions">'+(readonly?'': '<button class="btn secondary" data-id="'+esc(id)+'" onclick="saveIrlRule(this.dataset.id)">Enregistrer les règles du bail</button>')+
  (rule&&!readonly?'<button class="btn primary" data-id="'+esc(id)+'" onclick="prepareIrlProposal(this.dataset.id)">Calculer la proposition</button>':'')+'</div>'+
  (proposal?'<div class="note">Proposition : '+money(Number(proposal.base_monthly_rent))+' × '+esc(proposal.target_index)+' / '+esc(proposal.baseline_index)+
- ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b> · Statut : '+esc(proposal.status==='applied'?'Appliquée':proposal.status==='scheduled'?'Programmée':'À notifier')+
- '. '+(application?'Prise d’effet : '+esc(application.effective_on)+' · Notification attestée du '+esc(application.notice_sent_on)+'.': 'Aucun loyer modifié à ce stade.')+'</div>'+
+ ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b> · Statut : '+esc(proposal.status==='applied'?'Appliquée':proposal.status==='scheduled'?'Programmée':proposal.status==='cancelled'?'Annulée':'À notifier')+
+ '. '+(application?.status==='cancelled'?'Annulation : '+esc(application.cancelled_reason||'Bail clôturé')+'.':application?'Prise d’effet : '+esc(application.effective_on)+' · Notification attestée du '+esc(application.notice_sent_on)+'.': 'Aucun loyer modifié à ce stade.')+'</div>'+
  '<div class="actions">'+
- '<button class="btn secondary" data-id="'+esc(id)+'" onclick="printIrlNotice(this.dataset.id)">Préparer le courrier au locataire</button>'+
+ (proposal.status==='cancelled'?'':'<button class="btn secondary" data-id="'+esc(id)+'" onclick="printIrlNotice(this.dataset.id)">Préparer le courrier au locataire</button>')+
  (proposal.status==='draft'&&db.current_user?.payment_void_access&&!readonly?
  '<button class="btn primary" data-id="'+esc(id)+'" onclick="showIrlNotification(this.dataset.id)">Notifier et programmer la révision</button>':'')+
  '</div>':'')+
@@ -594,6 +745,7 @@ window.printIrlNotice=id=>{
  const rule=(db.irl_rules||[]).find(x=>x.lease_id===id);
  const proposal=(db.irl_proposals||[]).find(x=>x.lease_id===id&&x.revision_due_on===rule?.revision_due_on);
  if(!lease||!proposal){alert('Préparez d’abord une proposition IRL pour ce bail.');return}
+ if(proposal.status==='cancelled'){alert('Cette révision est annulée. Son historique reste consultable dans le bail.');return}
  const property=(db.properties||[]).find(x=>x.id===lease.property_id);
  const issuer=lease.issuer_name||String(setting('landlord_name',''))||'[Bailleur]';
  const address=lease.issuer_address||String(setting('landlord_address',''))||'[Adresse du bailleur]';
@@ -671,39 +823,45 @@ function renderContracts(){
 window.editLease=id=>{
  const lease=(db.leases||[]).find(l=>l.id===id);if(!lease)return;
  const property=(db.properties||[]).find(p=>p.id===lease.property_id);
- const tenant=(db.tenants||[]).find(t=>t.id===lease.tenant_row_id);
- const history=tenant?.data||{};
+ const tenant=(db.tenants||[]).find(t=>t.id===lease.tenant_row_id),history=tenant?.data||{};
  const items=(db.installments||[]).filter(x=>x.lease_id===id);
- const locked=lease.status!=='draft'||!db.current_user?.payment_access||!!db.current_user?.read_only;
- const leaseTypes=[['unverified','À qualifier'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']];
- const typeField='<div><label>Nature juridique du bail</label><select id="lease-kind" '+(locked?'disabled':'')+'>'+leaseTypes.map(([v,t])=>'<option value="'+v+'" '+(lease.lease_kind===v?'selected':'')+'>'+t+'</option>').join('')+'</select></div>';
- const emailConsent='<label class="payment-confirm"><input type="checkbox" id="lease-email-consent" '+(locked?'disabled':'')+' '+(lease.receipt_email_consent?'checked':'')+'> Accord exprès du locataire vérifié pour recevoir ses quittances par e-mail</label>';
- const field=(key,title,value,type,attrs='')=>'<div><label>'+esc(title)+'</label><input id="lease-'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+(locked?'disabled':'')+' '+attrs+'></div>';
- const month=new Date().toISOString().slice(0,7);
+ const writable=!!db.current_user?.payment_access&&!db.current_user?.read_only;
+ const locked=lease.status!=='draft'||!writable;
+ const verified=['active','closed'].includes(lease.status)&&!!lease.verified_at;
+ const month=todayParis().slice(0,7),partial=partialLeaseMonths(lease);
  $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Bail : '+esc(property?.name||'Bien')+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
- '<div class="note">Valeurs indicatives du suivi historique : entrée '+esc(history['Date entrée locataire']||'—')+', loyer '+esc(history['Loyer de base']??'—')+' €, charges '+esc(history['Charge']??'—')+' €. Vérifiez le bail signé.</div>'+
- '<div class="section-title">Informations contractuelles</div><div class="fields">'+
- field('start','Date de début',lease.start_date,'date')+
- field('end','Date de fin facultative',lease.end_date,'date')+
- field('rent','Loyer mensuel hors charges (€)',lease.monthly_rent,'number','min="0" step="0.01"')+
- field('charges','Provisions sur charges mensuelles (€)',lease.charges_amount,'number','min="0" step="0.01"')+
- field('day','Jour d’échéance (1 à 31)',lease.due_day,'number','min="1" max="31"')+
- typeField+
- field('issuer-name','Bailleur / mandataire émetteur',lease.issuer_name||(locked?'':String(setting('landlord_name',''))),'text','maxlength="200"')+
- field('issuer-address','Adresse postale de l’émetteur',lease.issuer_address||(locked?'':String(setting('landlord_address',''))),'text','maxlength="500"')+'</div>'+emailConsent+
- '<div class="section-title">Notes</div><textarea id="lease-notes" '+(locked?'disabled':'')+'>'+esc(lease.notes||'')+'</textarea>'+
+ '<div class="note">Vérifiez les conditions dans le bail signé.'+(lease.status==='closed'?' Bail clôturé le '+esc(lease.end_date)+'. Les échéances et règlements antérieurs restent consultables.':'')+'</div>'+
+ (tenant?'<div class="actions"><button class="btn secondary" data-row="'+tenant.row_number+'" onclick="editTenant(Number(this.dataset.row))">Fiche locataire</button></div>':'')+
+ '<div class="section-title">Informations contractuelles</div>'+leaseFields(lease,locked,history)+
  (locked?'':'<div class="actions" style="margin-top:12px"><button class="btn secondary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,false)">Enregistrer le brouillon</button><button class="btn primary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,true)">Vérifier et activer</button></div>')+
- '<div class="section-title">Échéances mensuelles</div>'+
- (lease.status==='active'?'<div class="toolbar"><input id="installment-month" type="month" value="'+month+'" style="width:180px" '+(!db.current_user?.payment_access||db.current_user?.read_only?'disabled':'')+'><button class="btn primary" data-id="'+esc(id)+'" onclick="generateInstallment(this.dataset.id)" '+(!db.current_user?.payment_access||db.current_user?.read_only?'disabled':'')+'>Créer une échéance</button></div>':'<div class="muted">Validez le bail pour pouvoir créer une échéance.</div>')+
- renderObjectTable(items.map(x=>({'Mois':x.period,'Échéance':x.due_on,'Loyer':money(Number(x.rent_amount)),'Charges':money(Number(x.charges_amount)),'Total':money(Number(x.total_due)),'État':x.status})))+
+ '<div class="section-title">Échéances et règlements</div>'+
+ (lease.status==='active'?'<div class="toolbar"><input id="installment-month" aria-label="Mois de l’échéance" type="month" value="'+month+'" style="width:180px" '+(!writable?'disabled':'')+'><button class="btn primary" data-id="'+esc(id)+'" onclick="generateInstallment(this.dataset.id)" '+(!writable?'disabled':'')+'>Créer une échéance</button></div>':lease.status==='draft'?'<div class="muted">Validez le bail pour pouvoir créer une échéance.</div>':'')+
+ (verified?'<div class="actions">'+(partial.length?'<button class="btn secondary" data-id="'+esc(id)+'" onclick="openPartialInstallment(this.dataset.id)" '+(!writable?'disabled':'')+'>Renseigner un premier / dernier mois incomplet</button>':'')+
+ '<button class="btn primary" data-id="'+esc(id)+'" onclick="openPaymentModal(this.dataset.id)" '+(!writable?'disabled':'')+'>Enregistrer un règlement</button>'+
+ '<button class="btn secondary" onclick="closeModal();showPage(&quot;transactions&quot;)">Consulter les règlements et reçus</button>'+
+ (lease.status==='closed'&&lease.lease_kind==='residential'?'<button class="btn secondary" data-id="'+esc(id)+'" onclick="openIrlLease(this.dataset.id)">Historique IRL</button>':'')+
+ (lease.status==='active'?'<button class="btn secondary" data-id="'+esc(id)+'" onclick="openLeaseClosure(this.dataset.id)" '+(!writable?'disabled':'')+'>Clôturer le bail</button>':'')+'</div>':'')+
+ renderObjectTable(items.map(x=>({'Mois':x.period,'Échéance':x.due_on,'Loyer':money(Number(x.rent_amount)),'Charges':money(Number(x.charges_amount)),'Total':money(Number(x.total_due)),'État':x.status==='cancelled'?'Annulée':'Prévue'})))+
  '<div class="status" id="modalStatus"></div></div></div>';
 };
 window.saveLease=async(id,activate)=>{
- if(activate&&!confirm('Avez-vous vérifié les clauses et montants dans le bail signé ?'))return;
- const raw=k=>document.getElementById('lease-'+k)?.value??'';
- const body={id,start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),due_day:raw('day'),lease_kind:$('lease-kind').value,issuer_name:raw('issuer-name'),issuer_address:raw('issuer-address'),receipt_email_consent:!!$('lease-email-consent')?.checked,notes:document.getElementById('lease-notes')?.value||'',activate};
- const status=$('modalStatus');status.textContent='Enregistrement…';status.className='status';
- try{await api('save-lease','POST',body);closeModal();await refresh();}catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const lease=(db.leases||[]).find(l=>l.id===id);if(!lease||lease.status!=='draft')return;
+ const status=$('modalStatus'),body={id,...readLeaseFields(),activate};
+ const invalid=[...$('modal').querySelectorAll('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')].find(input=>!input.checkValidity());
+ if(invalid){status.className='status err';status.textContent='Corrigez le champ « '+($('modal').querySelector('label[for="'+invalid.id+'"]')?.textContent||'valeur saisie')+' ».';invalid.focus();return}
+ if(activate){
+  const missing=leaseMissing(body,(db.properties||[]).find(p=>p.id===lease.property_id),(db.tenants||[]).find(t=>t.id===lease.tenant_row_id));
+  if(missing.length){status.className='status err';status.textContent='À compléter avant activation : '+missing.join(', ')+'.';return}
+  if(!confirm('Avez-vous vérifié les clauses et montants dans le bail signé ?'))return;
+ }
+ const buttons=[...$('modal').querySelectorAll('button[onclick^="saveLease"]')];buttons.forEach(b=>b.disabled=true);
+ status.textContent='Enregistrement…';status.className='status';
+ try{
+  const result=await api('save-lease','POST',body);if(!await refresh())return;editLease(id);
+  $('modalStatus').className='status ok';$('modalStatus').textContent=activate?'Bail activé. '+Number(result.installments_created||0)+' échéance(s) créée(s).'+(result.skipped_partial_months?' Les mois incomplets restent à renseigner.':''):'Brouillon enregistré.';
+ }catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Enregistrement impossible.'}}
+ finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
 };
 window.generateInstallment=async(id)=>{
  if(!db?.current_user?.payment_access||db.current_user?.read_only)return;
@@ -712,6 +870,70 @@ window.generateInstallment=async(id)=>{
  status.className='status';status.textContent='Enregistrement…';
  try{const result=await api('generate-installment','POST',{lease_id:id,period});if(!await refresh())return;editLease(id);$('modalStatus').textContent=result.already_exists?'Échéance déjà existante, aucun doublon.':'Échéance créée, sans paiement supposé.';}
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
+};
+
+function partialLeaseMonths(lease){
+ const periods=[],start=formDate(lease.start_date),end=formDate(lease.end_date);
+ if(start&&start.slice(8)!=='01')periods.push(start.slice(0,7));
+ if(end&&new Date(Date.parse(end+'T00:00:00Z')+86400000).getUTCDate()!==1)periods.push(end.slice(0,7));
+ return [...new Set(periods)];
+}
+window.openLeaseClosure=id=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const lease=(db.leases||[]).find(l=>l.id===id&&l.status==='active'&&l.verified_at);if(!lease)return;
+ const today=todayParis(),end=lease.end_date&&lease.end_date<=today?lease.end_date:today;
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:720px"><div class="top"><h2>Clôturer le bail</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<p><b>'+esc(activeLeaseName(lease))+'</b></p><label for="lease-close-date">Date effective de fin de location</label><input id="lease-close-date" type="date" min="'+esc(lease.start_date)+'" max="'+today+'" value="'+end+'" required>'+
+ '<div class="note" style="margin:14px 0">Les échéances antérieures et les règlements sont conservés. Les échéances strictement postérieures au départ sont annulées si aucun paiement enregistré ne leur est affecté. Les révisions IRL encore programmées pour ce bail sont arrêtées.</div>'+
+ '<p class="muted">Le montant du dernier mois reste conservé. Si ce mois est incomplet, vérifiez le montant dû puis utilisez « Renseigner un premier / dernier mois incomplet » dans le bail pour le saisir. Une échéance déjà liée à un paiement ne peut pas être réécrite.</p>'+
+ '<label class="payment-confirm"><input id="lease-close-final-confirm" type="checkbox"> J’ai vérifié le dernier mois et ses règlements ; aucun prorata ne doit être calculé automatiquement.</label>'+
+ '<div class="actions"><button class="btn primary" id="lease-close-save" data-id="'+esc(id)+'" onclick="closeLease(this.dataset.id)">Confirmer la clôture</button><button class="btn secondary" data-id="'+esc(id)+'" onclick="editLease(this.dataset.id)">Retour au bail</button></div><div id="modalStatus" class="status"></div></div></div>';
+};
+window.closeLease=async id=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const state=$('modalStatus'),button=$('lease-close-save'),date=$('lease-close-date');
+ if(!date?.checkValidity()||!formDate(date.value)){state.className='status err';state.textContent='Renseignez une date effective comprise entre le début du bail et aujourd’hui.';return}
+ if(!$('lease-close-final-confirm')?.checked){state.className='status err';state.textContent='Confirmez la vérification du dernier mois avant de clôturer le bail.';return}
+ if(!confirm('Confirmer la clôture de ce bail au '+date.value+' ? Son historique sera conservé.'))return;
+ button.disabled=true;state.className='status';state.textContent='Clôture en cours…';
+ try{
+  const result=await api('close-lease','POST',{id,end_date:date.value,confirmed:true,final_month_confirmed:true});
+  if(!await refresh())return;editLease(id);
+  $('modalStatus').className='status ok';
+  $('modalStatus').textContent='Bail clôturé. '+Number(result.cancelled_installments||0)+' échéance(s) postérieure(s) annulée(s).'+(result.partial_final_month?' Vérifiez le montant du dernier mois dans la saisie des mois incomplets.':'')+' Les règlements historiques restent accessibles.';
+ }catch(e){if(state.isConnected){state.className='status err';state.textContent=e.message||'Clôture impossible.'}}
+ finally{if(button.isConnected)button.disabled=false}
+};
+window.openPartialInstallment=id=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const lease=(db.leases||[]).find(l=>l.id===id&&['active','closed'].includes(l.status)&&l.verified_at);if(!lease)return;
+ const periods=partialLeaseMonths(lease);if(!periods.length)return;
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:680px"><div class="top"><h2>Premier / dernier mois incomplet</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<p><b>'+esc(activeLeaseName(lease))+'</b></p><p class="note">Saisissez les montants que vous avez vérifiés pour la période concernée. Aucun prorata n’est calculé. Une échéance liée à un paiement ou à une relance déclarée envoyée reste protégée.</p>'+
+ '<label for="partial-period">Mois concerné</label><select id="partial-period" data-id="'+esc(id)+'" onchange="updatePartialInstallment(this.dataset.id)">'+periods.map(p=>'<option value="'+p+'">'+p+'</option>').join('')+'</select>'+
+ '<div class="fields" style="margin-top:12px"><div><label for="partial-rent">Loyer dû pour cette période (€)</label><input id="partial-rent" type="number" min="0" step="0.01" required></div><div><label for="partial-charges">Charges dues pour cette période (€)</label><input id="partial-charges" type="number" min="0" step="0.01" required></div></div>'+
+ '<label class="payment-confirm"><input id="partial-confirmed" type="checkbox"> Je confirme les montants dus pour ce mois incomplet.</label>'+
+ '<div class="actions"><button id="partial-save" class="btn primary" data-id="'+esc(id)+'" onclick="savePartialInstallment(this.dataset.id)">Enregistrer les montants vérifiés</button><button class="btn secondary" data-id="'+esc(id)+'" onclick="editLease(this.dataset.id)">Retour au bail</button></div><div id="modalStatus" class="status"></div></div></div>';
+ updatePartialInstallment(id);
+};
+window.updatePartialInstallment=id=>{
+ const period=$('partial-period')?.value;
+ const item=(db.installments||[]).find(i=>i.lease_id===id&&String(i.period).slice(0,7)===period);
+ $('partial-rent').value=item?.rent_amount??'';$('partial-charges').value=item?.charges_amount??'';
+ $('partial-confirmed').checked=false;
+};
+window.savePartialInstallment=async id=>{
+ if(!db.current_user?.payment_access||db.current_user?.read_only)return;
+ const state=$('modalStatus'),button=$('partial-save'),rent=$('partial-rent')?.value,charges=$('partial-charges')?.value;
+ if(!formMoney(rent)||!formMoney(charges)){state.className='status err';state.textContent='Renseignez les deux montants, positifs ou nuls, à deux décimales maximum.';return}
+ if(!$('partial-confirmed')?.checked){state.className='status err';state.textContent='Confirmez les montants du mois incomplet.';return}
+ button.disabled=true;state.className='status';state.textContent='Enregistrement des montants…';
+ try{
+  const result=await api('save-partial-installment','POST',{lease_id:id,period:$('partial-period').value,rent_amount:rent,charges_amount:charges,confirmed:true});
+  if(!await refresh())return;editLease(id);
+  $('modalStatus').className='status ok';$('modalStatus').textContent=result.created?'Échéance du mois incomplet créée avec vos montants vérifiés.':result.updated?'Montants du mois incomplet mis à jour.':'Montants déjà enregistrés, aucun doublon.';
+ }catch(e){if(state.isConnected){state.className='status err';state.textContent=e.message||'Enregistrement impossible.'}}
+ finally{if(button.isConnected)button.disabled=false}
 };
 
 function rentalLedger(){
@@ -918,10 +1140,10 @@ window.openBankMatch=id=>{
  if(bankOverlappingLines(line).some(x=>x.status==='matched')){
   alert('Un mouvement identique a déjà été rapproché sur ce compte. Vérifiez le relevé avant toute autre saisie.');return;
  }
- const leases=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
+ const leases=(db.leases||[]).filter(l=>['active','closed'].includes(l.status)&&l.verified_at);
  if(!leases.length){alert('Aucun bail vérifié. Activez d’abord le bail concerné dans Contrats.');showPage('contracts');return}
  const suggestion=bankUniqueSuggestion(line);
- const leaseOptions='<option value="">Sélectionner un bail après vérification</option>'+leases.map(l=>'<option value="'+esc(l.id)+'"'+(suggestion?.id===l.id?' selected':'')+'>'+esc(activeLeaseName(l))+'</option>').join('');
+ const leaseOptions='<option value="">Sélectionner un bail après vérification</option>'+leases.map(l=>'<option value="'+esc(l.id)+'"'+(suggestion?.id===l.id?' selected':'')+'>'+esc(activeLeaseName(l))+(l.status==='closed'?' · Bail clôturé':'')+'</option>').join('');
  $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:720px"><div class="top"><h2>Rapprocher un crédit bancaire</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
  '<div class="note"><b>'+money(Number(line.amount))+'</b> · '+esc(line.booking_date)+'<p>'+esc(line.description)+'</p>'+
  '<p class="muted">Compte : '+esc(bankImportLabel(line.import_id))+(line.bank_reference?' · Réf. '+esc(line.bank_reference):'')+'</p></div>'+
@@ -989,14 +1211,14 @@ function renderTransactions(){
  }))+
  '<div class="note" style="margin-top:14px">La liaison bancaire directe n’est pas encore activée. Vous pouvez importer un relevé CSV et rapprocher chaque crédit après vérification. Un paiement saisi manuellement doit correspondre à une réception réellement constatée. Une avance non affectée n’est pas une quittance. Les montants « Paiement reçu » du tableur sont conservés séparément et ne sont jamais additionnés à ce registre.</div>';
 }
-window.openPaymentModal=()=>{
+window.openPaymentModal=(leaseId='')=>{
  if(!db.current_user?.payment_access||db.current_user?.read_only)return;
- const active=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at);
- if(!active.length){alert('Aucun bail actif vérifié. Validez d’abord un bail dans Contrats.');showPage('contracts');return;}
- const options=active.map(l=>'<option value="'+esc(l.id)+'">'+esc(activeLeaseName(l))+'</option>').join('');
+ const active=(db.leases||[]).filter(l=>['active','closed'].includes(l.status)&&l.verified_at);
+ if(!active.length){alert('Aucun bail vérifié. Validez d’abord un bail depuis sa fiche locataire.');showPage('tenants');return;}
+ const options=active.map(l=>'<option value="'+esc(l.id)+'" '+(l.id===leaseId?'selected':'')+'>'+esc(activeLeaseName(l))+(l.status==='closed'?' · Bail clôturé':'')+'</option>').join('');
  const today=todayParis(),key=crypto.randomUUID();
  $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:750px"><div class="top"><h2>Enregistrer un règlement reçu</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
- '<div class="note">Saisir uniquement un paiement effectivement constaté sur le compte ou reçu. Aucune connexion bancaire n’est encore active.</div>'+
+ '<div class="note">Saisissez uniquement un paiement effectivement reçu et vérifiez le bail bénéficiaire. Les règlements d’un bail clôturé restent possibles pour solder son historique.</div>'+
  '<div class="fields" style="margin-top:14px"><div><label>Bail et logement</label><select id="payment-lease" onchange="updatePaymentInstallments()">'+options+'</select></div>'+
  '<div><label>Échéance à rapprocher (facultatif)</label><select id="payment-installment"></select></div>'+
  '<div><label>Date de réception</label><input id="payment-date" type="date" max="'+today+'" value="'+today+'"></div>'+
@@ -1314,7 +1536,7 @@ function renderReports(){
  '<div class="note" style="margin-top:15px">Les montants historiques du tableur ne sont pas intégrés dans ces totaux. Les règlements annulés sont exclus. Le rapprochement des relevés CSV se fait dans Transactions après vérification manuelle. Aucun envoi de quittance n’est automatique.</div>';
 }
 
-async function fetchIrl(){irlChecked=true;irlLive={loading:true};if(page==='config')render();try{const r=await fetch('https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/marne-irl',{cache:'no-store'});const d=await r.json();if(!r.ok||!d.ok||!Number.isFinite(d.index))throw Error(d.error||'IRL non disponible');irlLive=d}catch(e){irlLive={error:e.message||'IRL non disponible'}}if(page==='config')render()}
+async function fetchIrl(){const generation=sessionGeneration;irlChecked=true;irlLive={loading:true};if($('config-irl-live'))$('config-irl-live').innerHTML=irlPanel();try{const r=await fetch('https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/marne-irl',{cache:'no-store'});const d=await r.json();if(generation!==sessionGeneration)return;if(!r.ok||!d.ok||!Number.isFinite(d.index))throw Error(d.error||'IRL non disponible');irlLive=d}catch(e){if(generation!==sessionGeneration)return;irlLive={error:e.message||'IRL non disponible'}}if($('config-irl-live'))$('config-irl-live').innerHTML=irlPanel()}
 window.refreshIrl=()=>{irlChecked=false;fetchIrl()};
 function irlPanel(){const ok=irlLive?.ok;const live=ok?'Indice INSEE vérifié : '+fmt(irlLive.index)+' — '+irlLive.period:irlLive?.loading?'Vérification INSEE en cours…':'IRL non vérifié dans cette session — actualisez depuis l’INSEE';const source='<a href="https://www.insee.fr/fr/statistiques/serie/001515333" target="_blank" rel="noopener noreferrer">Consulter la série officielle INSEE</a>';return '<div class="card" style="margin-bottom:15px"><div class="section-head"><div><h3>Indice de référence des loyers (IRL)</h3><p class="muted">Consultation de la dernière publication INSEE, sans modification des baux.</p></div><button class="btn primary" onclick="refreshIrl()">Actualiser depuis l’INSEE</button></div><div class="kpi">'+esc(live)+'</div><p class="muted">'+(ok?'Dernier contrôle : '+esc(new Date(irlLive.checked_at).toLocaleString('fr-FR')):irlLive?.error?'Actualisation indisponible : '+esc(irlLive.error):'Référence du 15 octobre 2026. Actualisation en ligne non confirmée.')+'</p><p>'+source+'</p><div class="note"><b>Révision des loyers :</b> l’indice de base dépend du trimestre prévu au bail, avec contrôle de la date de révision, du DPE et des restrictions applicables. Le recalcul automatique des loyers reste désactivé pour éviter des montants erronés.</div></div>'}
 function emailAutomationPanel(){
@@ -1370,7 +1592,7 @@ function renderEmails(){
  const verified=plans.filter(x=>x.outstanding>0.005&&x.days>=7&&x.stage===0).length;
  const output=section('Relances locatives','Les délais J+7 et J+14 créent des propositions, jamais un envoi automatique.','<button class="btn secondary" onclick="refresh()">Actualiser les règlements</button>')+
  stats([['Échéances à suivre',plans.filter(x=>x.outstanding>0.005).length],['Rappels préparables',ready],['Règlements à rapprocher',withPending],['Relances en attente',verified]])+
- '<div class="note">Le logiciel ne relance pas un locataire lorsque des paiements non affectés existent sur son bail. Il bloque aussi les rappels avant l’échéance et exige sept jours entre deux relances. Aucun SMTP Free n’est connecté : seules des préparations et des déclarations manuelles sont possibles.</div>'+
+ '<div class="note">Les relances sont préparées en brouillon pour vérification. Les paiements non affectés doivent être rapprochés avant une relance. Un envoi depuis Messagerie Free demande une connexion SMTP vérifiée et votre confirmation du message.</div>'+
  '<div class="section-head" style="margin-top:18px"><div><h2>Échéances et situations</h2></div></div>'+
  dataTable(['Bien / locataire','Échéance','En retard de','Reste dû','Situation','Action'],cases.sort((a,b)=>a.i.due_on.localeCompare(b.i.due_on)).map(x=>
  '<tr><td><b>'+esc(x.p?.name||'—')+'</b><div class="muted">'+esc(x.l?.tenant_name||'—')+'</div></td><td>'+esc(x.i.due_on)+'</td><td>'+Math.max(0,x.days)+' j</td><td><b>'+money(x.outstanding)+'</b></td><td><span class="mini-tag '+(x.stage>0?'warn':'')+'">'+esc(x.reason)+'</span></td><td>'+
@@ -1429,7 +1651,7 @@ function renderMail(){
  const tools=db.current_user?.read_only?'<span class="mini-tag">Lecture seule</span>':'<button class="btn secondary" onclick="testMailConnection()">Tester IMAP / SMTP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
  const setup=connected?'<div class="note mail-banner">Identifiants enregistrés côté serveur. IMAP : <b>'+(imapVerified?'Vérifié':'À tester')+'</b> · SMTP : <b>'+(smtpVerified?'Vérifié':'À tester')+'</b>.<p class="muted">Réception automatique programmée de 06h à 21h UTC, une fois par heure, et déclenchée uniquement après vérification IMAP. Dernière réception réussie : '+esc(recentSync)+'. Aucun envoi automatique.</p></div>':
  '<div class="note mail-banner"><b>Connexion à effectuer :</b> ouvre <b>Paramètres</b>, saisis l’adresse du compte Free et son mot de passe, puis enregistre. Le mot de passe est chiffré dans Vault. <button class="btn primary" onclick="showPage(&quot;config&quot;)">Configurer la messagerie</button></div>';
- $('content').innerHTML=section('Messagerie Free',esc(db.current_user?.mail_account||setting('sender_email','ph.danglade@free.fr'))+' — réception IMAP 993 et envoi SMTP 465.',tools)+
+ $('content').innerHTML=section('Messagerie Free',esc(db.current_user?.mail_account||setting('sender_email','')||'Adresse à renseigner')+' — réception IMAP 993 et envoi SMTP 465.',tools)+
  stats([['Reçus affichés',(db.mail_inbox||[]).length],['Non lus affichés',(db.mail_inbox||[]).filter(m=>!m.is_seen).length],['Brouillons affichés',(db.mail_outbox||[]).filter(m=>m.status==='draft').length],['Connexion',imapVerified?'IMAP vérifié':connected?'Test requis':'À configurer']])+setup+catchup+
  '<div class="section-head"><div><h2>Boîte de réception</h2><p class="muted">Lecture en texte seul ; les pièces jointes ne sont pas encore téléchargeables.</p></div></div>'+
  '<div class="mail-split"><div class="mail-list">'+(inbox.length?inbox.map(m=>
@@ -1477,7 +1699,7 @@ window.openFreeInboxMail=async id=>{
 window.composeMail=(to='',subject='',body='',replyId='')=>{
  const key=crypto.randomUUID();
  $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:740px"><div class="top"><h2>Rédiger un courriel</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
- '<p class="muted">De : '+esc(db.current_user?.mail_account||setting('sender_email','ph.danglade@free.fr'))+' — Enregistrement en brouillon, sans envoi.</p>'+
+ '<p class="muted">De : '+esc(db.current_user?.mail_account||setting('sender_email','')||'Adresse à renseigner')+' — Enregistrement en brouillon, sans envoi.</p>'+
  '<label>À</label><input id="mailTo" type="email" value="'+esc(to)+'" maxlength="254">'+
  '<label style="margin-top:12px">Objet</label><input id="mailSubject" value="'+esc(subject)+'" maxlength="250">'+
  '<label style="margin-top:12px">Message</label><textarea id="mailBody" maxlength="20000" rows="12">'+esc(body)+'</textarea>'+
@@ -1499,7 +1721,7 @@ window.viewMailDraft=id=>{
 window.sendFreeMail=async id=>{
  const m=(db.mail_outbox||[]).find(x=>x.id===id);
  if(!m||m.status!=='draft')return;
- if(!confirm('Envoyer maintenant « '+m.subject+' » à '+m.recipient_email+' depuis '+(db.current_user?.mail_account||setting('sender_email','ph.danglade@free.fr'))+' ?'))return;
+ if(!confirm('Envoyer maintenant « '+m.subject+' » à '+m.recipient_email+' depuis '+(db.current_user?.mail_account||setting('sender_email','')||'Adresse à renseigner')+' ?'))return;
  try{await api('mail-send','POST',{id,confirmed:true});await refresh();alert('Envoi accepté par le serveur SMTP.');}
  catch(e){await refresh();alert('Envoi non confirmé : '+e.message)}
 };

@@ -22,7 +22,8 @@ async function credentials(){
  const client=database();
  const setting=await client.from("rental_settings").select("value").eq("setting_key","sender_email").maybeSingle();
  if(setting.error)throw new Error("Mail account not available");
- const account=String(setting.data?.value||DEFAULT_ACCOUNT).trim().toLowerCase();
+ const account=String(setting.data?.value??"").trim().toLowerCase();
+ if(!account)throw Object.assign(new Error("Free mailbox address not configured"),{code:"mail_account_missing"});
  if(!/^[^\s@]+@free\.fr$/.test(account))throw new Error("Unsupported Free mailbox account");
  const secret=await client.rpc("marne_mail_password_get",{p_account:account});
  if(secret.error)throw new Error("Encrypted mail credential not accessible");
@@ -281,6 +282,7 @@ Deno.serve(async req=>{
   return response({error:"Unknown action"},400);
  }catch(e){
   const code=String((e as {code?:string}).code||"");
+  if(code==="mail_account_missing")return response({ok:false,error:"Renseignez une adresse @free.fr dans Paramètres avant d’utiliser la messagerie.",code},409);
   console.error("Marne mail transport operation failed",code||"UNKNOWN");
   return response({ok:false,error:"Connexion à la messagerie Free indisponible. Vérifiez les identifiants, l’accès réseau et les paramètres.",code:"mail_transport_failure"},502);
  }

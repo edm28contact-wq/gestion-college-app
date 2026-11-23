@@ -14,7 +14,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
 
 const tenantHeaders = [
-  "Locataire","Mail locataire","Logement","Adresse logement","Date entrée locataire","Date fin de bail","Loyer de base","Charge","IRL","Révision détectée","Écart révision","Montant révisé","Loyer actualisé","Paiement dû","Paiement reçu","Dernière nouvelle","Retard","Solde précédent","Solde","Type d’alerte","Visal","Relance 7 jours envoyée","Date relance 7 jours","Relance 14 jours envoyée","Date relance 14 jours","Mail Visal envoyé","Date mail Visal","Sujet locataire","Corps locataire","Demande propriétaire envoyée","Date demande propriétaire","Réponse propriétaire","Date réponse propriétaire","Validation envoi locataire","Mail locataire envoyé","Date mail locataire","Notes","Dernier run",
+  "Locataire","Mail locataire","Téléphone locataire","Logement","Adresse logement","Date entrée locataire","Date fin de bail","Loyer de base","Charge","IRL","Révision détectée","Écart révision","Montant révisé","Loyer actualisé","Paiement dû","Paiement reçu","Dernière nouvelle","Retard","Solde précédent","Solde","Type d’alerte","Visal","Relance 7 jours envoyée","Date relance 7 jours","Relance 14 jours envoyée","Date relance 14 jours","Mail Visal envoyé","Date mail Visal","Sujet locataire","Corps locataire","Demande propriétaire envoyée","Date demande propriétaire","Réponse propriétaire","Date réponse propriétaire","Validation envoi locataire","Mail locataire envoyé","Date mail locataire","Notes","Dernier run",
 ];
 const comments: Record<string,string> = {
   "Dernière nouvelle": "Date du dernier paiement reçu ou du dernier contact utile.",
@@ -64,6 +64,32 @@ function apiDate(v:any) {
     &&!Number.isNaN(Date.parse(v+"T00:00:00Z"))
     &&new Date(v+"T00:00:00Z").toISOString().slice(0,10)===v;
 }
+function apiAmount(v:any) {
+  return (typeof v==="number"||typeof v==="string")&&/^\d{1,9}([.,]\d{1,2})?$/.test(String(v).trim())
+    ? Number(String(v).trim().replace(",",".")) : NaN;
+}
+function dataObject(v:any) { return v!==null&&typeof v==="object"&&!Array.isArray(v); }
+function tenantInputError(data:any,changed:any) {
+  for(const [key,max] of [["Locataire",200],["Mail locataire",254],["Téléphone locataire",40],["Adresse logement",500]] as const){
+    if(!(key in changed))continue;
+    if(typeof data[key]!=="string"||data[key].trim().length>max)return "Champ locataire invalide : "+key;
+    data[key]=data[key].trim();
+  }
+  if("Mail locataire" in changed&&data["Mail locataire"]&&!/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(data["Mail locataire"]))
+    return "Adresse e-mail du locataire invalide";
+  for(const key of ["Date entrée locataire","Date fin de bail"]){
+    if(key in changed&&data[key]!==""&&data[key]!==null&&!apiDate(data[key]))return "Date invalide : "+key+" (AAAA-MM-JJ)";
+  }
+  if(("Date entrée locataire" in changed||"Date fin de bail" in changed)&&apiDate(data["Date entrée locataire"])&&apiDate(data["Date fin de bail"])&&data["Date fin de bail"]<data["Date entrée locataire"])
+    return "Fin de bail antérieure à l’entrée du locataire";
+  for(const key of ["Loyer de base","Charge"]){
+    if(!(key in changed)||data[key]===""||data[key]===null)continue;
+    const amount=apiAmount(data[key]);
+    if(!Number.isFinite(amount))return "Montant invalide : "+key;
+    data[key]=amount;
+  }
+  return null;
+}
 async function tenantHasLease(client:any,tenantId:string) {
   const result=await client.from("rental_leases").select("id").eq("tenant_row_id",tenantId).limit(1);
   if(result.error)throw result.error;
@@ -80,17 +106,29 @@ function worksAllowed(a:any) {
 }
 function documentsAllowed(a:any) {return paymentAllowed(a);}
 function mailAllowed(a:any) {return a?.role==="admin" || a?.permissions?.marne_admin===true;}
-async function configuredFreeAccount(client:any){
+class MailConfigurationError extends Error {
+ status:number;
+ constructor(message:string,status=409){super(message);this.status=status;}
+}
+async function configuredFreeAccount(client:any,optional=false){
  const q=await client.from("rental_settings").select("value").eq("setting_key","sender_email").maybeSingle();
- if(q.error)throw q.error;
- const result=String(q.data?.value||"ph.danglade@free.fr").trim().toLowerCase();
- if(!/^[^\s@]+@free\.fr$/.test(result))throw new Error("Adresse Free non valide dans les paramètres");
+ if(q.error)throw new MailConfigurationError("La configuration de messagerie ne peut pas être vérifiée. Réessayez sans modifier l’adresse.",503);
+ const result=String(q.data?.value??"").trim().toLowerCase();
+ if(!result){
+   if(optional)return "";
+   throw new MailConfigurationError("Renseignez une adresse @free.fr dans Paramètres avant d’utiliser la messagerie.");
+ }
+ if(!/^[^\s@]+@free\.fr$/.test(result))throw new MailConfigurationError("Adresse Free non valide dans les paramètres");
  return result;
 }
-async function freePasswordConfigured(client:any,accountEmail:string) {
+async function freePasswordConfigured(client:any,accountEmail:string,strict=false) {
+ if(!accountEmail)return false;
  if(accountEmail==="ph.danglade@free.fr" && Deno.env.get("MARNE_FREE_MAIL_PASSWORD"))return true;
  const check=await client.rpc("marne_mail_password_exists",{p_account:accountEmail});
- if(check.error){console.error("Mail vault status unavailable");return false}
+ if(check.error||typeof check.data!=="boolean"){
+   if(strict)throw new MailConfigurationError("L’état des identifiants Free ne peut pas être vérifié. Conservez l’adresse et réessayez.",503);
+   console.error("Mail vault status unavailable");return false;
+ }
  return check.data===true;
 }
 function transportSecret() {
@@ -212,7 +250,7 @@ async function loadCompleteRows(query:()=>any,label:string,key="id") {
 }
 async function loadData(client: any, account:any) {
   const financeAccess=paymentAllowed(account);
-  const currentMailAccount=mailAllowed(account)?await configuredFreeAccount(client):"";
+  const currentMailAccount=mailAllowed(account)?await configuredFreeAccount(client,true):"";
   const healthReportsQuery=paymentVoidAllowed(account)
     ? client.from("rental_health_runs").select("id,checked_at,trigger_type,status,critical_count,warning_count,checks,metrics").order("checked_at",{ascending:false}).limit(20)
     : Promise.resolve({data:[],error:null});
@@ -250,16 +288,16 @@ async function loadData(client: any, account:any) {
   const reminderQuery=financeAccess
     ? loadCompleteRows(()=>client.from("rental_reminder_drafts").select("id,lease_id,installment_id,stage,recipient_email,subject,body,due_at_preparation,status,prepared_at,declared_sent_at,declared_sent_by,cancelled_at,cancelled_reason",{count:"exact"}).order("prepared_at",{ascending:false}).order("id"),"relances")
     : Promise.resolve({data:[],error:null});
-  const inboxQuery=mailAllowed(account)
+  const inboxQuery=!!currentMailAccount
     ? client.from("rental_mail_messages").select("id,sender_email,recipient_email,subject,received_at,is_seen,has_attachments,attachment_count,imported_at,body_status,source_size,body_note").eq("account_email",currentMailAccount).order("received_at",{ascending:false,nullsFirst:false}).limit(150)
     : Promise.resolve({data:[],error:null});
-  const syncStateQuery=mailAllowed(account)
+  const syncStateQuery=!!currentMailAccount
     ? client.from("rental_mail_sync_state").select("account_email,imap_verified_at,smtp_verified_at,last_sync_at,last_imported,last_checked,last_error_at,last_error_code").eq("account_email",currentMailAccount).maybeSingle()
     : Promise.resolve({data:null,error:null});
-  const syncCursorQuery=mailAllowed(account)
+  const syncCursorQuery=!!currentMailAccount
     ? client.from("rental_mail_sync_cursors").select("last_uid,target_uid,last_progress_at").eq("account_email",currentMailAccount).eq("folder","INBOX").maybeSingle()
     : Promise.resolve({data:null,error:null});
-  const outboxQuery=mailAllowed(account)
+  const outboxQuery=!!currentMailAccount
     ? client.from("rental_mail_outbox").select("id,recipient_email,subject,plain_body,in_reply_to_message_id,status,created_at,created_by,approved_at,sent_at,provider_message_id,last_error").eq("account_email",currentMailAccount).order("created_at",{ascending:false}).limit(150)
     : Promise.resolve({data:[],error:null});
   const worksAccess=worksAllowed(account);
@@ -295,7 +333,7 @@ async function loadData(client: any, account:any) {
     syncCursorQuery,
   ]);
   for (const q of [s,t,p,l,e,pay,alloc,reminders,inbox,outbox,automations,works,documents,bankImports,bankLines,syncState,irlRules,irlProposals,irlIndices,irlCandidates,irlApplications,healthReports,syncCursor]) if (q.error) throw q.error;
-  const mailConfigured=mailAllowed(account)?await freePasswordConfigured(client,currentMailAccount):false;
+  const mailConfigured=currentMailAccount?await freePasswordConfigured(client,currentMailAccount):false;
   const mailSyncState=syncState.data||syncCursor.data?{...(syncState.data||{}),catchup_pending:syncCursor.data?Number(syncCursor.data.target_uid)>Number(syncCursor.data.last_uid):null,last_progress_at:syncCursor.data?.last_progress_at||null}:null;
   return { current_user:{username:account.username,role:account.role,display_name:account.display_name||account.username,permissions:account.permissions||{},read_only:account.role!=="admin"&&account.permissions?.readonly===true,payment_access:financeAccess,payment_void_access:paymentVoidAllowed(account),work_access:worksAccess,document_access:documentsAccess,bank_access:financeAccess,mail_access:mailAllowed(account),mail_configured:mailConfigured,mail_account:currentMailAccount}, mail_sync_state:mailSyncState, settings:s.data||[], tenants:t.data||[], properties:p.data||[], leases:l.data||[], installments:e.data||[], payments:pay.data||[], payment_allocations:alloc.data||[], reminder_drafts:reminders.data||[], mail_inbox:inbox.data||[], mail_outbox:outbox.data||[], automation_runs:automations.data||[], work_orders:works.data||[], documents:documents.data||[], bank_imports:bankImports.data||[], bank_lines:bankLines.data||[], irl_rules:irlRules.data||[], irl_proposals:irlProposals.data||[], irl_indices:irlIndices.data||[], irl_candidates:irlCandidates.data||[], irl_applications:irlApplications.data||[], health_reports:healthReports.data||[], tenant_headers:tenantHeaders, comments, commands, server_time:new Date().toISOString() };
 }
@@ -331,10 +369,10 @@ Deno.serve(async (req) => {
     if(action==="data"&&req.method==="GET")return json(await loadData(client,account));
 
     if (action === "save-tenant" && req.method === "POST") {
-      const body = await req.json();
+      const body = await req.json().catch(()=>null);
       const id = String(body?.id || "");
-      const data = body?.data && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : {};
-      const housingName = String(data["Logement"] || "").trim();
+      if((id&&!apiUuid(id))||!dataObject(body?.data)||enc.encode(JSON.stringify(body.data)).length>64000)
+        return json({error:"Fiche locataire invalide ou trop volumineuse"},400);
       let previous: any = null;
       if (id) {
         const existing = await client.from("rental_tenant_rows").select("property_id,data").eq("id",id).maybeSingle();
@@ -342,16 +380,31 @@ Deno.serve(async (req) => {
         if (!existing.data) return json({error:"Fiche locataire introuvable"},404);
         previous = existing.data;
       }
+      const data = {...(dataObject(previous?.data)?previous.data:{}),...body.data};
+      const invalid=tenantInputError(data,body.data);
+      if(invalid)return json({error:invalid},400);
+      if(enc.encode(JSON.stringify(data)).length>64000)return json({error:"Fiche locataire trop volumineuse"},400);
+      const housingName = String(data["Logement"] || "").trim();
       let propertyId: string | null = null;
-      if (housingName) {
-        if (previous?.property_id && String(previous.data?.["Logement"] || "").trim() === housingName) {
-          propertyId = previous.property_id;
-        } else {
+      if("property_id" in body){
+        propertyId=body.property_id===null||body.property_id===""?null:body.property_id;
+        if(propertyId!==null&&!apiUuid(propertyId))return json({error:"Logement invalide"},400);
+      }else if(previous?.property_id&&String(previous.data?.["Logement"]||"").trim()===housingName){
+        propertyId=previous.property_id;
+      }else if(housingName){
           const matched = await client.from("rental_properties").select("id").eq("name",housingName).eq("is_example",false).maybeSingle();
           if (matched.error) throw matched.error;
           if (!matched.data) return json({error:"Logement inconnu. Créez d’abord sa fiche dans Mes Biens."},400);
           propertyId = matched.data.id;
-        }
+      }
+      if(propertyId){
+        const property=await client.from("rental_properties").select("id,name,is_example,data").eq("id",propertyId).maybeSingle();
+        if(property.error)throw property.error;
+        if(!property.data||property.data.is_example)return json({error:"Choisissez un logement réel existant dans Mes Biens."},400);
+        data["Logement"]=property.data.name;
+        if(!id&&!("Adresse logement" in body.data)&&property.data.data?.["Adresse"])data["Adresse logement"]=String(property.data.data["Adresse"]);
+      }else if("property_id" in body){
+        data["Logement"]="";
       }
       const propertyChanged=!!id&&previous?.property_id!==propertyId;
       if(propertyChanged&&await tenantHasLease(client,id))
@@ -416,28 +469,68 @@ Deno.serve(async (req) => {
     }
 
     if (action === "save-property" && req.method === "POST") {
-      const body = await req.json();
+      const body = await req.json().catch(()=>null);
       const id = String(body?.id || "");
-      if (!id) return json({ error:"Dossier logement manquant" },400);
+      if (!apiUuid(id)||(!("name" in body)&&!("data" in body))) return json({ error:"Dossier logement invalide" },400);
+      if(("name" in body&&typeof body.name!=="string")||("data" in body&&!dataObject(body.data)))return json({error:"Informations du logement invalides"},400);
+      const previous=await client.from("rental_properties").select("id,name,data,is_example").eq("id",id).maybeSingle();
+      if(previous.error)throw previous.error;
+      if(!previous.data||previous.data.is_example)return json({error:"Logement réel introuvable"},404);
+      const name=String(body.name??previous.data.name).trim();
+      const details={...(dataObject(previous.data.data)?previous.data.data:{}),...(body.data||{}),"Nom du logement":name};
+      if(!name||name.length>180)return json({error:"Nom du logement obligatoire, limité à 180 caractères"},400);
+      for(const [key,max] of [["Adresse",500],["Ville",120],["Code postal",20],["Type de bien",100],["Notes",4000]] as const){
+        if(body.data&&key in body.data){
+          if(typeof details[key]!=="string"||details[key].trim().length>max)return json({error:"Information du logement invalide : "+key},400);
+          details[key]=details[key].trim();
+        }
+      }
+      if(enc.encode(JSON.stringify(details)).length>250000)return json({error:"Fiche logement trop volumineuse"},400);
       const payload = {
-        name:String(body?.name || "").trim(),
-        data:body?.data || {},
-        current_tenant:body?.current_tenant || {},
-        tenant_history:Array.isArray(body?.tenant_history)?body.tenant_history:[],
-        payment_schedule:Array.isArray(body?.payment_schedule)?body.payment_schedule:[],
+        name,data:details,
         updated_at:new Date().toISOString(),
       };
-      if (!payload.name) return json({ error:"Nom du logement obligatoire" },400);
-      const { data,error } = await client.from("rental_properties").update(payload).eq("id",id).select().single();
+      const { data,error } = await client.from("rental_properties").update(payload).eq("id",id).select().maybeSingle();
+      if(error?.code==="23505")return json({error:"Ce nom est déjà utilisé par un autre logement."},409);
       if (error) throw error;
+      if(!data)return json({error:"Dossier logement modifié ou supprimé. Actualisez avant de poursuivre."},409);
       await audit(client,account.username,"rental-save-property","rental_property",id,{ name:payload.name });
       return json({ ok:true,item:data });
     }
 
+    if (action === "prepare-lease" && req.method === "POST") {
+      if(!paymentAllowed(account))return json({error:"Gestion des baux réservée au personnel habilité"},403);
+      const body=await req.json().catch(()=>null),tenantId=body?.tenant_row_id;
+      if(!apiUuid(tenantId))return json({error:"Fiche locataire invalide"},400);
+      const result=await client.rpc("marne_prepare_lease",{p_tenant_row_id:tenantId,p_by:account.username});
+      if(result.error){
+        if(["22023","23503","23505","40001","55000"].includes(result.error.code))return json({error:result.error.message||"Le dossier a changé. Actualisez avant de préparer le bail."},409);
+        throw result.error;
+      }
+      await audit(client,account.username,"rental-prepare-lease","rental_lease",result.data.lease?.id,{tenant_row_id:tenantId,created:result.data.created===true});
+      return json({ok:true,...result.data,already_exists:result.data.created!==true});
+    }
+
+    if (action === "close-lease" && req.method === "POST") {
+      if(!paymentAllowed(account))return json({error:"Gestion des baux réservée au personnel habilité"},403);
+      const body=await req.json().catch(()=>null),leaseId=body?.id,end=body?.end_date;
+      if(!apiUuid(leaseId)||!apiDate(end)||body?.confirmed!==true)
+        return json({error:"Confirmez la clôture du bail avec une date de fin réelle (AAAA-MM-JJ)."},400);
+      if(body?.final_month_confirmed!==true)return json({error:"Vérifiez et confirmez le montant du dernier mois avant de clôturer le bail."},400);
+      const today=new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+      if(end>today)return json({error:"La clôture effective ne peut pas être datée dans le futur."},400);
+      const result=await client.rpc("marne_close_lease",{p_lease_id:leaseId,p_end_date:end,p_by:account.username,p_final_month_confirmed:true});
+      if(result.error){
+        if(["22023","23503","23505","40001","55000"].includes(result.error.code))return json({error:result.error.message||"La situation du bail a changé. Actualisez avant de poursuivre."},409);
+        throw result.error;
+      }
+      if(!result.data.already_closed)await audit(client,account.username,"rental-close-lease","rental_lease",leaseId,{end_date:end,final_month_confirmed:true,cancelled_installments:result.data.cancelled_installments||0});
+      return json({ok:true,...result.data});
+    }
 
     if (action === "save-lease" && req.method === "POST") {
       if(!paymentAllowed(account))return json({error:"Gestion des baux réservée au personnel habilité"},403);
-      const body=await req.json(),leaseId=String(body?.id||"");
+      const body=await req.json().catch(()=>null),leaseId=String(body?.id||"");
       if(!apiUuid(leaseId))return json({error:"Bail invalide"},400);
       const current=await client.from("rental_leases").select("id,status,property_id,tenant_row_id,tenant_name").eq("id",leaseId).maybeSingle();
       if(current.error)throw current.error;
@@ -447,41 +540,54 @@ Deno.serve(async (req) => {
       const start=dateVal(body?.start_date),end=dateVal(body?.end_date);
       if(start===undefined||end===undefined)return json({error:"Date invalide (AAAA-MM-JJ)"},400);
       if(start&&end&&end<start)return json({error:"Fin de bail antérieure au début"},400);
-      const parseMoney=(v:any)=>v===null||v===""?null:(typeof v==="number"||typeof v==="string")&&/^\d{1,9}([.,]\d{1,2})?$/.test(String(v).trim())?Number(String(v).replace(",",".")):NaN;
+      const parseMoney=(v:any)=>v===null||v===""?null:apiAmount(v);
       const rent=parseMoney(body?.monthly_rent),charges=parseMoney(body?.charges_amount);
       if((rent!==null&&(!Number.isFinite(rent)||rent<0))||(charges!==null&&(!Number.isFinite(charges)||charges<0)))return json({error:"Montant invalide"},400);
-      const day=body?.due_day===null||body?.due_day===""?null:Number(body?.due_day);
+      const day=body?.due_day===null||body?.due_day===""?null:(typeof body?.due_day==="number"||typeof body?.due_day==="string")&&/^\d{1,2}$/.test(String(body.due_day).trim())?Number(body.due_day):NaN;
       if(day!==null&&(!Number.isInteger(day)||day<1||day>31))return json({error:"Jour de paiement entre 1 et 31"},400);
       const kind=String(body?.lease_kind||"unverified");
       if(!["unverified","residential","parking","commercial","other"].includes(kind))
          return json({error:"Nature du bail invalide"},400);
-      const issuerName=String(body?.issuer_name??"").trim(),issuerAddress=String(body?.issuer_address??"").trim();
+      if((body?.issuer_name!=null&&typeof body.issuer_name!=="string")||(body?.issuer_address!=null&&typeof body.issuer_address!=="string"))
+        return json({error:"Identité du bailleur invalide"},400);
+      let issuerName=String(body?.issuer_name??"").trim(),issuerAddress=String(body?.issuer_address??"").trim();
+      if(!issuerName||!issuerAddress){
+        const defaults=await client.from("rental_settings").select("setting_key,value").in("setting_key",["landlord_name","landlord_address"]);
+        if(defaults.error)throw defaults.error;
+        const settings=Object.fromEntries((defaults.data||[]).map((s:any)=>[s.setting_key,s.value]));
+        issuerName=issuerName||String(settings.landlord_name||"").trim();
+        issuerAddress=issuerAddress||String(settings.landlord_address||"").trim();
+      }
       if(issuerName.length>200||issuerAddress.length>500)return json({error:"Identité du bailleur trop longue"},400);
       const consent=body?.receipt_email_consent===true;
       const activate=body?.activate===true;
       if(activate&&kind==="unverified")return json({error:"Sélectionnez la nature juridique du bail avant activation."},400);
       if(activate&&(!start||rent===null||charges===null||day===null))return json({error:"Début de bail, loyer, charges et jour d’échéance sont obligatoires pour activer."},400);
       if(activate){
-        if(!apiUuid(current.data.tenant_row_id)||!String(current.data.tenant_name||"").trim())
+        if(!apiUuid(current.data.tenant_row_id))
           return json({error:"Reliez un locataire identifié au bail avant son activation."},409);
         const [tenant,property]=await Promise.all([
           client.from("rental_tenant_rows").select("id,property_id,data").eq("id",current.data.tenant_row_id).maybeSingle(),
-          client.from("rental_properties").select("id,is_example").eq("id",current.data.property_id).maybeSingle()
+          client.from("rental_properties").select("id,is_example,data").eq("id",current.data.property_id).maybeSingle()
         ]);
         if(tenant.error)throw tenant.error;
         if(property.error)throw property.error;
         if(!property.data||property.data.is_example||!tenant.data||tenant.data.property_id!==current.data.property_id||!String(tenant.data.data?.["Locataire"]||"").trim())
           return json({error:"Le bail et son locataire doivent être reliés au même logement réel avant activation."},409);
+        if(String(tenant.data.data["Locataire"]).trim().length>200)return json({error:"Le nom du locataire doit être limité à 200 caractères."},400);
+        if(!String(property.data.data?.["Adresse"]||tenant.data.data?.["Adresse logement"]||"").trim())
+          return json({error:"Complétez l’adresse du logement dans sa fiche avant d’activer le bail."},409);
+        if(!issuerName||!issuerAddress)
+          return json({error:"Complétez le nom et l’adresse du bailleur dans Paramètres ou dans le bail avant activation."},409);
       }
-      const payload:any={start_date:start,end_date:end,monthly_rent:rent,charges_amount:charges,due_day:day,lease_kind:kind,issuer_name:issuerName||null,issuer_address:issuerAddress||null,receipt_email_consent:consent,notes:String(body?.notes??"").slice(0,2000),updated_at:new Date().toISOString()};
-      if(activate){payload.status="active";payload.verified_at=new Date().toISOString();payload.verified_by=account.username}
-      else if(current.data.status==="draft"){payload.status="draft";payload.verified_at=null;payload.verified_by=null}
-      else return json({error:"Bail actif : une modification demande un avenant ou un nouveau bail."},409);
-      const updated=await client.from("rental_leases").update(payload).eq("id",leaseId).eq("status","draft").select("id,status,property_id,verified_at").maybeSingle();
-      if(updated.error)throw updated.error;
-      if(!updated.data)return json({error:"Bail modifié simultanément : actualisez avant de poursuivre."},409);
-      await audit(client,account.username,"rental-save-lease","rental_lease",leaseId,{activate,status:updated.data.status});
-      return json({ok:true,lease:updated.data});
+      const payload={start_date:start,end_date:end,monthly_rent:rent,charges_amount:charges,due_day:day,lease_kind:kind,issuer_name:issuerName||null,issuer_address:issuerAddress||null,receipt_email_consent:consent,notes:String(body?.notes??"").slice(0,2000)};
+      const updated=await client.rpc("marne_save_lease",{p_lease_id:leaseId,p_patch:payload,p_by:account.username,p_activate:activate});
+      if(updated.error){
+        if(["22023","23503","23505","40001","55000"].includes(updated.error.code))return json({error:updated.error.message||"Bail modifié simultanément : actualisez avant de poursuivre."},409);
+        throw updated.error;
+      }
+      await audit(client,account.username,"rental-save-lease","rental_lease",leaseId,{activate,status:updated.data.lease?.status});
+      return json({ok:true,...updated.data});
     }
 
 
@@ -818,6 +924,25 @@ Deno.serve(async (req) => {
       return json({ok:true,...result.data});
     }
 
+    if (action === "save-partial-installment" && req.method === "POST") {
+      if(!paymentAllowed(account))return json({error:"Gestion des échéances réservée au personnel habilité"},403);
+      const body=await req.json().catch(()=>null),leaseId=body?.lease_id,period=body?.period;
+      const rent=apiAmount(body?.rent_amount),charges=apiAmount(body?.charges_amount);
+      if(!apiUuid(leaseId)||typeof period!=="string"||!/^(20\d{2})-(0[1-9]|1[0-2])$/.test(period)
+        ||!Number.isFinite(rent)||!Number.isFinite(charges)||body?.confirmed!==true)
+        return json({error:"Confirmez le mois partiel et ses montants de loyer et de charges vérifiés, avec deux décimales maximum."},400);
+      const result=await client.rpc("marne_set_partial_installment",{
+        p_lease_id:leaseId,p_period:period+"-01",p_rent:rent,p_charges:charges,p_by:account.username,p_confirmed:true
+      });
+      if(result.error){
+        if(["22023","23503","23505","40001","55000"].includes(result.error.code))return json({error:result.error.message||"Cette échéance ne peut pas être modifiée. Vérifiez le bail et ses règlements."},409);
+        throw result.error;
+      }
+      if(result.data.created||result.data.updated)await audit(client,account.username,"rental-partial-installment-saved","rental_installment",result.data.item?.id,
+        {lease_id:leaseId,period:period+"-01",rent_amount:rent,charges_amount:charges});
+      return json({ok:true,...result.data});
+    }
+
     if (action === "generate-installment" && req.method === "POST") {
       if(!paymentAllowed(account))return json({error:"Création d’échéances réservée au personnel habilité"},403);
       const body=await req.json().catch(()=>null);
@@ -980,13 +1105,13 @@ Deno.serve(async (req) => {
       if(i.error)throw i.error;
       if(!i.data||i.data.status!=="scheduled")return json({error:"Échéance inexistante ou annulée"},404);
       const [lease,property,status]=await Promise.all([
-        client.from("rental_leases").select("id,tenant_row_id,tenant_name,status,verified_at,lease_kind,issuer_name,issuer_address,receipt_email_consent").eq("id",i.data.lease_id).single(),
+        client.from("rental_leases").select("id,tenant_row_id,tenant_name,status,verified_at,start_date,end_date,lease_kind,issuer_name,issuer_address,receipt_email_consent").eq("id",i.data.lease_id).single(),
         client.from("rental_properties").select("name,data").eq("id",i.data.property_id).single(),
         client.rpc("marne_installment_status",{p_installment_id:installmentId})
       ]);
       for(const q of [lease,property,status])if(q.error)throw q.error;
-      if(!lease.data||lease.data.status!=="active"||!lease.data.verified_at)
-        return json({error:"Le bail doit être validé et actif."},409);
+      if(!lease.data||!["active","closed"].includes(lease.data.status)||!lease.data.verified_at)
+        return json({error:"Le bail doit avoir été validé avant l’établissement du document."},409);
       if(lease.data.lease_kind!=="residential")
         return json({error:"Ce modèle de quittance est réservé aux baux d’habitation vérifiés."},409);
       const issuer=String(lease.data.issuer_name||"").trim(),issuerAddress=String(lease.data.issuer_address||"").trim();
@@ -1004,7 +1129,10 @@ Deno.serve(async (req) => {
         return json({error:"Aucun règlement enregistré sur cette échéance."},409);
       const complete=Math.round(paid*100)>=Math.round(due*100);
       const period=String(i.data.period).slice(0,7),year=Number(period.slice(0,4)),month=Number(period.slice(5,7));
-      const from=period+"-01",to=new Date(Date.UTC(year,month,0)).toISOString().slice(0,10);
+      const monthFrom=period+"-01",monthTo=new Date(Date.UTC(year,month,0)).toISOString().slice(0,10);
+      const from=lease.data.start_date&&lease.data.start_date>monthFrom?lease.data.start_date:monthFrom;
+      const to=lease.data.end_date&&lease.data.end_date<monthTo?lease.data.end_date:monthTo;
+      if(from>to)return json({error:"Cette échéance ne recouvre pas la période du bail. Vérifiez ses dates avant le document."},409);
       await audit(client,account.username,"rental-payment-document-preview","rental_installment",installmentId,{type:complete?"quittance":"recu",paid,due});
       return json({
         ok:true,document_type:complete?"quittance":"recu",issuer,issuer_address:issuerAddress,
@@ -1123,7 +1251,8 @@ Deno.serve(async (req) => {
 
     if (action==="mail-status"&&req.method==="GET") {
       if(!mailAllowed(account))return json({error:"Accès à la messagerie interdit"},403);
-      return json({ok:true,account:await configuredFreeAccount(client),credential_configured:await freePasswordConfigured(client,await configuredFreeAccount(client)),
+      const mailAddress=await configuredFreeAccount(client,true);
+      return json({ok:true,account:mailAddress,credential_configured:await freePasswordConfigured(client,mailAddress),
         smtp_mode:"465/TLS",imap_mode:"993/TLS",autonomous_sending:false,
         transport_testing_required:true});
     }
@@ -1147,6 +1276,7 @@ Deno.serve(async (req) => {
 
     if (action==="mail-create-draft"&&req.method==="POST") {
       if(!mailAllowed(account))return json({error:"Accès à la messagerie interdit"},403);
+      const mailAddress=await configuredFreeAccount(client);
       const body=await req.json(),key=String(body?.client_key||"");
       const to=String(body?.recipient_email||"").trim().toLowerCase(),subject=String(body?.subject||"").trim(),plain=String(body?.plain_body||"").trim();
       if(!apiUuid(key)||!/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(to)||to.length>254
@@ -1155,12 +1285,12 @@ Deno.serve(async (req) => {
       const reply=body?.in_reply_to_message_id||null;
       if(reply&&!apiUuid(reply))return json({error:"Réponse à un message invalide"},400);
       if(reply){
-        const parent=await client.from("rental_mail_messages").select("id").eq("id",reply).eq("account_email",await configuredFreeAccount(client)).maybeSingle();
+        const parent=await client.from("rental_mail_messages").select("id").eq("id",reply).eq("account_email",mailAddress).maybeSingle();
         if(parent.error)throw parent.error;
         if(!parent.data)return json({error:"Message d’origine introuvable"},404);
       }
       const found=await client.from("rental_mail_outbox").select("id,status,recipient_email,subject,plain_body")
-          .eq("client_key",key).maybeSingle();
+          .eq("client_key",key).eq("account_email",mailAddress).maybeSingle();
       if(found.error)throw found.error;
       if(found.data){
         if(found.data.recipient_email!==to||found.data.subject!==subject||found.data.plain_body!==plain)
@@ -1168,7 +1298,7 @@ Deno.serve(async (req) => {
         return json({ok:true,id:found.data.id,status:found.data.status,duplicate:true});
       }
       const created=await client.from("rental_mail_outbox").insert({
-        account_email:await configuredFreeAccount(client),client_key:key,recipient_email:to,subject,plain_body:plain,in_reply_to_message_id:reply,status:"draft",created_by:account.username
+        account_email:mailAddress,client_key:key,recipient_email:to,subject,plain_body:plain,in_reply_to_message_id:reply,status:"draft",created_by:account.username
       }).select("id,status").single();
       if(created.error){
         if(created.error.code==="23505")return json({error:"Brouillon déjà enregistré : rechargez la messagerie"},409);
@@ -1240,8 +1370,21 @@ Deno.serve(async (req) => {
         return json({error:"Nom du bailleur ou adresse trop long"},400);
       if(cleaned.owner_email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned.owner_email)||cleaned.owner_email.length>254))
         return json({error:"Adresse du propriétaire invalide"},400);
-      if(!/^[^\s@]+@free\.fr$/i.test(cleaned.sender_email)||cleaned.sender_email.length>254)
+      if(cleaned.sender_email&&(!/^[^\s@]+@free\.fr$/i.test(cleaned.sender_email)||cleaned.sender_email.length>254))
         return json({error:"Le compte IMAP/SMTP Free doit être une adresse @free.fr valide"},400);
+      cleaned.sender_email=cleaned.sender_email.toLowerCase();
+      if(!cleaned.sender_email){
+        const previous=await configuredFreeAccount(client,true);
+        if(previous){
+          const [configured,state]=await Promise.all([
+            freePasswordConfigured(client,previous,true),
+            client.from("rental_mail_sync_state").select("imap_verified_at,smtp_verified_at").eq("account_email",previous).maybeSingle()
+          ]);
+          if(state.error)throw new MailConfigurationError("L’état de la boîte Free ne peut pas être vérifié. Conservez l’adresse et réessayez.",503);
+          if(configured||state.data?.imap_verified_at||state.data?.smtp_verified_at)
+            return json({error:"Cette boîte Free possède des identifiants ou une connexion vérifiée. Conservez son adresse ; elle ne peut pas être effacée implicitement."},409);
+        }
+      }
       const definition=[
         ["landlord_name","Nom du bailleur / mandataire",91,"Coordonnées par défaut pour les nouveaux baux et documents."],
         ["landlord_address","Adresse du bailleur / mandataire",92,"Adresse de référence pour les nouveaux baux et quittances."],
@@ -1288,6 +1431,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error(error);
     if(error instanceof IncompleteDataError)return json({error:error.message},503);
+    if(error instanceof MailConfigurationError)return json({error:error.message},error.status);
     return json({ error:error instanceof Error ? error.message : "Erreur serveur" },500);
   }
 });

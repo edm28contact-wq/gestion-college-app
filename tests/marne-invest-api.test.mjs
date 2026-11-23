@@ -22,7 +22,7 @@ const validLeaseBody = {
 function mockClient(overrides = {}, options = {}) {
   const data = structuredClone({
     rental_leases: [draftLease],
-    rental_properties: [{ id: propertyId, is_example: false }],
+    rental_properties: [{ id: propertyId, is_example: false, data: { Adresse: 'Adresse du logement de test' } }],
     rental_tenant_rows: [{ id: tenantId, property_id: propertyId, data: { Locataire: 'Locataire de test' } }],
     ...overrides,
   });
@@ -30,12 +30,13 @@ function mockClient(overrides = {}, options = {}) {
   const client = {
     calls, mutations, data,
     from(table) {
-      let operation = 'select', payload, single = false, head = false;
+      let operation = 'select', payload, conflictKeys = [], single = false, head = false;
       const filters = [], orders = [];
       let from = 0, to = Infinity, wantsCount = false;
       const query = {
         select(fields, config) { head = !!config?.head; wantsCount = config?.count === 'exact'; return query; },
         eq(key, value) { filters.push(row => row[key] === value); return query; },
+        in(key, values) { filters.push(row => values.includes(row[key])); return query; },
         gte(key, value) { filters.push(row => row[key] >= value); return query; },
         order(key, config) { orders.push([key, config?.ascending !== false]); return query; },
         limit(size) { to = size - 1; return query; },
@@ -44,9 +45,20 @@ function mockClient(overrides = {}, options = {}) {
         single() { single = true; return query; },
         update(value) { operation = 'update'; payload = value; return query; },
         insert(value) { operation = 'insert'; payload = value; return query; },
+        upsert(value, config) { operation = 'upsert'; payload = value; conflictKeys = String(config?.onConflict || '').split(',').filter(Boolean); return query; },
         async then(resolve, reject) {
           try {
             calls.push({ table, operation, from, to, wantsCount });
+            if(operation === 'upsert'){
+              const values=Array.isArray(payload)?payload:[payload];
+              mutations.push({table,operation,payload});
+              const rows=values.map(value=>{
+                const existing=(data[table]||[]).find(row=>conflictKeys.length&&conflictKeys.every(key=>row[key]===value[key]));
+                if(existing){Object.assign(existing,value);return existing;}
+                (data[table]||=[]).push(value);return value;
+              });
+              return resolve({data:single?rows[0]:rows,error:null});
+            }
             if (operation === 'insert') {
               if (options.insertResult) {
                 const result = options.insertResult(table);
@@ -89,6 +101,17 @@ function mockClient(overrides = {}, options = {}) {
       }
       if (name === 'marne_mail_password_exists') return { data: false, error: null };
       if (name === 'marne_run_health_check') return { data: { id: 'health-test', status: 'ok', critical_count: 0, warning_count: 0 }, error: null };
+      if(name === 'marne_save_lease'){
+        if(options.beforeUpdate)options.beforeUpdate('rental_leases',data);
+        const lease=data.rental_leases.find(row=>row.id===params.p_lease_id);
+        if(!lease||lease.status!=='draft')return {data:null,error:{code:'22023',message:'Bail modifié simultanément : actualisez.'}};
+        const tenant=data.rental_tenant_rows.find(row=>row.id===lease.tenant_row_id);
+        const payload={...params.p_patch,status:params.p_activate?'active':'draft',tenant_name:tenant?.data?.Locataire||lease.tenant_name,
+          verified_at:params.p_activate?'2026-01-01T00:00:00Z':null,verified_by:params.p_activate?params.p_by:null};
+        mutations.push({table:'rental_leases',operation:'rpc',payload});
+        Object.assign(lease,payload);
+        return {data:{lease:structuredClone(lease),installments_created:params.p_activate?2:0,skipped_partial_months:0,partial_periods:[]},error:null};
+      }
       if(name === 'marne_create_property_sheet'){
         const tenant=data.rental_tenant_rows.find(row=>row.row_number===params.p_row_number);
         const property=data.rental_properties.find(row=>row.id===tenant?.property_id);
@@ -100,13 +123,13 @@ function mockClient(overrides = {}, options = {}) {
   return client;
 }
 
-function runtime(client = mockClient(), account = admin) {
-  const errors = [];
+function runtime(client = mockClient(), account = admin, options = {}) {
+  const errors = [], environmentReads=[];
   const context = vm.createContext({
     Request, Response, URL, TextEncoder, TextDecoder, Uint8Array, AbortSignal,
-    console: { error(...args) { errors.push(args); } }, errors, fixtureClient: client, fixtureAccount: account,
+    console: { error(...args) { errors.push(args); } }, errors, environmentReads, fixtureClient: client, fixtureAccount: account,
     fetch() { throw new Error('Network is forbidden in isolated API tests'); },
-    Deno: { serve(handler) { context.handler = handler; }, env: { get() { return undefined; } } },
+    Deno: { serve(handler) { context.handler = handler; }, env: { get(name) { environmentReads.push(name); return options.environment?.[name]; } } },
   });
   vm.runInContext(source + '\ndb = () => fixtureClient; verifyToken = async () => fixtureAccount;', context);
   return context;
@@ -156,10 +179,202 @@ test('Une activation concurrente ne peut pas être écrasée par une ancienne le
   assert.equal(client.mutations.length, 0);
 });
 
+test('Les coordonnées des Paramètres sont reprises côté serveur avant activation', async () => {
+  const client=mockClient({rental_settings:[
+    {setting_key:'landlord_name',value:'Bailleur paramétré'},
+    {setting_key:'landlord_address',value:'Adresse paramétrée'},
+  ]});
+  const result=await request(runtime(client),'save-lease',{...validLeaseBody,issuer_name:'',issuer_address:''});
+  assert.equal(result.status,200);
+  const call=client.calls.find(x=>x.rpc==='marne_save_lease');
+  assert.equal(call.params.p_patch.issuer_name,'Bailleur paramétré');
+  assert.equal(call.params.p_patch.issuer_address,'Adresse paramétrée');
+  assert.equal(result.body.lease.issuer_name,'Bailleur paramétré');
+});
+
+test('L’activation conserve un émetteur contractuel explicite et utilise une seule transaction métier', async () => {
+  const client=mockClient({rental_settings:[{setting_key:'landlord_name',value:'Autre bailleur'}]});
+  const result=await request(runtime(client),'save-lease',{...validLeaseBody,verified_by:'intrus',status:'closed',tenant_name:'Identité injectée'});
+  assert.equal(result.status,200);
+  const calls=client.calls.filter(x=>x.rpc==='marne_save_lease');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].params.p_by,admin.username);
+  assert.equal(calls[0].params.p_activate,true);
+  assert.equal(calls[0].params.p_patch.issuer_name,validLeaseBody.issuer_name);
+  for(const key of ['status','verified_by','tenant_name'])assert.equal(key in calls[0].params.p_patch,false);
+  assert.equal(client.calls.some(x=>x.table==='rental_leases'&&x.operation==='update'),false);
+  assert.equal(client.calls.some(x=>x.rpc==='marne_create_installment'||x.rpc==='marne_generate_installments_daily'),false);
+  assert.equal(result.body.installments_created,2);
+});
+
+test('Un brouillon conserve l’identité actuelle de sa fiche même si son ancien nom était vide', async () => {
+  const client=mockClient({rental_leases:[{...draftLease,tenant_name:''}]});
+  const result=await request(runtime(client),'save-lease',validLeaseBody);
+  assert.equal(result.status,200);
+  assert.equal(result.body.lease.tenant_name,'Locataire de test');
+});
+
+test('Une activation sans adresse de logement ou émetteur complet reste bloquée avant la RPC', async () => {
+  for(const [overrides,body,message] of [
+    [{rental_properties:[{id:propertyId,is_example:false,data:{}}]},validLeaseBody,/adresse du logement/],
+    [{},{...validLeaseBody,issuer_name:'',issuer_address:''},/nom et l’adresse du bailleur/],
+  ]){
+    const client=mockClient(overrides);
+    const result=await request(runtime(client),'save-lease',body);
+    assert.equal(result.status,409);
+    assert.match(result.body.error,message);
+    assert.equal(client.calls.some(x=>x.rpc==='marne_save_lease'),false);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('La préparation du bail est déléguée à une RPC idempotente avec l’acteur authentifié', async () => {
+  let calls=0;
+  const client=mockClient({}, {rpcResult(name){return name==='marne_prepare_lease'?{data:{lease:draftLease,created:++calls===1,reused:calls>1},error:null}:null;}});
+  const context=runtime(client);
+  const first=await request(context,'prepare-lease',{tenant_row_id:tenantId,p_by:'intrus'});
+  const second=await request(context,'prepare-lease',{tenant_row_id:tenantId});
+  assert.equal(first.status,200);
+  assert.equal(first.body.already_exists,false);
+  assert.equal(second.body.already_exists,true);
+  assert.equal(second.body.lease.id,first.body.lease.id);
+  const rpcCalls=client.calls.filter(x=>x.rpc==='marne_prepare_lease');
+  assert.equal(rpcCalls.length,2);
+  assert.deepEqual(rpcCalls.map(x=>({...x.params})),[
+    {p_tenant_row_id:tenantId,p_by:admin.username},{p_tenant_row_id:tenantId,p_by:admin.username},
+  ]);
+  assert.equal(client.calls.some(x=>x.table==='rental_leases'&&x.operation!=='select'),false);
+});
+
+test('La préparation retrouve un bail historique sans réécrire son contrat', async () => {
+  for(const status of ['active','closed']){
+    const client=mockClient({}, {rpcResult(name){return name==='marne_prepare_lease'?{data:{lease:{...draftLease,status},created:false,reused:true},error:null}:null;}});
+    const result=await request(runtime(client),'prepare-lease',{tenant_row_id:tenantId});
+    assert.equal(result.status,200);
+    assert.equal(result.body.lease.status,status);
+    assert.equal(result.body.already_exists,true);
+    assert.equal(client.calls.some(x=>x.rpc==='marne_save_lease'),false);
+  }
+});
+
+test('Une clôture confirmée transmet uniquement le bail, la date réelle et l’acteur', async () => {
+  const closed={...draftLease,status:'closed',end_date:'2026-01-31'};
+  const client=mockClient({}, {rpcResult(name){return name==='marne_close_lease'?{data:{lease:closed,already_closed:false,cancelled_installments:1},error:null}:null;}});
+  const result=await request(runtime(client),'close-lease',{id:leaseId,end_date:'2026-01-31',confirmed:true,final_month_confirmed:true,p_by:'intrus'});
+  assert.equal(result.status,200);
+  assert.equal(result.body.lease.status,'closed');
+  assert.equal(result.body.cancelled_installments,1);
+  assert.deepEqual({...client.calls.find(x=>x.rpc==='marne_close_lease').params},{p_lease_id:leaseId,p_end_date:'2026-01-31',p_by:admin.username,p_final_month_confirmed:true});
+  assert.equal(client.calls.some(x=>x.table==='rental_leases'&&x.operation!=='select'),false);
+});
+
+test('La clôture refuse les dates impossibles, futures et les confirmations absentes', async () => {
+  for(const body of [
+    {id:leaseId,end_date:'2026-02-31',confirmed:true,final_month_confirmed:true},
+    {id:leaseId,end_date:'9999-12-31',confirmed:true,final_month_confirmed:true},
+    {id:leaseId,end_date:'2026-01-31'},
+    {id:leaseId,end_date:'2026-01-31',confirmed:true},
+    {id:'invalid',end_date:'2026-01-31',confirmed:true},
+  ]){
+    const client=mockClient();
+    assert.equal((await request(runtime(client),'close-lease',body)).status,400);
+    assert.equal(client.calls.some(x=>x.rpc==='marne_close_lease'),false);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Les nouvelles actions de bail respectent les droits et la lecture seule', async () => {
+  for(const [action,body] of [['prepare-lease',{tenant_row_id:tenantId}],['close-lease',{id:leaseId,end_date:'2026-01-31',confirmed:true,final_month_confirmed:true}],['save-partial-installment',{lease_id:leaseId,period:'2026-01',rent_amount:100,charges_amount:0,confirmed:true}]]){
+    for(const [account,status] of [[null,401],[{role:'staff',permissions:{marne_tenants:true}},403],[{role:'marne_invest',permissions:{readonly:true}},403]]){
+      const client=mockClient();
+      assert.equal((await request(runtime(client,account),action,body)).status,status);
+      assert.equal(client.calls.length,0);
+    }
+  }
+});
+
+test('Les conflits SQL du cycle bail sont présentés sans nouvelle écriture de secours', async () => {
+  for(const [action,rpc,body] of [
+    ['prepare-lease','marne_prepare_lease',{tenant_row_id:tenantId}],
+    ['save-lease','marne_save_lease',validLeaseBody],
+    ['close-lease','marne_close_lease',{id:leaseId,end_date:'2026-01-31',confirmed:true,final_month_confirmed:true}],
+    ['save-partial-installment','marne_set_partial_installment',{lease_id:leaseId,period:'2026-01',rent_amount:100,charges_amount:0,confirmed:true}],
+  ]){
+    for(const code of ['22023','23503','23505','40001','55000']){
+      const client=mockClient({}, {rpcResult(name){return name===rpc?{data:null,error:{code,message:'Situation du bail modifiée'}}:null;}});
+      const result=await request(runtime(client),action,body);
+      assert.equal(result.status,409);
+      assert.match(result.body.error,/Situation du bail modifiée/);
+      assert.equal(client.mutations.length,0);
+      assert.equal(client.calls.filter(x=>x.rpc===rpc).length,1);
+    }
+  }
+});
+
 test('Un locataire relié à un autre logement bloque l’activation', async () => {
   const client = mockClient({ rental_tenant_rows: [{ id: tenantId, property_id: otherPropertyId, data: { Locataire: 'Locataire de test' } }] });
   assert.equal((await request(runtime(client), 'save-lease', validLeaseBody)).status, 409);
   assert.equal(client.mutations.length, 0);
+});
+
+test('Une période partielle transmet les montants explicites sans les recalculer', async () => {
+  const installmentId='55555555-5555-4555-8555-555555555555';
+  const client=mockClient({}, {rpcResult(name,params){return name==='marne_set_partial_installment'?{
+    data:{item:{id:installmentId,period:params.p_period,rent_amount:params.p_rent,charges_amount:params.p_charges},created:true,updated:false},error:null}:null;}});
+  const result=await request(runtime(client),'save-partial-installment',{lease_id:leaseId,period:'2026-01',rent_amount:'123,45',charges_amount:0,confirmed:true});
+  assert.equal(result.status,200);
+  assert.equal(result.body.item.rent_amount,123.45);
+  assert.equal(result.body.item.charges_amount,0);
+  assert.deepEqual({...client.calls.find(x=>x.rpc==='marne_set_partial_installment').params},{p_lease_id:leaseId,p_period:'2026-01-01',p_rent:123.45,p_charges:0,p_by:admin.username,p_confirmed:true});
+  assert.equal(client.calls.some(x=>x.table==='rental_installments'&&x.operation!=='select'),false);
+});
+
+test('Une période partielle exige un mois valide, des montants explicites et une confirmation', async () => {
+  const valid={lease_id:leaseId,period:'2026-01',rent_amount:'100.00',charges_amount:'0',confirmed:true};
+  for(const body of [
+    {...valid,period:'2026-13'}, {...valid,period:'2026-01-01'}, {...valid,rent_amount:-1},
+    {...valid,rent_amount:''}, {...valid,charges_amount:null}, {...valid,charges_amount:'0.001'},
+    {...valid,rent_amount:true}, {...valid,confirmed:false},
+  ]){
+    const client=mockClient();
+    assert.equal((await request(runtime(client),'save-partial-installment',body)).status,400);
+    assert.equal(client.calls.some(x=>x.rpc==='marne_set_partial_installment'),false);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Les reçus restent accessibles après clôture et reflètent les dates de la période réellement occupée', async () => {
+  const installmentId='55555555-5555-4555-8555-555555555555';
+  for(const [status,start,end,from,to] of [
+    ['active','2026-01-15',null,'2026-01-15','2026-01-31'],
+    ['closed','2025-01-01','2026-01-20','2026-01-01','2026-01-20'],
+    ['closed','2026-01-15','2026-01-20','2026-01-15','2026-01-20'],
+  ]){
+    const client=mockClient({
+      rental_leases:[{...draftLease,...validLeaseBody,status,start_date:start,end_date:end,verified_at:'2026-01-01T00:00:00Z'}],
+      rental_installments:[{id:installmentId,lease_id:leaseId,property_id:propertyId,period:'2026-01-01',status:'scheduled',rent_amount:100,charges_amount:10,total_due:110}],
+    },{rpcResult(name){return name==='marne_installment_status'?{data:{allocated:110,due:110},error:null}:null;}});
+    const result=await request(runtime(client),'receipt-preview',{installment_id:installmentId});
+    assert.equal(result.status,200);
+    assert.equal(result.body.period_from,from);
+    assert.equal(result.body.period_to,to);
+    assert.equal(result.body.document_type,'quittance');
+    assert.equal(result.body.paid,110);
+    assert.equal(result.body.rent,100);
+    assert.equal(client.calls.some(x=>x.table==='rental_payments'&&x.operation!=='select'),false);
+  }
+});
+
+test('Un reçu refuse toujours un bail non vérifié ou une échéance hors de sa période', async () => {
+  const installmentId='55555555-5555-4555-8555-555555555555';
+  for(const patch of [{status:'closed',verified_at:null},{status:'draft',verified_at:'2026-01-01T00:00:00Z'},{status:'closed',verified_at:'2026-01-01T00:00:00Z',end_date:'2025-12-31'}]){
+    const client=mockClient({
+      rental_leases:[{...draftLease,...validLeaseBody,start_date:'2025-01-01',...patch}],
+      rental_installments:[{id:installmentId,lease_id:leaseId,property_id:propertyId,period:'2026-01-01',status:'scheduled',rent_amount:100,charges_amount:10,total_due:110}],
+    },{rpcResult(name){return name==='marne_installment_status'?{data:{allocated:110,due:110},error:null}:null;}});
+    assert.equal((await request(runtime(client),'receipt-preview',{installment_id:installmentId})).status,409);
+    assert.equal(client.mutations.length,0);
+  }
 });
 
 test('Un logement exemple ou un locataire absent ne peut pas être activé', async () => {
@@ -218,6 +433,106 @@ test('L’ancien endpoint de paramètres ne contourne pas la configuration centr
   }
 });
 
+const basicSettings={landlord_name:'Bailleur de test',landlord_address:'Adresse de test',owner_email:'',sender_email:'',bank_account_label:''};
+
+test('Les paramètres du bailleur peuvent être enregistrés avant toute configuration Free', async () => {
+  const client=mockClient({rental_settings:[]});
+  const result=await request(runtime(client),'save-site-config',{settings:basicSettings});
+  assert.equal(result.status,200);
+  assert.equal(client.data.rental_settings.find(row=>row.setting_key==='landlord_name').value,basicSettings.landlord_name);
+  assert.equal(client.data.rental_settings.find(row=>row.setting_key==='sender_email').value,'');
+  assert.equal(client.calls.some(call=>call.rpc?.startsWith('marne_mail_')),false);
+});
+
+test('Une adresse jamais connectée peut être effacée sans reprendre un compte historique', async () => {
+  const client=mockClient({rental_settings:[{setting_key:'sender_email',value:'nouveau@free.fr'}]});
+  const context=runtime(client,admin,{environment:{MARNE_FREE_MAIL_PASSWORD:'synthetic-legacy-credential'}});
+  assert.equal((await request(context,'save-site-config',{settings:basicSettings})).status,200);
+  const status=await request(context,'mail-status',undefined,'GET');
+  assert.equal(status.status,200);
+  assert.equal(status.body.account,'');
+  assert.equal(status.body.credential_configured,false);
+  assert.equal(context.environmentReads.includes('MARNE_FREE_MAIL_PASSWORD'),false);
+  const checks=client.calls.filter(call=>call.rpc==='marne_mail_password_exists');
+  assert.deepEqual(checks.map(call=>call.params.p_account),['nouveau@free.fr']);
+});
+
+test('Une boîte possédant un identifiant ou une connexion vérifiée ne peut pas être effacée implicitement', async () => {
+  for(const setup of [
+    {credential:true}, {state:{imap_verified_at:'2026-01-01T00:00:00Z'}}, {state:{smtp_verified_at:'2026-01-01T00:00:00Z'}},
+  ]){
+    const client=mockClient({rental_settings:[{setting_key:'sender_email',value:'fixture@free.fr'}],rental_mail_sync_state:[{account_email:'fixture@free.fr',...setup.state}]},
+      {rpcResult(name){return name==='marne_mail_password_exists'?{data:!!setup.credential,error:null}:null;}});
+    const result=await request(runtime(client),'save-site-config',{settings:basicSettings});
+    assert.equal(result.status,409);
+    assert.match(result.body.error,/ne peut pas être effacée/);
+    assert.equal(client.mutations.length,0);
+    assert.equal(client.data.rental_settings[0].value,'fixture@free.fr');
+  }
+});
+
+test('Un échec de vérification bloque l’effacement du compte sans assimiler l’inconnu à une absence', async () => {
+  const failures=[
+    {rpcResult(name){return name==='marne_mail_password_exists'?{data:null,error:{code:'TEST_LOOKUP',message:'synthetic-sensitive-detail'}}:null;}},
+    {rpcResult(name){return name==='marne_mail_password_exists'?{data:null,error:null}:null;}},
+    {queryResult(table,result){return table==='rental_mail_sync_state'?{data:null,error:{code:'TEST_LOOKUP'}}:result;}},
+    {queryResult(table,result){return table==='rental_settings'?{data:null,error:{code:'TEST_LOOKUP'}}:result;}},
+  ];
+  for(const options of failures){
+    const client=mockClient({rental_settings:[{setting_key:'sender_email',value:'fixture@free.fr'}]},options);
+    const context=runtime(client),result=await request(context,'save-site-config',{settings:basicSettings});
+    assert.equal(result.status,503);
+    assert.match(result.body.error,/ne peut pas être vérifi/);
+    assert.equal(client.mutations.length,0);
+    assert.doesNotMatch(JSON.stringify([result.body,context.errors]),/synthetic-sensitive-detail/);
+  }
+});
+
+test('Une adresse absente ne charge aucune boîte ni identifiant et reste visible comme non configurée', async () => {
+  for(const settings of [[],[{setting_key:'sender_email',value:''}],[{setting_key:'sender_email',value:'   '}]]){
+    const client=mockClient({rental_settings:settings,rental_mail_messages:[{id:'old-mail',account_email:'ph.danglade@free.fr'}]});
+    const context=runtime(client,admin,{environment:{MARNE_FREE_MAIL_PASSWORD:'synthetic-legacy-credential'}});
+    const result=await request(context,'data',undefined,'GET');
+    assert.equal(result.status,200);
+    assert.equal(result.body.current_user.mail_account,'');
+    assert.equal(result.body.current_user.mail_configured,false);
+    assert.deepEqual(result.body.mail_inbox,[]);
+    assert.equal(result.body.mail_sync_state,null);
+    const status=await request(context,'mail-status',undefined,'GET');
+    assert.equal(status.body.account,'');
+    assert.equal(status.body.credential_configured,false);
+    assert.equal(client.calls.some(call=>call.table?.startsWith('rental_mail_')||call.rpc?.startsWith('marne_mail_')),false);
+    assert.equal(context.environmentReads.includes('MARNE_FREE_MAIL_PASSWORD'),false);
+  }
+});
+
+test('Toutes les opérations de messagerie exigent une adresse explicite avant tout accès à la boîte', async () => {
+  for(const [action,body,method] of [
+    ['mail-configure',{password:'synthetic-credential'},'POST'],['mail-test',{},'POST'],['mail-sync',{},'POST'],
+    ['mail-send',{id:leaseId,confirmed:true},'POST'],['mail-create-draft',{client_key:leaseId},'POST'],
+    ['mail-cancel-draft',{id:leaseId},'POST'],['mail-mark-read',{id:leaseId},'POST'],['mail-message&id='+leaseId,undefined,'GET'],
+  ]){
+    const client=mockClient({rental_settings:[]}),context=runtime(client,admin,{environment:{MARNE_FREE_MAIL_PASSWORD:'synthetic-legacy-credential'}});
+    const result=await request(context,action,body,method);
+    assert.equal(result.status,409,action);
+    assert.match(result.body.error,/Renseignez une adresse @free.fr/);
+    assert.equal(client.calls.some(call=>call.table?.startsWith('rental_mail_')||call.rpc?.startsWith('marne_mail_')),false);
+    assert.equal(client.mutations.length,0);
+    assert.equal(context.environmentReads.includes('MARNE_FREE_MAIL_PASSWORD'),false);
+  }
+});
+
+test('Une adresse Free renseignée reste contrôlée et normalisée', async () => {
+  for(const address of ['sans-adresse','fixture@example.invalid']){
+    const client=mockClient();
+    assert.equal((await request(runtime(client),'save-site-config',{settings:{...basicSettings,sender_email:address}})).status,400);
+    assert.equal(client.mutations.length,0);
+  }
+  const client=mockClient();
+  assert.equal((await request(runtime(client),'save-site-config',{settings:{...basicSettings,sender_email:'FIXTURE@FREE.FR'}})).status,200);
+  assert.equal(client.data.rental_settings.find(row=>row.setting_key==='sender_email').value,'fixture@free.fr');
+});
+
 test('Les dates impossibles de paiement et d’intervention sont rejetées avant tout appel SQL métier', async () => {
   const client = mockClient({ rental_work_orders: [{ id: leaseId, status: 'open' }] });
   const context = runtime(client);
@@ -248,6 +563,104 @@ function tenantFixture(overrides = {}, options = {}) {
     ...overrides,
   }, options);
 }
+
+test('Une fiche locataire accepte les modifications partielles et les effacements explicites sans perdre l’historique', async () => {
+  const client=tenantFixture({rental_tenant_rows:[{id:tenantId,row_number:2,property_id:propertyId,data:{
+    Locataire:'Locataire de test',Logement:'Logement initial','Mail locataire':'ancien@example.invalid',
+    Notes:'Note conservée','Date entrée locataire':'date historique à vérifier','Solde précédent':42,
+  }}]});
+  const result=await request(runtime(client),'save-tenant',{id:tenantId,property_id:propertyId,data:{'Mail locataire':'',Charge:'0'}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.item.data['Mail locataire'],'');
+  assert.equal(result.body.item.data.Charge,0);
+  assert.equal(result.body.item.data.Notes,'Note conservée');
+  assert.equal(result.body.item.data['Solde précédent'],42);
+  assert.equal(result.body.item.data['Date entrée locataire'],'date historique à vérifier');
+});
+
+test('Le lien explicite au bien reste stable après renommage et normalise le nom affiché', async () => {
+  const client=tenantFixture({rental_properties:[{id:propertyId,name:'Logement renommé',is_example:false}]});
+  const result=await request(runtime(client),'save-tenant',{id:tenantId,property_id:propertyId,data:{Notes:'Coordonnées vérifiées'}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.item.property_id,propertyId);
+  assert.equal(result.body.item.data.Logement,'Logement renommé');
+  assert.equal(result.body.item.data.Locataire,'Locataire de test');
+});
+
+test('Un nouveau locataire lié par identifiant reprend seulement l’adresse renseignée du bien', async () => {
+  const client=tenantFixture({rental_properties:[{id:propertyId,name:'Logement initial',is_example:false,data:{Adresse:'1 rue de test'}}]},
+    {rpcResult(name,params){return name==='marne_create_tenant'?{data:{id:tenantId,row_number:3,property_id:params.p_property_id,data:params.p_data},error:null}:null;}});
+  const result=await request(runtime(client),'save-tenant',{property_id:propertyId,data:{Locataire:'Nouveau locataire','Loyer de base':'500,25',Charge:0}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.item.data.Logement,'Logement initial');
+  assert.equal(result.body.item.data['Adresse logement'],'1 rue de test');
+  assert.equal(result.body.item.data['Loyer de base'],500.25);
+  assert.equal(result.body.item.data.Charge,0);
+});
+
+test('Les informations locataires invalides sont refusées avant toute écriture', async () => {
+  for(const data of [
+    {'Mail locataire':'sans-adresse'}, {'Mail locataire':'a@example.invalid,b@example.invalid'},
+    {'Date entrée locataire':'2026-02-31'}, {'Date fin de bail':'2026-00-10'},
+    {'Date entrée locataire':'2026-03-01','Date fin de bail':'2026-02-28'},
+    {'Loyer de base':-1}, {Charge:'0.001'}, {Locataire:{name:'incorrect'}}, {'Téléphone locataire':'1'.repeat(41)},
+  ]){
+    const client=tenantFixture();
+    assert.equal((await request(runtime(client),'save-tenant',{id:tenantId,property_id:propertyId,data})).status,400);
+    assert.equal(client.mutations.length,0);
+  }
+  for(const body of [{id:'invalid',data:{}},{id:tenantId,data:[]},{id:tenantId,property_id:'invalid',data:{}}]){
+    const client=tenantFixture();
+    assert.equal((await request(runtime(client),'save-tenant',body)).status,400);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Une propriété absente ou exemple ne peut pas être liée à un locataire', async () => {
+  for(const properties of [[],[{id:propertyId,name:'Exemple',is_example:true}]]){
+    const client=tenantFixture({rental_properties:properties});
+    assert.equal((await request(runtime(client),'save-tenant',{id:tenantId,property_id:propertyId,data:{Notes:'Mise à jour'}})).status,400);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Les modifications du bien préservent les sections historiques et les clés absentes du formulaire', async () => {
+  const property={id:propertyId,name:'Logement initial',is_example:false,
+    data:{'Nom du logement':'Ancien libellé',Adresse:'Ancienne adresse',Notes:'Conserver','IRL de base':100},
+    current_tenant:{Locataire:'Historique'},tenant_history:[{annee:2020}],payment_schedule:[{periode:'2020-01'}]};
+  const client=tenantFixture({rental_properties:[property]});
+  const result=await request(runtime(client),'save-property',{id:propertyId,name:'Nouveau nom',data:{Adresse:'Adresse corrigée',Ville:'Paris'}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.item.name,'Nouveau nom');
+  assert.equal(result.body.item.data['Nom du logement'],'Nouveau nom');
+  assert.equal(result.body.item.data.Adresse,'Adresse corrigée');
+  assert.equal(result.body.item.data.Notes,'Conserver');
+  assert.equal(result.body.item.data['IRL de base'],100);
+  for(const key of ['current_tenant','tenant_history','payment_schedule'])assert.deepEqual(result.body.item[key],property[key]);
+  const update=client.mutations.find(x=>x.table==='rental_properties').payload;
+  for(const key of ['current_tenant','tenant_history','payment_schedule'])assert.equal(key in update,false);
+});
+
+test('Le bien conserve son nom en mise à jour partielle et permet de vider un champ optionnel', async () => {
+  const client=tenantFixture({rental_properties:[{id:propertyId,name:'Logement initial',is_example:false,data:{Ville:'Ancienne ville'}}]});
+  const result=await request(runtime(client),'save-property',{id:propertyId,data:{Ville:''}});
+  assert.equal(result.status,200);
+  assert.equal(result.body.item.name,'Logement initial');
+  assert.equal(result.body.item.data.Ville,'');
+});
+
+test('Les erreurs de fiche bien sont explicites et ne provoquent aucune écriture', async () => {
+  for(const body of [{id:'invalid',data:{}},{id:propertyId,name:''},{id:propertyId,data:[]},{id:propertyId,data:{Adresse:'x'.repeat(501)}}]){
+    const client=tenantFixture();
+    assert.equal((await request(runtime(client),'save-property',body)).status,400);
+    assert.equal(client.mutations.length,0);
+  }
+  const missing=tenantFixture({rental_properties:[]});
+  assert.equal((await request(runtime(missing),'save-property',{id:propertyId,name:'Test'})).status,404);
+  const duplicate=tenantFixture({}, {updateResult(table){return table==='rental_properties'?{data:null,error:{code:'23505'}}:null;}});
+  assert.equal((await request(runtime(duplicate),'save-property',{id:propertyId,name:'Autre logement'})).status,409);
+  assert.equal(duplicate.mutations.length,0);
+});
 
 test('Le locataire d’un bail brouillon, actif ou clôturé conserve son logement historique', async () => {
   for (const status of ['draft', 'active', 'closed']) {

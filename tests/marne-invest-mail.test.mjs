@@ -300,3 +300,74 @@ test('L’endpoint busy ne prétend pas avoir réussi une synchronisation',async
  assert.equal(response.status,200);assert.equal((await response.json()).busy,true);
  assert.equal(run.db.calls.length,1);
 });
+
+function configurationRuntime(setting,options={}){
+ const calls=[],environmentReads=[];
+ const db={calls,
+  from(table){
+   assert.equal(table,'rental_settings');
+   const query={select(){return query;},eq(key,value){assert.equal(key,'setting_key');assert.equal(value,'sender_email');return query;},
+    async maybeSingle(){calls.push({table});return {data:setting,error:options.settingError||null};}};
+   return query;
+  },
+  async rpc(name,p){calls.push({name,p});assert.equal(name,'marne_mail_password_get');return {data:options.credential??'synthetic-vault-credential',error:options.credentialError||null};},
+ };
+ const run=runtime([],{db});
+ run.context.Deno.env.get=name=>{environmentReads.push(name);return name==='MARNE_FREE_MAIL_PASSWORD'?'synthetic-legacy-credential':undefined;};
+ vm.runInContext("serviceKey=()=> 'fixture-service-key';",run.context);
+ return {...run,calls,environmentReads};
+}
+
+test('Une adresse absente bloque le transport avant toute lecture de mot de passe ou connexion',async()=>{
+ for(const setting of [null,{value:null},{value:''},{value:'   '}]){
+  const run=configurationRuntime(setting);
+  await assert.rejects(()=>run.context.credentials(),error=>error.code==='mail_account_missing');
+  assert.equal(run.calls.some(call=>call.name),false);
+  assert.deepEqual(run.environmentReads,[]);
+  assert.deepEqual(run.client.calls,[]);
+ }
+});
+
+test('Une erreur de lecture des paramètres ou une adresse invalide ne déclenche aucun fallback',async()=>{
+ for(const [setting,options,pattern] of [
+  [null,{settingError:{code:'TEST_LOOKUP'}},/Mail account not available/],
+  [{value:'fixture@example.invalid'},{},/Unsupported Free mailbox account/],
+ ]){
+  const run=configurationRuntime(setting,options);
+  await assert.rejects(()=>run.context.credentials(),pattern);
+  assert.equal(run.calls.some(call=>call.name),false);
+  assert.deepEqual(run.environmentReads,[]);
+  assert.deepEqual(run.client.calls,[]);
+ }
+});
+
+test('Seul le compte Free explicitement renseigné est recherché dans le coffre',async()=>{
+ const run=configurationRuntime({value:' FIXTURE@FREE.FR '});
+ const result=await run.context.credentials();
+ assert.equal(result.account,account);
+ assert.equal(result.pass,'synthetic-vault-credential');
+ assert.deepEqual(run.calls.filter(call=>call.name).map(call=>({name:call.name,p:{...call.p}})),[{name:'marne_mail_password_get',p:{p_account:account}}]);
+ assert.deepEqual(run.environmentReads,[]);
+ assert.deepEqual(run.client.calls,[]);
+});
+
+test('Un échec du coffre sur le compte historique explicite ne déclenche pas le secours environnement',async()=>{
+ const run=configurationRuntime({value:'ph.danglade@free.fr'},{credentialError:{code:'TEST_VAULT'}});
+ await assert.rejects(()=>run.context.credentials(),/Encrypted mail credential not accessible/);
+ assert.deepEqual(run.environmentReads,[]);
+ assert.deepEqual(run.client.calls,[]);
+});
+
+test('Les endpoints transport sync, test et send refusent une adresse absente sans réseau',async()=>{
+ for(const action of ['sync','test','send']){
+  const run=configurationRuntime({value:''});
+  const response=await run.context.handler(new Request('https://example.invalid/mail',{method:'POST',
+   headers:{'x-marne-service-key':'fixture-service-key','content-type':'application/json'},
+   body:JSON.stringify({action,id:tokenFor(1)})}));
+  assert.equal(response.status,409);
+  assert.equal((await response.json()).code,'mail_account_missing');
+  assert.equal(run.calls.some(call=>call.name),false);
+  assert.deepEqual(run.environmentReads,[]);
+  assert.deepEqual(run.client.calls,[]);
+ }
+});

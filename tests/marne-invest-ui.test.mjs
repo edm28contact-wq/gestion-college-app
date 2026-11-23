@@ -53,11 +53,10 @@ test('Limite de 200 mouvements',()=>{
  for(let i=0;i<201;i++)lines.push('20/11/2026;LOYER '+i+';600,00');
  assert.throws(()=>bankCsvRows(lines.join('\n')));
 });
-test('Version finale et ses blocs accessibles',()=>{
+test('Mise en service et ses modules accessibles',()=>{
  for(const route of ['pilotage','contracts','transactions','documents','works','mail','config']){
   assert.ok(script.includes("'"+route+"'"),route+' absent');
  }
- assert.match(script,/const releaseMilestones=\[/);
  assert.match(script,/function renderPilotage\(\)/);
 });
 test('Un changement IRL n est pas effectue dans le navigateur',()=>{
@@ -100,16 +99,23 @@ test('Les courriers IRL ne partent pas directement du navigateur',()=>{
  assert.doesNotMatch(fragment,/sendMail\(/);
 });
 
-test('La préparation des logements est séparée du progrès logiciel',()=>{
- assert.match(script,/function renderPropertyReadiness\(\)/);
- assert.match(script,/ready\/props\.length/);
- assert.match(script,/editLease\(this\.dataset\.id\)/);
- assert.match(script,/showPropertyDocuments\(this\.dataset\.property\)/);
+test('La préparation des logements conserve les accès aux baux et documents',()=>{
+ const start=script.indexOf('function renderPropertyReadiness()');
+ const end=script.indexOf('function healthReportState(',start);
+ assert.ok(start>=0&&end>start);
+ const readiness=script.slice(start,end);
+ assert.match(readiness,/ready\/props\.length/);
+ assert.match(readiness,/openPropertyTenant\(this\.dataset\.id\)/);
+ assert.match(readiness,/openPropertyEditor\(this\.dataset\.id\)/);
+ assert.match(readiness,/showPropertyDocuments\(this\.dataset\.property\)/);
 });
 
-test('Diagnostic opérationnel affiché dans la page version finale',()=>{
+test('Diagnostic opérationnel affiché dans la mise en service',()=>{
  assert.match(script,/function renderOperationsHealth\(\)/);
- assert.match(script,/releaseBanner\(\)\+health\+renderOperationsHealth\(\)/);
+ const start=script.indexOf('function renderPilotage()');
+ const end=script.indexOf('window.runAutomaticInstallments=',start);
+ assert.ok(start>=0&&end>start);
+ assert.match(script.slice(start,end),/renderOperationsHealth\(\)/);
  assert.match(script,/window\.runMarneHealth\s*=\s*async/);
 });
 test('Exécution du diagnostic réservée à administrateur',()=>{

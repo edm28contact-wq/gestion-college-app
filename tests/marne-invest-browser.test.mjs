@@ -12,7 +12,7 @@ const installmentId = '00000000-0000-4000-8000-000000000004';
 const paymentId = '00000000-0000-4000-8000-000000000005';
 const mailId = '00000000-0000-4000-8000-000000000006';
 const routes = [
-  ['dashboard', 'Dashboard'], ['pilotage', 'Version finale'], ['properties', 'Mes Biens'],
+  ['dashboard', 'Dashboard'], ['pilotage', 'Mise en service'], ['properties', 'Mes Biens'],
   ['tenants', 'Locataires'], ['contracts', 'Contrats'], ['transactions', 'Transactions'],
   ['emails', 'Relances et e-mails'], ['mail', 'Messagerie Free'], ['works', 'Travaux'],
   ['documents', 'Documents'], ['reports', 'Rapports'], ['config', 'Paramètres'],
@@ -33,7 +33,7 @@ function fixture({ readOnly = false, empty = false } = {}) {
     },
     settings: [{ setting_key: 'sender_email', value: 'fixture@free.fr' }],
     tenants: [{ id: tenantId, property_id: propertyId, row_number: 2, data: {
-      Locataire: 'Locataire Test', 'Nom du logement': 'Logement Test', 'Mail locataire': 'fixture@example.test',
+      Locataire: 'Locataire Test', Logement: 'Logement Test', 'Mail locataire': 'fixture@example.test',
       'Loyer de base': 600, Charge: 50, 'Date entrée locataire': '2026-11-01',
     } }],
     properties: [{ id: propertyId, name: 'Logement Test', is_example: false,
@@ -60,7 +60,7 @@ function fixture({ readOnly = false, empty = false } = {}) {
     bank_imports: [], bank_lines: [], irl_rules: [], irl_proposals: [], irl_indices: [],
     irl_candidates: [], irl_applications: [], health_reports: [{ id: 'health-fixture', checked_at: now,
       trigger_type: 'manual', status: 'ok', critical_count: 0, warning_count: 0, checks: [], metrics: { cron_jobs: 5 } }],
-    tenant_headers: ['Locataire', 'Nom du logement', 'Mail locataire', 'Loyer de base', 'Charge'],
+    tenant_headers: ['Locataire', 'Mail locataire', 'Logement', 'Adresse logement', 'Date entrée locataire', 'Date fin de bail', 'Loyer de base', 'Charge', 'Notes'],
     comments: {}, commands: [], server_time: now,
   };
   if (empty) {
@@ -72,7 +72,7 @@ function fixture({ readOnly = false, empty = false } = {}) {
 }
 
 async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixture(), pageName = 'dashboard',
-  authenticated = true, fallback = false } = {}) {
+  authenticated = true, fallback = false, apiHandler = null, irlResponse = null, confirmDialogs = [] } = {}) {
   const context = await browser.newContext({ viewport, locale: 'fr-FR', timezoneId: 'Europe/Paris', serviceWorkers: 'block' });
   t.after(() => context.close());
   const errors = [], dialogs = [], requests = [], unexpected = [];
@@ -101,6 +101,7 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
       'access-control-allow-headers': 'authorization,content-type',
     } });
     if (url.pathname === '/functions/v1/marne-irl') {
+      if (irlResponse) await irlResponse;
       return json({ ok: true, index: 146, period: 'T3 2026 — fixture', checked_at: data.server_time });
     }
     if (url.pathname === '/functions/v1/rental-admin-api') {
@@ -119,6 +120,18 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
         if (gate) { gate.markReceived(); await gate.response; }
         if (dataFailure) return json({ error: dataFailure.message }, dataFailure.status);
         return json(data);
+      }
+      if (apiHandler) {
+        try {
+          const reply = await apiHandler({ action, request: req, data });
+          if (reply) {
+            if (reply.status >= 400) expectedHttpStatuses.add(reply.status);
+            return json(reply.body, reply.status || 200);
+          }
+        } catch (error) {
+          errors.push('Réponse fictive ' + action + ' : ' + error.message);
+          return json({ error: 'Réponse fictive invalide' }, 500);
+        }
       }
       if (action === 'mail-message' && req.method() === 'GET') {
         const id = url.searchParams.get('id');
@@ -151,7 +164,11 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
     const expectedHttpError = httpStatus && expectedHttpStatuses.has(Number(httpStatus));
     if (!expectedHttpError) errors.push(msg.text());
   });
-  page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+  page.on('dialog', async dialog => {
+    dialogs.push(dialog.message());
+    if (dialog.type() === 'confirm' && confirmDialogs.some(pattern => pattern.test(dialog.message()))) await dialog.accept();
+    else await dialog.dismiss();
+  });
   await page.goto(origin + '/?page=' + pageName, { waitUntil: 'domcontentloaded' });
   if (authenticated || fallback) {
     await page.waitForFunction(() => document.querySelector('#serverTime')?.textContent.includes('Données actualisées'));
@@ -184,6 +201,140 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
 async function visit(page, name) {
   await page.locator('#nav button[data-p="' + name + '"]').click();
   assert.ok((await page.locator('#content').innerText()).trim().length > 0, 'Contenu vide : ' + name);
+}
+
+function setupScenario(data = fixture({ empty: true })) {
+  const apiHandler = async ({ action, request }) => {
+    if (request.method() !== 'POST') return null;
+    const body = request.postDataJSON();
+    if (action === 'save-site-config') {
+      for (const [setting_key, value] of Object.entries(body.settings)) {
+        const existing = data.settings.find(row => row.setting_key === setting_key);
+        if (existing) existing.value = value;
+        else data.settings.push({ setting_key, value });
+      }
+      data.current_user.mail_account = body.settings.sender_email;
+      return { body: { ok: true, updated_fields: Object.keys(body.settings) } };
+    }
+    if (action === 'mail-configure') {
+      data.current_user.mail_configured = true;
+      data.mail_sync_state = { imap_verified_at: null, smtp_verified_at: null };
+      return { body: { ok: true, stored: true, connection_test_required: true } };
+    }
+    if (action === 'new-property') {
+      const property = { id: propertyId, name: body.name, is_example: false,
+        data: { 'Nom du logement': body.name, Adresse: body.address, 'Champ historique': 'À conserver' },
+        current_tenant: {}, tenant_history: [{ Locataire: 'Ancien dossier fictif' }], payment_schedule: [], source_sheet: 'fixture' };
+      const rowNumber = Math.max(1, ...data.tenants.map(item => item.row_number)) + 1;
+      const row = { id: data.tenants.length ? '10000000-0000-4000-8000-' + String(rowNumber).padStart(12, '0') : tenantId,
+        row_number: rowNumber, property_id: propertyId,
+        data: { Logement: body.name, 'Adresse logement': body.address, 'Champ historique': 'À conserver' } };
+      data.properties.push(property); data.tenants.push(row);
+      return { body: { ok: true, property, row } };
+    }
+    if (action === 'save-property') {
+      const property = data.properties.find(row => row.id === body.id);
+      if (!property) return { status: 404, body: { error: 'Bien fictif introuvable' } };
+      property.name = body.name;
+      Object.assign(property.data, body.data, { 'Nom du logement': body.name });
+      return { body: { ok: true, item: property } };
+    }
+    if (action === 'save-tenant') {
+      let row = data.tenants.find(item => item.id === body.id);
+      if (!row) {
+        const rowNumber = Math.max(1, ...data.tenants.map(item => item.row_number)) + 1;
+        row = { id: data.tenants.length ? '10000000-0000-4000-8000-' + String(rowNumber).padStart(12, '0') : tenantId,
+          row_number: rowNumber, property_id: null, data: {} };
+        data.tenants.push(row);
+      }
+      row.property_id = body.property_id || null;
+      Object.assign(row.data, body.data);
+      const property = data.properties.find(item => item.id === row.property_id);
+      if (property) row.data.Logement = property.name;
+      return { body: { ok: true, item: row } };
+    }
+    if (action === 'prepare-lease') {
+      const existing = data.leases.find(row => row.tenant_row_id === body.tenant_row_id && row.status !== 'closed');
+      if (existing) return { body: { ok: true, lease: existing, already_exists: true } };
+      const tenant = data.tenants.find(row => row.id === body.tenant_row_id);
+      if (!tenant?.property_id) return { status: 409, body: { error: 'Locataire fictif sans logement' } };
+      const lease = { id: leaseId, property_id: tenant.property_id, tenant_row_id: tenant.id,
+        tenant_name: tenant.data.Locataire, status: 'draft', verified_at: null,
+        start_date: null, end_date: null, monthly_rent: null, charges_amount: null, due_day: null,
+        lease_kind: 'unverified', issuer_name: null, issuer_address: null, receipt_email_consent: false };
+      data.leases.push(lease);
+      return { body: { ok: true, lease, already_exists: false } };
+    }
+    if (action === 'save-lease') {
+      const lease = data.leases.find(row => row.id === body.id);
+      if (!lease || lease.status !== 'draft') return { status: 409, body: { error: 'Bail fictif non modifiable' } };
+      for (const key of ['start_date', 'end_date', 'lease_kind', 'issuer_name', 'issuer_address', 'receipt_email_consent', 'notes']) {
+        lease[key] = body[key];
+      }
+      for (const key of ['monthly_rent', 'charges_amount', 'due_day']) lease[key] = body[key] === '' ? null : Number(body[key]);
+      let installmentsCreated = 0;
+      if (body.activate) {
+        lease.status = 'active'; lease.verified_at = data.server_time;
+        const currentMonth = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit' }).format(new Date(data.server_time));
+        const [year, month] = currentMonth.split('-').map(Number);
+        const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
+        for (const [index, period] of [currentMonth, nextMonth].entries()) {
+          data.installments.push({ id: index ? '00000000-0000-4000-8000-000000000007' : installmentId,
+            lease_id: lease.id, property_id: lease.property_id, period: period + '-01',
+            due_on: period + '-' + String(lease.due_day).padStart(2, '0'), rent_amount: lease.monthly_rent,
+            charges_amount: lease.charges_amount, total_due: lease.monthly_rent + lease.charges_amount, status: 'scheduled' });
+          installmentsCreated++;
+        }
+      }
+      return { body: { ok: true, lease, installments_created: installmentsCreated, skipped_partial_months: 0, partial_periods: [] } };
+    }
+    if (action === 'generate-installment') {
+      const lease = data.leases.find(row => row.id === body.lease_id);
+      const period = body.period + '-01';
+      const previous = data.installments.find(row => row.lease_id === body.lease_id && row.period === period);
+      if (previous) return { body: { ok: true, installment: previous, already_exists: true } };
+      const installment = { id: installmentId, lease_id: lease.id, property_id: lease.property_id,
+        period, due_on: body.period + '-' + String(lease.due_day).padStart(2, '0'),
+        rent_amount: lease.monthly_rent, charges_amount: lease.charges_amount,
+        total_due: lease.monthly_rent + lease.charges_amount, status: 'scheduled' };
+      data.installments.push(installment);
+      return { body: { ok: true, installment, already_exists: false } };
+    }
+    if (action === 'close-lease') {
+      const lease = data.leases.find(row => row.id === body.id);
+      if (!lease || lease.status !== 'active') return { status: 409, body: { error: 'Bail fictif non actif' } };
+      if (!body.confirmed || !body.final_month_confirmed) return { status: 400, body: { error: 'Confirmation fictive manquante' } };
+      lease.status = 'closed'; lease.end_date = body.end_date;
+      return { body: { ok: true, lease, already_closed: false, cancelled_installments: 0,
+        cancelled_reminders: 0, cancelled_irl_applications: 0, partial_final_month: true } };
+    }
+    if (action === 'save-partial-installment') {
+      const lease = data.leases.find(row => row.id === body.lease_id);
+      const period = body.period + '-01';
+      let item = data.installments.find(row => row.lease_id === body.lease_id && row.period === period);
+      const created = !item, rent = Number(body.rent_amount), charges = Number(body.charges_amount);
+      const updated = !!item && (item.rent_amount !== rent || item.charges_amount !== charges);
+      if (!item) {
+        item = { id: installmentId, lease_id: lease.id, property_id: lease.property_id, period,
+          due_on: body.period === lease.start_date.slice(0, 7) ? lease.start_date : period, status: 'scheduled' };
+        data.installments.push(item);
+      }
+      Object.assign(item, { rent_amount: rent, charges_amount: charges, total_due: rent + charges });
+      return { body: { ok: true, item, created, updated } };
+    }
+    return null;
+  };
+  return { data, apiHandler };
+}
+
+function writtenActions(app) {
+  return app.requests.filter(request => request.method === 'POST').map(request => request.action);
+}
+
+function assertSetupRequests(app) {
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+  assert.equal(app.requests.some(request => ['mail-send', 'mail-sync', 'mail-test', 'record-payment'].includes(request.action)), false);
 }
 
 for (const [label, viewport] of [
@@ -285,7 +436,7 @@ test('Navigateur : les tests IMAP et SMTP réussis sont affichés sans demander 
   const app = await openApp(t, { data, pageName: 'config' });
   assert.equal(await app.page.getByText('IMAP et SMTP vérifiés', { exact: true }).count(), 1);
   await visit(app.page, 'pilotage');
-  assert.match(await app.page.locator('#content').innerText(), /IMAP vérifié ; SMTP vérifié/);
+  assert.match(await app.page.locator('#content').innerText(), /Réception IMAP : vérifiée · Envoi SMTP : vérifié/);
   await visit(app.page, 'mail');
   assert.match(await app.page.locator('.mail-banner').innerText(), /IMAP : Vérifié · SMTP : Vérifié/);
   assert.ok(app.requests.every(req => req.method === 'GET'));
@@ -310,11 +461,12 @@ test('Navigateur : un diagnostic absent ou périmé ne confirme jamais le succè
   assert.deepEqual(app.unexpected, []);
 });
 
-test('Navigateur : un logement prêt exige le locataire exact du bail et des dates en cours', async t => {
+test('Navigateur : un logement prêt exige le locataire exact, les coordonnées et les conditions du bail en cours', async t => {
   const data = fixture();
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const day = offset => new Date(Date.parse(today + 'T12:00:00Z') + offset * 86400000).toISOString().slice(0, 10);
   data.leases[0].start_date = day(-30);
+  const completeLease = { ...data.leases[0] };
   const app = await openApp(t, { data, pageName: 'pilotage' });
   const panel = app.page.locator('section.release-block').filter({ hasText: 'Préparation des 1 logements' });
   assert.match(await panel.locator('.section-head strong').innerText(), /1\s*\/\s*1 prêts \(100 %\)/);
@@ -322,12 +474,21 @@ test('Navigateur : un logement prêt exige le locataire exact du bail et des dat
     { tenant_row_id: 'another-tenant', start_date: day(-30), end_date: null },
     { tenant_row_id: tenantId, start_date: day(1), end_date: null },
     { tenant_row_id: tenantId, start_date: day(-30), end_date: day(-1) },
+    { issuer_name: '' },
+    { issuer_address: '' },
+    { lease_kind: 'unverified' },
+    { monthly_rent: -1 },
   ]) {
-    Object.assign(data.leases[0], lease);
+    Object.assign(data.leases[0], completeLease, lease);
     await app.page.evaluate(() => window.refresh());
     assert.match(await panel.locator('.section-head strong').innerText(), /0\s*\/\s*1 prêts \(0 %\)/);
     assert.equal(await panel.getByRole('progressbar').getAttribute('aria-valuenow'), '0');
   }
+  Object.assign(data.leases[0], completeLease);
+  data.properties[0].data.Adresse = '';
+  await app.page.evaluate(() => window.refresh());
+  assert.match(await panel.locator('.section-head strong').innerText(), /0\s*\/\s*1 prêts \(0 %\)/);
+  assert.match(await panel.innerText(), /adresse du bien/);
   assert.deepEqual(app.errors, []);
   assert.deepEqual(app.unexpected, []);
 });
@@ -640,4 +801,444 @@ test('Navigateur : les en-têtes seuls et le texte tronqué sont signalés dans 
   assert.deepEqual(app.errors, []);
   assert.deepEqual(app.unexpected, []);
   assert.ok(app.requests.every(req => req.method === 'GET'));
+});
+
+test('Navigateur : paramètres, bien et locataire permettent de préparer puis activer une location fictive', { timeout: 60000 }, async t => {
+  const scenario = setupScenario();
+  const app = await openApp(t, { ...scenario, pageName: 'pilotage', confirmDialogs: [/bail signé/, /Créer une échéance/] });
+  for (const name of ['1. Paramètres communs', '2. Fiches biens', '3. Fiches locataires et baux']) {
+    assert.equal(await app.page.getByRole('heading', { name, exact: true }).count(), 1);
+  }
+  await app.page.getByRole('button', { name: 'Ouvrir Paramètres', exact: true }).click();
+  const settings = { landlord_name: 'Bailleur fictif', landlord_address: '1 rue fictive, 75001 Paris',
+    owner_email: 'bailleur@example.test', sender_email: 'fixture@free.fr', bank_account_label: 'Compte fictif de gestion' };
+  for (const [key, value] of Object.entries(settings)) await app.page.locator('#central-' + key).fill(value);
+  await app.page.locator('#central-mail-password').fill('secret-entierement-fictif');
+  await app.page.locator('#central-config-save').click();
+  await app.page.locator('#central-config-status').filter({ hasText: /Paramètres enregistrés/ }).waitFor();
+  assert.equal(await app.page.locator('#central-mail-password').inputValue(), '');
+  assert.deepEqual(writtenActions(app), ['save-site-config', 'mail-configure']);
+  const config = JSON.parse(app.requests.find(request => request.action === 'save-site-config').body);
+  assert.deepEqual(config, { settings });
+  assert.equal(JSON.stringify(scenario.data.settings).includes('secret-entierement-fictif'), false);
+
+  await visit(app.page, 'properties');
+  await app.page.getByRole('button', { name: /Ajouter un logement/ }).click();
+  await app.page.locator('#npName').fill('Appartement de recette');
+  await app.page.locator('#npAddress').fill('2 rue provisoire');
+  await app.page.getByRole('button', { name: 'Créer le logement et sa ligne', exact: true }).click();
+  await app.page.locator('.property-card').filter({ hasText: 'Appartement de recette' }).waitFor();
+  assert.equal(scenario.data.properties.length, 1);
+  assert.equal(scenario.data.tenants.length, 1);
+  assert.equal(scenario.data.leases.length, 0);
+  await app.page.getByRole('button', { name: 'Ouvrir le bien', exact: true }).click();
+  await app.page.locator('#modal [onclick*="openPropertyEditor"]').click();
+  await app.page.locator('#property-address').fill('2 rue fictive');
+  await app.page.locator('#property-city').fill('Paris');
+  await app.page.locator('#property-postcode').fill('75002');
+  await app.page.locator('#property-type').fill('Studio');
+  await app.page.locator('#property-notes').fill('Dossier de test uniquement');
+  await app.page.locator('#property-save').click();
+  await app.page.locator('#property-save').waitFor({ state: 'detached' });
+  assert.equal(scenario.data.properties[0].data.Adresse, '2 rue fictive');
+  assert.equal(scenario.data.properties[0].data['Champ historique'], 'À conserver');
+  assert.deepEqual(scenario.data.properties[0].tenant_history, [{ Locataire: 'Ancien dossier fictif' }]);
+  const propertyWrite = JSON.parse(app.requests.find(request => request.action === 'save-property').body);
+  assert.equal(propertyWrite.id, propertyId);
+  assert.equal('tenant_history' in propertyWrite, false);
+  assert.equal('payment_schedule' in propertyWrite, false);
+
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'tenants');
+  await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  assert.equal(await app.page.locator('#tenant-property').inputValue(), propertyId);
+  assert.equal(await app.page.locator('#lease-day').inputValue(), '');
+  assert.equal(await app.page.locator('#lease-kind').inputValue(), 'unverified');
+  assert.equal(await app.page.locator('#lease-issuer-name').inputValue(), settings.landlord_name);
+  assert.equal(await app.page.locator('#lease-issuer-address').inputValue(), settings.landlord_address);
+  assert.equal(await app.page.locator('#lease-email-consent').isChecked(), false);
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const month = today.slice(0, 7);
+  await app.page.locator('#tenant-name').fill('Alice Fixture');
+  await app.page.locator('#tenant-email').fill('alice@example.test');
+  await app.page.locator('#tenant-phone').fill('0600000000');
+  await app.page.locator('#tenant-notes').fill('Contacts fictifs');
+  await app.page.locator('#lease-start').fill(month + '-01');
+  await app.page.locator('#lease-rent').fill('650');
+  await app.page.locator('#lease-charges').fill('0');
+  await app.page.locator('#lease-day').fill('5');
+  await app.page.locator('#lease-kind').selectOption('residential');
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Fiche et brouillon de bail enregistrés/ }).waitFor();
+  assert.equal(scenario.data.leases.length, 1);
+  assert.equal(scenario.data.leases[0].status, 'draft');
+  assert.equal(scenario.data.leases[0].charges_amount, 0);
+  assert.equal(scenario.data.tenants[0].data['Champ historique'], 'À conserver');
+  assert.equal(scenario.data.installments.length, 0);
+  await app.page.locator('#tenant-activate').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /bail activé/ }).waitFor();
+  assert.equal(scenario.data.tenants.length, 1);
+  assert.equal(scenario.data.leases.length, 1);
+  assert.equal(scenario.data.leases[0].status, 'active');
+  assert.equal(scenario.data.leases[0].tenant_row_id, tenantId);
+  assert.equal(scenario.data.leases[0].issuer_address, settings.landlord_address);
+  assert.equal(scenario.data.installments.length, 2);
+  assert.match(await app.page.locator('#modalStatus').innerText(), /2 échéance/);
+  assert.equal(await app.page.locator('#lease-rent').isDisabled(), true);
+  assert.deepEqual(writtenActions(app).filter(action => ['save-tenant', 'prepare-lease', 'save-lease'].includes(action)),
+    ['save-tenant', 'prepare-lease', 'save-lease', 'save-tenant', 'prepare-lease', 'save-lease']);
+
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'pilotage');
+  const readiness = app.page.locator('section.release-block').filter({ hasText: 'Préparation des 1 logements' });
+  assert.match(await readiness.locator('.section-head strong').innerText(), /1\s*\/\s*1 prêts \(100 %\)/);
+  await visit(app.page, 'contracts');
+  await app.page.locator('#content [onclick*="editLease"]').click();
+  await app.page.locator('#installment-month').fill(month);
+  await app.page.getByRole('button', { name: 'Créer une échéance', exact: true }).click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Échéance déjà existante/ }).waitFor();
+  assert.equal(scenario.data.installments.length, 2);
+  assert.equal(scenario.data.installments[0].total_due, 650);
+  assert.deepEqual(scenario.data.payments, []);
+  assert.deepEqual(scenario.data.payment_allocations, []);
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'transactions');
+  await app.page.getByRole('button', { name: '+ Enregistrer un paiement', exact: true }).click();
+  assert.equal(await app.page.locator('#payment-lease').inputValue(), leaseId);
+  assert.equal(await app.page.locator('#payment-installment option[value="' + installmentId + '"]').count(), 1);
+  await app.page.evaluate(() => window.closeModal());
+  await app.page.getByRole('button', { name: 'Importer un relevé CSV', exact: true }).click();
+  assert.equal(await app.page.locator('#bank-account-label').inputValue(), settings.bank_account_label);
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'documents');
+  await app.page.getByRole('button', { name: '+ Déposer un document', exact: true }).click();
+  assert.equal(await app.page.locator('#document-property').inputValue(), propertyId);
+  assert.equal(await app.page.locator('#document-lease option[value="' + leaseId + '"]').count(), 1);
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'works');
+  await app.page.getByRole('button', { name: '+ Signaler une intervention', exact: true }).click();
+  assert.equal(await app.page.locator('#work-property').inputValue(), propertyId);
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'emails');
+  await app.page.getByRole('button', { name: 'Rédiger', exact: true }).click();
+  assert.equal(await app.page.locator('#mailTo').inputValue(), 'alice@example.test');
+  assert.match(await app.page.locator('#modal').innerText(), /fixture@free\.fr/);
+  assert.equal(app.dialogs.filter(message => /bail signé/.test(message)).length, 1);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : un bail incomplet et un contact invalide restent à corriger avant toute écriture', async t => {
+  const data = fixture();
+  Object.assign(data.leases[0], { status: 'draft', verified_at: null, start_date: null, monthly_rent: null,
+    charges_amount: null, due_day: null, lease_kind: 'unverified', issuer_name: '', issuer_address: '' });
+  const app = await openApp(t, { data, pageName: 'tenants' });
+  await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  for (const id of ['lease-start', 'lease-rent', 'lease-charges']) {
+    assert.equal(await app.page.locator('#' + id).inputValue(), '', 'Une valeur historique ne remplit pas un champ effacé dans le bail');
+  }
+  await app.page.locator('#tenant-activate').click();
+  assert.match(await app.page.locator('#modalStatus').innerText(), /À compléter avant activation/);
+  assert.match(await app.page.locator('#modalStatus').innerText(), /loyer|charges|bailleur/);
+  await app.page.locator('#tenant-email').fill('adresse-invalide');
+  await app.page.locator('#tenant-save').click();
+  assert.match(await app.page.locator('#modalStatus').innerText(), /Corrigez.*E-mail/);
+  assert.deepEqual(writtenActions(app), []);
+  assert.equal(data.leases[0].status, 'draft');
+  assertSetupRequests(app);
+});
+
+test('Navigateur : un échec de préparation du bail distingue la fiche enregistrée et permet de reprendre', async t => {
+  const data = fixture();
+  Object.assign(data.leases[0], { status: 'draft', verified_at: null });
+  const scenario = setupScenario(data);
+  const app = await openApp(t, { ...scenario, pageName: 'tenants' });
+  await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  await app.page.locator('#tenant-notes').fill('Coordonnées conservées après incident fictif');
+  const held = app.delayAction('save-lease', { status: 503, body: { error: 'Bail temporairement indisponible dans le test' } });
+  held.release();
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Fiche enregistrée.*bail reste à terminer/ }).waitFor();
+  assert.equal(data.tenants[0].data.Notes, 'Coordonnées conservées après incident fictif');
+  assert.equal(data.leases[0].status, 'draft');
+  assert.equal(await app.page.locator('#tenant-save').isEnabled(), true);
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Fiche et brouillon de bail enregistrés/ }).waitFor();
+  assert.equal(data.tenants.length, 1);
+  assert.equal(data.leases.length, 1);
+  assert.deepEqual(writtenActions(app), ['save-tenant', 'prepare-lease', 'save-lease', 'save-tenant', 'prepare-lease', 'save-lease']);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : reprendre une nouvelle fiche partiellement enregistrée ne crée aucun doublon', async t => {
+  const data = fixture({ empty: true });
+  data.properties = fixture().properties;
+  const scenario = setupScenario(data);
+  const app = await openApp(t, { ...scenario, pageName: 'tenants' });
+  await app.page.getByRole('button', { name: '+ Nouveau locataire', exact: true }).click();
+  await app.page.locator('#tenant-property').selectOption(propertyId);
+  await app.page.locator('#tenant-name').fill('Nouveau dossier fictif');
+  await app.page.locator('#tenant-email').fill('nouveau@example.test');
+  await app.page.locator('#lease-rent').fill('725');
+  await app.page.locator('#lease-charges').fill('0');
+  await app.page.locator('#lease-day').fill('7');
+  await app.page.locator('#lease-notes').fill('Conditions saisies à conserver après la panne');
+  const held = app.delayAction('save-lease', { status: 503, body: { error: 'Panne fictive après création de la fiche' } });
+  held.release();
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Fiche enregistrée.*bail reste à terminer/ }).waitFor();
+  assert.equal(data.tenants.length, 1);
+  assert.equal(data.leases.length, 1);
+  assert.equal(await app.page.locator('#tenant-save').getAttribute('data-id'), tenantId);
+  assert.equal(await app.page.locator('#tenant-activate').getAttribute('data-id'), tenantId);
+  assert.equal(await app.page.locator('#lease-rent').inputValue(), '725');
+  assert.equal(await app.page.locator('#lease-notes').inputValue(), 'Conditions saisies à conserver après la panne');
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Fiche et brouillon de bail enregistrés/ }).waitFor();
+  assert.equal(data.tenants.length, 1);
+  assert.equal(data.leases.length, 1);
+  assert.equal(data.leases[0].monthly_rent, 725);
+  assert.equal(data.leases[0].charges_amount, 0);
+  const saves = app.requests.filter(request => request.action === 'save-tenant').map(request => JSON.parse(request.body));
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].id || '', '');
+  assert.equal(saves[1].id, tenantId);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : le locataire du bail prime sur une ancienne ligne vide ou un dossier ambigu', async t => {
+  const data = fixture();
+  const named = data.tenants[0];
+  const blank = { id: 'blank-fixture', row_number: 1, property_id: propertyId, data: { Logement: 'Logement Test' } };
+  const other = { id: 'other-fixture', row_number: 3, property_id: propertyId, data: { Locataire: 'Autre locataire fictif', Logement: 'Logement Test' } };
+  data.tenants = [blank, other, named];
+  const app = await openApp(t, { data, pageName: 'properties' });
+  const card = app.page.locator('.property-card');
+  assert.match(await card.innerText(), /Locataire Test/);
+  assert.doesNotMatch(await card.innerText(), /Autre locataire fictif|Aucun locataire/);
+  Object.assign(data.leases[0], { status: 'draft', verified_at: null });
+  await app.page.evaluate(() => window.refresh());
+  assert.match(await card.innerText(), /Locataire Test/);
+  data.leases = []; data.tenants = [blank, named];
+  await app.page.evaluate(() => window.refresh());
+  assert.match(await card.innerText(), /Locataire Test/);
+  data.tenants.push(other);
+  await app.page.evaluate(() => window.refresh());
+  assert.doesNotMatch(await card.innerText(), /Locataire Test|Autre locataire fictif/);
+  data.tenants = [blank, named];
+  Object.assign(named.data, { 'Loyer de base': -5, Charge: -8, 'Date entrée locataire': 'pas une date', 'Mail locataire': 'invalide' });
+  await app.page.evaluate(() => window.refresh());
+  assert.match(await card.locator('.mini-tag').innerText(), /1\/5 champs/);
+  assert.deepEqual(writtenActions(app), []);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : une réponse IRL tardive conserve les paramètres et le secret encore saisis', async t => {
+  let release;
+  const irlResponse = new Promise(resolve => { release = resolve; });
+  const app = await openApp(t, { pageName: 'config', irlResponse, viewport: { width: 390, height: 844 } });
+  try {
+    await app.page.locator('#central-landlord_name').fill('Saisie à préserver');
+    await app.page.locator('#central-landlord_address').fill('Adresse non encore enregistrée');
+    await app.page.locator('#central-mail-password').fill('secret-fictif-non-enregistre');
+    release();
+    await app.page.locator('#config-irl-live').filter({ hasText: /Indice INSEE vérifié/ }).waitFor();
+    assert.equal(await app.page.locator('#central-landlord_name').inputValue(), 'Saisie à préserver');
+    assert.equal(await app.page.locator('#central-landlord_address').inputValue(), 'Adresse non encore enregistrée');
+    assert.equal(await app.page.locator('#central-mail-password').inputValue(), 'secret-fictif-non-enregistre');
+    const size = await app.page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
+    assert.ok(size.scroll <= size.width + 1);
+    assert.deepEqual(writtenActions(app), []);
+    assertSetupRequests(app);
+  } finally { release(); }
+});
+
+test('Navigateur : mettre à jour un contact conserve les conditions et les règlements des baux actifs ou clos', async t => {
+  for (const state of ['active', 'closed']) {
+    const data = fixture();
+    data.leases[0].status = state;
+    if (state === 'closed') data.leases[0].end_date = '2026-11-20';
+    const originalLease = structuredClone(data.leases[0]);
+    const originalPayments = structuredClone(data.payments);
+    const scenario = setupScenario(data);
+    const app = await openApp(t, { ...scenario, pageName: 'tenants' });
+    await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+    assert.equal(await app.page.locator('#tenant-property').isDisabled(), true);
+    assert.equal(await app.page.locator('#lease-rent').isDisabled(), true);
+    assert.equal(await app.page.locator('#lease-issuer-name').isDisabled(), true);
+    assert.equal(await app.page.locator('#tenant-activate').count(), 0);
+    await app.page.locator('#tenant-email').fill('nouveau-contact@example.test');
+    await app.page.locator('#tenant-phone').fill('0611111111');
+    await app.page.locator('#tenant-save').click();
+    await app.page.locator('#modalStatus').filter({ hasText: 'Fiche enregistrée.' }).waitFor();
+    assert.equal(await app.page.locator('#tenant-email').inputValue(), 'nouveau-contact@example.test');
+    assert.deepEqual(data.leases[0], originalLease);
+    assert.deepEqual(data.payments, originalPayments);
+    assert.deepEqual(writtenActions(app), ['save-tenant']);
+    assertSetupRequests(app);
+  }
+});
+
+test('Navigateur : clôturer un bail demande le dernier mois vérifié et conserve les règlements antérieurs', async t => {
+  const data = fixture();
+  const before = structuredClone({ installments: data.installments, payments: data.payments, allocations: data.payment_allocations });
+  const scenario = setupScenario(data);
+  const app = await openApp(t, { ...scenario, pageName: 'tenants', confirmDialogs: [/clôtur/i] });
+  await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  await app.page.getByRole('button', { name: 'Clôturer le bail', exact: true }).click();
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  await app.page.locator('#lease-close-date').fill(today);
+  await app.page.locator('#lease-close-save').click();
+  assert.equal(writtenActions(app).includes('close-lease'), false);
+  assert.match(await app.page.locator('#modalStatus').innerText(), /dernier mois|confirm|vérifi/i);
+  await app.page.locator('#lease-close-final-confirm').check();
+  await app.page.locator('#lease-close-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /clôturé/i }).waitFor();
+  const closure = JSON.parse(app.requests.find(request => request.action === 'close-lease').body);
+  assert.deepEqual(closure, { id: leaseId, end_date: today, confirmed: true, final_month_confirmed: true });
+  assert.equal(data.leases[0].status, 'closed');
+  assert.equal(data.leases[0].end_date, today);
+  assert.deepEqual({ installments: data.installments, payments: data.payments, allocations: data.payment_allocations }, before);
+  assert.deepEqual(writtenActions(app), ['close-lease']);
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'transactions');
+  assert.match(await app.page.locator('#content').innerText(), /400,00/);
+  await visit(app.page, 'documents');
+  assert.equal(await app.page.locator('#content [onclick*="openPaymentDocument"]').count(), 1);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : les mois incomplets exigent des montants saisis et une confirmation propre à chaque période', async t => {
+  const data = fixture();
+  Object.assign(data.leases[0], { start_date: '2026-11-15', end_date: '2026-12-12' });
+  data.installments = []; data.payments = []; data.payment_allocations = [];
+  const contract = structuredClone(data.leases[0]);
+  const scenario = setupScenario(data);
+  const app = await openApp(t, { ...scenario, pageName: 'contracts' });
+  await app.page.locator('#content [onclick*="editLease"]').click();
+  await app.page.getByRole('button', { name: 'Renseigner un premier / dernier mois incomplet', exact: true }).click();
+  assert.deepEqual(await app.page.locator('#partial-period option').evaluateAll(options => options.map(option => option.value)), ['2026-11', '2026-12']);
+  assert.equal(await app.page.locator('#partial-rent').inputValue(), '');
+  assert.equal(await app.page.locator('#partial-charges').inputValue(), '');
+  assert.equal(await app.page.locator('#partial-confirmed').isChecked(), false);
+  await app.page.locator('#partial-save').click();
+  assert.match(await app.page.locator('#modalStatus').innerText(), /Renseignez les deux montants/);
+  await app.page.locator('#partial-rent').fill('275.35');
+  await app.page.locator('#partial-charges').fill('0');
+  await app.page.locator('#partial-save').click();
+  assert.match(await app.page.locator('#modalStatus').innerText(), /Confirmez les montants/);
+  assert.deepEqual(writtenActions(app), []);
+  await app.page.locator('#partial-confirmed').check();
+  await app.page.locator('#partial-period').selectOption('2026-12');
+  assert.equal(await app.page.locator('#partial-confirmed').isChecked(), false);
+  assert.equal(await app.page.locator('#partial-rent').inputValue(), '');
+  assert.equal(await app.page.locator('#partial-charges').inputValue(), '');
+  await app.page.locator('#partial-period').selectOption('2026-11');
+  await app.page.locator('#partial-rent').fill('275.35');
+  await app.page.locator('#partial-charges').fill('0');
+  await app.page.locator('#partial-confirmed').check();
+  await app.page.locator('#partial-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Échéance du mois incomplet créée/ }).waitFor();
+  assert.equal(data.installments.length, 1);
+  assert.equal(data.installments[0].rent_amount, 275.35);
+  assert.equal(data.installments[0].charges_amount, 0);
+  assert.equal(data.installments[0].total_due, 275.35);
+  assert.deepEqual(data.leases[0], contract);
+  assert.deepEqual(data.payments, []);
+  const body = JSON.parse(app.requests.find(request => request.action === 'save-partial-installment').body);
+  assert.deepEqual(body, { lease_id: leaseId, period: '2026-11', rent_amount: '275.35', charges_amount: '0', confirmed: true });
+  await app.page.getByRole('button', { name: 'Renseigner un premier / dernier mois incomplet', exact: true }).click();
+  assert.equal(await app.page.locator('#partial-rent').inputValue(), '275.35');
+  assert.equal(await app.page.locator('#partial-confirmed').isChecked(), false);
+  await app.page.locator('#partial-confirmed').check();
+  await app.page.locator('#partial-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Montants déjà enregistrés, aucun doublon/ }).waitFor();
+  assert.equal(data.installments.length, 1);
+  assert.deepEqual(writtenActions(app), ['save-partial-installment', 'save-partial-installment']);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : les coordonnées du bailleur peuvent être enregistrées sans configurer une messagerie', async t => {
+  const scenario = setupScenario();
+  const app = await openApp(t, { ...scenario, pageName: 'config' });
+  await app.page.locator('#central-landlord_name').fill('Bailleur sans messagerie');
+  await app.page.locator('#central-landlord_address').fill('Adresse fictive du bailleur');
+  assert.equal(await app.page.locator('#central-sender_email').inputValue(), '');
+  await app.page.locator('#central-mail-password').fill('secret-fictif-sans-compte');
+  await app.page.locator('#central-config-save').click();
+  assert.match(await app.page.locator('#central-config-status').innerText(), /adresse Free/);
+  assert.deepEqual(writtenActions(app), []);
+  await app.page.locator('#central-mail-password').fill('');
+  await app.page.locator('#central-config-save').click();
+  await app.page.locator('#central-config-status').filter({ hasText: /Paramètres enregistrés/ }).waitFor();
+  assert.equal(await app.page.locator('#central-landlord_name').inputValue(), 'Bailleur sans messagerie');
+  assert.equal(await app.page.locator('#central-landlord_address').inputValue(), 'Adresse fictive du bailleur');
+  assert.equal(await app.page.locator('#central-sender_email').inputValue(), '');
+  assert.equal(scenario.data.current_user.mail_configured, false);
+  assert.deepEqual(writtenActions(app), ['save-site-config']);
+  const body = JSON.parse(app.requests.find(request => request.action === 'save-site-config').body);
+  assert.equal(body.settings.sender_email, '');
+  assert.equal(body.settings.landlord_name, 'Bailleur sans messagerie');
+  assert.equal(JSON.stringify(body).includes('secret-fictif-sans-compte'), false);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : une fiche sans bien conserve toutes les conditions saisies jusqu’à la préparation du bail', { timeout: 60000 }, async t => {
+  const scenario = setupScenario();
+  scenario.data.settings.push({ setting_key: 'landlord_name', value: 'Bailleur général' },
+    { setting_key: 'landlord_address', value: 'Adresse générale' });
+  const app = await openApp(t, { ...scenario, pageName: 'tenants' });
+  await app.page.getByRole('button', { name: '+ Nouveau locataire', exact: true }).click();
+  await app.page.locator('#tenant-name').fill('Nina Fixture');
+  await app.page.locator('#tenant-email').fill('nina@example.test');
+  const inputs = { start: '2026-11-15', end: '2027-08-27', rent: '432.10', charges: '25.50', day: '12',
+    'issuer-name': 'Émetteur propre à ce dossier', 'issuer-address': 'Adresse propre à ce dossier', notes: 'Conditions provisoires conservées' };
+  for (const [id, value] of Object.entries(inputs)) await app.page.locator('#lease-' + id).fill(value);
+  await app.page.locator('#lease-kind').selectOption('parking');
+  await app.page.locator('#lease-email-consent').check();
+  assert.equal(await app.page.locator('#tenant-property').inputValue(), '');
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: 'Fiche enregistrée.' }).waitFor();
+  assert.deepEqual(writtenActions(app), ['save-tenant']);
+  assert.equal(scenario.data.tenants.length, 1);
+  assert.equal(scenario.data.leases.length, 0);
+  await app.page.reload({ waitUntil: 'domcontentloaded' });
+  await app.page.waitForFunction(() => document.querySelector('#serverTime')?.textContent.includes('Données actualisées'));
+  await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  for (const [id, value] of Object.entries(inputs)) {
+    const actual = await app.page.locator('#lease-' + id).inputValue();
+    if (['rent', 'charges'].includes(id)) assert.equal(Number(actual), Number(value));
+    else assert.equal(actual, value);
+  }
+  assert.equal(await app.page.locator('#lease-kind').inputValue(), 'parking');
+  assert.equal(await app.page.locator('#lease-email-consent').isChecked(), true);
+  await app.page.evaluate(() => window.closeModal());
+  await visit(app.page, 'properties');
+  await app.page.getByRole('button', { name: '+ Ajouter un logement', exact: true }).click();
+  await app.page.locator('#npName').fill('Bien ajouté après le dossier');
+  await app.page.locator('#npAddress').fill('Adresse fictive du nouveau bien');
+  await app.page.getByRole('button', { name: 'Créer le logement et sa ligne', exact: true }).click();
+  await app.page.locator('.property-card').filter({ hasText: 'Bien ajouté après le dossier' }).waitFor();
+  await visit(app.page, 'tenants');
+  await app.page.getByRole('row').filter({ hasText: 'Nina Fixture' }).getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  await app.page.locator('#tenant-property').selectOption(propertyId);
+  await app.page.locator('#tenant-save').click();
+  await app.page.locator('#modalStatus').filter({ hasText: /Fiche et brouillon de bail enregistrés/ }).waitFor();
+  const lease = scenario.data.leases[0];
+  assert.equal(scenario.data.leases.length, 1);
+  assert.equal(lease.status, 'draft');
+  assert.equal(lease.tenant_row_id, tenantId);
+  assert.equal(lease.property_id, propertyId);
+  assert.equal(lease.start_date, inputs.start);
+  assert.equal(lease.end_date, inputs.end);
+  assert.equal(lease.monthly_rent, 432.1);
+  assert.equal(lease.charges_amount, 25.5);
+  assert.equal(lease.due_day, 12);
+  assert.equal(lease.lease_kind, 'parking');
+  assert.equal(lease.issuer_name, inputs['issuer-name']);
+  assert.equal(lease.issuer_address, inputs['issuer-address']);
+  assert.equal(lease.receipt_email_consent, true);
+  assert.equal(lease.notes, inputs.notes);
+  assert.deepEqual(scenario.data.installments, []);
+  assert.deepEqual(writtenActions(app), ['save-tenant', 'new-property', 'save-tenant', 'prepare-lease', 'save-lease']);
+  assertSetupRequests(app);
 });
