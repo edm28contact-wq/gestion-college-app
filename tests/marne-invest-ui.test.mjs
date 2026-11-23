@@ -75,3 +75,27 @@ test('Archivage des documents soumis a session',()=>{
  assert.match(script,/action=document-download/);
  assert.match(script,/authorization:'Bearer '\+token/);
 });
+
+test('IRL: lettre projet et notification restent une action humaine',()=>{
+ assert.match(script,/window\.printIrlNotice\s*=\s*id=>/);
+ assert.match(script,/PROJET À VÉRIFIER/);
+ assert.match(script,/window\.showIrlNotification\s*=\s*id=>/);
+ assert.match(script,/irl-notice-confirm/);
+ assert.match(script,/window\.scheduleIrlNotice\s*=\s*async/);
+ assert.match(script,/api\('schedule-irl','POST'/);
+ assert.match(script,/confirmed:true/);
+});
+test('IRL: les baux programmé et appliqué sont distingués',()=>{
+ assert.match(script,/application\.effective_on/);
+ assert.match(script,/proposal\.status==='scheduled'/);
+ assert.match(script,/proposal\.status==='applied'/);
+});
+test('Les courriers IRL ne partent pas directement du navigateur',()=>{
+ const start=script.indexOf('window.printIrlNotice=id=>');
+ const end=script.indexOf('window.showIrlNotification=id=>',start);
+ const fragment=script.slice(start,end);
+ assert.ok(start>=0&&end>start);
+ assert.doesNotMatch(fragment,/fetch\(/);
+ assert.doesNotMatch(fragment,/api\('mail-send'/);
+ assert.doesNotMatch(fragment,/sendMail\(/);
+});
