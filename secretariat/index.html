@@ -46,7 +46,7 @@ function secretaryCanSee(section){
  if(a.role==='admin')return true;
  const p=a.permissions||{};
  if(section==='settings'||section==='password')return false;
- if(section==='stocks')return true;
+ if(section==='stocks')return p.secretariat===true||p['secretariat.read']===true||p['products.read']===true||p['stock.read']===true;
  if(section==='orders')return p.secretariat===true||p['secretariat.read']===true||p['secretariat.orders.write']===true;
  if(section==='invoices')return p.secretariat===true||p['secretariat.read']===true||p['secretariat.invoices.write']===true;
  if(section==='planning')return p.secretariat===true||p['secretariat.read']===true||p['personnel.planning.read']===true||p['personnel.planning.write']===true;
