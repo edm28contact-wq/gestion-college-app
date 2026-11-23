@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#20374f">
+<title>Mes espaces · Gestion Collège</title>
+<style>
+:root{font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#192c3c;background:#f1f5f9}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh}
+main{max-width:1100px;margin:auto;padding:clamp(16px,4vw,40px)}
+header{background:#20374f;color:#fff;padding:24px;border-radius:18px;margin-bottom:24px;box-shadow:0 12px 36px #14273a18}
+header h1{font-size:clamp(24px,4vw,36px);line-height:1.1;margin:4px 0 10px}
+header p{color:#d7e5f1;margin:0}
+.eyebrow{font-size:12px;font-weight:750;letter-spacing:.09em;text-transform:uppercase;color:#b6d3ed}
+section{background:#fff;border:1px solid #d8e1eb;border-radius:14px;padding:18px;margin:14px 0}
+section h2{font-size:19px;margin:0 0 10px}
+.row{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap}
+button,select{font:inherit;padding:10px 13px;border:1px solid #b7c8d8;border-radius:10px;background:#fff;color:#20374f}
+button{cursor:pointer;font-weight:650}
+button:hover{background:#eff6fc}
+.status{color:#536a7d;font-size:14px;min-height:1.6em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.space{display:flex;flex-direction:column;gap:7px;text-decoration:none;border:1px solid #c9d9e7;border-radius:12px;padding:17px;background:#f9fcff;color:#1d374d;min-height:120px}
+.space:hover{border-color:#5e97bd;background:#edf7ff;transform:translateY(-1px)}
+.space strong{font-size:17px}
+.space small{font-size:13px;color:#50677b;line-height:1.45}
+.hint{font-size:13px;color:#5c6c7c;margin:10px 0 0}
+label{font-size:14px;font-weight:650}
+select{max-width:100%}
+button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid #4d93c3;outline-offset:3px}
+[hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){.space:hover{transform:none}}
+</style>
+<script>
+if(new URLSearchParams(location.search).has("id")){
+ const destination=new URL("../college/",location.href);
+ destination.search=location.search;destination.hash=location.hash;
+ location.replace(destination.href);
+}
+</script>
+</head>
+<body>
+<main>
+<header><div class="eyebrow">Cours Chambertin · Gestion Collège</div><h1>Mes espaces de travail</h1><p>Accédez uniquement aux modules autorisés pour votre compte.</p></header>
+<section aria-labelledby="sessionTitle">
+<div class="row"><h2 id="sessionTitle">Session et autorisations</h2><button id="reload" type="button">Actualiser mes accès</button></div>
+<div id="status" role="status" aria-live="polite" class="status">Vérification des sessions disponibles…</div>
+<div class="row" id="accountRow" hidden><label for="account">Compte utilisé pour l'affichage</label><select id="account"></select></div>
+<p id="rightsHint" class="hint" hidden>Une modification de pouvoir peut nécessiter une reconnexion pour obtenir une nouvelle session.</p>
+</section>
+<section id="spacesSection" aria-labelledby="spaceTitle" hidden><h2 id="spaceTitle">Espaces autorisés</h2><div id="spaces" class="grid"></div></section>
+<section id="loginSection" aria-labelledby="loginTitle"><h2 id="loginTitle">Se connecter à un espace</h2><p class="hint">Ces liens permettent de s'authentifier. Ils n'accordent aucun droit sans autorisation du compte.</p>
+<div class="grid" id="loginLinks">
+<a class="space" href="../secretariat/"><strong>Secrétariat</strong><small>Stocks, commandes, factures ou planning selon les pouvoirs</small></a>
+<a class="space" href="../secretariat/planning/"><strong>Planning</strong><small>Événements, absences et retards</small></a>
+<a class="space" href="../college/admin/"><strong>Administration Collège</strong><small>Personnel, stocks et pilotage</small></a>
+<a class="space" href="../comptabilite/"><strong>Comptabilité</strong><small>Factures et écritures</small></a>
+<a class="space" href="../cuisine/"><strong>Cuisine</strong><small>Relevés et contrôles HACCP</small></a>
+<a class="space" href="../admin/marne-invest/"><strong>Marne Invest</strong><small>Gestion des biens et locataires</small></a>
+<a class="space" href="../admin/holding/"><strong>Holding</strong><small>Administration centrale</small></a>
+</div></section>
+<noscript><section>Activez JavaScript pour charger les espaces autorisés.</section></noscript>
+</main>
+<script>
+(()=>{
+"use strict";
+const endpoint="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/college-access-context";
+const $=id=>document.getElementById(id);
+const home=new URL("../",location.href);
+const candidates=[
+ ["college_secretariat_token","Secrétariat"],
+ ["college_admin_token","Administration Collège"],
+ ["college_accounting_token","Comptabilité"],
+ ["kitchen_token","Cuisine"],
+ ["marne_invest_admin_token","Marne Invest"],
+ ["edm_admin_token","Administration centrale"],
+ ["holding_admin_token","Holding"]
+];
+const spaces=[
+ ["planning","Planning","Événements, absences et suivi du personnel","secretariat/planning/"],
+ ["secretariat","Secrétariat","Stocks, commandes et factures selon les droits","secretariat/"],
+ ["college","Administration Collège","Pilotage des produits, applications et salariés","college/admin/"],
+ ["accounting","Comptabilité","Traitement et validation comptable","comptabilite/"],
+ ["cuisine","Cuisine","Relevés HACCP et équipements","cuisine/"],
+ ["veryfi","Lecteur de factures","Lecture et vérification des factures","lecteur-veryfi/"],
+ ["marne","Marne Invest","Biens, locataires, travaux et loyers","admin/marne-invest/"],
+ ["holding","Holding","Gestion des utilisateurs et pouvoirs","admin/holding/"]
+];
+let accounts=[],requestId=0;
+function token(key){try{return key==="kitchen_token"?sessionStorage.getItem(key):localStorage.getItem(key)}catch{return null}}
+function renderAccount(index){
+ const selected=accounts[index];
+ $("spaces").replaceChildren();
+ if(!selected){$("spacesSection").hidden=true;$("loginSection").hidden=false;$("rightsHint").hidden=true;return}
+ const context=selected.access;
+ for(const [id,title,description,route] of spaces){
+  if(context.sites?.[id]!==true)continue;
+  const link=document.createElement("a");
+  link.className="space";link.href=new URL(route,home).href;
+  if(id==="veryfi")link.search="?origine="+(context.sites?.accounting&&!context.sites?.secretariat?"comptabilite":"secretariat");
+  const heading=document.createElement("strong");heading.textContent=title;
+  const detail=document.createElement("small");detail.textContent=description;
+  link.append(heading,detail);$("spaces").append(link);
+ }
+ $("spacesSection").hidden=!$("spaces").children.length;
+ $("loginSection").hidden=!!$("spaces").children.length;
+ $("rightsHint").hidden=false;
+ $("status").textContent="Compte : "+(context.display_name||context.username)+(context.read_only?" · Lecture seule":"")+" · "+$("spaces").children.length+" espace(s) autorisé(s).";
+}
+async function load(){
+ const id=++requestId;
+ $("reload").disabled=true;
+ $("status").textContent="Vérification des accès en cours…";
+ const seen=new Set(),all=[];
+ for(const [key,label] of candidates){
+  const value=token(key);
+  if(typeof value==="string"&&value.includes(".")&&!seen.has(value)){seen.add(value);all.push({value,label})}
+ }
+ try{
+  const entries=await Promise.all(all.map(async item=>{
+   try{
+    const response=await fetch(endpoint,{method:"GET",headers:{"x-admin-session":item.value},cache:"no-store",signal:AbortSignal.timeout(8500)});
+    if(!response.ok)return null;
+    const data=await response.json();
+    return data?.ok?{access:data,label:item.label}:null;
+   }catch{return null}
+  }));
+  if(id!==requestId)return;
+  accounts=entries.filter(Boolean);
+  $("account").replaceChildren();
+  accounts.forEach((item,i)=>{
+   const option=document.createElement("option");option.value=String(i);
+   option.textContent=(item.access.display_name||item.access.username)+" — "+item.label;
+   $("account").append(option);
+  });
+  $("accountRow").hidden=accounts.length<=1;
+  if(accounts.length){renderAccount(0)}
+  else{
+   renderAccount(-1);
+   $("status").textContent="Aucune session valide détectée. Connectez-vous à l'espace de votre choix.";
+  }
+ }finally{if(id===requestId)$("reload").disabled=false}
+}
+$("account").addEventListener("change",()=>renderAccount(Number($("account").value)));
+$("reload").addEventListener("click",load);
+window.addEventListener("focus",load);
+window.addEventListener("storage",load);
+load();
+})();
+</script>
+</body>
+</html>
