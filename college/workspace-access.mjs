@@ -27,6 +27,7 @@ function allowedLink(href,context,base){
   if(page==="products")return !!p.college_products;
   return !!p.college;
  }
+ if(route==="portail/")return !!context;
  if(route==="secretariat/")return !!p.secretariat;
  if(route==="comptabilite/")return !!p.accounting;
  if(route==="secretariat/planning/")return !!p.planning;
