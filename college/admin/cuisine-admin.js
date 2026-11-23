@@ -85,7 +85,8 @@
  '<div><label>Rappel (minutes)</label><input name="reminder_minutes" type="number" min="1" max="60" required value="'+e(s.defaults?.reminder_minutes??55)+'"></div>'+
  '<div><button class="btn primary" type="submit">Enregistrer les valeurs par défaut</button></div></form></div>'+
  '<div class="card"><h2>Thermomètres connectés</h2><p class="muted">Govee : connexion via l’API officielle (capteurs Wi-Fi compatibles uniquement). Les sondes Testo 104-IR / 104-IR BT sont référencées pour une intégration ultérieure. Les relevés manuels restent disponibles.</p>'+
- '<div class="grid"><form id="kitchenGoveeKey"><h3>1. Compte Govee</h3><p class="muted">Clé conservée chiffrée côté Supabase Vault, jamais affichée après l’enregistrement.</p><label>Clé API Govee</label><input type="password" name="api_key" required minlength="10" maxlength="240" autocomplete="new-password" placeholder="Coller votre clé Govee Home"><button class="btn primary" type="submit">Tester et enregistrer la clé</button><p class="muted">'+(s.account?.govee_key_configured?'Clé enregistrée — vous pouvez rechercher les capteurs.':'Aucune clé configurée.')+'</p></form>'+
+ '<div class="card" style="background:#f0f6f4;border:2px solid #8fbeb3"><h3 style="font-size:19px">Connexion Govee — une seule clé pour tous vos thermomètres</h3><p class="muted">Saisissez la clé API de votre compte Govee Home ici, une seule fois. Elle est conservée chiffrée et n’est jamais montrée dans le navigateur après l’enregistrement.</p><form id="kitchenGoveeKey"><label for="kitchenGoveeApiKey">Votre unique clé API Govee</label><div class="grid"><div><input id="kitchenGoveeApiKey" type="password" name="api_key" required minlength="10" maxlength="240" autocomplete="new-password" placeholder="Collez votre clé API Govee ici"></div><div><button class="btn primary" type="submit" id="kitchenGoveeSaveAndTest">Enregistrer la clé et tester mes appareils</button></div></div></form><p id="kitchenGoveeKeyStatus" role="status" style="font-weight:700">'+(s.account?.govee_key_configured?'Clé enregistrée · prête pour le test des appareils.':'Aucune clé enregistrée · connexion non activée.')+'</p><div class="actions"><button type="button" id="kitchenGoveeQuickTest" class="btn secondary" '+(s.account?.govee_key_configured?'':'disabled')+'>Tester la connexion et récupérer les données</button></div><div id="kitchenGoveeTestResult" aria-live="polite"></div></div>'+
+ '<div class="grid"><div><h3>Appareils de votre compte</h3><p class="muted">Le test vérifie l’accès à Govee, détecte les H5179 / H5192 disponibles et tente de lire les mesures sans les enregistrer dans l’historique HACCP.</p></div>'+
  '<div><h3>2. Rechercher les capteurs</h3><p class="muted">L’API Govee affiche les capteurs compatibles avec votre compte. Un thermomètre Bluetooth seul peut ne pas être détecté.</p><button id="kitchenGoveeDiscover" class="btn secondary" type="button">Rechercher mes capteurs Govee</button><div id="kitchenGoveeDiscovered" class="muted" aria-live="polite">Associez un capteur par chambre froide.</div></div></div>'+
  '<h3>Capteurs associés aux chambres froides</h3>'+
  ((s.connected||[]).filter(d=>d.kind==="cold_room").length?(s.connected||[]).filter(d=>d.kind==="cold_room").map(d=>'<div class="data-row"><div><strong>'+e(d.label)+'</strong><div class="muted">Modèle : '+e(d.model)+' · Référence : '+e(d.device_identifier)+'</div><div class="muted">État : '+e(d.status)+' · Dernière synchronisation : '+when(d.last_checked_at)+(d.last_temperature_c==null?'':' · '+t(d.last_temperature_c)+' °C')+(d.last_error?' · '+e(d.last_error):'')+'</div></div><form class="grid" data-govee-room="'+attr(d,"id")+'"><div><label>Chambre froide associée à ce capteur</label><select required name="room_id">'+s.rooms.filter(r=>!r.archived_at&&!r.deleted_at).filter(r=>r.id===d.room_id||!(s.connected||[]).some(other=>other.kind==="cold_room"&&other.id!==d.id&&other.room_id===r.id)).map(r=>'<option value="'+attr(r,"id")+'" '+(r.id===d.room_id?"selected":"")+'>'+e(r.label)+'</option>').join("")+'</select></div><div><button class="btn primary" type="submit">Enregistrer l’affectation</button></div></form><button class="btn secondary" data-govee-sync="'+attr(d,"id")+'" type="button">Lire la température</button></div>').join(""):'<p class="muted">Aucun capteur associé. Recherchez les capteurs pour affecter un appareil à chaque chambre.</p>')+
@@ -189,8 +190,46 @@
  if(form.matches("[data-dish-edit]"))action("update-dish-type",{id:form.dataset.dishEdit,label:values.label});
  if(form.id==="kitchenSaveDefaults")action("save-defaults",{default_cold_room_id:values.default_cold_room_id,default_oven_id:values.default_oven_id,default_dish_type_id:values.default_dish_type_id,target_start_c:Number(values.target_start_c),target_end_c:Number(values.target_end_c),reminder_minutes:Number(values.reminder_minutes)});
  if(form.id==="kitchenAddTask")action("add-task",{label:values.label,assigned_to:values.assigned_to||null});
- if(form.id==="kitchenGoveeKey")action("govee-save-key",{api_key:String(values.api_key||"")});
+ if(form.id==="kitchenGoveeKey"){saveGoveeKeyAndTest(String(values.api_key||""));return;}
  if(form.id==="kitchenProbeRegister")action("probe-register",{label:values.label,model:values.model});
+ });
+
+ function showGoveeTestResult(result){
+  const dest=node("kitchenGoveeTestResult");if(!dest)return;
+  const devices=Array.isArray(result.devices)?result.devices:[];
+  const received=devices.filter(d=>d.raw_temperature!==null&&d.status==="donnees_recues").length;
+  dest.innerHTML='<div class="card"><h3>Résultat du test Govee</h3><p class="muted">Clé acceptée · '+result.account_devices+' appareil(s) sur le compte · '+result.matching_devices+' appareil(s) sélectionné(s) pour le test · '+received+' mesure(s) disponibles.</p>'+
+   (devices.length?devices.map(d=>'<div class="data-row"><div><strong>'+e(d.label)+' · '+e(d.sku)+'</strong><div class="muted">'+e(d.status==='donnees_recues'?"Température reçue":d.status==="non_expose"?"Non exposé par cette API":d.status==="hors_ligne"?"Hors ligne":d.status==="sans_mesure"?"Aucune mesure disponible":d.status==="statut_non_confirme"?"Mesure disponible, état du capteur inconnu":"Erreur API")+'</div>'+(d.error?'<div class="muted">'+e(d.error)+'</div>':'')+'</div><div>'+ (d.raw_temperature===null?'<strong>—</strong>':'<strong>Valeur brute : '+t(d.raw_temperature)+'</strong>')+'</div></div>').join(""):'<p>Aucun modèle H5179/H5192 accessible dans la réponse Govee. Cela ne signifie pas que vos appareils ne fonctionnent pas dans Govee Home.</p>')+
+   '<p class="muted">Les valeurs affichées sont brutes, sans unité certifiée. Aucun relevé HACCP n’est enregistré par ce test. Le H5192 peut ne pas être exposé par l’API.</p></div>';
+ }
+ async function testGoveeConnection(){
+  const button=node("kitchenGoveeQuickTest"),status=node("kitchenGoveeKeyStatus");
+  if(button)button.disabled=true;
+  if(status)status.textContent="Test en cours : recherche des appareils et lecture des températures…";
+  try{
+   const result=await api("govee-test");
+   showGoveeTestResult(result);
+   if(status)status.textContent="Clé valide. Test terminé : "+result.checked_devices+" appareil(s) analysé(s).";
+  }catch(error){
+   if(status)status.textContent="Échec du test : "+error.message;
+   const box=node("kitchenGoveeTestResult");if(box)box.textContent="Aucune donnée Govee confirmée pour le moment.";
+  }finally{if(button)button.disabled=false}
+ }
+ async function saveGoveeKeyAndTest(key){
+  const button=node("kitchenGoveeSaveAndTest"),status=node("kitchenGoveeKeyStatus");
+  if(button)button.disabled=true;
+  if(status)status.textContent="Validation de la clé API Govee en cours…";
+  try{
+   await api("govee-save-key","POST",{api_key:key});
+   const field=node("kitchenGoveeApiKey");if(field)field.value="";
+   if(status)status.textContent="Clé enregistrée et vérifiée. Lecture des capteurs…";
+   await testGoveeConnection();
+  }catch(error){
+   if(status)status.textContent="Impossible d’enregistrer ou de vérifier la clé : "+error.message;
+  }finally{if(button)button.disabled=false}
+ }
+ document.addEventListener("click",evt=>{
+  if(evt.target.closest?.("#kitchenGoveeQuickTest"))testGoveeConnection();
  });
  document.addEventListener("click",async evt=>{
  const discover=evt.target.closest?.("#kitchenGoveeDiscover");
