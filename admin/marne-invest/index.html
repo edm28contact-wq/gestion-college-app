@@ -102,6 +102,16 @@
 .health-item p{margin:5px 0 0}
 @media(max-width:1000px){.shell{grid-template-columns:minmax(0,1fr)}.side{min-width:0}.nav{max-width:100%}}
 @media(max-width:620px){.main{padding:0 12px 20px}.top{margin:0 -12px 16px;padding:14px 12px}.top .actions{width:100%}.kv{grid-template-columns:minmax(0,1fr)}.health-item>div,.release-entry>div{min-width:0;overflow-wrap:anywhere}}
+
+.property-edit-section{border:1px solid #dce5ef;border-radius:10px;padding:14px;margin:13px 0;background:#fbfdff}
+.property-edit-section summary{font-weight:750;cursor:pointer;padding:3px 0}
+.property-edit-section .fields{margin:14px 0 4px}
+.property-charge-list,.property-custom-list{display:grid;gap:8px;margin:12px 0}
+.property-charge-row{display:grid;grid-template-columns:minmax(155px,2fr) minmax(95px,1fr) minmax(125px,1.2fr) minmax(160px,1.4fr) auto;gap:7px;align-items:center}
+.property-custom-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(180px,2fr) auto;gap:8px}
+.property-edit-actions{position:sticky;bottom:-18px;background:white;padding:14px 0;border-top:1px solid #e2e8f0;z-index:4}
+@media(max-width:850px){.property-charge-row{grid-template-columns:repeat(2,minmax(0,1fr))}.property-charge-row>:first-child,.property-charge-row>:last-child{grid-column:1/-1}}
+@media(max-width:620px){.property-custom-row,.property-charge-row{grid-template-columns:1fr}.property-charge-row>*{grid-column:auto!important}}
 </style>
 </head>
 <body>
@@ -345,10 +355,15 @@ function leaseForTenant(tenant){
  const rows=(db.leases||[]).filter(l=>l.tenant_row_id===tenant.id);
  return rows.find(l=>l.status==='active')||rows.find(l=>l.status==='draft')||rows.filter(l=>l.status==='closed').sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')))[0]||null;
 }
-function leaseFields(lease,locked,history={}){
+function leaseFields(lease,locked,history={},property=null){
  const field=(key,title,value,type,attrs='')=>'<div><label for="lease-'+key+'">'+esc(title)+'</label><input id="lease-'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+(locked?'disabled':'')+' '+attrs+'></div>';
  const kinds=[['unverified','À renseigner'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']];
- const value=(key,legacy)=>lease?lease[key]??'':history[legacy]??'';
+ const value=(key,legacy)=>{
+  const actual=lease?.[key],historical=history?.[legacy];
+  if(actual!==null&&actual!==undefined&&actual!=='')return actual;
+  if(historical!==null&&historical!==undefined&&historical!=='')return historical;
+  return !lease||lease.status==='draft'?propertyDefault(property,key):'';
+ };
  const amount=(key,legacy)=>formMoney(value(key,legacy))?String(value(key,legacy)).trim().replace(',','.'):'';
  return '<div class="fields">'+
  field('start','Date de début du bail',formDate(value('start_date','Date entrée locataire')),'date')+
@@ -403,12 +418,12 @@ window.editTenant=(rowNumber,propertyId='')=>{
  const props=(db.properties||[]).filter(p=>!p.is_example);
  const contract=financial?'<div class="section-title">Bail et loyers</div>'+
  (lease?.status==='active'?'<p class="note">Bail actif : les conditions validées sont conservées. Vous pouvez mettre à jour les coordonnées du locataire.</p>':lease?.status==='closed'?'<p class="note">Bail clôturé : son historique est conservé. Pour une nouvelle location, créez une nouvelle fiche locataire.</p>':'<p class="muted">Les coordonnées du bailleur sont reprises depuis Paramètres. Vous pouvez enregistrer une fiche incomplète puis la terminer. L’activation demande une confirmation des informations du contrat.</p>')+
- leaseFields(lease,contractLocked,data):'';
+ leaseFields(lease,contractLocked,data,props.find(p=>p.id===property)):'';
  $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><div><h2>'+(row?'Fiche locataire':'Nouveau locataire')+'</h2><p class="muted">Coordonnées et préparation de la location</p></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
  '<div class="fields">'+field('name','Nom et prénom / dénomination',data.Locataire,'text','maxlength="200"')+
  field('email','E-mail du locataire',data['Mail locataire'],'email','maxlength="254"')+
  field('phone','Téléphone du locataire',data['Téléphone locataire'],'tel','maxlength="40"')+
- '<div><label for="tenant-property">Bien associé</label><select id="tenant-property" '+(readonly||linkedLease?'disabled':'')+'><option value="">À sélectionner</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===property?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div></div>'+
+ '<div><label for="tenant-property">Bien associé</label><select id="tenant-property" onchange="applyPropertyLeaseDefaults(this.value)" '+(readonly||linkedLease?'disabled':'')+'><option value="">À sélectionner</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===property?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div></div>'+
  (linkedLease?'<p class="muted">Le bien est lié à l’historique du bail. Une nouvelle location dans un autre bien utilise une nouvelle fiche.</p>':'')+
  '<label for="tenant-notes">Notes du dossier</label><textarea id="tenant-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea>'+contract+
  '<div class="actions" style="margin-top:16px">'+(readonly?'':'<button class="btn primary" id="tenant-save" data-id="'+esc(row?.id||'')+'" onclick="saveTenant(this.dataset.id,false)">Enregistrer la fiche</button>')+
@@ -416,6 +431,18 @@ window.editTenant=(rowNumber,propertyId='')=>{
  (['active','closed'].includes(lease?.status)&&financial?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="editLease(this.dataset.id)">Échéances et règlements du bail</button>'+(lease.status==='active'&&lease.lease_kind==='residential'?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="openIrlLease(this.dataset.id)">Révision IRL</button>':'')+(!readonly&&lease.status==='active'?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="openLeaseClosure(this.dataset.id)">Clôturer le bail</button>':''):'')+
  (property?'<button class="btn secondary" data-property="'+esc(property)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents du bien</button>':'')+'</div>'+
  '<details style="margin-top:16px"><summary>Données historiques conservées</summary>'+kv(data)+'</details><div class="status" id="modalStatus" role="status"></div></div></div>';
+};
+
+window.applyPropertyLeaseDefaults=id=>{
+ const property=(db?.properties||[]).find(x=>x.id===id);
+ const mapping=[['rent','monthly_rent'],['charges','charges_amount'],['day','due_day'],['kind','lease_kind']];
+ for(const [field,key] of mapping){
+  const input=$('lease-'+field),value=String(propertyDefault(property,key)||'');
+  if(input&&!input.disabled&&(!input.value||input.dataset.propertyAutofill==='1'||input.value==='unverified')){
+   input.value=value||(field==='kind'?'unverified':'');
+   input.dataset.propertyAutofill='1';
+  }
+ }
 };
 window.saveTenant=async(id,activate=false)=>{
  const status=$('modalStatus');if(!status||db.current_user?.read_only)return;
@@ -476,10 +503,10 @@ function propertyCompleteness(p,t){
  const lease=leaseForTenant(t),data=t?.data||{};
  const needed=[
  ['Adresse du bien',!!String(p.data?.Adresse||'').trim()],
- ['Loyer valide',formMoney(lease?.monthly_rent??data['Loyer de base'])],
+ ['Loyer valide',formMoney(lease?.monthly_rent??data['Loyer de base']??p.data?.['Loyer mensuel de référence'])],
  ['Date d’entrée valide',!!formDate(lease?.start_date||data['Date entrée locataire'])],
  ['E-mail locataire valide',/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(data['Mail locataire']||''))],
- ['Charges valides',formMoney(lease?.charges_amount??data.Charge)]
+ ['Charges valides',formMoney(lease?.charges_amount??data.Charge??p.data?.['Charges mensuelles de référence'])]
  ];
  return {missing:needed.filter(([,valid])=>!valid).map(([label])=>label),complete:needed.filter(([,valid])=>valid).length};
 }
@@ -488,7 +515,7 @@ function renderProperties(){
  $('content').innerHTML=section('Patrimoine immobilier','Renseignez chaque bien puis ouvrez sa fiche locataire pour préparer la location.',
  '<button class="btn primary" onclick="newProperty()" '+(db.current_user?.read_only?'disabled':'')+'>+ Ajouter un logement</button>')+
  '<div class="property-grid">'+filteredProperties.map(p=>{
-  const t=linkedTenant(p.id),lease=leaseForTenant(t),quality=propertyCompleteness(p,t),rent=lease?.monthly_rent??t?.data?.['Loyer de base'];
+  const t=linkedTenant(p.id),lease=leaseForTenant(t),quality=propertyCompleteness(p,t),rent=lease?.monthly_rent??t?.data?.['Loyer de base']??p.data?.['Loyer mensuel de référence'];
   return '<div class="card property-card"><div class="section-head"><h3>'+esc(p.name)+'</h3><span class="mini-tag '+(quality.missing.length?'warn':'')+'">'+quality.complete+'/5 champs vérifiés</span></div>'+
   '<p class="muted">'+esc(p.data?.Adresse||'Adresse à renseigner')+'</p><p><b>'+esc(t?.data?.Locataire||((db.tenants||[]).filter(x=>x.property_id===p.id).length>1?'Plusieurs dossiers : choisir dans la fiche':'Fiche locataire à compléter'))+'</b></p>'+
   '<p class="muted">'+(lease?.status==='active'?'Bail actif':lease?.status==='closed'?'Dernier bail clôturé':'Bail à préparer / valider')+' · Loyer : '+(formMoney(rent)?money(Number(String(rent).replace(',','.'))):'À renseigner')+'</p>'+
@@ -496,7 +523,7 @@ function renderProperties(){
   '<div class="actions"><button class="btn primary" data-id="'+esc(p.id)+'" onclick="openProperty(this.dataset.id)">Ouvrir le bien</button><button class="btn secondary" data-id="'+esc(p.id)+'" onclick="openPropertyTenant(this.dataset.id)">Fiche locataire</button></div></div>';
  }).join('')+'</div>'+(filteredProperties.length?'':'<div class="card empty-state">Ajoutez un bien pour commencer. Vous pourrez compléter ses informations progressivement.</div>');
 }
-function kv(obj){return Object.entries(obj||{}).map(([key,value])=>'<div class="kv"><b>'+esc(key)+'</b><span>'+esc(value??'')+'</span></div>').join('')}
+function kv(obj){return Object.entries(obj||{}).map(([key,value])=>'<div class="kv"><b>'+esc(key)+'</b><span style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(value!==null&&typeof value==='object'?JSON.stringify(value,null,2):value??'')+'</span></div>').join('')}
 window.openProperty=id=>{
  const p=(db.properties||[]).find(x=>x.id===id);if(!p)return;
  const tenants=(db.tenants||[]).filter(t=>t.property_id===id),readonly=!!db.current_user?.read_only;
@@ -513,23 +540,161 @@ window.openPropertyTenant=id=>{
  const tenant=linkedTenant(id),related=(db.tenants||[]).filter(t=>t.property_id===id);
  if(tenant)editTenant(tenant.row_number);else if(related.length>1)openProperty(id);else editTenant(undefined,id);
 };
+
+const PROPERTY_GROUPS=[
+ ['Identification et localisation',[
+  ['Adresse','Adresse complète','text',500],['Complément adresse','Complément d’adresse','text',300],['Ville','Ville','text',120],['Code postal','Code postal','text',20],['Type de bien','Type de bien','text',100],['Référence lot','Référence du lot','text',100],['Référence cadastrale','Référence cadastrale','text',150],['Bâtiment','Bâtiment','text',100],['Étage','Étage','text',30],['Porte','Numéro de porte','text',50],['Identifiant fiscal logement','Identifiant fiscal du logement','text',100]
+ ]],
+ ['Surfaces et caractéristiques',[
+  ['Surface habitable (m²)','Surface habitable (m²)','decimal'],['Surface au sol (m²)','Surface au sol (m²)','decimal'],['Surface annexe (m²)','Surface annexe (m²)','decimal'],['Surface terrain (m²)','Surface terrain (m²)','decimal'],['Nombre de pièces','Nombre de pièces','integer'],['Nombre de chambres','Nombre de chambres','integer'],['Nombre de salles de bain','Nombre de salles de bain','integer'],['Nombre de WC','Nombre de WC','integer'],['Année construction','Année de construction','integer'],['État physique','État physique du bien','select',0,[['','À renseigner'],['neuf','Neuf'],['bon','Bon état'],['rafraichir','À rafraîchir'],['renover','À rénover'],['travaux','En travaux']]],['Meublé','Location meublée','select',0,[['','À renseigner'],['oui','Oui'],['non','Non']]],['Copropriété','En copropriété','select',0,[['','À renseigner'],['oui','Oui'],['non','Non']]]
+ ]],
+ ['Loyer et conditions de location',[
+  ['Loyer mensuel de référence','Loyer mensuel hors charges (€)','money'],['Charges mensuelles de référence','Charges mensuelles récupérables (€)','money'],['Dépôt de garantie','Dépôt de garantie (€)','money'],['Jour d’échéance','Jour de paiement (1 à 31)','integer'],['Type de bail par défaut','Nature de bail par défaut','select',0,[['','À préciser'],['residential','Habitation'],['parking','Parking / garage'],['commercial','Commercial'],['other','Autre']]],['Mode des charges','Mode des charges','select',0,[['','À préciser'],['provision','Provision avec régularisation'],['forfait','Forfait'],['reel','Au réel']]],['Date de disponibilité','Date de disponibilité','date'],['Préavis contractuel (mois)','Préavis contractuel (mois)','integer'],['Plafond loyer applicable','Plafond de loyer applicable (€)','money'],['Complément de loyer','Complément de loyer justifié (€)','money']
+ ]],
+ ['Révision du loyer et IRL',[
+  ['Indice IRL de référence','Indice IRL de référence','decimal'],['Trimestre IRL','Trimestre IRL du bail','select',0,[['','À renseigner'],['T1','T1'],['T2','T2'],['T3','T3'],['T4','T4']]],['Année IRL de référence','Année de référence IRL','integer'],['Date de dernière révision','Date de dernière révision','date'],['Date anniversaire de révision','Date anniversaire de révision','date'],['Révision autorisée','Révision prévue au bail','select',0,[['','À vérifier'],['oui','Oui'],['non','Non']]]
+ ]],
+ ['Charges du propriétaire et fiscalité',[
+  ['Taxe foncière annuelle','Taxe foncière annuelle (€)','money'],['TEOM annuelle','Taxe enlèvement des ordures ménagères annuelle (€)','money'],['Charges copropriété annuelles','Charges de copropriété annuelles (€)','money'],['Frais de syndic annuels','Frais de syndic annuels (€)','money'],['Assurance PNO annuelle','Assurance propriétaire non occupant annuelle (€)','money'],['Assurance GLI annuelle','Assurance loyers impayés annuelle (€)','money'],['Frais gestion annuels','Frais de gestion annuels (€)','money'],['Charges entretien annuelles','Budget entretien annuel (€)','money'],['Autres charges annuelles','Autres charges annuelles (€)','money'],['Régime fiscal','Régime fiscal','text',100],['Taxe habitation applicable','Taxe habitation applicable','select',0,[['','À vérifier'],['oui','Oui'],['non','Non']]]
+ ]],
+ ['Acquisition et valorisation',[
+  ['Date acquisition','Date d’acquisition','date'],['Prix acquisition','Prix d’acquisition (€)','money'],['Frais acquisition','Frais d’acquisition (€)','money'],['Montant travaux acquisition','Travaux à l’acquisition (€)','money'],['Valeur estimée','Valeur actuelle estimée (€)','money'],['Capital restant dû','Capital restant dû (€)','money'],['Mensualité emprunt','Mensualité du prêt (€)','money'],['Taux crédit','Taux du crédit (%)','decimal'],['Date fin emprunt','Date de fin du prêt','date']
+ ]],
+ ['Équipements, diagnostics et gestion',[
+  ['Chauffage','Type de chauffage','text',100],['Énergie chauffage','Énergie du chauffage','text',100],['Eau chaude','Production d’eau chaude','text',100],['Équipements','Équipements du logement','textarea',4000],['Annexes','Cave, parking, jardin, dépendances','textarea',2000],['DPE classe','Classe DPE','select',0,[['','À renseigner'],...['A','B','C','D','E','F','G'].map(x=>[x,x])]],['GES classe','Classe GES','select',0,[['','À renseigner'],...['A','B','C','D','E','F','G'].map(x=>[x,x])]],['Date DPE','Date du DPE','date'],['Fin validité DPE','Date de fin de validité DPE','date'],['Numéro compteur électricité','N° de compteur électrique','text',120],['Numéro compteur eau','N° de compteur d’eau','text',120],['Assureur','Assureur','text',200],['Numéro police assurance','N° police assurance','text',120],['Gestionnaire','Gestionnaire / interlocuteur','text',200],['Contact syndic','Contact syndic','text',300],['Travaux à prévoir','Travaux à prévoir','textarea',4000],['Date prochain entretien','Date du prochain entretien','date']
+ ]]
+];
+const PROPERTY_FIELDS=PROPERTY_GROUPS.flatMap(group=>group[1]);
+const PROPERTY_MANAGED_KEYS=new Set(['Nom du logement','Notes','Charges affectées','Paramètres personnalisés',...PROPERTY_FIELDS.map(x=>x[0])]);
+function propertyDefault(property,leaseKey){
+ const keys={monthly_rent:'Loyer mensuel de référence',charges_amount:'Charges mensuelles de référence',due_day:'Jour d’échéance',lease_kind:'Type de bail par défaut'};
+ return property?.data?.[keys[leaseKey]]??'';
+}
+function propertyFieldHtml(field,data,readonly){
+ const [key,label,type,max=500,choices=[]]=field,value=String(data[key]??''),id='property-field-'+PROPERTY_FIELDS.indexOf(field);
+ const disabled=readonly?'disabled':'',attrs='data-property-key="'+esc(key)+'" data-property-type="'+esc(type)+'" '+disabled;
+ let control='';
+ if(type==='textarea')control='<textarea id="'+id+'" '+attrs+' maxlength="'+max+'">'+esc(value)+'</textarea>';
+ else if(type==='select'){
+  const options=choices.some(x=>x[0]===value)?choices:[...choices,[value,value]];
+  control='<select id="'+id+'" '+attrs+'>'+options.map(([v,t])=>'<option value="'+esc(v)+'" '+(v===value?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select>';
+ }else{
+  const numeric=['money','decimal','integer'].includes(type),inputType=numeric?'number':type==='date'?'date':'text';
+  const shown=type==='date'?formDate(value):value;
+  const limits=numeric?'min="0" step="'+(type==='integer'?'1':'0.01')+'" max="999999999"':'maxlength="'+max+'"';
+  control='<input id="'+id+'" '+attrs+' type="'+inputType+'" value="'+esc(shown)+'" '+limits+'>';
+ }
+ return '<div><label for="'+id+'">'+esc(label)+'</label>'+control+'</div>';
+}
+function propertyChargeRow(row={},readonly=false){
+ const name=String(row.libelle??''),amount=String(row.montant??''),frequency=String(row.periodicite||'mensuel'),payer=String(row.affectation||'locataire');
+ const sel=(cls,options,value)=>'<select class="'+cls+'" onchange="updatePropertyChargeTotals()" '+(readonly?'disabled':'')+'>'+options.map(([v,t])=>'<option value="'+v+'" '+(v===value?'selected':'')+'>'+t+'</option>').join('')+'</select>';
+ return '<div class="property-charge-row" data-charge-row>'+
+ '<input data-charge-label aria-label="Nature de la charge" placeholder="Ex. eau, entretien, TEOM" maxlength="160" value="'+esc(name)+'" '+(readonly?'disabled':'')+'>'+
+ '<input data-charge-amount aria-label="Montant de la charge" type="number" min="0" max="999999999" step="0.01" placeholder="Montant €" value="'+esc(amount)+'" oninput="updatePropertyChargeTotals()" '+(readonly?'disabled':'')+'>'+
+ sel('charge-frequency',[['mensuel','Par mois'],['trimestriel','Par trimestre'],['annuel','Par an']],frequency)+
+ sel('charge-payer',[['locataire','Récupérable locataire'],['bailleur','À charge bailleur']],payer)+
+ (readonly?'':'<button class="btn danger" type="button" onclick="this.closest(\'[data-charge-row]\').remove();updatePropertyChargeTotals()">Retirer</button>')+'</div>';
+}
+window.addPropertyCharge=()=>{const node=$('property-charge-rows');if(node){node.insertAdjacentHTML('beforeend',propertyChargeRow());updatePropertyChargeTotals()}};
+function propertyChargeValues(){
+ const rows=[...document.querySelectorAll('#property-charge-rows [data-charge-row]')],lines=[];
+ let tenantMonth=0,ownerMonth=0;
+ for(const row of rows){
+  const libelle=row.querySelector('[data-charge-label]').value.trim(),montant=row.querySelector('[data-charge-amount]').value.trim();
+  if(!libelle&&!montant)continue;
+  if(!libelle||!formMoney(montant))throw Error('Chaque charge doit comporter un libellé et un montant positif ou nul à deux décimales maximum.');
+  const periodicite=row.querySelector('.charge-frequency').value,affectation=row.querySelector('.charge-payer').value;
+  if(!['mensuel','trimestriel','annuel'].includes(periodicite)||!['locataire','bailleur'].includes(affectation))throw Error('Affectation ou périodicité des charges invalide.');
+  const factor=periodicite==='annuel'?12:periodicite==='trimestriel'?3:1;
+  const monthly=Math.round(Number(montant)*100/factor)/100;
+  if(affectation==='locataire')tenantMonth+=monthly;else ownerMonth+=monthly;
+  lines.push({libelle,montant:Number(montant).toFixed(2),periodicite,affectation});
+ }
+ return {lines,tenantMonth:Math.round(tenantMonth*100)/100,ownerMonth:Math.round(ownerMonth*100)/100};
+}
+window.updatePropertyChargeTotals=()=>{
+ const status=$('property-charge-summary'),input=document.querySelector('[data-property-key="Charges mensuelles de référence"]');
+ if(!status||!input)return;
+ try{
+  const result=propertyChargeValues();
+  if(result.lines.length){input.value=result.tenantMonth.toFixed(2);input.readOnly=true}
+  else input.readOnly=false;
+  status.className='muted';status.textContent=result.lines.length?'Total mensuel récupérable : '+money(result.tenantMonth)+' · Charges mensuelles à charge bailleur : '+money(result.ownerMonth)+'. Les charges de référence sont calculées depuis la ventilation.':'Sans ventilation, le montant mensuel de référence peut être saisi directement dans « Loyer et conditions de location ».';
+ }catch(e){status.className='status err';status.textContent=e.message}
+};
+function propertyCustomRow(key='',value='',readonly=false){
+ return '<div class="property-custom-row" data-custom-row><input data-custom-key aria-label="Nom du paramètre" maxlength="120" placeholder="Nom du paramètre" value="'+esc(key)+'" '+(readonly?'disabled':'')+'><input data-custom-value aria-label="Valeur du paramètre" maxlength="4000" placeholder="Valeur" value="'+esc(value)+'" '+(readonly?'disabled':'')+'>'+(readonly?'':'<button class="btn danger" type="button" onclick="this.closest(\'[data-custom-row]\').remove()">Retirer</button>')+'</div>';
+}
+window.addPropertyCustom=()=>{const node=$('property-custom-rows');if(node)node.insertAdjacentHTML('beforeend',propertyCustomRow())};
+function propertyLegacyValue(value){
+ return value!==null&&typeof value==='object'?JSON.stringify(value,null,2):String(value??'');
+}
 window.openPropertyEditor=id=>{
  const p=(db.properties||[]).find(x=>x.id===id);if(!p)return;
  const readonly=!!db.current_user?.read_only,data=p.data||{};
- const field=(key,label,value,max)=>'<div><label for="property-'+key+'">'+label+'</label><input id="property-'+key+'" value="'+esc(value??'')+'" maxlength="'+max+'" '+(readonly?'disabled':'')+'></div>';
- $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Modifier le bien</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
- '<div class="fields">'+field('name','Nom du bien',p.name,180)+field('address','Adresse complète du bien',data.Adresse,500)+field('city','Ville',data.Ville,100)+field('postcode','Code postal',data['Code postal'],20)+field('type','Type de bien',data['Type de bien'],100)+'</div>'+
- '<label for="property-notes">Notes du bien</label><textarea id="property-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea>'+
- '<div class="actions" style="margin-top:15px"><button class="btn primary" id="property-save" data-id="'+esc(id)+'" onclick="saveProperty(this.dataset.id)" '+(readonly?'disabled':'')+'>Enregistrer le bien</button></div><div class="status" id="modalStatus" role="status"></div></div></div>';
+ const charges=Array.isArray(data['Charges affectées'])?data['Charges affectées']:[];
+ const custom=data['Paramètres personnalisés']&&typeof data['Paramètres personnalisés']==='object'&&!Array.isArray(data['Paramètres personnalisés'])?data['Paramètres personnalisés']:{};
+ const other=Object.entries(data).filter(([key])=>!PROPERTY_MANAGED_KEYS.has(key));
+ const active=(db.leases||[]).find(x=>x.property_id===id&&x.status==='active');
+ const groupHtml=PROPERTY_GROUPS.map(([title,fields],i)=>'<details class="property-edit-section" '+(i<3?'open':'')+'><summary>'+esc(title)+'</summary><div class="fields">'+fields.map(field=>propertyFieldHtml(field,data,readonly)).join('')+'</div></details>').join('');
+ $('modal').innerHTML='<div class="modal"><div class="box property-edit-box"><div class="top"><div><h2>Modifier le bien — '+esc(p.name)+'</h2><p class="muted">Tous les paramètres sont propres à ce bien.</p></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<p class="note">Le loyer et les charges définis ici servent de références pour les nouveaux baux. Les montants d’un bail actif et ses échéances passées ne sont jamais modifiés par cette fiche.</p>'+
+ (active?'<p class="muted">Bail en cours : '+money(Number(active.monthly_rent||0))+' hors charges + '+money(Number(active.charges_amount||0))+' de charges. Une modification contractuelle suit la procédure dédiée aux baux.</p>':'')+
+ '<div class="fields"><div><label for="property-name">Nom du bien</label><input id="property-name" maxlength="180" value="'+esc(p.name)+'" '+(readonly?'disabled':'')+'></div></div>'+
+ groupHtml+
+ '<details class="property-edit-section" open><summary>Ventilation et affectation des charges</summary><p class="muted">Ajoutez les charges du bien, leur périodicité et qui les supporte. Les charges récupérables alimentent la référence mensuelle ; les dépenses du bailleur restent séparées.</p><div id="property-charge-rows" class="property-charge-list">'+charges.map(x=>propertyChargeRow(x,readonly)).join('')+'</div>'+
+ (readonly?'':'<button class="btn secondary" type="button" onclick="addPropertyCharge()">+ Ajouter une charge</button>')+'<p id="property-charge-summary" class="muted"></p></details>'+
+ '<details class="property-edit-section"><summary>Paramètres personnalisés</summary><p class="muted">Ajoutez librement des informations propres à ce bien.</p><div id="property-custom-rows" class="property-custom-list">'+Object.entries(custom).map(([key,value])=>propertyCustomRow(key,propertyLegacyValue(value),readonly)).join('')+'</div>'+
+ (readonly?'':'<button class="btn secondary" type="button" onclick="addPropertyCustom()">+ Ajouter un paramètre</button>')+'</details>'+
+ (other.length?'<details class="property-edit-section"><summary>Autres données existantes ('+other.length+')</summary><p class="muted">Ces champs historiques sont conservés. Les valeurs structurées doivent rester au format JSON.</p><div class="fields">'+other.map(([key,value])=>'<div><label>'+esc(key)+'</label><textarea data-legacy-key="'+esc(key)+'" data-legacy-type="'+(value!==null&&typeof value==='object'?'json':typeof value)+'" maxlength="12000" '+(readonly?'disabled':'')+'>'+esc(propertyLegacyValue(value))+'</textarea></div>').join('')+'</div></details>':'')+
+ '<div class="property-edit-section"><label for="property-notes">Notes du bien</label><textarea id="property-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea></div>'+
+ '<div class="actions property-edit-actions"><button class="btn primary" id="property-save" data-id="'+esc(id)+'" onclick="saveProperty(this.dataset.id)" '+(readonly?'disabled':'')+'>Enregistrer tous les paramètres</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div class="status" id="modalStatus" role="status"></div></div></div>';
+ updatePropertyChargeTotals();
 };
 window.saveProperty=async id=>{
  const status=$('modalStatus'),button=$('property-save');if(!status||!button||db.current_user?.read_only)return;
- const name=$('property-name').value.trim();
- if(!name){status.className='status err';status.textContent='Renseignez le nom du bien.';return}
- const data={Adresse:$('property-address').value.trim(),Ville:$('property-city').value.trim(),'Code postal':$('property-postcode').value.trim(),'Type de bien':$('property-type').value.trim(),Notes:$('property-notes').value};
- button.disabled=true;status.className='status';status.textContent='Enregistrement du bien…';
- try{await api('save-property','POST',{id,name,data});if(!await refresh())return;openProperty(id);$('modalStatus').className='status ok';$('modalStatus').textContent='Bien enregistré.'}
- catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Enregistrement impossible'}}
+ const original=(db.properties||[]).find(x=>x.id===id),name=$('property-name')?.value.trim();
+ if(!original||!name){status.className='status err';status.textContent='Renseignez le nom du bien.';return}
+ const fail=message=>{status.className='status err';status.textContent=message;return false};
+ const data={Notes:$('property-notes').value};
+ for(const input of document.querySelectorAll('[data-property-key]')){
+  const key=input.dataset.propertyKey,type=input.dataset.propertyType,value=input.value.trim();
+  if(!input.checkValidity())return void fail('Corrigez le champ « '+key+' ».');
+  if(type==='money'&&value!==''&&!formMoney(value))return void fail('Montant incorrect pour « '+key+' » (deux décimales maximum).');
+  if(['decimal','integer'].includes(type)&&value!==''&&(!Number.isFinite(Number(value))||Number(value)<0||(type==='integer'&&!Number.isInteger(Number(value)))))return void fail('Valeur numérique incorrecte pour « '+key+' ».');
+  if(type==='date'&&value!==''&&!formDate(value))return void fail('Date incorrecte pour « '+key+' ».');
+  if(key==='Jour d’échéance'&&value!==''&&!(Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=31))return void fail('Le jour de paiement doit être compris entre 1 et 31.');
+  data[key]=value;
+ }
+ let charges;
+ try{charges=propertyChargeValues()}catch(e){return void fail(e.message)}
+ data['Charges affectées']=charges.lines;
+ if(charges.lines.length)data['Charges mensuelles de référence']=charges.tenantMonth.toFixed(2);
+ const custom=Object.create(null);
+ for(const row of document.querySelectorAll('#property-custom-rows [data-custom-row]')){
+  const key=row.querySelector('[data-custom-key]').value.trim(),value=row.querySelector('[data-custom-value]').value.trim();
+  if(!key&&!value)continue;
+  if(!key||['__proto__','constructor','prototype'].includes(key)||Object.hasOwn(custom,key))return void fail('Nom de paramètre personnalisé vide, interdit ou déjà utilisé : '+key);
+  custom[key]=value;
+ }
+ data['Paramètres personnalisés']=custom;
+ for(const input of document.querySelectorAll('[data-legacy-key]')){
+  const key=input.dataset.legacyKey,raw=input.value,originalValue=original.data?.[key];
+  if(raw===propertyLegacyValue(originalValue))continue;
+  try{
+   const type=input.dataset.legacyType;
+   data[key]=type==='json'?JSON.parse(raw):type==='number'?(raw.trim()===''?null:Number(raw)):type==='boolean'?(raw.trim()==='true'?true:raw.trim()==='false'?false:(()=>{throw Error('Booléen attendu : true ou false')})()):raw;
+   if(type==='number'&&data[key]!==null&&!Number.isFinite(data[key]))throw Error('Nombre invalide');
+  }catch(e){return void fail('Donnée historique « '+key+' » invalide : '+e.message)}
+ }
+ button.disabled=true;status.className='status';status.textContent='Enregistrement de tous les paramètres du bien…';
+ try{
+  await api('save-property','POST',{id,name,data});
+  if(!await refresh())return;
+  openProperty(id);
+  const next=$('modalStatus');if(next){next.className='status ok';next.textContent='Tous les paramètres du bien ont été enregistrés. Les contrats actifs et leur historique restent inchangés.'}
+ }catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Enregistrement impossible'}}
  finally{if(button.isConnected)button.disabled=false}
 };
 function renderObjectTable(rows){if(!rows?.length)return '<div class="card muted">Aucune ligne.</div>';const hs=[...new Set(rows.flatMap(Object.keys))];return `<div class="table-wrap" style="max-height:320px"><table><thead><tr>${hs.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${hs.map(h=>`<td>${cellHtml(h,r[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
