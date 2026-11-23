@@ -59,6 +59,8 @@ function allowedTab(selector,context,area){
   if(selector==="#tSettings"||selector==="#tPassword")return context.is_super_admin===true;
   if(selector==="#tInvoices")return !!context.sites?.secretariat&&(context.is_super_admin||p.secretariat===true||p["secretariat.read"]===true||p["secretariat.invoices.write"]===true);
   if(selector==="#tOrders")return !!context.sites?.secretariat&&(context.is_super_admin||p.secretariat===true||p["secretariat.read"]===true||p["secretariat.orders.write"]===true);
+  if(selector==="#tStocks")return !!context.sites?.secretariat&&(context.is_super_admin||p.secretariat===true||p["secretariat.read"]===true||p["products.read"]===true||p["stock.read"]===true);
+  if(selector==="#tPlanning")return !!context.sites?.secretariat&&(context.is_super_admin||p.secretariat===true||p["secretariat.read"]===true||p["personnel.planning.read"]===true||p["personnel.planning.write"]===true);
   return !!context.sites?.secretariat;
  }
  if(area==="planning"&&selector==="#new")return context.read_only!==true&&(context.is_super_admin||p.secretariat===true||p["personnel.planning.write"]===true||p["secretariat.write"]===true);
