@@ -30,9 +30,14 @@ function startAgentReturnPolling(){
   agentReturnPoll=setInterval(refreshAgentReturns,5000);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshAgentReturns()});
 }
+function updateAccountingSiteShortcuts(){
+ const a=db?.current_user||{},p=a.permissions||{};
+ const rights={college:a.role==='admin'||p.college_admin===true||['dashboard.read','products.read','products.write','stock.read','stock.write','apps.read','apps.write','college.salaires.read'].some(k=>p[k]===true),holding:a.role==='admin'};
+ document.querySelectorAll('[data-accounting-site]').forEach(link=>link.hidden=rights[link.dataset.accountingSite]!==true);
+}
 function accountingCanWrite(){return db?.current_user?.can_write===true&&db?.current_user?.permissions?.readonly!==true}
 function show(p){if(db&&!accountingCanWrite()&&['import','od','export'].includes(p))return;page=p;render()}
-function render(){if(!db)return;if(!accountingCanWrite()&&['import','od','export'].includes(page))page='dashboard';[['td','dashboard'],['ti','import'],['to','od'],['te','export'],['tr','rules'],['ts','settings']].forEach(([id,p])=>{const el=$(id);if(!el)return;el.hidden=!accountingCanWrite()&&['import','od','export'].includes(p);el.className='btn '+(page===p?'active':'secondary')});({dashboard,import:importPage,od:odPage,export:exportPage,rules:rulesPage,settings:settingsPage}[page]||dashboard)()}
+function render(){if(!db)return;updateAccountingSiteShortcuts();if(!accountingCanWrite()&&['import','od','export'].includes(page))page='dashboard';[['td','dashboard'],['ti','import'],['to','od'],['te','export'],['tr','rules'],['ts','settings']].forEach(([id,p])=>{const el=$(id);if(!el)return;el.hidden=!accountingCanWrite()&&['import','od','export'].includes(p);el.className='btn '+(page===p?'active':'secondary')});({dashboard,import:importPage,od:odPage,export:exportPage,rules:rulesPage,settings:settingsPage}[page]||dashboard)()}
 function money(v){return v==null?'—':Number(v).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'}
 function badge(s){return s==='exportee'?'<span class="badge expb">Exportée</span>':s==='validee'?'<span class="badge okb">Validée</span>':s==='erreur'?'<span class="badge errb">Erreur</span>':'<span class="badge warn">À contrôler</span>'}
 function workflowBadge(i){const s=String(i?.workflow_stage||'a_traiter');return s==='exportee_charlemagne'?'<span class="badge expb">Export Charlemagne</span>':s==='validee_humain'?'<span class="badge okb">Validée humainement</span>':s==='traitee_agent'?'<span class="badge warn">À valider humainement</span>':s==='traitee_gemini'?'<span class="badge warn">Traitée par Gemini · en attente Agent</span>':'<span class="badge warn">Facture à traiter</span>'}
