@@ -49,9 +49,9 @@
 html.secretariat-embedded{background:transparent}
 .secretariat-embedded .shell{max-width:none;margin:0;padding:0}
 .secretariat-embedded .shell>.flex.between:first-child{display:none!important}
-</style><link rel="stylesheet" href="../../college/workspace-layout.css?v=20261111-47">
+[hidden]{display:none!important}</style><link rel="stylesheet" href="../../college/workspace-layout.css?v=20261111-47">
 <script>try{if(window.self!==window.top&&window.parent.location.origin===location.origin&&new URLSearchParams(location.search).get('embed')==='secretariat')document.documentElement.classList.add('secretariat-embedded')}catch{}</script>
-</head><body><main class="shell"><div class="flex between"><div><h1>Planning des événements du personnel</h1><div class="muted">Secrétariat · Absences, retards et événements · Préparation des éléments de paie</div></div><div class="flex"><a class="btn alt" href="../">Secrétariat</a><a class="btn alt" href="../../college/admin/">Administration Collège</a></div></div>
+</head><body><main class="shell"><div class="flex between"><div><h1>Planning des événements du personnel</h1><div class="muted">Secrétariat · Absences, retards et événements · Préparation des éléments de paie</div></div><div class="flex"><a class="btn alt" data-planning-site="secretariat" href="../" hidden>Secrétariat</a><a class="btn alt" data-planning-site="college" href="../../college/admin/" hidden>Administration Collège</a></div></div>
 <section id="login" class="card login hide"><h2>Connexion requise</h2><div class="field"><label>Identifiant</label><input id="username" autocomplete="username"></div><br><div class="field"><label>Mot de passe</label><input id="password" type="password" autocomplete="current-password"></div><p><button class="btn" id="loginBtn">Se connecter</button></p><p id="loginMessage" class="status"></p></section>
 <form id="planningFirstPassword" class="card login hide" onsubmit="event.preventDefault();completePlanningFirstPassword()"><h2>Première connexion</h2><p>Choisissez un mot de passe personnel pour accéder au planning.</p><div class="field"><label for="planningNewPassword">Nouveau mot de passe</label><input id="planningNewPassword" type="password" minlength="10" autocomplete="new-password" required></div><div class="field"><label for="planningConfirmPassword">Confirmation</label><input id="planningConfirmPassword" type="password" minlength="10" autocomplete="new-password" required></div><p><button class="btn" type="submit">Enregistrer le mot de passe</button></p><p id="planningPasswordStatus" class="status" role="status"></p></form><section id="main" class="hide"><div class="card flex between"><div class="flex"><label for="month"><b>Mois</b></label><input id="month" type="month" style="width:175px"><button class="btn alt" id="refresh">Actualiser</button><button class="btn alt" type="button" id="printMonth" title="Télécharger le récapitulatif complet du mois en PDF">Imprimer / Télécharger PDF</button></div><div class="flex"><span id="identity" class="muted"></span><button class="btn alt" id="new">Nouvel événement</button></div></div><div class="stats"><div class="stat"><small>Événements du mois</small><strong id="nAll">0</strong></div><div class="stat"><small>Absences</small><strong id="nAbs">0</strong></div><div class="stat"><small>Autres événements</small><strong id="nInc">0</strong></div><div class="stat"><small>Retards</small><strong id="nRet">0</strong></div></div>
 
@@ -178,7 +178,20 @@ async function completePlanningFirstPassword(){
   s.textContent='';
  }catch(e){s.textContent=e.message||'Échec du changement'}
 }
-async function load(){const version=++loadVersion,month=$('month').value;try{const j=await request('list','GET',null,'&month='+encodeURIComponent(month));if(version!==loadVersion||month!==$('month').value)return;events=j.events||[];admin=j.role==='admin';readonly=j.read_only;await loadPlanningStaff();$('login').classList.add('hide');$('main').classList.remove('hide');$('identity').textContent=admin?'Administration · consultation et saisie':readonly?'Secrétariat · lecture seule':'Secrétariat · saisie';$('new').classList.toggle('hide',readonly);$('formCard').classList.add('hide');render();notice(planningStaffError?'Liste du personnel indisponible : '+planningStaffError:'')}catch(e){if(version!==loadVersion)return;if(/Session/.test(e.message))authForm();else notice(e.message)}}
+async function syncPlanningShortcuts(){
+ const checked=token;
+ document.querySelectorAll('[data-planning-site]').forEach(x=>x.hidden=true);
+ if(!checked)return;
+ try{
+  const r=await fetch(ROOT+'college-access-context',{headers:{'x-admin-session':checked},cache:'no-store'});
+  if(!r.ok||checked!==token)return;
+  const data=await r.json(),sites=data.sites||{},p=data.permissions||{};
+  document.querySelectorAll('[data-planning-site]').forEach(link=>{
+   link.hidden=link.dataset.planningSite==='secretariat'?sites.secretariat!==true:sites.college!==true;
+  });
+ }catch{}
+}
+async function load(){const version=++loadVersion,month=$('month').value;try{const j=await request('list','GET',null,'&month='+encodeURIComponent(month));if(version!==loadVersion||month!==$('month').value)return;events=j.events||[];admin=j.role==='admin';readonly=j.read_only;await loadPlanningStaff();syncPlanningShortcuts();$('login').classList.add('hide');$('main').classList.remove('hide');$('identity').textContent=admin?'Administration · consultation et saisie':readonly?'Secrétariat · lecture seule':'Secrétariat · saisie';$('new').classList.toggle('hide',readonly);$('formCard').classList.add('hide');render();notice(planningStaffError?'Liste du personnel indisponible : '+planningStaffError:'')}catch(e){if(version!==loadVersion)return;if(/Session/.test(e.message))authForm();else notice(e.message)}}
 function render(){
  const filtered=filteredPlanningEvents();renderPlanningCalendar(filtered);
  $('nAll').textContent=events.length;$('nAbs').textContent=events.filter(x=>x.event_type==='absence').length;
