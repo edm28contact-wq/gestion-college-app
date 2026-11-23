@@ -182,7 +182,7 @@
   const host=target.closest("main")||target;
   host.classList.add("school-workspace-host");
   applyAuthorizedNavigation();
-  import(url("college/workspace-access.mjs?v=20261123-1")).then(({attach})=>{
+  import(url("college/workspace-access.mjs?v=20261123-2")).then(({attach})=>{
    applyAuthorizedNavigation=attach({aside,brand,footer,base,area,target,filterMenu});
   }).catch(()=>{
    footer.textContent="Contrôle des accès indisponible. Liens non vérifiés masqués.";
