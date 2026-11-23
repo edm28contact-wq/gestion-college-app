@@ -74,6 +74,7 @@ async function login(){if(busy)return;busy=true;$("connect").disabled=true;try{
  const v=await request("login","POST",{staff_id:$("agent").value,pin:$("pin").value},false);
  token=v.token;sessionStorage.setItem("kitchen_token",token);$("pin").value="";await load();
 }catch(e){status(e.message,true,"loginStatus")}finally{busy=false;$("connect").disabled=false}}
+async function connectAccount(){const shared=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";if(!shared){status("Connectez-vous d’abord à l’un des espaces administratifs avec un compte habilité, puis revenez ici.",true,"loginStatus");return}token=shared;sessionStorage.setItem("kitchen_token",token);await load()}
 function logout(){token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
 async function load(){try{data=await request("list");$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();if(page==="cold")refreshColdHistory(coldOffset);checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
 function switchPage(next){
@@ -89,6 +90,9 @@ function render(){
  else if(page==="reheat"){renderReheat();updateReheatControls();}
  else renderTasks();
  updateCriticalAlert();
+ const viewOnly=data.me.scope!=="staff"||data.me.existingAccount===true;
+ $("readonlyNotice").hidden=!viewOnly;
+ for(const button of document.querySelectorAll("#content form button[type=submit]")){if(viewOnly)button.disabled=true}
 }
 function dayOf(iso){return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(iso))}
 function latestByRoom(){const m=new Map();for(const r of data.cold)if(!m.has(r.room_id))m.set(r.room_id,r);return m}
@@ -188,7 +192,7 @@ function renderTasks(){
 async function save(action,body){if(busy)return;busy=true;try{const result=await request(action,"POST",body);await load();if(result.alert)status("Contrôle enregistré avec anomalie : prévenir le responsable et effectuer une action corrective.",true);else status("Enregistré avec date, heure et nom de l’agent.");}catch(e){status(e.message,true);}finally{busy=false}}
 document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else if(form.dataset.finish){if(!canFinish(form.dataset.due)){status("Saisie bloquée : attendez les 5 dernières minutes.",true);return;}save("finish-reheat",{id:form.dataset.finish,temperature_c:t})}});
 document.addEventListener("click",e=>{const b=e.target.closest?.("button[data-task]");if(b)save("task-check",{task_id:b.dataset.task})});
-$("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
+$("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("connectAccount")?.addEventListener("click",connectAccount);$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
 document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.page)));
 document.addEventListener("click",e=>{const b=e.target.closest?.("[data-go]");if(b)switchPage(b.dataset.go)});
 document.addEventListener("change",event=>{
@@ -206,7 +210,7 @@ document.addEventListener("click",event=>{
 function updateReheatControls(){
  if(!data)return;
  for(const form of document.querySelectorAll("form[data-finish][data-due]")){
-   const unlocked=canFinish(form.dataset.due),ms=remainingMs(form.dataset.due);
+   const unlocked=data.me.scope==="staff"&&!data.me.existingAccount&&canFinish(form.dataset.due),ms=remainingMs(form.dataset.due);
    const input=form.elements.namedItem("temperature_c"),button=form.querySelector('button[type="submit"]');
    if(input)input.disabled=!unlocked;
    if(button)button.disabled=!unlocked;
