@@ -57,8 +57,8 @@ begin
 
   perform public.replace_admin_access_assignments(who, array[]::uuid[]);
   if exists (
-    select 1 from public.admin_access_assignments
-    where account_id = (select id from public.admin_accounts where username = who)
+    select 1 from public.admin_access_assignments aa
+    where aa.account_id = (select id from public.admin_accounts where username = who)
   ) then
     raise exception 'Assignment removal failed';
   end if;
