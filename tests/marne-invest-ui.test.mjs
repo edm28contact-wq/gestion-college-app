@@ -99,3 +99,10 @@ test('Les courriers IRL ne partent pas directement du navigateur',()=>{
  assert.doesNotMatch(fragment,/api\('mail-send'/);
  assert.doesNotMatch(fragment,/sendMail\(/);
 });
+
+test('La préparation des logements est séparée du progrès logiciel',()=>{
+ assert.match(script,/function renderPropertyReadiness\(\)/);
+ assert.match(script,/ready\/props\.length/);
+ assert.match(script,/editLease\(this\.dataset\.id\)/);
+ assert.match(script,/showPropertyDocuments\(this\.dataset\.property\)/);
+});
