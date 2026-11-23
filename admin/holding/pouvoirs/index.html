@@ -32,4 +32,4 @@ function chooseUser(a){if(!a||a.protected)return;user=a.username;$('assignTitle'
 async function saveAssignment(){const a=state.accounts.find(a=>a.username===user);if(!a)return;const ids=[...document.querySelectorAll('.assigned:checked')].map(x=>x.value);try{await request('assign','POST',{username:a.username,power_ids:ids});await load();status('Pouvoirs attribués à '+a.username+'. Ses sessions seront renouvelées si ses droits ont changé.')}catch(e){status(e.message,true)}}
 $('reload').addEventListener('click',load);$('newPower').addEventListener('click',resetPower);$('resetPower').addEventListener('click',resetPower);$('savePower').addEventListener('click',savePower);$('addRight').addEventListener('click',addCustom);
 if(!token){status('Connectez-vous depuis Administration Holding avant d’ouvrir cette page.',true)}else{resetPower();load()}
-</script><script defer src="../../../college/workspace-layout.js?v=20261111-47" data-area="holding-users" data-target="main.wrap"></script></body></html>
+</script><script defer src="../../../college/workspace-layout.js?v=20261123-access-1" data-area="holding-users" data-target="main.wrap"></script></body></html>
