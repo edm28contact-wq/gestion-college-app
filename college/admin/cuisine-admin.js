@@ -107,20 +107,21 @@
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
  
  const content=node("content"),all=Array.from(content.children),tabs=[
-  ["overview","Vue d’ensemble"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["staff","Équipe et nettoyage"]
+  ["overview","Vue d’ensemble"],["govee","Connexion Govee"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["staff","Équipe et nettoyage"]
  ];
  if(!node("kitchen-organized-styles")){
    const css=document.createElement("style");css.id="kitchen-organized-styles";
    css.textContent="#kitchen-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:13px 0 18px}#kitchen-tabs button{border:1px solid #d3dce3;border-radius:9px;padding:11px 15px;font-weight:750;background:#f1f4f6;color:#334657;cursor:pointer}#kitchen-tabs button.active{background:#243447;color:white;border-color:#243447}#content .kitchen-panel[hidden]{display:none!important}#content .kitchen-panel .grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}#content .kitchen-panel form{margin:10px 0 14px}#content .kitchen-panel form label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}#content .kitchen-panel .card{padding:18px}#content .kitchen-panel h2{margin:0 0 9px}#content .kitchen-panel h3{margin:17px 0 9px}#content .kitchen-panel .data-row{padding:11px 0;border-bottom:1px solid #e7edf0}#content .kitchen-panel .data-row:last-child{border:0}#content .kitchen-panel .btn{margin-top:4px}#content .kitchen-section-intro{padding:18px 20px;border:1px solid #dbe4ea;border-radius:12px;background:#f5f8fa;margin-bottom:14px}#content .kitchen-section-intro h2{margin:0 0 5px}#content .kitchen-section-intro p{margin:0;color:#5d6d79;font-size:13px}#content .kitchen-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}#content .kitchen-overview-grid>div{padding:17px;background:#fff;border:1px solid #dce4e9;border-radius:12px}#content .kitchen-overview-grid strong{display:block;font-size:27px;margin:5px 0;color:#243447}#content .kitchen-overview-grid small{color:#607182}#content #kitchen-tabs{position:relative}";
    document.head.append(css);
  }
- const groups={overview:[],records:[],equipment:[],staff:[]};
+ const groups={overview:[],govee:[],records:[],equipment:[],staff:[]};
  for(const el of all){
    if(el.id==="kitchen-tabs")continue;
    const heading=el.querySelector?.("h2")?.textContent||"";
    if(heading.startsWith("Gestion Cuisine"))groups.overview.push(el);
    else if(heading.startsWith("Agents de cuisine")||heading.startsWith("Tâches de nettoyage"))groups.staff.push(el);
-   else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut")||heading.startsWith("Thermomètres connectés"))groups.equipment.push(el);
+   else if(heading.startsWith("Thermomètres connectés"))groups.govee.push(el);
+   else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut"))groups.equipment.push(el);
    else if(heading.startsWith("Derniers relevés")||heading.startsWith("Remises en température")||heading.startsWith("Journal des relevés invalidés")||heading.startsWith("Actions correctives"))groups.records.push(el);
    else groups.overview.push(el);
  }
@@ -129,7 +130,7 @@
    const b=document.createElement("button");b.type="button";b.dataset.kitchenTab=key;b.textContent=label;b.setAttribute("role","tab");b.addEventListener("click",()=>{kitchenTab=key;selectTab()});header.append(b);
  }
  content.prepend(header);
- const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],staff:["Équipe de cuisine","Gérez les codes personnels MEDJEBER / MOREL et les tâches quotidiennes."]};
+ const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],staff:["Équipe de cuisine","Gérez les codes personnels MEDJEBER / MOREL et les tâches quotidiennes."]};
  const panels={};
  for(const [key] of tabs){
    const wrapper=document.createElement("section");wrapper.className="kitchen-panel";wrapper.dataset.panel=key;wrapper.setAttribute("role","tabpanel");
@@ -197,7 +198,7 @@
  function showGoveeTestResult(result){
   const dest=node("kitchenGoveeTestResult");if(!dest)return;
   const devices=Array.isArray(result.devices)?result.devices:[];
-  const received=devices.filter(d=>d.raw_temperature!==null&&d.status==="donnees_recues").length;
+  const received=devices.filter(d=>d.raw_temperature!==null).length;
   dest.innerHTML='<div class="card"><h3>Résultat du test Govee</h3><p class="muted">Clé acceptée · '+result.account_devices+' appareil(s) sur le compte · '+result.matching_devices+' appareil(s) sélectionné(s) pour le test · '+received+' mesure(s) disponibles.</p>'+
    (devices.length?devices.map(d=>'<div class="data-row"><div><strong>'+e(d.label)+' · '+e(d.sku)+'</strong><div class="muted">'+e(d.status==='donnees_recues'?"Température reçue":d.status==="non_expose"?"Non exposé par cette API":d.status==="hors_ligne"?"Hors ligne":d.status==="sans_mesure"?"Aucune mesure disponible":d.status==="statut_non_confirme"?"Mesure disponible, état du capteur inconnu":"Erreur API")+'</div>'+(d.error?'<div class="muted">'+e(d.error)+'</div>':'')+'</div><div>'+ (d.raw_temperature===null?'<strong>—</strong>':'<strong>Valeur brute : '+t(d.raw_temperature)+'</strong>')+'</div></div>').join(""):'<p>Aucun modèle H5179/H5192 accessible dans la réponse Govee. Cela ne signifie pas que vos appareils ne fonctionnent pas dans Govee Home.</p>')+
    '<p class="muted">Les valeurs affichées sont brutes, sans unité certifiée. Aucun relevé HACCP n’est enregistré par ce test. Le H5192 peut ne pas être exposé par l’API.</p></div>';
@@ -319,6 +320,7 @@
 
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-corrective]");if(b)openCorrectiveDialog(b.dataset.corrective,b.dataset.id)});
  document.addEventListener("click",evt=>{if(evt.target.closest?.("#kitchenTasksPdf"))exportTasksPDF()});
+ window.kitchenAdminOpenGovee=function(){kitchenTab="govee";window.kitchenAdminPage()};
  window.kitchenAdminPage=function(){node("content").innerHTML='<div class="card">Chargement des relevés Cuisine…</div>';load()};
  window.kitchenAdminLoad=load;
 })();
