@@ -30,11 +30,11 @@ function mockClient(overrides = {}, options = {}) {
   const client = {
     calls, mutations, data,
     from(table) {
-      let operation = 'select', payload, conflictKeys = [], single = false, head = false;
+      let operation = 'select', payload, conflictKeys = [], single = false, head = false, selectedFields = '';
       const filters = [], orders = [];
       let from = 0, to = Infinity, wantsCount = false;
       const query = {
-        select(fields, config) { head = !!config?.head; wantsCount = config?.count === 'exact'; return query; },
+        select(fields, config) { selectedFields = fields; head = !!config?.head; wantsCount = config?.count === 'exact'; return query; },
         eq(key, value) { filters.push(row => row[key] === value); return query; },
         in(key, values) { filters.push(row => values.includes(row[key])); return query; },
         gte(key, value) { filters.push(row => row[key] >= value); return query; },
@@ -48,7 +48,7 @@ function mockClient(overrides = {}, options = {}) {
         upsert(value, config) { operation = 'upsert'; payload = value; conflictKeys = String(config?.onConflict || '').split(',').filter(Boolean); return query; },
         async then(resolve, reject) {
           try {
-            calls.push({ table, operation, from, to, wantsCount });
+            calls.push({ table, operation, from, to, wantsCount, fields: selectedFields });
             if(operation === 'upsert'){
               const values=Array.isArray(payload)?payload:[payload];
               mutations.push({table,operation,payload});
@@ -101,6 +101,13 @@ function mockClient(overrides = {}, options = {}) {
       }
       if (name === 'marne_mail_password_exists') return { data: false, error: null };
       if (name === 'marne_run_health_check') return { data: { id: 'health-test', status: 'ok', critical_count: 0, warning_count: 0 }, error: null };
+      if(name === 'marne_save_irl_rule'){
+        const payload={lease_id:params.p_lease_id,...params.p_rule,verified_by:params.p_by};
+        const previous=(data.rental_irl_lease_rules||[]).find(row=>row.lease_id===params.p_lease_id);
+        if(previous)Object.assign(previous,payload);else(data.rental_irl_lease_rules||=[]).push(payload);
+        mutations.push({table:'rental_irl_lease_rules',operation:'rpc',payload});
+        return {data:{ok:true,rule:structuredClone(payload)},error:null};
+      }
       if(name === 'marne_save_lease'){
         if(options.beforeUpdate)options.beforeUpdate('rental_leases',data);
         const lease=data.rental_leases.find(row=>row.id===params.p_lease_id);
@@ -374,6 +381,26 @@ test('Un reçu refuse toujours un bail non vérifié ou une échéance hors de s
     },{rpcResult(name){return name==='marne_installment_status'?{data:{allocated:110,due:110},error:null}:null;}});
     assert.equal((await request(runtime(client),'receipt-preview',{installment_id:installmentId})).status,409);
     assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Le reçu assemble l’adresse postale du bien et refuse un nom de bien comme seule adresse', async () => {
+  const installmentId='55555555-5555-4555-8555-555555555555';
+  for(const [propertyData,tenantData,expected,status] of [
+    [{Adresse:'12 rue QA','Code postal':'51000',Ville:'Ville QA'},{},'12 rue QA\n51000 Ville QA',200],
+    [{Adresse:'12 rue QA',Ville:'Ville QA'},{},'12 rue QA\nVille QA',200],
+    [{},{'Adresse logement':'Adresse contractuelle complète'},'Adresse contractuelle complète',200],
+    [{'Code postal':'51000',Ville:'Ville QA'},{},null,409],
+  ]){
+    const client=mockClient({
+      rental_leases:[{...draftLease,...validLeaseBody,status:'active',verified_at:'2026-01-01T00:00:00Z'}],
+      rental_properties:[{id:propertyId,name:'Nom de bien distinct',data:propertyData}],
+      rental_tenant_rows:[{id:tenantId,property_id:propertyId,data:tenantData}],
+      rental_installments:[{id:installmentId,lease_id:leaseId,property_id:propertyId,period:'2026-01-01',status:'scheduled',rent_amount:100,charges_amount:10}],
+    },{rpcResult(name){return name==='marne_installment_status'?{data:{allocated:110,due:110},error:null}:null;}});
+    const result=await request(runtime(client),'receipt-preview',{installment_id:installmentId});
+    assert.equal(result.status,status);
+    if(expected)assert.equal(result.body.address,expected);
   }
 });
 
@@ -883,4 +910,242 @@ test('Un compte sans droit de messagerie ne lit pas les curseurs IMAP', async ()
   assert.equal(result.status, 200);
   assert.equal(result.body.mail_sync_state, null);
   assert.equal(client.calls.some(call => call.table === 'rental_mail_sync_cursors'), false);
+});
+
+const reminderInstallmentId='55555555-5555-4555-8555-555555555555';
+const reminderId='66666666-6666-4666-8666-666666666666';
+const reminderVersion='2026-01-15T12:34:56.123456+00:00';
+function reminderClient(result,overrides={},options={}){
+  return mockClient({
+    rental_leases:[{...draftLease,status:'active',start_date:'2020-01-01',verified_at:'2020-01-01T00:00:00Z'}],
+    rental_properties:[{id:propertyId,name:'Bien QA',data:{Adresse:'Adresse QA'}}],
+    rental_tenant_rows:[{id:tenantId,property_id:propertyId,data:{'Mail locataire':'qa@example.invalid'}}],
+    rental_installments:[{id:reminderInstallmentId,lease_id:leaseId,property_id:propertyId,period:'2020-02-01',due_on:'2020-02-05',status:'scheduled'}],
+    ...overrides,
+  },{...options,rpcResult(name,params){
+    if(options.rpcResult){const value=options.rpcResult(name,params);if(value)return value;}
+    if(name==='marne_installment_status')return {data:{remaining:165,unallocated_on_lease:0},error:null};
+    if(['marne_prepare_reminder_draft','marne_declare_reminder_sent'].includes(name))return result;
+    return null;
+  }});
+}
+
+test('La reprise d’une relance annulée transmet le solde attendu à une seule RPC transactionnelle',async()=>{
+  const client=reminderClient({data:{ok:true,already_exists:false,reprepared:true,item:{id:reminderId,status:'prepared',prepared_at:reminderVersion}},error:null},
+    {rental_reminder_drafts:[{id:reminderId,installment_id:reminderInstallmentId,stage:7,status:'cancelled'}]});
+  const result=await request(runtime(client),'prepare-reminder',{installment_id:reminderInstallmentId,stage:7,prepared_by:'untrusted'});
+  assert.equal(result.status,200);
+  assert.equal(result.body.reprepared,true);
+  const params=client.calls.find(call=>call.rpc==='marne_prepare_reminder_draft').params;
+  assert.equal(params.p_expected_remaining,165);
+  assert.equal(params.p_installment_id,reminderInstallmentId);
+  assert.equal(params.p_stage,7);
+  assert.equal(params.p_recipient_email,'qa@example.invalid');
+  assert.equal(params.p_by,admin.username);
+  assert.match(params.p_body,/165,00/);
+  assert.equal(client.mutations.some(call=>call.table==='rental_reminder_drafts'),false);
+  assert.equal(client.mutations.filter(call=>call.table==='admin_audit_log').length,1);
+});
+
+test('Un rappel déjà préparé ou déclaré reste idempotent sans nouvel audit',async()=>{
+  for(const status of ['prepared','declared_sent']){
+    const client=reminderClient({data:{ok:true,already_exists:true,reprepared:false,item:{id:reminderId,status}},error:null});
+    const result=await request(runtime(client),'prepare-reminder',{installment_id:reminderInstallmentId,stage:7});
+    assert.equal(result.status,200);
+    assert.equal(result.body.item.status,status);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Un changement financier intervenu avant le verrou renvoie409 sans écriture API de secours',async()=>{
+  for(const code of ['22023','23505','40001','55000']){
+    const client=reminderClient({data:null,error:{code,message:'Solde modifié sous verrou'}});
+    const result=await request(runtime(client),'prepare-reminder',{installment_id:reminderInstallmentId,stage:7});
+    assert.equal(result.status,409);
+    assert.equal(result.body.error,'Solde modifié sous verrou');
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Un solde nul ou des sommes non affectées bloquent la préparation avant la RPC',async()=>{
+  for(const balance of [{remaining:0,unallocated_on_lease:0},{remaining:165,unallocated_on_lease:10}]){
+    const client=reminderClient(null,{}, {rpcResult(name){return name==='marne_installment_status'?{data:balance,error:null}:null;}});
+    assert.equal((await request(runtime(client),'prepare-reminder',{installment_id:reminderInstallmentId,stage:7})).status,409);
+    assert.equal(client.calls.some(call=>call.rpc==='marne_prepare_reminder_draft'),false);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('La confirmation transmet la version affichée avec ses microsecondes et l’acteur authentifié',async()=>{
+  const client=reminderClient({data:{ok:true,already_exists:false},error:null});
+  const result=await request(runtime(client),'declare-reminder-sent',{id:reminderId,prepared_at:reminderVersion,confirmed:true,declared_sent_by:'untrusted'});
+  assert.equal(result.status,200);
+  assert.deepEqual(JSON.parse(JSON.stringify(client.calls.find(call=>call.rpc==='marne_declare_reminder_sent').params)),{
+    p_reminder_id:reminderId,p_expected_prepared_at:reminderVersion,p_by:admin.username,
+  });
+  assert.equal(client.calls.some(call=>call.rpc==='marne_installment_status'),false);
+  assert.equal(client.mutations.some(call=>call.table==='rental_reminder_drafts'),false);
+});
+
+test('Une annulation transactionnelle pour relance périmée reste un conflit explicite et sans audit d’envoi',async()=>{
+  const data={ok:false,code:'reminder_stale',error:'Situation financière modifiée',cancelled:true};
+  const client=reminderClient({data,error:null});
+  const result=await request(runtime(client),'declare-reminder-sent',{id:reminderId,prepared_at:reminderVersion,confirmed:true});
+  assert.equal(result.status,409);
+  assert.deepEqual(result.body,data);
+  assert.equal(client.mutations.length,0);
+});
+
+test('Une ancienne version, une absence et un retry de déclaration conservent leurs états précis',async()=>{
+  for(const [rpcResult,status] of [
+    [{data:null,error:{code:'55000',message:'Relance reconstruite'}},409],
+    [{data:{ok:false,code:'reminder_missing',error:'Relance introuvable'},error:null},404],
+    [{data:{ok:true,already_exists:true},error:null},200],
+  ]){
+    const client=reminderClient(rpcResult);
+    assert.equal((await request(runtime(client),'declare-reminder-sent',{id:reminderId,prepared_at:reminderVersion,confirmed:true})).status,status);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Une déclaration sans confirmation ou sans version exploitable ne touche pas la base',async()=>{
+  for(const patch of [{confirmed:false},{prepared_at:null},{prepared_at:''},{prepared_at:'2026-02-30T12:00:00Z'},
+    {prepared_at:'2026-01-01T25:00:00Z'},{prepared_at:'2026-01-01T12:00:00.1234567Z'},
+    {prepared_at:'2026-01-01T12:00:00+23:00'},{id:'bad'}]){
+    const client=mockClient();
+    const result=await request(runtime(client),'declare-reminder-sent',{id:reminderId,prepared_at:reminderVersion,confirmed:true,...patch});
+    assert.equal(result.status,400);
+    assert.equal(client.calls.length,0);
+  }
+});
+
+const irlRuleBody={lease_id:leaseId,revision_due_on:'2026-03-01',reference_quarter:4,target_year:2025,
+  has_revision_clause:true,dpe_rating:'D',geographic_scope:'metropole',is_mobility_lease:false,confirmed:true};
+function irlClient(overrides={},options={}){
+  return mockClient({rental_leases:[{...draftLease,status:'active',lease_kind:'residential',start_date:'2020-01-01',verified_at:'2020-01-01T00:00:00Z'}],...overrides},options);
+}
+
+test('La règle IRL exige une année cible explicite et transmet celle choisie sans l’inférer de l’échéance',async()=>{
+  const client=irlClient();
+  assert.equal((await request(runtime(client),'save-irl-rule',irlRuleBody)).status,200);
+  assert.equal(client.data.rental_irl_lease_rules[0].target_year,2025);
+  for(const target_year of [undefined,null,'',2000,2101,2025.5,'année']){
+    const invalid=irlClient();
+    assert.equal((await request(runtime(invalid),'save-irl-rule',{...irlRuleBody,target_year})).status,400);
+    assert.equal(invalid.mutations.length,0);
+  }
+});
+
+test('Un brouillon IRL peut corriger ses règles et sa date sans réécrire l’ancienne proposition',async()=>{
+  const previous={...irlRuleBody,target_year:2024,revision_due_on:'2026-01-01'};
+  const proposal={id:reminderId,lease_id:leaseId,revision_due_on:previous.revision_due_on,status:'draft',draft_revision:1};
+  const client=irlClient({rental_irl_lease_rules:[previous],rental_irl_proposals:[proposal]});
+  assert.equal((await request(runtime(client),'save-irl-rule',irlRuleBody)).status,200);
+  assert.equal(client.data.rental_irl_lease_rules[0].target_year,2025);
+  assert.equal(client.data.rental_irl_lease_rules[0].revision_due_on,'2026-03-01');
+  assert.deepEqual(client.data.rental_irl_proposals,[proposal]);
+});
+
+test('Les règles associées à une révision programmée ou annulée gardent leur année cible',async()=>{
+  for(const status of ['scheduled','cancelled']){
+    const previous={...irlRuleBody,target_year:2024};
+    const client=irlClient({rental_irl_lease_rules:[previous],rental_irl_proposals:[{id:reminderId,lease_id:leaseId,revision_due_on:previous.revision_due_on,status}]});
+    assert.equal((await request(runtime(client),'save-irl-rule',irlRuleBody)).status,409);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('La règle IRL est sauvegardée sous verrou par RPC sans pouvoir écraser une programmation concurrente',async()=>{
+  const client=irlClient();
+  assert.equal((await request(runtime(client),'save-irl-rule',{...irlRuleBody,verified_by:'untrusted',status:'scheduled'})).status,200);
+  const params=client.calls.find(call=>call.rpc==='marne_save_irl_rule').params;
+  assert.equal(params.p_by,admin.username);
+  assert.equal(params.p_lease_id,leaseId);
+  assert.deepEqual(Object.keys(params.p_rule).sort(),['dpe_rating','geographic_scope','has_revision_clause','is_mobility_lease','reference_quarter','revision_due_on','target_year']);
+  assert.equal(client.calls.some(call=>call.table==='rental_irl_lease_rules'&&call.operation!=='select'),false);
+  const conflict=irlClient({}, {rpcResult(name){return name==='marne_save_irl_rule'?{data:null,error:{code:'55000',message:'Révision programmée simultanément'}}:null;}});
+  const result=await request(runtime(conflict),'save-irl-rule',irlRuleBody);
+  assert.equal(result.status,409);
+  assert.equal(result.body.error,'Révision programmée simultanément');
+  assert.equal(conflict.mutations.length,0);
+});
+
+test('La programmation IRL transmet la révision exacte du brouillon et présente les conflits historiques',async()=>{
+  const body={proposal_id:reminderId,notice_sent_on:'2026-01-01',notice_method:'registered_post',expected_revision:2,confirmed:true};
+  const client=irlClient({}, {rpcResult(name){return name==='marne_schedule_irl_application'?{data:{application_id:'application-qa'},error:null}:null;}});
+  assert.equal((await request(runtime(client),'schedule-irl',body)).status,200);
+  assert.equal(client.calls.find(call=>call.rpc==='marne_schedule_irl_application').params.p_expected_revision,2);
+  for(const expected_revision of [undefined,null,0,-1,1.5,true,[2],2147483648]){
+    const invalid=irlClient();
+    assert.equal((await request(runtime(invalid),'schedule-irl',{...body,expected_revision})).status,400);
+    assert.equal(invalid.mutations.length,0);
+  }
+  for(const action of ['prepare-irl','schedule-irl']){
+    const conflict=irlClient({}, {rpcResult(){return {data:null,error:{code:'55000',message:'Historique protégé'}};}});
+    const payload=action==='prepare-irl'?{lease_id:leaseId,confirmed:true}:body;
+    assert.equal((await request(runtime(conflict),action,payload)).status,409);
+    assert.equal(conflict.mutations.length,0);
+  }
+});
+
+test('La lecture expose les vérifications des montants et les versions IRL sans laisser les champs au hasard',async()=>{
+  const client=mockClient();
+  assert.equal((await request(runtime(client),'data',undefined,'GET')).status,200);
+  const installmentFields=client.calls.find(call=>call.table==='rental_installments').fields.split(',');
+  assert.ok(installmentFields.includes('amount_verified_at'));
+  assert.ok(installmentFields.includes('amount_verified_by'));
+  const proposalFields=client.calls.find(call=>call.table==='rental_irl_proposals').fields.split(',');
+  assert.ok(proposalFields.includes('draft_revision'));
+  assert.ok(proposalFields.includes('draft_history'));
+  assert.ok(client.calls.find(call=>call.table==='rental_irl_lease_rules').fields.split(',').includes('target_year'));
+});
+
+const irlIndexBody={year:2025,quarter:4,value:'145,78',published_on:'2026-01-15',source_url:'https://www.insee.fr/fr/statistiques/1234567',confirmed:true};
+test('Un indice officiel attesté passe à une RPC insert-only avec les valeurs explicites',async()=>{
+  const client=mockClient({}, {rpcResult(name){return name==='marne_register_irl_index'?{data:{ok:true,item:{year:2025,quarter:4,value:145.78},already_exists:false},error:null}:null;}});
+  const result=await request(runtime(client),'irl-register',irlIndexBody);
+  assert.equal(result.status,200);
+  assert.deepEqual(JSON.parse(JSON.stringify(client.calls.find(call=>call.rpc==='marne_register_irl_index').params)),{
+    p_year:2025,p_quarter:4,p_value:145.78,p_published_on:'2026-01-15',p_source_url:irlIndexBody.source_url,p_by:admin.username,p_confirmed:true,
+  });
+  assert.equal(client.mutations.some(call=>call.table==='rental_irl_indices'),false);
+});
+
+test('Une source IRL externe, une publication impossible ou des décimales excessives ne sont jamais enregistrées',async()=>{
+  for(const patch of [{year:2000,quarter:1,published_on:'2000-03-31'},{year:1e50},{quarter:5},{value:0},{value:-1},{value:'145.781'},
+    {value:100000},{published_on:'2026-02-30'},{published_on:'2999-01-01'},{source_url:'https://evil.invalid/123'},
+    {source_url:'https://www.insee.fr.evil.invalid/fr/statistiques/123'},{source_url:'https://www.insee.fr/fr/statistiques/123?redirect=bad'},{confirmed:false}]){
+    const client=mockClient();
+    assert.equal((await request(runtime(client),'irl-register',{...irlIndexBody,...patch})).status,400);
+    assert.equal(client.calls.length,0);
+  }
+});
+
+test('Un indice existant identique est idempotent et une divergence ne déclenche aucune écriture de secours',async()=>{
+  for(const [rpcResult,status] of [
+    [{data:{ok:true,already_exists:true,item:{}},error:null},200],
+    [{data:null,error:{code:'23505',message:'Indice existant différent'}},409],
+  ]){
+    const client=mockClient({}, {rpcResult(){return rpcResult;}});
+    assert.equal((await request(runtime(client),'irl-register',irlIndexBody)).status,status);
+    assert.equal(client.mutations.length,0);
+  }
+});
+
+test('Les relances et l’import IRL respectent les droits et la lecture seule',async()=>{
+  for(const account of [
+    {username:'qa-no-finance',role:'staff',permissions:{marne_tenants:true}},
+    {username:'qa-readonly',role:'marne_invest',permissions:{readonly:true,marne_admin:true}},
+  ])for(const [action,body] of [
+    ['prepare-reminder',{installment_id:reminderInstallmentId,stage:7}],
+    ['declare-reminder-sent',{id:reminderId,prepared_at:reminderVersion,confirmed:true}],
+    ['irl-register',irlIndexBody],
+  ]){
+    const client=mockClient();
+    assert.equal((await request(runtime(client,account),action,body)).status,403);
+    assert.equal(client.calls.length,0);
+  }
+  const accountant=mockClient();
+  assert.equal((await request(runtime(accountant,{username:'qa-accounting',role:'marne_invest',permissions:{}}),'irl-register',irlIndexBody)).status,403);
+  assert.equal(accountant.calls.length,0);
 });

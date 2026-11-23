@@ -538,6 +538,40 @@ function configInput(key,title,hint,type='text',max=500,allowed=true){
  return '<div><label for="central-'+key+'">'+esc(title)+'</label><input id="central-'+key+'" type="'+type+'" value="'+esc(current)+'" maxlength="'+max+'" '+(allowed?'':'disabled')+'><p class="muted">'+esc(hint)+'</p></div>';
 }
 
+function renderIrlIndexForm(){
+ if(!db.current_user?.payment_void_access||db.current_user?.read_only)return '';
+ return '<details id="irl-register-form" style="margin-top:16px"><summary>Ajouter un indice publié manquant</summary>'+
+ '<p class="muted">Reportez les informations de la publication Insee : année, trimestre, valeur et date de publication par l’Insee. Cette saisie ne vérifie pas automatiquement le contenu de la source. Un indice existant ne sera pas remplacé.</p>'+
+ '<div class="fields"><div><label for="irl-register-year">Année de l’indice</label><input id="irl-register-year" type="number" min="2000" max="'+todayParis().slice(0,4)+'" step="1" required></div>'+
+ '<div><label for="irl-register-quarter">Trimestre</label><select id="irl-register-quarter" required><option value="">Choisir le trimestre</option>'+[1,2,3,4].map(q=>'<option value="'+q+'">T'+q+'</option>').join('')+'</select></div>'+
+ '<div><label for="irl-register-value">Valeur publiée</label><input id="irl-register-value" type="number" min="0.01" step="0.01" required></div>'+
+ '<div><label for="irl-register-date">Publication par l’Insee</label><input id="irl-register-date" type="date" max="'+todayParis()+'" required></div>'+
+ '<div><label for="irl-register-source">Lien de la publication Insee</label><input id="irl-register-source" type="url" maxlength="500" placeholder="https://www.insee.fr/fr/statistiques/…" required></div></div>'+
+ '<label class="payment-confirm"><input id="irl-register-confirm" type="checkbox"> J’ai consulté la publication Insee et vérifié ces informations pour la métropole.</label>'+
+ '<button class="btn secondary" id="irl-register-save" onclick="registerIrlIndex()">Enregistrer l’indice vérifié</button><div class="status" id="irl-register-status" role="status"></div></details>';
+}
+window.registerIrlIndex=async()=>{
+ if(!db.current_user?.payment_void_access||db.current_user?.read_only)return;
+ const state=$('irl-register-status'),button=$('irl-register-save');
+ const invalid=[...$('irl-register-form').querySelectorAll('input:not([type="checkbox"]),select')].find(input=>!input.checkValidity());
+ if(invalid){state.className='status err';state.textContent='Complétez correctement les informations de la publication Insee.';invalid.focus();return}
+ if(!$('irl-register-confirm')?.checked){state.className='status err';state.textContent='Confirmez la vérification de la publication officielle.';return}
+ const value=$('irl-register-value').value;
+ if(!formMoney(value)||Number(value)<=0){state.className='status err';state.textContent='Renseignez une valeur positive à deux décimales maximum.';return}
+ const body={year:Number($('irl-register-year').value),quarter:Number($('irl-register-quarter').value),value,published_on:$('irl-register-date').value,source_url:$('irl-register-source').value.trim(),confirmed:true};
+ button.disabled=true;state.className='status';state.textContent='Enregistrement de l’indice…';
+ try{
+  const result=await api('irl-register','POST',body);
+  if(!db)return;
+  const item=result.item;if(!item)throw new Error('Indice enregistré : actualisez le référentiel pour vérifier sa présence.');
+  const items=db.irl_indices||[],index=items.findIndex(i=>Number(i.year)===Number(item.year)&&Number(i.quarter)===Number(item.quarter)&&i.geographic_scope===item.geographic_scope);
+  if(index<0)items.push(item);else items[index]=item;db.irl_indices=items;
+  const panel=$('irl-reference-panel');if(panel)panel.outerHTML=renderIrlPublicationPanel();
+  const form=$('irl-register-form'),done=$('irl-register-status');
+  if(form)form.open=true;if(done){done.className='status ok';done.textContent=result.already_exists?'Indice identique déjà enregistré, aucun doublon.':'Indice enregistré. Il est disponible pour les baux dont la période correspond.'}
+ }catch(e){if(state.isConnected){state.className='status err';state.textContent=e.message||'Enregistrement impossible.'}}
+ finally{if(button.isConnected)button.disabled=false}
+};
 function renderIrlPublicationPanel(){
  if(!db.current_user?.payment_access)return '';
  const candidates=db.irl_candidates||[];
@@ -545,7 +579,7 @@ function renderIrlPublicationPanel(){
  const values=db.irl_indices||[];
  const sorted=[...values].sort((a,b)=>b.year-a.year||b.quarter-a.quarter);
  const latest=sorted[0];
- return '<div class="note" style="margin-top:15px"><b>Surveillance des nouveaux indices Insee</b>'+
+ return '<div class="note" id="irl-reference-panel" style="margin-top:15px"><b>Surveillance des nouveaux indices Insee</b>'+
  '<p class="muted">Recherche officielle programmée chaque lundi à 07h20 UTC. Toute nouvelle valeur reste en attente de validation avant son utilisation dans le calcul des loyers.</p>'+
  (latest?'<p>Dernier indice confirmé : T'+esc(latest.quarter)+' '+esc(latest.year)+' — <b>'+esc(latest.value)+'</b> (métropole).</p>':'')+
  '<div class="actions"><button class="btn secondary" onclick="checkIrlPublication()">Vérifier les nouveautés Insee</button>'+
@@ -555,7 +589,7 @@ function renderIrlPublicationPanel(){
  (db.current_user?.payment_void_access&&!db.current_user?.read_only?
  '<button class="btn secondary" data-id="'+esc(c.id)+'" onclick="approveIrlCandidate(this.dataset.id)">Valider après consultation Insee</button>':
  '<span class="muted">Validation administrateur requise</span>')+'</span></div>').join(''):
- '<p class="muted">Aucune nouvelle publication en attente de validation.</p>')+'</div>';
+ '<p class="muted">Aucune nouvelle publication en attente de validation.</p>')+renderIrlIndexForm()+'</div>';
 }
 window.checkIrlPublication=async()=>{
  try{
@@ -639,7 +673,7 @@ window.saveCentralConfig=async()=>{
 function lookup(data,keys){for(const k of keys){const v=data?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return String(v)}return ''}
 function money(n){return Number.isFinite(n)?fmt(n)+' €':'—'}
 function tenantName(t){return lookup(t.data,['Locataire','Nom locataire','Nom du locataire','Locataire actuel','Nom','Nom et prénom','Prénom Nom','Corps locataire'])||'Locataire ligne '+t.row_number}
-function dwellingName(t){return lookup(t.data,['Nom du logement','Logement','Studio','Bien','Adresse','Adresse du logement'])||'Non renseigné'}
+function dwellingName(t){return (db.properties||[]).find(p=>p.id===t.property_id)?.name||lookup(t.data,['Nom du logement','Logement','Studio','Bien','Adresse','Adresse du logement'])||'Non renseigné'}
 function filtered(items,fn){return !searchQuery?items:items.filter(x=>fn(x).toLocaleLowerCase('fr').includes(searchQuery))}
 function section(title,description,tools=''){return '<div class="section-head"><div><h2>'+esc(title)+'</h2><p class="muted">'+esc(description)+'</p></div><div class="section-tools">'+tools+'</div></div>'}
 function stats(items){return '<div class="summary-strip">'+items.map(([name,value,sub])=>'<div class="card"><div class="muted">'+esc(name)+'</div><div class="kpi">'+esc(String(value))+'</div>'+(sub?'<div class="muted">'+esc(sub)+'</div>':'')+'</div>').join('')+'</div>'}
@@ -656,6 +690,24 @@ window.exportMarne=type=>{
 };
 
 
+function propertyPostalAddress(property){
+ const data=property?.data||{},street=String(data.Adresse||'').trim(),locality=[data['Code postal'],data.Ville].map(v=>String(v||'').trim()).filter(Boolean).join(' ');
+ return street?street+(locality&&!street.toLocaleLowerCase('fr').includes(locality.toLocaleLowerCase('fr'))?', '+locality:''):'';
+}
+function currentIrlProposal(proposal,rule){
+ return !!proposal&&!!rule&&proposal.revision_due_on===rule.revision_due_on&&Number(proposal.reference_quarter)===Number(rule.reference_quarter)&&Number(proposal.target_year)===Number(rule.target_year);
+}
+function renderIrlHistory(leaseId,rule){
+ const rows=[];
+ for(const proposal of (db.irl_proposals||[]).filter(p=>p.lease_id===leaseId)){
+  rows.push({...proposal,history_state:proposal.status==='applied'?'Appliquée':proposal.status==='scheduled'?'Programmée':proposal.status==='cancelled'?'Annulée':currentIrlProposal(proposal,rule)?'Brouillon courant':'Règle modifiée · ancien brouillon'});
+  for(const revision of Array.isArray(proposal.draft_history)?proposal.draft_history:[]){
+   if(revision?.snapshot)rows.push({...revision.snapshot,history_state:'Remplacée le '+String(revision.replaced_at||'').slice(0,10)+' · '+String(revision.replaced_by||'')});
+  }
+ }
+ if(!rows.length)return '';
+ return '<details style="margin-top:16px"><summary>Historique des propositions et recalculs</summary>'+dataTable(['Révision du bail','Indices','Loyer proposé','Version','État'],rows.map(r=>'<tr><td>'+esc(r.revision_due_on||'')+'</td><td>T'+esc(r.reference_quarter)+' · '+esc(r.baseline_year)+' → '+esc(r.target_year)+'</td><td>'+money(Number(r.proposed_monthly_rent))+'</td><td>'+esc(r.draft_revision||1)+'</td><td>'+esc(r.history_state)+'</td></tr>'))+'</details>';
+}
 function renderIrlManager(){
  if(!db.current_user?.payment_access)return '';
  const rules=db.irl_rules||[],proposals=db.irl_proposals||[],leases=(db.leases||[]).filter(l=>l.status==='active'&&l.verified_at&&l.lease_kind==='residential');
@@ -678,6 +730,26 @@ function renderIrlManager(){
  '<p class="module-note">'+proposals.length+' proposition(s) conservée(s), '+(db.irl_applications||[]).filter(a=>a.status==='scheduled').length+
  ' révision(s) programmée(s). Le nouveau loyer prend effet au premier mois complet suivant la validation d’une notification déjà effectuée ; les mois précédents restent inchangés.</p></section>';
 }
+window.updateIrlTargetYears=(preferred='')=>{
+ const selector=$('irl-target-year');if(!selector)return;
+ const due=$('irl-date')?.value||'',quarter=Number($('irl-quarter')?.value),scope=$('irl-region')?.value||'metropole';
+ const today=todayParis(),cutoff=due&&due<today?due:today;
+ let oldest='';
+ if(formDate(due)){
+  const [year,month,day]=due.split('-').map(Number),last=new Date(Date.UTC(year-1,month,0)).getUTCDate();
+  oldest=new Date(Date.UTC(year-1,month-1,Math.min(day,last))).toISOString().slice(0,10);
+ }
+ const indices=db.irl_indices||[];
+ const candidates=formDate(due)?indices.filter(i=>i.geographic_scope===scope&&Number(i.quarter)===quarter&&formDate(i.published_on)&&i.published_on<=cutoff&&i.published_on>oldest).sort((a,b)=>Number(b.year)-Number(a.year)):[];
+ const options=candidates.map(i=>{
+  const base=indices.find(b=>b.geographic_scope===scope&&Number(b.quarter)===quarter&&Number(b.year)===Number(i.year)-1&&formDate(b.published_on)&&b.published_on<=cutoff);
+  return {year:String(i.year),label:'T'+quarter+' '+i.year+' : '+i.value+(base?' · base '+base.year+' : '+base.value:' · indice précédent à compléter'),enabled:!!base};
+ });
+ selector.innerHTML='<option value="">Année de l’indice à confirmer</option>'+options.map(o=>'<option value="'+esc(o.year)+'" '+(o.enabled?'':'disabled')+'>'+esc(o.label)+'</option>').join('');
+ selector.value=options.some(o=>o.enabled&&o.year===String(preferred))?String(preferred):'';
+ if($('irl-year-note'))$('irl-year-note').textContent=options.some(o=>o.enabled)?'Choisissez les années prévues par votre clause, puis vérifiez les valeurs affichées.':'Renseignez la date et le trimestre. Si aucun couple d’indices n’est disponible, complétez le référentiel dans Paramètres.';
+ if($('irl-verified'))$('irl-verified').checked=false;
+};
 window.openIrlLease=id=>{
  const lease=(db.leases||[]).find(l=>l.id===id);if(!lease)return;
  const rule=(db.irl_rules||[]).find(r=>r.lease_id===id);
@@ -693,41 +765,48 @@ window.openIrlLease=id=>{
  '<label style="margin-top:15px" class="payment-confirm"><input id="irl-clause" type="checkbox" '+(rule?.has_revision_clause?'checked':'')+' '+(readonly?'disabled':'')+'> Le contrat signé contient une clause annuelle de révision du loyer</label>'+
  '<div class="fields"><div><label>Classement DPE</label><select id="irl-dpe" '+(readonly?'disabled':'')+'>'+
  ['unknown','A','B','C','D','E','F','G'].map(x=>option(x,x==='unknown'?'Non vérifié':x,rule?.dpe_rating||'unknown')).join('')+'</select></div>'+
- '<div><label>Région du logement</label><select id="irl-region" '+(readonly?'disabled':'')+'>'+
+ '<div><label>Région du logement</label><select id="irl-region" onchange="updateIrlTargetYears()" '+(readonly?'disabled':'')+'>'+
  option('metropole','Métropole',rule?.geographic_scope||'metropole')+
  option('corse','Corse (calcul indisponible)',rule?.geographic_scope)+
  option('outre_mer','Outre-mer (calcul indisponible)',rule?.geographic_scope)+'</select></div>'+
- '<div><label>Date annuelle de révision prévue au bail</label><input id="irl-date" type="date" value="'+esc(rule?.revision_due_on||'')+'" '+(readonly?'disabled':'')+'></div>'+
- '<div><label>Trimestre de référence inscrit au bail</label><select id="irl-quarter" '+(readonly?'disabled':'')+'>'+
- [1,2,3,4].map(q=>option(String(q),'T'+q,String(rule?.reference_quarter||''))).join('')+'</select></div></div>'+
+ '<div><label for="irl-date">Date annuelle de révision prévue au bail</label><input id="irl-date" type="date" value="'+esc(rule?.revision_due_on||'')+'" onchange="updateIrlTargetYears()" '+(readonly?'disabled':'')+'></div>'+
+ '<div><label for="irl-quarter">Trimestre de référence inscrit au bail</label><select id="irl-quarter" onchange="updateIrlTargetYears()" '+(readonly?'disabled':'')+'><option value="">Trimestre à vérifier</option>'+
+ [1,2,3,4].map(q=>option(String(q),'T'+q,String(rule?.reference_quarter||''))).join('')+'</select></div>'+
+ '<div><label for="irl-target-year">Année de l’indice cible de cette révision</label><select id="irl-target-year" '+(readonly?'disabled':'')+'></select><p id="irl-year-note" class="muted"></p></div></div>'+
  '<label class="payment-confirm"><input id="irl-mobility" type="checkbox" '+(rule?.is_mobility_lease?'checked':'')+' '+(readonly?'disabled':'')+'> Il s’agit d’un bail mobilité (révision impossible)</label>'+
  '<label class="payment-confirm"><input id="irl-verified" type="checkbox"> J’ai vérifié ces champs sur le bail et le DPE, sans supposer les informations manquantes.</label>'+
  '<div class="actions">'+(readonly?'': '<button class="btn secondary" data-id="'+esc(id)+'" onclick="saveIrlRule(this.dataset.id)">Enregistrer les règles du bail</button>')+
  (rule&&!readonly?'<button class="btn primary" data-id="'+esc(id)+'" onclick="prepareIrlProposal(this.dataset.id)">Calculer la proposition</button>':'')+'</div>'+
  (proposal?'<div class="note">Proposition : '+money(Number(proposal.base_monthly_rent))+' × '+esc(proposal.target_index)+' / '+esc(proposal.baseline_index)+
- ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b> · Statut : '+esc(proposal.status==='applied'?'Appliquée':proposal.status==='scheduled'?'Programmée':proposal.status==='cancelled'?'Annulée':'À notifier')+
+ ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b> · Statut : '+esc(proposal.status==='applied'?'Appliquée':proposal.status==='scheduled'?'Programmée':proposal.status==='cancelled'?'Annulée':currentIrlProposal(proposal,rule)?'À notifier':'Règle modifiée · recalcul requis')+
  '. '+(application?.status==='cancelled'?'Annulation : '+esc(application.cancelled_reason||'Bail clôturé')+'.':application?'Prise d’effet : '+esc(application.effective_on)+' · Notification attestée du '+esc(application.notice_sent_on)+'.': 'Aucun loyer modifié à ce stade.')+'</div>'+
  '<div class="actions">'+
- (proposal.status==='cancelled'?'':'<button class="btn secondary" data-id="'+esc(id)+'" onclick="printIrlNotice(this.dataset.id)">Préparer le courrier au locataire</button>')+
- (proposal.status==='draft'&&db.current_user?.payment_void_access&&!readonly?
+ (proposal.status==='cancelled'||proposal.status==='draft'&&!currentIrlProposal(proposal,rule)?'':'<button class="btn secondary" data-id="'+esc(id)+'" onclick="printIrlNotice(this.dataset.id)">Préparer le courrier au locataire</button>')+
+ (proposal.status==='draft'&&currentIrlProposal(proposal,rule)&&db.current_user?.payment_void_access&&!readonly?
  '<button class="btn primary" data-id="'+esc(id)+'" onclick="showIrlNotification(this.dataset.id)">Notifier et programmer la révision</button>':'')+
  '</div>':'')+
- '<p class="muted">Calcul uniquement sur l’indice IRL métropolitain publié par l’Insee. Les charges ne sont pas indexées par cette simulation.</p>'+
+ renderIrlHistory(id,rule)+'<p class="muted">Calcul uniquement sur l’indice IRL métropolitain publié par l’Insee. Les charges ne sont pas indexées par cette simulation.</p>'+
  '<div class="status" id="modalStatus"></div></div></div>';
+ updateIrlTargetYears(rule?.target_year??'');
 };
 window.saveIrlRule=async id=>{
  const status=$('modalStatus');if(!status)return;
  if(!$('irl-verified')?.checked){status.className='status err';status.textContent='Vous devez confirmer la vérification des documents contractuels.';return}
+ const year=Number($('irl-target-year')?.value);
+ if(!Number.isInteger(year)||year<2000||year>2100){status.className='status err';status.textContent='Choisissez et vérifiez l’année de l’indice cible pour cette révision.';return}
  const body={lease_id:id,has_revision_clause:!!$('irl-clause')?.checked,
    is_mobility_lease:!!$('irl-mobility')?.checked,dpe_rating:$('irl-dpe')?.value,
    geographic_scope:$('irl-region')?.value,revision_due_on:$('irl-date')?.value,
-   reference_quarter:Number($('irl-quarter')?.value),confirmed:true};
+   reference_quarter:Number($('irl-quarter')?.value),target_year:year,confirmed:true};
  status.className='status';status.textContent='Enregistrement sécurisé des règles IRL…';
  try{await api('save-irl-rule','POST',body);closeModal();if(await refresh())openIrlLease(id)}
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 window.prepareIrlProposal=async id=>{
  const status=$('modalStatus');if(!status)return;
+ const rule=(db.irl_rules||[]).find(r=>r.lease_id===id);
+ const changed=!rule||String(rule.revision_due_on||'')!==$('irl-date')?.value||Number(rule.reference_quarter)!==Number($('irl-quarter')?.value)||Number(rule.target_year)!==Number($('irl-target-year')?.value)||rule.dpe_rating!==$('irl-dpe')?.value||rule.geographic_scope!==$('irl-region')?.value||!!rule.has_revision_clause!==!!$('irl-clause')?.checked||!!rule.is_mobility_lease!==!!$('irl-mobility')?.checked;
+ if(changed){status.className='status err';status.textContent='Enregistrez les règles modifiées avant de calculer la proposition.';return}
  if(!$('irl-verified')?.checked){status.className='status err';status.textContent='Confirmez d’abord la vérification des clauses du bail.';return}
  if(!confirm('Calculer la proposition IRL avec les indices Insee, sans modifier le loyer actuel ?'))return;
  status.className='status';status.textContent='Contrôle des conditions et calcul officiel…';
@@ -746,6 +825,7 @@ window.printIrlNotice=id=>{
  const proposal=(db.irl_proposals||[]).find(x=>x.lease_id===id&&x.revision_due_on===rule?.revision_due_on);
  if(!lease||!proposal){alert('Préparez d’abord une proposition IRL pour ce bail.');return}
  if(proposal.status==='cancelled'){alert('Cette révision est annulée. Son historique reste consultable dans le bail.');return}
+ if(proposal.status==='draft'&&!currentIrlProposal(proposal,rule)){alert('Les règles du bail ont changé. Recalculez la proposition avant de préparer le courrier.');return}
  const property=(db.properties||[]).find(x=>x.id===lease.property_id);
  const issuer=lease.issuer_name||String(setting('landlord_name',''))||'[Bailleur]';
  const address=lease.issuer_address||String(setting('landlord_address',''))||'[Adresse du bailleur]';
@@ -756,7 +836,7 @@ window.printIrlNotice=id=>{
  '<style>body{font:16px/1.6 Georgia,serif;max-width:720px;margin:45px auto;color:#202b3b;padding:0 20px}h1{font-size:21px;text-align:center;margin:35px 0}p{margin:12px 0}.warn{border:1px solid #ae6c15;background:#fff7e5;padding:12px;margin:20px 0}footer{margin-top:38px;font-size:12px}@media print{.warn{font-size:11px}}</style></head><body>'+
  '<div class="warn">PROJET À VÉRIFIER — Non envoyé par Marne Invest. Vérifiez la date, la clause du bail, les indices et le DPE. La révision ne peut prendre effet avant la demande notifiée au locataire.</div>'+
  '<p><b>'+esc(issuer)+'</b><br>'+esc(address)+'</p>'+
- '<p>À l’attention de : '+esc(lease.tenant_name||'[Locataire]')+'<br>Adresse du logement : '+esc(property?.name||'[Adresse complète du logement à compléter]')+'</p>'+
+ '<p>À l’attention de : '+esc(lease.tenant_name||'[Locataire]')+'<br>Adresse du logement : '+esc(propertyPostalAddress(property)||'[Adresse complète du logement à compléter]')+'</p>'+
  '<p>Le '+esc(noticeDate)+'</p><h1>Notification de révision annuelle du loyer</h1>'+
  '<p>Madame, Monsieur,</p><p>Conformément à la clause de révision annuelle figurant dans votre contrat de location, je vous informe du calcul de révision du loyer hors charges applicable après vérification des conditions légales.</p>'+
  '<p>Révision prévue au bail : <b>'+esc(rule?.revision_due_on||'à vérifier')+'</b>. Référence : trimestre '+esc(String(proposal.reference_quarter))+' ; indice '+esc(String(proposal.baseline_year))+': <b>'+esc(String(proposal.baseline_index))+
@@ -773,7 +853,8 @@ window.printIrlNotice=id=>{
 };
 window.showIrlNotification=id=>{
  if(!db.current_user?.payment_void_access||db.current_user?.read_only)return;
- const proposal=(db.irl_proposals||[]).find(p=>p.lease_id===id&&p.status==='draft');
+ const rule=(db.irl_rules||[]).find(r=>r.lease_id===id);
+ const proposal=(db.irl_proposals||[]).find(p=>p.lease_id===id&&p.status==='draft'&&currentIrlProposal(p,rule));
  if(!proposal){alert('Aucune proposition en attente de notification.');return}
  const lease=(db.leases||[]).find(l=>l.id===id);
  $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:760px"><div class="top"><div><h2>Programmer une révision IRL</h2><p class="muted">'+esc(lease?.tenant_name||'')+'</p></div>'+
@@ -784,7 +865,7 @@ window.showIrlNotification=id=>{
  '<div><label>Mode de notification vérifiable</label><select id="irl-notice-method">'+
  '<option value="registered_post">Lettre recommandée</option><option value="hand_signed">Remise en main propre avec signature</option></select></div></div>'+
  '<label class="payment-confirm"><input id="irl-notice-confirm" type="checkbox"> Je confirme avoir réellement notifié le locataire à cette date, vérifié les indices Insee, le bail, le DPE et les échéances. Je conserve la preuve d’envoi.</label>'+
- '<div class="actions"><button class="btn primary" id="irl-schedule-button" data-proposal="'+esc(proposal.id)+'" onclick="scheduleIrlNotice(this.dataset.proposal)">Programmer le nouveau loyer</button></div>'+
+ '<div class="actions"><button class="btn primary" id="irl-schedule-button" data-proposal="'+esc(proposal.id)+'" data-revision="'+Number(proposal.draft_revision||1)+'" onclick="scheduleIrlNotice(this.dataset.proposal)">Programmer le nouveau loyer</button></div>'+
  '<div class="status" id="modalStatus"></div></div></div>';
 };
 window.scheduleIrlNotice=async proposalId=>{
@@ -798,7 +879,7 @@ window.scheduleIrlNotice=async proposalId=>{
  if(!confirm('Confirmez-vous la notification réelle ? Les échéances futures non réglées seront ajustées, puis le bail à la date prévue. Les mois passés ne seront pas modifiés.'))return;
  button.disabled=true;status.className='status';status.textContent='Contrôle et programmation de la révision…';
  try{
-  const result=await api('schedule-irl','POST',{proposal_id:proposalId,notice_sent_on,notice_method,confirmed:true});
+  const result=await api('schedule-irl','POST',{proposal_id:proposalId,notice_sent_on,notice_method,expected_revision:Number(button.dataset.revision),confirmed:true});
   closeModal();await refresh();
   const proposal=(db.irl_proposals||[]).find(x=>x.id===proposalId);
   if(proposal)openIrlLease(proposal.lease_id);
@@ -841,7 +922,7 @@ window.editLease=id=>{
  '<button class="btn secondary" onclick="closeModal();showPage(&quot;transactions&quot;)">Consulter les règlements et reçus</button>'+
  (lease.status==='closed'&&lease.lease_kind==='residential'?'<button class="btn secondary" data-id="'+esc(id)+'" onclick="openIrlLease(this.dataset.id)">Historique IRL</button>':'')+
  (lease.status==='active'?'<button class="btn secondary" data-id="'+esc(id)+'" onclick="openLeaseClosure(this.dataset.id)" '+(!writable?'disabled':'')+'>Clôturer le bail</button>':'')+'</div>':'')+
- renderObjectTable(items.map(x=>({'Mois':x.period,'Échéance':x.due_on,'Loyer':money(Number(x.rent_amount)),'Charges':money(Number(x.charges_amount)),'Total':money(Number(x.total_due)),'État':x.status==='cancelled'?'Annulée':'Prévue'})))+
+ renderObjectTable(items.map(x=>({'Mois':x.period,'Échéance':x.due_on,'Loyer':money(Number(x.rent_amount)),'Charges':money(Number(x.charges_amount)),'Total':money(Number(x.total_due)),'État':x.status==='cancelled'?'Annulée':'Prévue','Montant manuel vérifié':x.amount_verified_at?new Date(x.amount_verified_at).toLocaleString('fr-FR',{timeZone:'Europe/Paris'})+' · '+String(x.amount_verified_by||''):'—'})))+
  '<div class="status" id="modalStatus"></div></div></div>';
 };
 window.saveLease=async(id,activate)=>{
@@ -1564,16 +1645,19 @@ function reminderPlan(i,ledger,today){
  const days=reminderDayDiff(i.due_on,today);
  const drafts=(db.reminder_drafts||[]).filter(x=>x.installment_id===i.id);
  const first=drafts.find(x=>x.stage===7),second=drafts.find(x=>x.stage===14);
+ const stale=r=>r&&(Math.abs(Number(r.due_at_preparation)-outstanding)>=0.005||String(r.recipient_email||'').trim().toLowerCase()!==String(t?.data?.['Mail locataire']||'').trim().toLowerCase());
  const canAdvance=first?.status==='declared_sent'&&first.declared_sent_at&&reminderDayDiff(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(first.declared_sent_at)),today)>=7;
  let stage=0,reason='';
- if(!l||l.status!=='active'||!l.verified_at)reason='Bail non vérifié';
+ if(!l||!l.verified_at)reason='Bail non vérifié';
+ else if(l.status!=='active')reason=l.status==='closed'?'Bail clôturé · suivi manuel du solde':'Bail non actif';
  else if(outstanding<=0.005)reason='Échéance soldée';
  else if(pending>0.005)reason='Règlement à rapprocher';
  else if(days<7)reason='Délai J+7 non atteint';
  else if(!isEmailAddress(t?.data?.['Mail locataire']))reason='E-mail manquant';
- else if(!first){stage=7;reason='Rappel J+7 prêt à préparer'}
+ else if(!first||first.status==='cancelled'&&!first.declared_sent_at){stage=7;reason=first?'Rappel J+7 à repréparer':'Rappel J+7 prêt à préparer'}
+ else if(first.status==='prepared'&&stale(first)){stage=7;reason='Solde ou destinataire modifié · rappel J+7 à repréparer'}
  else if(first.status==='prepared')reason='Brouillon J+7 préparé';
- else if(first.status==='declared_sent'&&days>=14&&canAdvance&&!second){stage=14;reason='Rappel J+14 prêt à préparer'}
+ else if(first.status==='declared_sent'&&days>=14&&canAdvance&&(!second||second.status==='cancelled'&&!second.declared_sent_at||second.status==='prepared'&&stale(second))){stage=14;reason=second?'Rappel J+14 à repréparer':'Rappel J+14 prêt à préparer'}
  else if(second?.status==='prepared')reason='Brouillon J+14 préparé';
  else if(second?.status==='declared_sent')reason='Rappel J+14 déclaré envoyé';
  else if(first.status==='declared_sent'&&!canAdvance)reason='Attente de 7 jours après le premier rappel';
@@ -1596,16 +1680,16 @@ function renderEmails(){
  '<div class="section-head" style="margin-top:18px"><div><h2>Échéances et situations</h2></div></div>'+
  dataTable(['Bien / locataire','Échéance','En retard de','Reste dû','Situation','Action'],cases.sort((a,b)=>a.i.due_on.localeCompare(b.i.due_on)).map(x=>
  '<tr><td><b>'+esc(x.p?.name||'—')+'</b><div class="muted">'+esc(x.l?.tenant_name||'—')+'</div></td><td>'+esc(x.i.due_on)+'</td><td>'+Math.max(0,x.days)+' j</td><td><b>'+money(x.outstanding)+'</b></td><td><span class="mini-tag '+(x.stage>0?'warn':'')+'">'+esc(x.reason)+'</span></td><td>'+
- (x.stage>0&&!db.current_user?.read_only?'<button class="btn primary" data-id="'+esc(x.i.id)+'" data-stage="'+x.stage+'" onclick="prepareRentalReminder(this.dataset.id,Number(this.dataset.stage))">Préparer J+'+x.stage+'</button>':'—')+
+ (x.stage>0&&!db.current_user?.read_only?'<button class="btn primary" data-id="'+esc(x.i.id)+'" data-stage="'+x.stage+'" onclick="prepareRentalReminder(this.dataset.id,Number(this.dataset.stage))">'+(x.drafts.some(r=>r.stage===x.stage)?'Repréparer':'Préparer')+' J+'+x.stage+'</button>':'—')+
  '</td></tr>'))+
  '<div class="section-head" style="margin-top:22px"><div><h2>Brouillons et relances déclarées</h2><p class="muted">Les confirmations manuelles ne constituent pas une preuve technique de distribution.</p></div></div>'+
  dataTable(['Bien','Niveau','Destinataire','Préparé le','Statut','Action'],drafts.map(r=>{
   const l=(db.leases||[]).find(x=>x.id===r.lease_id);
   const p=(db.properties||[]).find(x=>x.id===l?.property_id);
   const plan=plans.find(x=>x.i.id===r.installment_id);
-  const safe=plan&&plan.outstanding>0.005&&plan.pending<=0.005;
+  const safe=plan&&plan.l?.status==='active'&&plan.l.verified_at&&plan.outstanding>0.005&&plan.pending<=0.005&&Math.abs(Number(r.due_at_preparation)-plan.outstanding)<0.005&&String(r.recipient_email||'').trim().toLowerCase()===String(plan.t?.data?.['Mail locataire']||'').trim().toLowerCase();
   return '<tr><td>'+esc(p?.name||'—')+'</td><td>J+'+esc(r.stage)+'</td><td>'+esc(r.recipient_email||'—')+'</td><td>'+esc(r.prepared_at?.slice(0,10)||'—')+'</td><td><span class="mini-tag '+(r.status==='declared_sent'?'':'warn')+'">'+esc(r.status==='prepared'?(safe?'À envoyer manuellement':'À revérifier'):r.status==='declared_sent'?'Déclaré envoyé':'Annulé')+'</span></td><td><div class="item-actions">'+
- (r.status==='prepared'&&safe?'<button class="btn secondary" data-id="'+esc(r.id)+'" onclick="composeRentalReminder(this.dataset.id)">Ouvrir le brouillon</button><button class="btn secondary" data-id="'+esc(r.id)+'" onclick="confirmRentalReminderSent(this.dataset.id)">Déclarer envoyé</button>':'—')+
+ (r.status==='prepared'&&safe&&!db.current_user?.read_only?'<button class="btn secondary" data-id="'+esc(r.id)+'" onclick="composeRentalReminder(this.dataset.id)">Ouvrir le brouillon</button><button class="btn secondary" data-id="'+esc(r.id)+'" onclick="confirmRentalReminderSent(this.dataset.id)">Déclarer envoyé</button>':'—')+
  '</div></td></tr>';
  }))+
  '<div class="section-head" style="margin-top:22px"><div><h2>Courriels ponctuels</h2><p class="muted">Ouvrir une rédaction manuelle, sans envoi automatique.</p></div></div>'+
@@ -1617,26 +1701,28 @@ window.prepareRentalReminder=async(id,stage)=>{
  try{
   const reply=await api('prepare-reminder','POST',{installment_id:id,stage});
   await refresh();
-  alert(reply.already_exists?'Ce rappel existe déjà, aucun doublon créé.':'Brouillon J+'+stage+' préparé. Aucun e-mail n’a été envoyé.');
- }catch(e){alert(e.message||'Relance indisponible')}
+  alert(reply.already_exists?'Ce rappel existe déjà, aucun doublon créé.':reply.reprepared?'Brouillon J+'+stage+' repréparé avec le solde vérifié. Aucun e-mail n’a été envoyé.':'Brouillon J+'+stage+' préparé. Aucun e-mail n’a été envoyé.');
+ }catch(e){alert(e.message||'Relance indisponible');await refresh()}
 };
 window.composeRentalReminder=async(id)=>{
  const draft=(db.reminder_drafts||[]).find(r=>r.id===id);if(!draft||draft.status!=='prepared')return;
  try{
   await api('prepare-reminder','POST',{installment_id:draft.installment_id,stage:draft.stage});
-  const to=draft.recipient_email;
+  if(!await refresh())return;
+  const current=(db.reminder_drafts||[]).find(r=>r.id===id);if(!current||current.status!=='prepared')return;
+  const to=current.recipient_email;
   if(!isEmailAddress(to)){alert('Adresse e-mail invalide.');return;}
-  if(db.current_user?.mail_access){showPage('mail');composeMail(to,draft.subject,draft.body)}
-  else location.href=mailUrl(to,draft.subject,draft.body);
- }catch(e){alert('Brouillon non utilisable : '+(e.message||'situation à vérifier'))}
+  if(db.current_user?.mail_access){showPage('mail');composeMail(to,current.subject,current.body)}
+  else location.href=mailUrl(to,current.subject,current.body);
+ }catch(e){alert('Brouillon non utilisable : '+(e.message||'situation à vérifier'));await refresh()}
 };
 window.confirmRentalReminderSent=async id=>{
  const draft=(db.reminder_drafts||[]).find(r=>r.id===id);if(!draft||draft.status!=='prepared')return;
  if(!confirm('Avez-vous réellement envoyé ce courriel depuis votre messagerie ? Le logiciel ne peut pas vérifier sa distribution.'))return;
  try{
-  await api('declare-reminder-sent','POST',{id,confirmed:true});
+  await api('declare-reminder-sent','POST',{id,prepared_at:draft.prepared_at,confirmed:true});
   await refresh();
- }catch(e){alert(e.message||'Confirmation impossible')}
+ }catch(e){alert(e.message||'Confirmation impossible');await refresh()}
 };
 
 function renderMail(){

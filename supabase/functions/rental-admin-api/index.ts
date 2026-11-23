@@ -255,10 +255,10 @@ async function loadData(client: any, account:any) {
     ? client.from("rental_health_runs").select("id,checked_at,trigger_type,status,critical_count,warning_count,checks,metrics").order("checked_at",{ascending:false}).limit(20)
     : Promise.resolve({data:[],error:null});
   const irlRulesQuery=financeAccess
-    ? loadCompleteRows(()=>client.from("rental_irl_lease_rules").select("lease_id,has_revision_clause,dpe_rating,is_mobility_lease,geographic_scope,revision_due_on,reference_quarter,verified_by,verified_at,updated_at",{count:"exact"}).order("lease_id"),"règles IRL","lease_id")
+    ? loadCompleteRows(()=>client.from("rental_irl_lease_rules").select("lease_id,has_revision_clause,dpe_rating,is_mobility_lease,geographic_scope,revision_due_on,reference_quarter,target_year,verified_by,verified_at,updated_at",{count:"exact"}).order("lease_id"),"règles IRL","lease_id")
     : Promise.resolve({data:[],error:null});
   const irlProposalsQuery=financeAccess
-    ? loadCompleteRows(()=>client.from("rental_irl_proposals").select("id,lease_id,revision_due_on,prepared_on,prepared_by,reference_quarter,baseline_year,target_year,baseline_index,target_index,base_monthly_rent,proposed_monthly_rent,status,created_at",{count:"exact"}).order("created_at",{ascending:false}).order("id"),"propositions IRL")
+    ? loadCompleteRows(()=>client.from("rental_irl_proposals").select("id,lease_id,revision_due_on,prepared_on,prepared_by,reference_quarter,baseline_year,target_year,baseline_index,target_index,base_monthly_rent,proposed_monthly_rent,status,draft_revision,draft_history,created_at",{count:"exact"}).order("created_at",{ascending:false}).order("id"),"propositions IRL")
     : Promise.resolve({data:[],error:null});
   const irlApplicationsQuery=financeAccess
     ? loadCompleteRows(()=>client.from("rental_irl_applications").select("id,proposal_id,lease_id,revision_due_on,notice_sent_on,notice_method,effective_on,old_monthly_rent,new_monthly_rent,approved_by,approved_at,activated_at,status",{count:"exact"}).order("effective_on",{ascending:false}).order("id"),"révisions IRL")
@@ -312,7 +312,7 @@ async function loadData(client: any, account:any) {
     loadCompleteRows(()=>client.from("rental_tenant_rows").select("id,row_number,property_id,data,created_at,updated_at",{count:"exact"}).order("row_number").order("id"),"locataires"),
     loadCompleteRows(()=>client.from("rental_properties").select("id,name,data,current_tenant,tenant_history,payment_schedule,source_sheet,is_example,created_at,updated_at",{count:"exact"}).order("is_example",{ascending:false}).order("name").order("id"),"biens immobiliers"),
     loadCompleteRows(()=>client.from("rental_leases").select("id,property_id,tenant_row_id,tenant_name,observed_move_in_date,start_date,end_date,monthly_rent,charges_amount,due_day,lease_kind,issuer_name,issuer_address,receipt_email_consent,status,source,verified_at,verified_by,notes",{count:"exact"}).order("created_at").order("id"),"baux"),
-    loadCompleteRows(()=>client.from("rental_installments").select("id,lease_id,property_id,period,due_on,rent_amount,charges_amount,total_due,status",{count:"exact"}).order("period",{ascending:false}).order("id"),"échéances"),
+    loadCompleteRows(()=>client.from("rental_installments").select("id,lease_id,property_id,period,due_on,rent_amount,charges_amount,total_due,status,amount_verified_at,amount_verified_by",{count:"exact"}).order("period",{ascending:false}).order("id"),"échéances"),
     paymentsQuery,
     allocationsQuery,
     reminderQuery,
@@ -816,53 +816,83 @@ Deno.serve(async (req) => {
       return json({ok:true,...result.data});
     }
 
+    if(action==="irl-register"&&req.method==="POST"){
+      if(!paymentVoidAllowed(account))return json({error:"Enregistrement des indices officiels réservé à l’administrateur"},403);
+      const body=await req.json().catch(()=>null),year=Number(body?.year),quarter=Number(body?.quarter);
+      const value=apiAmount(body?.value),publishedOn=String(body?.published_on||""),sourceUrl=String(body?.source_url||"").trim();
+      const today=new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+      const quarterEnd=Number.isInteger(year)&&year>=2000&&year<=2100&&[1,2,3,4].includes(quarter)
+        ? new Date(Date.UTC(year,quarter*3,0)).toISOString().slice(0,10):"";
+      if(body?.confirmed!==true||!Number.isInteger(year)||year<2000||year>2100||![1,2,3,4].includes(quarter)
+        ||!Number.isFinite(value)||value<=0||value>99999.99||!apiDate(publishedOn)||publishedOn>today
+        ||publishedOn<=quarterEnd||!/^https:\/\/www\.insee\.fr\/fr\/statistiques\/[0-9]+$/.test(sourceUrl))
+        return json({error:"Confirmez l’indice publié par l’INSEE : année, trimestre, valeur positive à deux décimales maximum, date réelle après le trimestre et lien officiel."},400);
+      const result=await client.rpc("marne_register_irl_index",{
+        p_year:year,p_quarter:quarter,p_value:value,p_published_on:publishedOn,
+        p_source_url:sourceUrl,p_by:account.username,p_confirmed:true
+      });
+      if(result.error){
+        if(["22023","23505","40001","55000"].includes(result.error.code))return json({error:result.error.message},409);
+        throw result.error;
+      }
+      if(!result.data?.already_exists)await audit(client,account.username,"rental-irl-index-registered","rental_irl_index",undefined,
+        {year,quarter,value,published_on:publishedOn,source_url:sourceUrl});
+      return json({ok:true,...result.data});
+    }
+
     if(action==="save-irl-rule"&&req.method==="POST"){
       if(!paymentAllowed(account))return json({error:"Gestion IRL non autorisée"},403);
       const body=await req.json().catch(()=>null);
       const leaseId=String(body?.lease_id||"");
       const due=String(body?.revision_due_on||"");
-      const quarter=Number(body?.reference_quarter),dpe=String(body?.dpe_rating||"unknown");
+      const quarter=Number(body?.reference_quarter),targetYear=Number(body?.target_year),dpe=String(body?.dpe_rating||"unknown");
       const scope=String(body?.geographic_scope||"metropole");
       const validDate=/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(due)
         &&!Number.isNaN(Date.parse(due+"T00:00:00Z"))
         &&new Date(due+"T00:00:00Z").toISOString().slice(0,10)===due;
       if(!apiUuid(leaseId)||!validDate||![1,2,3,4].includes(quarter)
+        ||!Number.isInteger(targetYear)||targetYear<2001||targetYear>2100
         ||!["A","B","C","D","E","F","G","unknown"].includes(dpe)
         ||!["metropole","corse","outre_mer"].includes(scope)
         ||typeof body?.has_revision_clause!=="boolean"
         ||typeof body?.is_mobility_lease!=="boolean"
         ||body?.confirmed!==true)
-        return json({error:"Vérifiez la clause de révision, le DPE, la région et le trimestre du bail"},400);
+        return json({error:"Vérifiez la clause de révision, le DPE, la région, le trimestre et l’année de l’indice cible."},400);
       const lease=await client.from("rental_leases").select("id,start_date,status,lease_kind,verified_at").eq("id",leaseId).maybeSingle();
       if(lease.error)throw lease.error;
       if(!lease.data||lease.data.status!=="active"||!lease.data.verified_at||lease.data.lease_kind!=="residential")
         return json({error:"Configuration IRL disponible uniquement sur les baux d’habitation actifs validés"},409);
-      const previous=await client.from("rental_irl_lease_rules").select("lease_id,reference_quarter,revision_due_on,dpe_rating,has_revision_clause,is_mobility_lease,geographic_scope").eq("lease_id",leaseId).maybeSingle();
+      const previous=await client.from("rental_irl_lease_rules").select("lease_id,reference_quarter,target_year,revision_due_on,dpe_rating,has_revision_clause,is_mobility_lease,geographic_scope").eq("lease_id",leaseId).maybeSingle();
       if(previous.error)throw previous.error;
       if(previous.data){
         const existing=await client.from("rental_irl_proposals").select("id,status").eq("lease_id",leaseId).eq("revision_due_on",previous.data.revision_due_on).limit(1);
         if(existing.error)throw existing.error;
-        if(existing.data?.some(p=>p.status!=="applied") && (
+        if(existing.data?.some(p=>["scheduled","cancelled"].includes(p.status)) && (
            previous.data.revision_due_on!==due ||
            previous.data.reference_quarter!==quarter ||
+           previous.data.target_year!==targetYear ||
            previous.data.dpe_rating!==dpe ||
            previous.data.has_revision_clause!==body.has_revision_clause ||
            previous.data.is_mobility_lease!==body.is_mobility_lease ||
            previous.data.geographic_scope!==scope))
-          return json({error:"Une proposition IRL reste en préparation ou programmée : ne changez pas les règles contractuelles."},409);
+          return json({error:"Une révision programmée ou annulée protège les règles contractuelles de son historique."},409);
         if(existing.data?.some(p=>p.status==="applied") &&
            due<=previous.data.revision_due_on)
           return json({error:"Pour une nouvelle révision, choisissez une échéance contractuelle postérieure à la révision appliquée."},409);
       }
-      const saved=await client.from("rental_irl_lease_rules").upsert({
-        lease_id:leaseId,revision_due_on:due,reference_quarter:quarter,
-        dpe_rating:dpe,geographic_scope:scope,has_revision_clause:body.has_revision_clause,
-        is_mobility_lease:body.is_mobility_lease,verified_by:account.username,
-        verified_at:new Date().toISOString(),updated_at:new Date().toISOString()
-      },{onConflict:"lease_id"}).select("lease_id").single();
-      if(saved.error)throw saved.error;
+      const saved=await client.rpc("marne_save_irl_rule",{
+        p_lease_id:leaseId,p_by:account.username,p_rule:{
+          revision_due_on:due,reference_quarter:quarter,target_year:targetYear,
+          dpe_rating:dpe,geographic_scope:scope,has_revision_clause:body.has_revision_clause,
+          is_mobility_lease:body.is_mobility_lease
+        }
+      });
+      if(saved.error){
+        if(["22023","23505","40001","55000"].includes(saved.error.code))return json({error:saved.error.message},409);
+        throw saved.error;
+      }
       await audit(client,account.username,"rental-irl-rule-verified","rental_lease",leaseId,
-        {revision_due_on:due,reference_quarter:quarter,dpe_rating:dpe,scope});
+        {revision_due_on:due,reference_quarter:quarter,target_year:targetYear,dpe_rating:dpe,scope});
       return json({ok:true,lease_id:leaseId});
     }
 
@@ -873,7 +903,7 @@ Deno.serve(async (req) => {
         return json({error:"Confirmation et bail valides requis"},400);
       const q=await client.rpc("marne_irl_prepare_proposal",{p_lease_id:leaseId,p_prepared_by:account.username});
       if(q.error){
-        if(q.error.code==="22023")return json({error:q.error.message},409);
+        if(["22023","55000"].includes(q.error.code))return json({error:q.error.message},409);
         throw q.error;
       }
       if(q.data?.created)await audit(client,account.username,"rental-irl-proposal-prepared","rental_lease",leaseId,
@@ -897,20 +927,22 @@ Deno.serve(async (req) => {
         return json({error:"Programmation de révision réservée à l’administrateur"},403);
       const body=await req.json().catch(()=>null);
       const proposalId=String(body?.proposal_id||"");
+      const expectedRevision=Number(body?.expected_revision);
       const noticeOn=String(body?.notice_sent_on||"");
       const method=String(body?.notice_method||"");
       const isDate=/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(noticeOn)
        &&!Number.isNaN(Date.parse(noticeOn+"T00:00:00Z"))
        &&new Date(noticeOn+"T00:00:00Z").toISOString().slice(0,10)===noticeOn;
-      if(body?.confirmed!==true||!apiUuid(proposalId)||!isDate
+      if(body?.confirmed!==true||!apiUuid(proposalId)||!isDate||!["number","string"].includes(typeof body?.expected_revision)
+         ||!Number.isSafeInteger(expectedRevision)||expectedRevision<1||expectedRevision>2147483647
          ||!["registered_post","hand_signed"].includes(method))
         return json({error:"Confirmez une notification réellement effectuée, avec date et mode valides"},400);
       const result=await client.rpc("marne_schedule_irl_application",{
         p_proposal_id:proposalId,p_notice_sent_on:noticeOn,
-        p_notice_method:method,p_approved_by:account.username
+        p_notice_method:method,p_approved_by:account.username,p_expected_revision:expectedRevision
       });
       if(result.error){
-        if(result.error.code==="22023"||result.error.code==="23505")
+        if(["22023","23505","55000"].includes(result.error.code))
           return json({error:result.error.message},409);
         throw result.error;
       }
@@ -1117,6 +1149,11 @@ Deno.serve(async (req) => {
       const issuer=String(lease.data.issuer_name||"").trim(),issuerAddress=String(lease.data.issuer_address||"").trim();
       const tenant=String(lease.data.tenant_name||"").trim();
       let address=String(property.data?.data?.["Adresse"]||"").trim();
+      if(address){
+        const locality=[property.data?.data?.["Code postal"],property.data?.data?.["Ville"]]
+          .map(value=>String(value||"").trim()).filter(Boolean).join(" ");
+        if(locality)address+="\n"+locality;
+      }
       if(!address&&lease.data.tenant_row_id){
         const q=await client.from("rental_tenant_rows").select("data").eq("id",lease.data.tenant_row_id).maybeSingle();
         if(q.error)throw q.error;
@@ -1184,46 +1221,38 @@ Deno.serve(async (req) => {
         " un solde de "+due.toFixed(2).replace(".",",")+" € reste à rapprocher pour l’échéance du "+
         i.data.due_on+" concernant "+String(property.data.name)+".\n\nSi vous avez effectué un règlement récemment, merci de nous le signaler en précisant sa date et sa référence afin que nous puissions vérifier notre suivi.\n\nCeci est un rappel amiable, sous réserve de la vérification des paiements.\n\nCordialement,\nMarne Invest";
       const subject="Rappel amiable de l’échéance du "+i.data.due_on+" — "+String(property.data.name);
-      const existing=await client.from("rental_reminder_drafts").select("id,status").eq("installment_id",installmentId).eq("stage",stage).maybeSingle();
-      if(existing.error)throw existing.error;
-      if(existing.data)return json({ok:true,already_exists:true,item:existing.data});
-      const saved=await client.from("rental_reminder_drafts").insert({
-        installment_id:installmentId,lease_id:l.data.id,stage,recipient_email:recipient,subject,body:msg,
-        due_at_preparation:due,prepared_by:account.username,status:"prepared"
-      }).select("id,status").single();
+      const saved=await client.rpc("marne_prepare_reminder_draft",{
+        p_installment_id:installmentId,p_stage:stage,p_expected_remaining:due,
+        p_recipient_email:recipient,p_subject:subject,p_body:msg,p_by:account.username
+      });
       if(saved.error){
-        if(saved.error.code==="23505"){
-          const previous=await client.from("rental_reminder_drafts").select("id,status").eq("installment_id",installmentId).eq("stage",stage).single();
-          if(previous.error)throw previous.error;
-          return json({ok:true,already_exists:true,item:previous.data});
-        }
+        if(["22023","23505","40001","55000"].includes(saved.error.code))
+          return json({error:saved.error.message},409);
         throw saved.error;
       }
-      await audit(client,account.username,"rental-reminder-prepared","rental_reminder",saved.data.id,{installment_id:installmentId,stage});
-      return json({ok:true,already_exists:false,item:saved.data});
+      if(!saved.data.already_exists)await audit(client,account.username,"rental-reminder-prepared","rental_reminder",saved.data.item.id,
+        {installment_id:installmentId,stage,reprepared:saved.data.reprepared===true});
+      return json(saved.data);
     }
 
     if (action === "declare-reminder-sent" && req.method === "POST") {
       if(!paymentAllowed(account))return json({error:"Accès aux relances non autorisé"},403);
-      const body=await req.json(),id=String(body?.id||"");
+      const body=await req.json(),id=String(body?.id||""),preparedAt=String(body?.prepared_at||"");
       if(!apiUuid(id)||body?.confirmed!==true)
         return json({error:"Confirmation de l’envoi manuel obligatoire"},400);
-      const item=await client.from("rental_reminder_drafts").select("id,installment_id,status").eq("id",id).maybeSingle();
-      if(item.error)throw item.error;
-      if(!item.data)return json({error:"Relance introuvable"},404);
-      if(item.data.status==="declared_sent")return json({ok:true,already_exists:true});
-      if(item.data.status!=="prepared")return json({error:"Relance annulée"},409);
-      const balance=await client.rpc("marne_installment_status",{p_installment_id:item.data.installment_id});
-      if(balance.error)throw balance.error;
-      if(Number(balance.data?.remaining||0)<0.005||Number(balance.data?.unallocated_on_lease||0)>0.005)
-         return json({error:"Situation financière modifiée : vérifiez avant d’indiquer un envoi."},409);
-      const updated=await client.from("rental_reminder_drafts").update({
-         status:"declared_sent",declared_sent_at:new Date().toISOString(),declared_sent_by:account.username
-      }).eq("id",id).eq("status","prepared").select("id,status").maybeSingle();
-      if(updated.error)throw updated.error;
-      if(!updated.data)return json({ok:true,already_exists:true});
-      await audit(client,account.username,"rental-reminder-declared-sent","rental_reminder",id,{manual:true});
-      return json({ok:true,already_exists:false});
+      if(!apiDate(preparedAt.slice(0,10))||!/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/.test(preparedAt)
+        ||Number.isNaN(Date.parse(preparedAt)))
+        return json({error:"Version du brouillon manquante ou invalide : actualisez avant de confirmer l’envoi."},400);
+      const result=await client.rpc("marne_declare_reminder_sent",{
+        p_reminder_id:id,p_expected_prepared_at:preparedAt,p_by:account.username
+      });
+      if(result.error){
+        if(["22023","40001","55000"].includes(result.error.code))return json({error:result.error.message},409);
+        throw result.error;
+      }
+      if(result.data?.ok!==true)return json(result.data,result.data?.code==="reminder_missing"?404:409);
+      if(!result.data.already_exists)await audit(client,account.username,"rental-reminder-declared-sent","rental_reminder",id,{manual:true});
+      return json(result.data);
     }
 
 

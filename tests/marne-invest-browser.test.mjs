@@ -1242,3 +1242,148 @@ test('Navigateur : une fiche sans bien conserve toutes les conditions saisies ju
   assert.deepEqual(writtenActions(app), ['save-tenant', 'new-property', 'save-tenant', 'prepare-lease', 'save-lease']);
   assertSetupRequests(app);
 });
+
+test('Navigateur : les relances annulées ou périmées sont repréparées et la rédaction utilise le dernier solde vérifié', { timeout: 60000 }, async t => {
+  for (const [status, stage] of [['cancelled', 7], ['prepared', 7], ['cancelled', 14], ['prepared', 14]]) {
+    const data = fixture();
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const day = offset => new Date(Date.parse(today + 'T12:00:00Z') + offset * 86400000).toISOString().slice(0, 10);
+    data.leases[0].start_date = day(-60);
+    Object.assign(data.installments[0], { period: day(-21).slice(0, 7) + '-01', due_on: day(-21) });
+    const reminderId = '00000000-0000-4000-8000-000000000008';
+    const draft = { id: reminderId, lease_id: leaseId, installment_id: installmentId, stage, status,
+      due_at_preparation: 650, recipient_email: 'ancien-contact@example.test', subject: 'Ancien rappel',
+      body: 'ANCIEN_CORPS_A_EXCLURE', prepared_at: day(-12) + 'T12:00:00Z', declared_sent_at: null };
+    data.reminder_drafts = stage === 14 ? [{ ...draft, id: '00000000-0000-4000-8000-000000000009',
+      stage: 7, status: 'declared_sent', due_at_preparation: 250, declared_sent_at: day(-10) + 'T12:00:00Z' }, draft] : [draft];
+    let preparations = 0;
+    const apiHandler = async ({ action, request }) => {
+      if (action !== 'prepare-reminder' || request.method() !== 'POST') return null;
+      preparations++;
+      if (preparations === 2) {
+        data.payments.push({ ...data.payments[0], id: 'payment-additional-fixture', amount: 50, received_on: today });
+        data.payment_allocations.push({ payment_id: 'payment-additional-fixture', installment_id: installmentId, amount: 50 });
+        data.tenants[0].data['Mail locataire'] = 'contact-actualise@example.test';
+      }
+      Object.assign(draft, { status: 'prepared', due_at_preparation: preparations === 1 ? 250 : 200,
+        recipient_email: data.tenants[0].data['Mail locataire'], prepared_at: data.server_time,
+        subject: preparations === 1 ? 'Rappel repréparé' : 'Rappel revalidé avant rédaction',
+        body: preparations === 1 ? 'CORPS_REPREPARE_250' : 'CORPS_REVALIDE_200' });
+      return { body: { ok: true, id: reminderId, reprepared: true, already_exists: false } };
+    };
+    const app = await openApp(t, { data, apiHandler, pageName: 'emails' });
+    assert.equal(await app.page.getByRole('button', { name: 'Ouvrir le brouillon', exact: true }).count(), 0);
+    assert.equal(await app.page.getByRole('button', { name: 'Déclarer envoyé', exact: true }).count(), 0);
+    await app.page.getByRole('button', { name: 'Repréparer J+' + stage, exact: true }).click();
+    const openDraft = app.page.getByRole('button', { name: 'Ouvrir le brouillon', exact: true });
+    await openDraft.waitFor();
+    assert.equal(draft.due_at_preparation, 250);
+    assert.equal(draft.status, 'prepared');
+    await openDraft.click();
+    await app.page.locator('#mailBody').waitFor();
+    assert.equal(await app.page.locator('#mailBody').inputValue(), 'CORPS_REVALIDE_200');
+    assert.equal(await app.page.locator('#mailSubject').inputValue(), 'Rappel revalidé avant rédaction');
+    assert.equal(await app.page.locator('#mailTo').inputValue(), 'contact-actualise@example.test');
+    assert.equal(draft.due_at_preparation, 200);
+    assert.equal(draft.declared_sent_at, null);
+    assert.deepEqual(writtenActions(app), ['prepare-reminder', 'prepare-reminder']);
+    for (const request of app.requests.filter(request => request.action === 'prepare-reminder')) {
+      assert.deepEqual(JSON.parse(request.body), { installment_id: installmentId, stage });
+    }
+    assert.deepEqual(data.mail_outbox, []);
+    assertSetupRequests(app);
+  }
+});
+
+test('Navigateur : la révision IRL exige une année cible explicitement choisie parmi les indices publiés', async t => {
+  const data = fixture();
+  data.leases[0].start_date = '2024-01-01';
+  data.irl_indices = [
+    { year: 2024, quarter: 4, geographic_scope: 'metropole', value: 140, published_on: '2025-01-15', source_url: origin + '/irl-fixture' },
+    { year: 2025, quarter: 4, geographic_scope: 'metropole', value: 142, published_on: '2026-01-15', source_url: origin + '/irl-fixture' },
+    { year: 2026, quarter: 4, geographic_scope: 'metropole', value: 144, published_on: '2027-01-15', source_url: origin + '/irl-fixture' },
+  ];
+  const originalLease = structuredClone(data.leases[0]);
+  const apiHandler = async ({ action, request }) => {
+    if (action !== 'save-irl-rule' || request.method() !== 'POST') return null;
+    const { confirmed, ...values } = request.postDataJSON();
+    const rule = { ...values, verified_at: data.server_time };
+    data.irl_rules = [rule];
+    return { body: { ok: true, lease_id: rule.lease_id } };
+  };
+  const app = await openApp(t, { data, apiHandler, pageName: 'contracts' });
+  await app.page.getByRole('button', { name: 'Configurer / calculer', exact: true }).click();
+  await app.page.locator('#irl-clause').check();
+  await app.page.locator('#irl-dpe').selectOption('D');
+  await app.page.locator('#irl-date').fill('2026-01-01');
+  await app.page.locator('#irl-date').press('Tab');
+  await app.page.locator('#irl-quarter').selectOption('4');
+  assert.equal(await app.page.locator('#irl-target-year option[value="2025"]').count(), 0);
+  assert.equal(await app.page.locator('#irl-target-year').inputValue(), '');
+  await app.page.locator('#irl-verified').check();
+  await app.page.locator('#irl-date').fill('2026-02-01');
+  await app.page.locator('#irl-date').press('Tab');
+  assert.equal(await app.page.locator('#irl-target-year option[value="2025"]').count(), 1);
+  assert.equal(await app.page.locator('#irl-target-year option[value="2026"]').count(), 0);
+  assert.equal(await app.page.locator('#irl-target-year').inputValue(), '', 'Une année disponible ne doit pas être supposée');
+  assert.equal(await app.page.locator('#irl-clause').isChecked(), true);
+  assert.equal(await app.page.locator('#irl-dpe').inputValue(), 'D');
+  assert.equal(await app.page.locator('#irl-verified').isChecked(), false);
+  await app.page.locator('#irl-verified').check();
+  await app.page.getByRole('button', { name: 'Enregistrer les règles du bail', exact: true }).click();
+  assert.match(await app.page.locator('#modalStatus').innerText(), /année|indice/i);
+  assert.deepEqual(writtenActions(app), []);
+  await app.page.locator('#irl-target-year').selectOption('2025');
+  await app.page.getByRole('button', { name: 'Enregistrer les règles du bail', exact: true }).click();
+  await app.page.getByRole('button', { name: 'Calculer la proposition', exact: true }).waitFor();
+  assert.equal(await app.page.locator('#irl-target-year').inputValue(), '2025');
+  assert.deepEqual(writtenActions(app), ['save-irl-rule']);
+  const body = JSON.parse(app.requests.find(request => request.action === 'save-irl-rule').body);
+  assert.deepEqual(body, { lease_id: leaseId, has_revision_clause: true, is_mobility_lease: false,
+    dpe_rating: 'D', geographic_scope: 'metropole', revision_due_on: '2026-02-01',
+    reference_quarter: 4, target_year: 2025, confirmed: true });
+  assert.deepEqual(data.leases[0], originalLease);
+  assertSetupRequests(app);
+});
+
+test('Navigateur : ajouter un indice historique confirmé conserve les paramètres encore non enregistrés', async t => {
+  const data = fixture();
+  const apiHandler = async ({ action, request }) => {
+    if (action !== 'irl-register' || request.method() !== 'POST') return null;
+    const body = request.postDataJSON();
+    const item = { year: body.year, quarter: body.quarter, value: Number(body.value),
+      published_on: body.published_on, source_url: body.source_url, geographic_scope: 'metropole' };
+    data.irl_indices.push(item);
+    return { body: { ok: true, item, already_exists: false } };
+  };
+  const app = await openApp(t, { data, apiHandler, pageName: 'config' });
+  await app.page.locator('#central-landlord_name').fill('Coordonnées encore en cours de saisie');
+  await app.page.locator('#central-landlord_address').fill('Adresse non enregistrée à conserver');
+  await app.page.locator('#central-mail-password').fill('secret-fictif-non-enregistre');
+  const dataLoads = app.requests.filter(request => request.action === 'data').length;
+  await app.page.locator('#irl-register-form > summary').click();
+  await app.page.locator('#irl-register-year').fill('2024');
+  await app.page.locator('#irl-register-quarter').selectOption('4');
+  await app.page.locator('#irl-register-value').fill('140.25');
+  await app.page.locator('#irl-register-date').fill('2025-01-15');
+  await app.page.locator('#irl-register-source').fill('https://www.insee.fr/fr/statistiques/1234567');
+  await app.page.locator('#irl-register-save').click();
+  assert.match(await app.page.locator('#irl-register-status').innerText(), /Confirmez la vérification/);
+  assert.deepEqual(writtenActions(app), []);
+  await app.page.locator('#irl-register-confirm').check();
+  await app.page.locator('#irl-register-save').click();
+  await app.page.locator('#irl-register-status').filter({ hasText: /Indice enregistré/ }).waitFor();
+  assert.match(await app.page.locator('#irl-reference-panel').innerText(), /T4 2024/);
+  assert.match(await app.page.locator('#irl-reference-panel').innerText(), /140[.,]25/);
+  assert.equal(await app.page.locator('#central-landlord_name').inputValue(), 'Coordonnées encore en cours de saisie');
+  assert.equal(await app.page.locator('#central-landlord_address').inputValue(), 'Adresse non enregistrée à conserver');
+  assert.equal(await app.page.locator('#central-mail-password').inputValue(), 'secret-fictif-non-enregistre');
+  assert.equal(app.requests.filter(request => request.action === 'data').length, dataLoads);
+  assert.deepEqual(writtenActions(app), ['irl-register']);
+  const body = JSON.parse(app.requests.find(request => request.action === 'irl-register').body);
+  assert.deepEqual(body, { year: 2024, quarter: 4, value: '140.25', published_on: '2025-01-15',
+    source_url: 'https://www.insee.fr/fr/statistiques/1234567', confirmed: true });
+  assert.equal(JSON.stringify(body).includes('secret-fictif-non-enregistre'), false);
+  assert.equal(data.irl_indices.length, 1);
+  assertSetupRequests(app);
+});
