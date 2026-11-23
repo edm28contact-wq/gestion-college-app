@@ -145,7 +145,7 @@ const releaseMilestones=[
  ['Application IRL après notification vérifiée','done','Courrier préparé, date d’envoi attestée, prise d’effet différée ; aucun envoi automatique'],
  ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
  ['Diagnostic quotidien des anomalies','done','Vérification de 5 planifications, paiements, loyers, archives et réception Free, sans opérations automatiques'],
- ['Recette de bout en bout en production','partial','18 tests de régression et contrôles SQL ; recette navigateur authentifiée à réaliser']
+ ['Recette de bout en bout en production','partial','21 tests de régression et contrôles SQL ; recette navigateur authentifiée à réaliser']
 ];
 function releaseStatus(){
  const total=releaseMilestones.length,done=releaseMilestones.filter(x=>x[1]==='done').length,partial=releaseMilestones.filter(x=>x[1]==='partial').length;
@@ -281,7 +281,7 @@ function renderPilotage(){
  '<div class="kv"><b>Adresses e-mail locataires manquantes</b><span>'+Math.max(0,tenants.length-emails)+' · <button class="btn secondary" onclick="showPage(&quot;tenants&quot;)">Ouvrir Locataires</button></span></div>'+
  '<div class="kv"><b>Messagerie Free</b><span>'+(db.mail_sync_state?.imap_verified_at?'IMAP vérifié ; SMTP à contrôler':db.current_user?.mail_configured?'Test IMAP/SMTP requis':'Mot de passe à configurer')+' · <button class="btn secondary" onclick="showPage(&quot;config&quot;)">Paramètres</button></span></div></section>';
  const checklist='<section class="release-block"><h3>Feuille de route de la version finale</h3>'+
- '<div class="note">18 tests de régression du site sont enregistrés dans GitHub Actions. Cela ne remplace pas les tests réels avec vos comptes Free, bancaires et les contrats signés.</div>'+
+ '<div class="note">21 tests de régression du site sont enregistrés dans GitHub Actions. Cela ne remplace pas les tests réels avec vos comptes Free, bancaires et les contrats signés.</div>'+
  '<p class="muted">Méthode de calcul : 1 point par lot livré ; un lot partiel ou planifié n’est pas compté. Le pourcentage évolue lors des prochaines livraisons vérifiées.</p>'+
  '<div class="release-list">'+releaseMilestones.map(([label,state,desc])=>{
  const name=state==='done'?'Livré':state==='partial'?'Partiel':'À développer';
