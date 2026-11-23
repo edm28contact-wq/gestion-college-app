@@ -48,3 +48,11 @@ test("sans session vérifiée, aucun lien ni onglet",()=>{
  assert.equal(check("secretariat/",null),false);
  assert.equal(allowedTab("#tInvoices",null,"secretariat"),false);
 });
+
+test("la permission factures seule ne donne pas le stock ni le planning",()=>{
+ const ctx=context({secretariat:true},{"secretariat.invoices.write":true});
+ assert.equal(allowedTab("#tInvoices",ctx,"secretariat"),true);
+ assert.equal(allowedTab("#tStocks",ctx,"secretariat"),false);
+ assert.equal(allowedTab("#tOrders",ctx,"secretariat"),false);
+ assert.equal(allowedTab("#tPlanning",ctx,"secretariat"),false);
+});
