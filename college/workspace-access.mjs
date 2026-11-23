@@ -125,7 +125,7 @@ export function attach({aside,brand,footer,base,area,target,filterMenu}){
  window.addEventListener("storage",event=>{if(!event.key||keys.includes(event.key))refresh(true)});
  window.addEventListener("focus",()=>refresh());
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
- const timer=setInterval(()=>{if(!document.hidden&&access)refresh()},45000);
+ const timer=setInterval(()=>{if(!document.hidden)refresh()},45000);
  window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
  new MutationObserver(()=>{if(!target.classList.contains("hide"))refresh()}).observe(target,{attributes:true,attributeFilter:["class"]});
  apply();
