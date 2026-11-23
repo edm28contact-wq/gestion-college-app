@@ -131,7 +131,7 @@ function render(){
  else if(page==="reheat"){renderReheat();updateReheatControls();}
  else renderTasks();
  updateCriticalAlert();
- const viewOnly=data.me.scope!=="staff"||data.me.existingAccount===true;
+ const viewOnly=data.me.scope==="viewer";
  $("readonlyNotice").hidden=!viewOnly;
  for(const button of document.querySelectorAll("#content form button[type=submit]")){if(viewOnly)button.disabled=true}
 }
@@ -251,7 +251,7 @@ document.addEventListener("click",event=>{
 function updateReheatControls(){
  if(!data)return;
  for(const form of document.querySelectorAll("form[data-finish][data-due]")){
-   const unlocked=data.me.scope==="staff"&&!data.me.existingAccount&&canFinish(form.dataset.due),ms=remainingMs(form.dataset.due);
+   const unlocked=data.me.scope!=="viewer"&&canFinish(form.dataset.due),ms=remainingMs(form.dataset.due);
    const input=form.elements.namedItem("temperature_c"),button=form.querySelector('button[type="submit"]');
    if(input)input.disabled=!unlocked;
    if(button)button.disabled=!unlocked;
