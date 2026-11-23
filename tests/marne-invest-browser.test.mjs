@@ -425,7 +425,7 @@ test('Navigateur : modèles personnalisables, aperçu fictif et préservation de
  assert.equal(await app.page.locator('#central-landlord_name').inputValue(),'Coordonnée non enregistrée');assert.equal(await app.page.locator('#central-mail-password').inputValue(),'secret-fictif-non-enregistre');
  await app.page.locator('#auto-daily-limit').fill('7');await app.page.locator('#auto-config-save').click();
  await app.page.locator('#auto-config-status').filter({hasText:'Modèles et règles enregistrés'}).waitFor();
- const saved=JSON.parse(app.requests.find(x=>x.action==='mail-automation-save').body);assert.equal(saved.settings.send_enabled,false);assert.equal(saved.settings.daily_limit,7);assert.equal(saved.templates[0].body_template,'Texte personnalisé {{tenant_name}} / {{amount_due}}');
+ const saved=JSON.parse(app.requests.find(x=>x.action==='mail-automation-save').body);assert.equal(saved.settings.send_enabled,false);assert.equal(saved.settings.daily_limit,7);assert.equal(saved.templates[0].version,1);assert.equal(saved.templates[0].body_template,'Texte personnalisé {{tenant_name}} / {{amount_due}}');
  assert.equal(JSON.stringify(saved).includes('secret-fictif'),false);assert.equal(await app.page.locator('#central-mail-password').inputValue(),'secret-fictif-non-enregistre');assertSetupRequests(app);
 });
 
@@ -455,7 +455,13 @@ test('Navigateur : préparation des messages ne déclenche pas le transport SMTP
  await app.page.locator('#auto-generate').click();await app.page.locator('#auto-generate-status').filter({hasText:'2 message(s) préparé(s)'}).waitFor();assert.deepEqual(writtenActions(app),['mail-automation-generate']);assertSetupRequests(app);
 });
 
-function bankConnectionFixture(){return {ok:true,provider:'powens',api_version:'2.0',mode:'read_only',domain:'test-fixture.biapi.pro',client_id:'client-fixture',environment:'sandbox',configured:false,verified:false,connected:false,auto_sync:false,redirect_uri:'https://edm28contact-wq.github.io/gestion-college-app/admin/marne-invest/?page=config',connections:[],accounts:[]}}
+test('Navigateur : préparation sans boîte configurée indique précisément le paramètre manquant', {timeout:60000},async t=>{
+ const app=await openApp(t,{pageName:'emails',apiHandler:async({action})=>action==='mail-automation-generate'?{body:{ok:true,created:0,preparation_blocked:'account_missing'}}:null});
+ await app.page.locator('#auto-generate').click();await app.page.locator('#auto-generate-status').filter({hasText:'Adresse Free manquante'}).waitFor();
+ assert.match(await app.page.locator('#auto-generate-status').getAttribute('class'),/err/);assert.deepEqual(writtenActions(app),['mail-automation-generate']);assertSetupRequests(app);
+});
+
+function bankConnectionFixture(){return {ok:true,provider:'powens',api_version:'2.0',mode:'read_only',domain:'test-fixture-sandbox.biapi.pro',client_id:'client-fixture',environment:'sandbox',configured:false,verified:false,connected:false,auto_sync:false,redirect_uri:'https://edm28contact-wq.github.io/gestion-college-app/admin/marne-invest/?page=config',connections:[],accounts:[]}}
 
 test('Navigateur : configuration bancaire séparée, secret effacé après sauvegarde et aucun import implicite', {timeout:60000},async t=>{
  const state=bankConnectionFixture();const app=await openApp(t,{pageName:'config',apiHandler:async({action,request})=>{
@@ -465,6 +471,33 @@ test('Navigateur : configuration bancaire séparée, secret effacé après sauve
  await app.page.locator('#bank-client-secret').fill('secret-powens-fictif');await app.page.locator('#bank-config-save').click();await app.page.locator('#bank-connection-status').filter({hasText:'Configuration enregistrée'}).waitFor();
  assert.equal(await app.page.locator('#bank-client-secret').inputValue(),'');assert.equal(await app.page.locator('#central-mail-password').inputValue(),'autre-secret-fictif');assert.deepEqual(writtenActions(app),['bank-configure']);
  assert.equal(JSON.stringify(state).includes('secret-powens'),false);assertSetupRequests(app);
+});
+
+test('Navigateur : passage bancaire en production exige une confirmation distincte', {timeout:60000},async t=>{
+ const state={...bankConnectionFixture(),configured:true};const app=await openApp(t,{pageName:'config',apiHandler:async({action,request})=>{
+  if(action==='bank-status')return {body:state};if(action==='bank-configure'){const b=request.postDataJSON();assert.equal(b.switch_to_production,true);Object.assign(state,{domain:b.domain,environment:b.environment});return {body:{ok:true}}}
+ }});
+ await app.page.getByRole('button',{name:'Configurer / consulter la connexion bancaire',exact:true}).click();await app.page.locator('#bank-domain').fill('fixture-production.biapi.pro');await app.page.locator('#bank-environment').selectOption('production');await app.page.locator('#bank-client-secret').fill('production-secret-fictif');await app.page.locator('#bank-config-save').click();
+ await app.page.locator('#bank-connection-status').filter({hasText:'Cochez le passage en production'}).waitFor();assert.deepEqual(writtenActions(app),[]);
+ await app.page.locator('#bank-switch-production').check();await app.page.locator('#bank-config-save').click();await app.page.locator('#bank-connection-status').filter({hasText:'Configuration enregistrée'}).waitFor();
+ assert.deepEqual(writtenActions(app),['bank-configure']);assert.equal(await app.page.locator('#bank-switch-production').count(),0);assertSetupRequests(app);
+});
+
+test('Navigateur : opérations bancaires de test visibles mais impossibles à rapprocher', {timeout:60000},async t=>{
+ const data=fixture();data.bank_imports=[{id:'import-sandbox',account_label:'Compte QA',provider_environment:'sandbox'},{id:'import-production',account_label:'Compte QA',provider_environment:'production'}];
+ data.bank_lines=[{id:'line-sandbox',import_id:'import-sandbox',booking_date:'2026-11-05',amount:650,description:'Loyer Test',status:'pending'},{id:'line-production',import_id:'import-production',booking_date:'2026-11-05',amount:650,description:'Loyer Test',status:'pending'}];
+ const app=await openApp(t,{data,pageName:'transactions'});
+ assert.equal(await app.page.getByRole('button',{name:'Rapprocher',exact:true}).count(),1);assert.equal(await app.page.locator('button[data-id="line-sandbox"][onclick*="openBankMatch"]').count(),0);
+ assert.match(await app.page.locator('#content').innerText(),/Test Powens — non comptabilisable/);assert.doesNotMatch(await app.page.locator('#content').innerText(),/Doublon potentiel/);
+ await app.page.evaluate(()=>window.openBankMatch('line-sandbox'));assert.equal(await app.page.locator('#bank-match-confirm').count(),0);assert.deepEqual(writtenActions(app),[]);assertSetupRequests(app);
+});
+
+test('Navigateur : rapprochement avertit d’un doublon entre CSV et banque malgré des libellés de compte différents', {timeout:60000},async t=>{
+ const data=fixture();data.bank_imports=[{id:'import-csv',account_label:'Ancien relevé CSV'},{id:'import-provider',account_label:'Compte connecté',provider_account_id:'account-qa',provider_environment:'production'}];
+ data.bank_lines=[{id:'line-csv',import_id:'import-csv',booking_date:'2026-11-05',amount:650,description:'Virement loyer',status:'pending'},{id:'line-provider',import_id:'import-provider',booking_date:'2026-11-05',amount:650,description:'Virement loyer',status:'pending'}];
+ const app=await openApp(t,{data,pageName:'transactions'});assert.match(await app.page.locator('#content').innerText(),/Doublon CSV \/ banque à vérifier/);
+ await app.page.locator('button[data-id="line-provider"][onclick*="openBankMatch"]').click();assert.match(await app.page.locator('#modal').innerText(),/Vérifiez le relevé et les paiements déjà enregistrés/);
+ assert.equal(await app.page.locator('#bank-match-verified').isChecked(),false);assert.deepEqual(writtenActions(app),[]);assertSetupRequests(app);
 });
 
 test('Navigateur : URL fournisseur inattendue rejetée sans navigation ni import', {timeout:60000},async t=>{
@@ -481,6 +514,38 @@ test('Navigateur : comptes bancaires sélectionnés puis import vers rapprocheme
  await app.page.getByRole('button',{name:'Configurer / consulter la connexion bancaire',exact:true}).click();await app.page.locator('.bank-account-choice').check();await app.page.getByRole('button',{name:'Enregistrer les comptes sélectionnés',exact:true}).click();
  await app.page.locator('#bank-connection-status').filter({hasText:'Sélection enregistrée'}).waitFor();await app.page.locator('#bank-connection-config').getByRole('button',{name:'Synchroniser',exact:true}).click();await app.page.locator('#bank-connection-status').filter({hasText:'4 mouvement(s) importé(s)'}).waitFor();
  assert.deepEqual(writtenActions(app),['bank-selection','bank-sync']);assert.equal(data.payments.length,1);assertSetupRequests(app);
+});
+
+test('Navigateur : preuve SMTP et envoi incertain empêchent une seconde relance du même niveau', {timeout:60000},async t=>{
+ for(const deliveryStatus of ['sent','uncertain']){
+  const data=fixture(),today=new Date(),past=offset=>new Date(today.getTime()-offset*86400000).toISOString();
+  data.installments[0].due_on=past(25).slice(0,10);
+  data.reminder_drafts=[{id:'reminder-proof',lease_id:leaseId,installment_id:installmentId,stage:7,recipient_email:'fixture@example.test',subject:'Rappel QA',body:'Solde QA',due_at_preparation:250,status:'cancelled',prepared_at:past(10)}];
+  data.mail_outbox=[{id:'mail-proof',automation_kind:'reminder_7',source_id:'reminder-proof',recipient_email:'fixture@example.test',subject:'Rappel QA',plain_body:'Solde QA',status:deliveryStatus,sent_at:deliveryStatus==='sent'?past(8):null}];
+  const app=await openApp(t,{data,pageName:'emails'});
+  assert.equal(await app.page.getByRole('button',{name:/^(Préparer|Repréparer) J\+7$/}).count(),0);
+  assert.equal(await app.page.getByRole('button',{name:'Ouvrir le brouillon',exact:true}).count(),0);
+  if(deliveryStatus==='sent')assert.equal(await app.page.getByRole('button',{name:'Préparer J+14',exact:true}).count(),1);
+  else assert.match(await app.page.locator('#content').innerText(),/résultat à vérifier/);
+  assertSetupRequests(app);
+ }
+});
+
+test('Navigateur : retour bancaire contrôlé sans import et paramètres temporaires effacés de l’adresse', {timeout:60000},async t=>{
+ const app=await openApp(t,{pageName:'config'});
+ await app.page.evaluate(()=>sessionStorage.setItem('marne-bank-connect-state',JSON.stringify({state:'state-qa',expires_at:Date.now()+60000})));
+ await app.page.goto(origin+'/?page=config&state=state-qa&connection_id=123&code=code-fictif',{waitUntil:'domcontentloaded'});
+ await app.page.waitForFunction(()=>document.querySelector('#serverTime')?.textContent.includes('Données actualisées'));
+ assert.match(await app.page.locator('#content').innerText(),/Retour du parcours bancaire reçu/);assert.equal(new URL(app.page.url()).search,'?page=config');
+ assert.equal(await app.page.evaluate(()=>sessionStorage.getItem('marne-bank-connect-state')),null);assert.deepEqual(writtenActions(app),[]);assertSetupRequests(app);
+});
+
+test('Navigateur : une réponse de configuration retardée ne repeuple pas l’écran après déconnexion', {timeout:60000},async t=>{
+ const app=await openApp(t,{pageName:'config'}),held=app.delayAction('mail-automation-config',{status:200,body:automaticMailFixture()});
+ await app.page.getByRole('button',{name:'Configurer les modèles et les règles',exact:true}).click();await held.received;
+ await app.page.getByRole('button',{name:'Déconnexion',exact:true}).click();held.release();
+ await app.page.waitForFunction(()=>document.querySelector('#login').classList.contains('hide')===false);
+ assert.equal(await app.page.locator('#content').innerText(),'');assert.equal(await app.page.locator('#auto-config-save').count(),0);assertSetupRequests(app);
 });
 
 for (const [label, viewport] of [

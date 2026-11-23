@@ -523,7 +523,7 @@ window.openProperty=id=>{
  '<div class="section-title">Informations du bien</div><div class="card">'+kv(p.data)+'</div>'+
  '<div class="section-title">Fiches locataires et baux</div>'+
  (tenants.length?tenants.map(t=>{const l=leaseForTenant(t);return '<div class="kv"><span><b>'+esc(t.data?.Locataire||'Fiche à compléter')+'</b><br>'+esc(l?.status==='active'?'Bail actif':l?.status==='closed'?'Historique · bail clôturé':l?'Bail en brouillon':'Bail à préparer')+'</span><button class="btn secondary" data-row="'+t.row_number+'" onclick="editTenant(Number(this.dataset.row))">Ouvrir la fiche locataire</button></div>'}).join(''):'<p class="muted">Aucun locataire renseigné.</p>')+
- (!readonly?'<div class="actions"><button class="btn primary" data-id="'+esc(id)+'" onclick="openPropertyAssignment(this.dataset.id)">Affecter un locataire</button><button class="btn secondary" data-id="'+esc(id)+'" onclick="editTenant(undefined,this.dataset.id)">+ Nouvelle fiche locataire</button></div>':'')+
+ (!readonly?'<div class="actions">'+(db.current_user?.payment_access?'<button class="btn primary" data-id="'+esc(id)+'" onclick="openPropertyAssignment(this.dataset.id)">Affecter un locataire</button>':'')+'<button class="btn secondary" data-id="'+esc(id)+'" onclick="editTenant(undefined,this.dataset.id)">+ Nouvelle fiche locataire</button></div>':'')+
  '<details style="margin-top:15px"><summary>Historique du bien</summary>'+renderObjectTable(p.tenant_history)+renderObjectTable(p.payment_schedule)+'</details><div id="modalStatus" class="status"></div></div></div>';
 };
 window.openPropertyTenant=id=>{
@@ -589,7 +589,7 @@ window.saveProperty=async id=>{
  finally{if(button.isConnected)button.disabled=false}
 };
 window.openPropertyAssignment=id=>{
- const p=(db.properties||[]).find(x=>x.id===id);if(!p||db.current_user?.read_only)return;
+ const p=(db.properties||[]).find(x=>x.id===id);if(!p||db.current_user?.read_only||!db.current_user?.payment_access)return;
  const eligible=(db.tenants||[]).filter(t=>!t.property_id&&!(db.leases||[]).some(l=>l.tenant_row_id===t.id));
  $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Affecter un locataire — '+esc(p.name)+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div><p class="note">L’affectation prépare le dossier. L’activation du bail sera confirmée après vérification des dates et des montants.</p>'+
  (eligible.length?'<label for="assignment-tenant">Fiche locataire existante sans bien</label><select id="assignment-tenant"><option value="">Choisir un locataire</option>'+eligible.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.data?.Locataire||'Fiche à compléter')+'</option>').join('')+'</select><div class="actions"><button class="btn primary" id="assignment-save" data-id="'+esc(id)+'" onclick="assignPropertyTenant(this.dataset.id)">Affecter et ouvrir le dossier</button></div>':'<p class="muted">Aucune fiche locataire sans bien disponible.</p>')+
@@ -709,7 +709,7 @@ function renderMailAutomationConfig(panel){
   '<label for="auto-body-'+t.kind+'">Texte du message</label><textarea id="auto-body-'+t.kind+'" maxlength="12000" rows="8" '+(allowed?'':'disabled')+'>'+esc(t.body_template)+'</textarea><p class="muted">Champs disponibles : '+vars.map(v=>'<code>{{'+v+'}}</code>').join(' · ')+'</p>'+
   '<button class="btn secondary" data-kind="'+t.kind+'" onclick="previewAutomaticMail(this.dataset.kind)">Aperçu avec des données fictives</button><div id="auto-preview-'+t.kind+'" role="status"></div></details>';
  }).join('')+
- (allowed?'<button class="btn primary" id="auto-config-save" onclick="saveMailAutomationConfig()">Enregistrer les modèles et les règles</button>':'')+'<div class="status" id="auto-config-status" role="status"></div>';
+ (allowed?'<button class="btn primary" id="auto-config-save" onclick="saveMailAutomationConfig()">Enregistrer les modèles et les règles</button>':'')+'<button class="btn secondary" onclick="loadMailAutomationConfig()">Recharger les modèles enregistrés</button><div class="status" id="auto-config-status" role="status"></div>';
 }
 window.previewAutomaticMail=async kind=>{
  const pane=$('auto-preview-'+kind);if(!pane||!automationKinds[kind])return;const generation=sessionGeneration;
@@ -721,7 +721,7 @@ window.saveMailAutomationConfig=async()=>{
  const button=$('auto-config-save'),status=$('auto-config-status');if(!button||!status)return;
  const settings={send_enabled:$('auto-send-enabled').checked,daily_limit:Number($('auto-daily-limit').value)};
  if(!$('auto-daily-limit').checkValidity()||!Number.isInteger(settings.daily_limit)){status.className='status err';status.textContent='Choisissez un plafond compris entre 1 et 25.';return}
- const templates=(mailAutomationConfig?.templates||[]).filter(t=>automationKinds[t.kind]).map(t=>({kind:t.kind,mode:$('auto-mode-'+t.kind).value,subject_template:$('auto-subject-'+t.kind).value,body_template:$('auto-body-'+t.kind).value}));
+ const templates=(mailAutomationConfig?.templates||[]).filter(t=>automationKinds[t.kind]).map(t=>({kind:t.kind,version:t.version,mode:$('auto-mode-'+t.kind).value,subject_template:$('auto-subject-'+t.kind).value,body_template:$('auto-body-'+t.kind).value}));
  if(settings.send_enabled&&templates.some(t=>t.mode==='automatic')&&!confirm('Activer l’envoi automatique pour les catégories choisies, dans la limite de '+settings.daily_limit+' messages par jour ?'))return;
  button.disabled=true;status.className='status';status.textContent='Enregistrement des règles…';
  try{await api('mail-automation-save','POST',{settings,templates,confirmed:true});if(!db)return;db.mail_automation=settings;await loadMailAutomationConfig();const done=$('auto-config-status');if(done){done.className='status ok';done.textContent='Modèles et règles enregistrés. Les messages admissibles suivront les modes choisis.'}}
@@ -730,7 +730,7 @@ window.saveMailAutomationConfig=async()=>{
 window.generateAutomaticMails=async()=>{
  if(!db.current_user?.mail_access||db.current_user?.read_only)return;
  const button=$('auto-generate'),status=$('auto-generate-status');if(button)button.disabled=true;if(status)status.textContent='Préparation des messages admissibles…';
- try{const x=await api('mail-automation-generate','POST',{});if(!await refresh())return;const next=$('auto-generate-status');if(next){next.className='status ok';next.textContent=Number(x.created||0)+' message(s) préparé(s), '+Number(x.updated||0)+' actualisé(s), '+Number(x.complaints_created||0)+' signalement(s) à examiner. Aucun envoi déclenché par cette commande.'}}
+ try{const x=await api('mail-automation-generate','POST',{});if(!await refresh())return;const next=$('auto-generate-status');if(next){next.className=x.preparation_blocked?'status err':'status ok';next.textContent=x.preparation_blocked?'Préparation en attente : '+(automationRequirements[x.preparation_blocked]||'configuration de la messagerie à terminer')+'. Ouvrez Paramètres pour compléter les informations.':Number(x.created||0)+' message(s) préparé(s), '+Number(x.updated||0)+' actualisé(s), '+Number(x.complaints_created||0)+' signalement(s) à examiner. Aucun envoi déclenché par cette commande.'}}
  catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message||'Préparation impossible'}}finally{if(button?.isConnected)button.disabled=false}
 };
 
@@ -748,7 +748,7 @@ window.loadBankConnection=async()=>{
  catch(e){if(generation===sessionGeneration&&panel.isConnected)panel.innerHTML='<p class="status err">'+esc(e.message||'Connexion indisponible')+'</p><button class="btn secondary" onclick="loadBankConnection()">Réessayer</button>'}
 };
 function renderBankConnection(panel){
- const s=bankConnectionState;if(!s||!panel)return;const allowed=!!db.current_user?.bank_access&&!db.current_user?.read_only;
+ const s=bankConnectionState;if(!s||!panel)return;const allowed=!!db.current_user?.payment_void_access&&!db.current_user?.read_only,canSync=!!db.current_user?.bank_access&&!db.current_user?.read_only;
  const accounts=s.accounts||[],connections=s.connections||[];
  const field=(id,label,value,type='text',max=200)=>'<div><label for="bank-'+id+'">'+esc(label)+'</label><input id="bank-'+id+'" type="'+type+'" maxlength="'+max+'" value="'+esc(value||'')+'" '+(allowed?'':'disabled')+(type==='password'?' autocomplete="new-password"':'')+'></div>';
  panel.innerHTML=(bankReturnNotice?'<p class="note">'+esc(bankReturnNotice)+'</p>':'')+
@@ -756,19 +756,24 @@ function renderBankConnection(panel){
  '<p class="muted">Un accès Powens actif est nécessaire. Le domaine de test utilise des banques fictives ; un domaine de production doit être ouvert par Powens. Vos identifiants bancaires sont saisis dans le parcours sécurisé du fournisseur.</p>'+
  '<div class="fields">'+field('domain','Domaine Powens',s.domain)+field('client-id','Identifiant de l’application',s.client_id)+field('client-secret','Secret de l’application (vide = conserver)','','password',1000)+
  '<div><label for="bank-environment">Environnement</label><select id="bank-environment" '+(allowed?'':'disabled')+'><option value="sandbox" '+(s.environment!=='production'?'selected':'')+'>Test — banques fictives</option><option value="production" '+(s.environment==='production'?'selected':'')+'>Production — vraies banques</option></select></div></div>'+
+ (s.configured&&s.environment==='sandbox'?'<label class="payment-confirm"><input id="bank-switch-production" type="checkbox" '+(allowed?'':'disabled')+'> Passer cette connexion de test en production et conserver son historique. Un nouveau consentement et une nouvelle sélection des comptes seront nécessaires.</label>':'')+
  (s.auth_uncertain?'<p class="note">La création de l’accès Powens a donné un résultat incertain. Retrouvez l’utilisateur dans la console Powens pour reprendre cet accès.</p>'+field('recovery-user','Identifiant utilisateur Powens à récupérer','','number',20):'')+
  '<label class="payment-confirm"><input id="bank-auto-sync" type="checkbox" '+(s.auto_sync?'checked':'')+' '+(allowed?'':'disabled')+'> Synchroniser automatiquement les comptes sélectionnés après connexion</label>'+
  '<p class="muted">Adresse de retour à autoriser dans l’application Powens : <code style="overflow-wrap:anywhere">'+esc(s.redirect_uri||'https://edm28contact-wq.github.io/gestion-college-app/admin/marne-invest/?page=config')+'</code></p>'+
  (allowed?'<div class="actions"><button class="btn primary" id="bank-config-save" onclick="saveBankConfiguration()">Enregistrer la configuration bancaire</button><button class="btn secondary" data-action="connect" onclick="bankConnectionAction(this.dataset.action)" '+(s.configured?'':'disabled')+'>Connecter une banque</button><button class="btn secondary" data-action="manage" onclick="bankConnectionAction(this.dataset.action)" '+(s.configured?'':'disabled')+'>Gérer le consentement</button><button class="btn secondary" data-action="accounts" onclick="bankConnectionAction(this.dataset.action)" '+(s.configured?'':'disabled')+'>Recharger les comptes</button></div>':'')+
- '<p class="muted">Enregistrez les paramètres avant de connecter la banque. Les montants importés restent à rapprocher et à confirmer dans Transactions.</p>'+
+ '<p class="muted">Enregistrez les paramètres avant de connecter la banque. Les mouvements de production restent à rapprocher et à confirmer dans Transactions. Les mouvements de test ne peuvent pas créer de paiement locatif.</p>'+
  (connections.some(c=>c.error_code||c.state&&c.state!=='connected')?'<p class="note">État des connexions : '+connections.map(c=>esc(c.error_code||c.state||'À vérifier')).join(' · ')+'. Si le consentement a expiré, ouvrez « Gérer le consentement ».</p>':'')+
- (accounts.length?dataTable(['Importer','Compte','Identifiant','Devise','Dernière synchronisation','Action'],accounts.map(a=>'<tr><td><input type="checkbox" class="bank-account-choice" aria-label="Sélectionner '+esc(a.name)+'" data-id="'+esc(a.provider_account_id)+'" '+(a.selected?'checked':'')+' '+(!allowed||a.disabled||a.deleted||a.currency!=='EUR'?'disabled':'')+'></td><td>'+esc(a.name||'Compte')+(a.disabled||a.deleted?'<br><span class="mini-tag warn">Indisponible</span>':'')+'</td><td>'+esc(a.masked_iban||'—')+'</td><td>'+esc(a.currency)+'</td><td>'+esc(a.last_sync_at?new Date(a.last_sync_at).toLocaleString('fr-FR'):'Pas encore importé')+(a.has_more?'<br>Suite à importer':'')+(a.warning_count?'<br>'+Number(a.warning_count)+' mouvement(s) à contrôler':'')+'</td><td>'+(allowed&&a.selected&&!a.disabled&&!a.deleted&&a.currency==='EUR'?'<button class="btn secondary" data-id="'+esc(a.provider_account_id)+'" onclick="syncBankAccount(this.dataset.id)">'+(a.has_more?'Importer la suite':'Synchroniser')+'</button>':'')+'</td></tr>'))+(allowed?'<button class="btn secondary" onclick="saveBankSelection()">Enregistrer les comptes sélectionnés</button>':''):'<p class="muted">Les comptes apparaîtront après le consentement et le rechargement de la liste.</p>')+
+ (accounts.length?dataTable(['Importer','Compte','Identifiant','Devise','Dernière synchronisation','Action'],accounts.map(a=>'<tr><td><input type="checkbox" class="bank-account-choice" aria-label="Sélectionner '+esc(a.name)+'" data-id="'+esc(a.provider_account_id)+'" '+(a.selected?'checked':'')+' '+(!allowed||a.disabled||a.deleted||a.currency!=='EUR'?'disabled':'')+'></td><td>'+esc(a.name||'Compte')+(a.disabled||a.deleted?'<br><span class="mini-tag warn">Indisponible</span>':'')+'</td><td>'+esc(a.masked_iban||'—')+'</td><td>'+esc(a.currency)+'</td><td>'+esc(a.last_sync_at?new Date(a.last_sync_at).toLocaleString('fr-FR'):'Pas encore importé')+(a.has_more?'<br>Suite à importer':'')+(a.warning_count?'<br>'+Number(a.warning_count)+' mouvement(s) à contrôler':'')+'</td><td>'+(canSync&&a.selected&&!a.disabled&&!a.deleted&&a.currency==='EUR'?'<button class="btn secondary" data-id="'+esc(a.provider_account_id)+'" onclick="syncBankAccount(this.dataset.id)">'+(a.has_more?'Importer la suite':'Synchroniser')+'</button>':'')+'</td></tr>'))+(allowed?'<button class="btn secondary" onclick="saveBankSelection()">Enregistrer les comptes sélectionnés</button>':''):'<p class="muted">Les comptes apparaîtront après le consentement et le rechargement de la liste.</p>')+
  '<div class="status" id="bank-connection-status" role="status"></div>';
 }
-function bankConfigHasChanges(){return !!$('bank-client-secret')?.value||$('bank-domain')?.value.trim()!==String(bankConnectionState?.domain||'')||$('bank-client-id')?.value.trim()!==String(bankConnectionState?.client_id||'')||$('bank-environment')?.value!==(bankConnectionState?.environment||'sandbox')||$('bank-auto-sync')?.checked!==!!bankConnectionState?.auto_sync}
+function bankConfigHasChanges(){return !!$('bank-client-secret')?.value||!!$('bank-recovery-user')?.value||!!$('bank-switch-production')?.checked||$('bank-domain')?.value.trim()!==String(bankConnectionState?.domain||'')||$('bank-client-id')?.value.trim()!==String(bankConnectionState?.client_id||'')||$('bank-environment')?.value!==(bankConnectionState?.environment||'sandbox')||$('bank-auto-sync')?.checked!==!!bankConnectionState?.auto_sync}
 window.saveBankConfiguration=async()=>{
  const status=$('bank-connection-status'),button=$('bank-config-save');if(!status||!button)return;
  const body={domain:$('bank-domain').value.trim(),client_id:$('bank-client-id').value.trim(),client_secret:$('bank-client-secret').value,environment:$('bank-environment').value,auto_sync:$('bank-auto-sync').checked,confirmed:true};
+ const productionSwitch=bankConnectionState?.configured&&bankConnectionState?.environment==='sandbox'&&body.environment==='production';
+ if(productionSwitch&&!$('bank-switch-production')?.checked){status.className='status err';status.textContent='Cochez le passage en production pour confirmer le nouveau consentement bancaire.';return}
+ if($('bank-switch-production')?.checked&&!productionSwitch){status.className='status err';status.textContent='Sélectionnez l’environnement de production ou décochez le passage en production.';return}
+ if(productionSwitch)body.switch_to_production=true;
  if($('bank-recovery-user')?.value){if(!/^[1-9]\d*$/.test($('bank-recovery-user').value)){status.className='status err';status.textContent='Renseignez l’identifiant numérique de l’utilisateur Powens à récupérer.';return}body.recovery_user_id=$('bank-recovery-user').value;}
  if(!/^[a-z0-9][a-z0-9-]*\.biapi\.pro$/i.test(body.domain)||!body.client_id){status.className='status err';status.textContent='Renseignez le domaine Powens (nom.biapi.pro) et l’identifiant de l’application.';return}
  button.disabled=true;status.className='status';status.textContent='Enregistrement sécurisé de la configuration…';
@@ -779,22 +784,23 @@ window.bankConnectionAction=async action=>{
  const status=$('bank-connection-status');if(!status)return;
  if(bankConfigHasChanges()){status.className='status err';status.textContent='Enregistrez les modifications bancaires avant de continuer.';return}
  const buttons=[...$('bank-connection-config').querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);status.className='status';status.textContent=action==='accounts'?'Chargement des comptes autorisés…':'Préparation du parcours sécurisé…';
- try{if(action==='accounts'){await api('bank-accounts','POST',{confirmed:true});await loadBankConnection();return}
+ try{if(action==='accounts'){const x=await api('bank-accounts','POST',{confirmed:true});if(x.busy)throw Error('Une opération bancaire est déjà en cours. Réessayez après sa fin.');await loadBankConnection();return}
   if(!['connect','manage'].includes(action))throw Error('Action bancaire inconnue.');
-  const x=await api('bank-connect','POST',{confirmed:true,mode:action}),url=new URL(x.url);
+  const x=await api('bank-connect','POST',{confirmed:true,mode:action});if(x.busy)throw Error('Une opération bancaire est déjà en cours. Réessayez après sa fin.');const url=new URL(x.url);
   if(url.protocol!=='https:'||url.hostname!=='webview.powens.com'||!['/fr/connect','/fr/manage'].includes(url.pathname)||!x.state)throw Error('Adresse de connexion bancaire invalide.');
   sessionStorage.setItem('marne-bank-connect-state',JSON.stringify({state:x.state,expires_at:Date.now()+Math.min(Number(x.expires_in)||1800,1800)*1000}));location.assign(url.href);
  }catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Connexion impossible'}}finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
 };
 window.saveBankSelection=async()=>{
- const status=$('bank-connection-status');if(!status)return;const account_ids=[...document.querySelectorAll('.bank-account-choice:checked:not(:disabled)')].map(x=>x.dataset.id);
+ const status=$('bank-connection-status');if(!status)return;if(bankConfigHasChanges()){status.className='status err';status.textContent='Enregistrez les paramètres bancaires avant de choisir les comptes.';return}const account_ids=[...document.querySelectorAll('.bank-account-choice:checked:not(:disabled)')].map(x=>x.dataset.id);
+ const buttons=[...$('bank-connection-config').querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
  try{await api('bank-selection','POST',{account_ids,confirmed:true});await loadBankConnection();const done=$('bank-connection-status');if(done){done.className='status ok';done.textContent='Sélection enregistrée.'}}
- catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Sélection impossible'}}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Sélection impossible'}}finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
 };
 window.syncBankAccount=async account_id=>{
  const status=$('bank-connection-status');if(!status)return;if(bankConfigHasChanges()){status.className='status err';status.textContent='Enregistrez les paramètres bancaires avant de synchroniser.';return}
  const buttons=[...$('bank-connection-config').querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);status.className='status';status.textContent='Import des mouvements autorisés…';
- try{const x=await api('bank-sync','POST',{account_id,confirmed:true});await loadBankConnection();const done=$('bank-connection-status');if(done){done.className='status ok';done.textContent=Number(x.imported||0)+' mouvement(s) importé(s). '+(x.has_more?'Un autre lot reste à importer. ':'')+'Ouvrez Transactions pour les rapprocher.'}}
+ try{const x=await api('bank-sync','POST',{account_id,confirmed:true});if(x.busy)throw Error('Une synchronisation bancaire est déjà en cours. Réessayez après sa fin.');await loadBankConnection();const done=$('bank-connection-status');if(done){done.className='status ok';done.textContent=Number(x.imported??x.imported_count??0)+' mouvement(s) importé(s). '+(x.has_more?'Un autre lot reste à importer. ':'')+'Ouvrez Transactions pour les rapprocher.'}}
  catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Synchronisation impossible'}}finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
 };
 
@@ -1311,9 +1317,20 @@ function bankCsvRows(csv){
  });
 }
 function bankImportLabel(id){return (db.bank_imports||[]).find(x=>x.id===id)?.account_label||'Compte non identifié'}
+function bankLineIsSandbox(line){return (db.bank_imports||[]).find(x=>x.id===line.import_id)?.provider_environment==='sandbox'}
+function bankCsvOverlap(line){
+ if(bankLineIsSandbox(line))return false;
+ if(line.provider_warning==='possible_csv_duplicate')return true;
+ const imports=new Map((db.bank_imports||[]).map(x=>[x.id,x])),source=imports.get(line.import_id);if(!source)return false;
+ return (db.bank_lines||[]).some(other=>other.id!==line.id&&!bankLineIsSandbox(other)&&imports.has(other.import_id)
+  &&!!source.provider_account_id!==!!imports.get(other.import_id).provider_account_id
+  &&other.booking_date===line.booking_date&&Math.abs(Number(other.amount)-Number(line.amount))<0.005
+  &&String(other.description||'').trim().toLowerCase()===String(line.description||'').trim().toLowerCase());
+}
 function bankOverlappingLines(line){
  const account=bankImportLabel(line.import_id).toLowerCase().trim();
  return (db.bank_lines||[]).filter(other=>other.id!==line.id
+  &&bankLineIsSandbox(other)===bankLineIsSandbox(line)
   &&bankImportLabel(other.import_id).toLowerCase().trim()===account
   &&other.booking_date===line.booking_date
   &&Math.abs(Number(other.amount)-Number(line.amount))<0.005
@@ -1335,7 +1352,7 @@ function renderBankReconciliation(){
  const verifiedPayments=new Map((db.payments||[]).map(p=>[p.id,p]));
  const anomalies=lines.filter(l=>l.status==='matched'&&verifiedPayments.get(l.matched_payment_id)?.status==='void').length;
  const matches=lines.filter(l=>l.status==='matched'&&verifiedPayments.get(l.matched_payment_id)?.status==='recorded').length;
- const pendingCredit=lines.filter(l=>l.status==='pending'&&Number(l.amount)>0).length;
+ const pendingCredit=lines.filter(l=>l.status==='pending'&&Number(l.amount)>0&&!bankLineIsSandbox(l)).length;
  const pendingDebits=lines.filter(l=>l.status==='pending'&&Number(l.amount)<0).length;
  const canWrite=!db.current_user?.read_only;
  const rows=filtered(lines,l=>[l.description,l.booking_date,l.bank_reference,bankImportLabel(l.import_id)].join(' '));
@@ -1344,13 +1361,13 @@ function renderBankReconciliation(){
  (canWrite?'<div class="actions"><button class="btn secondary" onclick="loadBankConnection()">Connexion bancaire</button><button class="btn primary" onclick="openBankCsvImporter()">Importer un relevé CSV</button></div>':'')+'</div>'+
  stats([['Mouvements importés',lines.length],['Crédits à vérifier',pendingCredit],['Rapprochements valides',matches],['Paiements annulés à vérifier',anomalies]])+
  dataTable(['Date','Compte','Libellé','Montant','État','Action'],rows.map(l=>{
-  const amount=Number(l.amount),overlap=bankOverlappingLines(l),alreadyMatched=overlap.some(x=>x.status==='matched');
+  const amount=Number(l.amount),sandbox=bankLineIsSandbox(l),overlap=bankOverlappingLines(l),alreadyMatched=overlap.some(x=>x.status==='matched');
   const linkedVoided=l.status==='matched'&&verifiedPayments.get(l.matched_payment_id)?.status==='void';
-  const source=linkedVoided?'Paiement annulé : à vérifier':l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':alreadyMatched?'Doublon déjà rapproché':overlap.length?'Doublon potentiel':amount>0?'Crédit à vérifier':'Débit informatif';
+  const source=sandbox?'Test Powens — non comptabilisable':linkedVoided?'Paiement annulé : à vérifier':l.status==='matched'?'Rapproché':l.status==='ignored'?'Ignoré':alreadyMatched?'Doublon déjà rapproché':bankCsvOverlap(l)?'Doublon CSV / banque à vérifier':overlap.length?'Doublon potentiel':amount>0?'Crédit à vérifier':'Débit informatif';
   return '<tr><td>'+esc(l.booking_date)+'</td><td>'+esc(bankImportLabel(l.import_id))+'</td><td><b>'+esc(l.description)+'</b>'+
   (l.bank_reference?'<div class="muted">Réf. '+esc(l.bank_reference)+'</div>':'')+'</td><td><b>'+money(amount)+'</b></td>'+
   '<td><span class="mini-tag '+(l.status==='pending'?'warn':'')+'">'+esc(source)+'</span></td>'+
-  '<td class="item-actions">'+(canWrite&&l.status==='pending'&&amount>0&&!alreadyMatched?
+  '<td class="item-actions">'+(canWrite&&!sandbox&&l.status==='pending'&&amount>0&&!alreadyMatched?
    '<button class="btn primary" data-id="'+esc(l.id)+'" onclick="openBankMatch(this.dataset.id)">Rapprocher</button>':'')+
   (canWrite&&l.status==='pending'?'<button class="btn secondary" data-id="'+esc(l.id)+'" onclick="ignoreBankLine(this.dataset.id)">Ignorer</button>':'')+
   (l.status==='matched'?'<span class="muted">Paiement enregistré</span>':'')+'</td></tr>';
@@ -1402,7 +1419,7 @@ window.saveBankCsv=async()=>{
 window.openBankMatch=id=>{
  if(!db.current_user?.bank_access||db.current_user?.read_only)return;
  const line=(db.bank_lines||[]).find(l=>l.id===id);
- if(!line||line.status!=='pending'||Number(line.amount)<=0)return;
+ if(!line||bankLineIsSandbox(line)||line.status!=='pending'||Number(line.amount)<=0)return;
  if(bankOverlappingLines(line).some(x=>x.status==='matched')){
   alert('Un mouvement identique a déjà été rapproché sur ce compte. Vérifiez le relevé avant toute autre saisie.');return;
  }
@@ -1413,6 +1430,7 @@ window.openBankMatch=id=>{
  $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:720px"><div class="top"><h2>Rapprocher un crédit bancaire</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
  '<div class="note"><b>'+money(Number(line.amount))+'</b> · '+esc(line.booking_date)+'<p>'+esc(line.description)+'</p>'+
  '<p class="muted">Compte : '+esc(bankImportLabel(line.import_id))+(line.bank_reference?' · Réf. '+esc(line.bank_reference):'')+'</p></div>'+
+ (bankCsvOverlap(line)?'<p class="note"><b>Doublon CSV / banque à vérifier.</b> Un autre import contient un mouvement de même date, montant et libellé. Vérifiez le relevé et les paiements déjà enregistrés avant de confirmer.</p>':'')+
  '<label style="margin-top:13px">Bail bénéficiaire</label><select id="bank-match-lease" onchange="updateBankMatchInstallments()">'+leaseOptions+'</select>'+
  (suggestion?'<p class="muted">Correspondance suggérée par le nom et le montant. Elle doit être vérifiée avant validation.</p>':'<p class="muted">Aucune correspondance certaine trouvée : sélectionnez le bail manuellement.</p>')+
  '<label style="margin-top:12px">Échéance à régler (facultatif)</label><select id="bank-match-installment"></select>'+
@@ -1430,6 +1448,7 @@ window.updateBankMatchInstallments=()=>{
 };
 window.confirmBankMatch=async id=>{
  const status=$('modalStatus'),btn=$('bank-match-confirm'),lease=$('bank-match-lease')?.value;
+ const line=(db.bank_lines||[]).find(l=>l.id===id);if(!line||bankLineIsSandbox(line))return;
  if(!$('bank-match-verified')?.checked||!lease){status.className='status err';status.textContent='Choisissez le bail et cochez la vérification bancaire.';return}
  if(!confirm('Confirmer l’encaissement sur le bail sélectionné ? Cette opération modifiera le registre des loyers.'))return;
  btn.disabled=true;status.className='status';status.textContent='Rapprochement et écriture comptable…';
@@ -1576,7 +1595,7 @@ window.openMailComplaint=id=>{
  $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Vérifier le signalement reçu</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
  '<p><b>'+esc(c.subject||'(Sans objet)')+'</b><br>'+esc(c.sender_email)+'</p><pre class="mail-text">'+esc(c.excerpt||'Extrait indisponible')+'</pre>'+
  (c.content_incomplete?'<p class="note">Le texte importé est incomplet. Consultez le courriel complet dans Free avant de confirmer le dossier.</p>':'')+
- '<div class="fields"><div><label for="complaint-property">Bien concerné</label><select id="complaint-property" onchange="updateComplaintLeases()" '+(readonly?'disabled':'')+'><option value="">À identifier</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(c.property_id===p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div><div><label for="complaint-lease">Locataire / bail lié au signalement</label><select id="complaint-lease" '+(readonly?'disabled':'')+'></select></div>'+ 
+ '<div class="fields"><div><label for="complaint-property">Bien concerné</label><select id="complaint-property" onchange="updateComplaintLeases()" '+(readonly?'disabled':'')+'><option value="">À identifier</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(c.property_id===p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div><div><label for="complaint-lease">Locataire / bail lié au signalement</label><select id="complaint-lease" '+(readonly?'disabled':'')+'></select></div>'+
  '<div><label for="complaint-category">Catégorie proposée</label><select id="complaint-category" '+(readonly?'disabled':'')+'>'+Object.entries(workCategories).map(([value,label])=>'<option value="'+value+'" '+(c.category===value?'selected':'')+'>'+label+'</option>').join('')+'</select></div><div><label for="complaint-priority">Priorité à vérifier</label><select id="complaint-priority" '+(readonly?'disabled':'')+'><option value="standard">Standard</option><option value="urgent" '+(c.priority==='urgent'?'selected':'')+'>Urgent</option></select></div></div>'+
  '<label for="complaint-title">Objet du dossier de travaux</label><input id="complaint-title" maxlength="180" value="'+esc(c.suggested_title||c.subject||'')+'" '+(readonly?'disabled':'')+'><label for="complaint-description">Faits à retenir</label><textarea id="complaint-description" maxlength="4000" rows="6" '+(readonly?'disabled':'')+'>'+esc(c.suggested_description||c.excerpt||'')+'</textarea>'+
  '<label class="payment-confirm"><input id="complaint-verified" type="checkbox" '+(readonly?'disabled':'')+'> J’ai vérifié le contenu du courriel, le bien et le locataire concernés.</label><p class="muted">Le dossier sera créé au statut « Signalé ». Le devis, le prestataire et la date d’intervention seront renseignés ensuite.</p>'+
