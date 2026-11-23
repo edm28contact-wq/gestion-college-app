@@ -138,7 +138,7 @@ const releaseMilestones=[
  ['Connexion bancaire directe','todo','Accès bancaire automatisé non connecté'],
  ['Suivi des travaux et prestataires','done','Tickets, devis, validation et historique ; aucune commande automatique'],
  ['Propositions IRL encadrées par bail','done','Calcul Insee avec clause, DPE et trimestre ; aucun loyer modifié'],
- ['Application IRL et notification au locataire','todo','Validation et date de prise d’effet contractuelle à sécuriser'],
+ ['Application IRL après notification vérifiée','done','Courrier préparé, date d’envoi attestée, prise d’effet différée ; aucun envoi automatique'],
  ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
  ['Recette de bout en bout en production','partial','14 tests code et 4 tests HTTP de sécurité passés ; tests navigateur connecté encore nécessaires']
 ];
@@ -387,16 +387,18 @@ function renderIrlManager(){
    '<td>'+money(Number(l.monthly_rent||0))+'</td>'+
    '<td>'+esc(r?(r.has_revision_clause?'Clause confirmée · ':'Clause absente · ')+'DPE '+r.dpe_rating:'À vérifier')+'</td>'+
    '<td>'+esc(r?.revision_due_on||'Non renseignée')+'</td>'+
-   '<td>'+esc(proposal?money(Number(proposal.proposed_monthly_rent))+' (non appliqué)':'—')+'</td>'+
+   '<td>'+esc(proposal?money(Number(proposal.proposed_monthly_rent))+' ('+(proposal.status==='applied'?'effectif':proposal.status==='scheduled'?'programmé':'à notifier')+')':'—')+'</td>'+
    '<td><button class="btn secondary" data-id="'+esc(l.id)+'" onclick="openIrlLease(this.dataset.id)">Configurer / calculer</button></td></tr>';
  }))+
- '<p class="module-note">'+proposals.length+' proposition(s) conservée(s). Sans validation de la date d’application, ce module ne modifie aucun bail, n’émet aucun courrier et ne facture aucune hausse.</p></section>';
+ '<p class="module-note">'+proposals.length+' proposition(s) conservée(s), '+(db.irl_applications||[]).filter(a=>a.status==='scheduled').length+
+ ' révision(s) programmée(s). Le nouveau loyer prend effet au premier mois complet suivant la validation d’une notification déjà effectuée ; les mois précédents restent inchangés.</p></section>';
 }
 window.openIrlLease=id=>{
  const lease=(db.leases||[]).find(l=>l.id===id);if(!lease)return;
  const rule=(db.irl_rules||[]).find(r=>r.lease_id===id);
  const p=(db.properties||[]).find(x=>x.id===lease.property_id);
  const proposal=(db.irl_proposals||[]).find(x=>x.lease_id===id&&x.revision_due_on===rule?.revision_due_on);
+ const application=(db.irl_applications||[]).find(x=>x.proposal_id===proposal?.id);
  const readonly=db.current_user?.read_only||lease.status!=='active';
  const option=(v,label,current)=>'<option value="'+esc(v)+'" '+(v===current?'selected':'')+'>'+esc(label)+'</option>';
  $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:760px"><div class="top"><div><h2>Révision IRL · '+esc(p?.name||'Logement')+'</h2>'+
@@ -417,8 +419,14 @@ window.openIrlLease=id=>{
  '<label class="payment-confirm"><input id="irl-verified" type="checkbox"> J’ai vérifié ces champs sur le bail et le DPE, sans supposer les informations manquantes.</label>'+
  '<div class="actions">'+(readonly?'': '<button class="btn secondary" data-id="'+esc(id)+'" onclick="saveIrlRule(this.dataset.id)">Enregistrer les règles du bail</button>')+
  (rule&&!readonly?'<button class="btn primary" data-id="'+esc(id)+'" onclick="prepareIrlProposal(this.dataset.id)">Calculer la proposition</button>':'')+'</div>'+
- (proposal?'<div class="note">Proposition déjà préparée : '+money(Number(proposal.base_monthly_rent))+' × '+esc(proposal.target_index)+' / '+esc(proposal.baseline_index)+
- ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b>. Document non envoyé et loyer inchangé.</div>':'')+
+ (proposal?'<div class="note">Proposition : '+money(Number(proposal.base_monthly_rent))+' × '+esc(proposal.target_index)+' / '+esc(proposal.baseline_index)+
+ ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b> · Statut : '+esc(proposal.status==='applied'?'Appliquée':proposal.status==='scheduled'?'Programmée':'À notifier')+
+ '. '+(application?'Prise d’effet : '+esc(application.effective_on)+' · Notification attestée du '+esc(application.notice_sent_on)+'.': 'Aucun loyer modifié à ce stade.')+'</div>'+
+ '<div class="actions">'+
+ '<button class="btn secondary" data-id="'+esc(id)+'" onclick="printIrlNotice(this.dataset.id)">Préparer le courrier au locataire</button>'+
+ (proposal.status==='draft'&&db.current_user?.payment_void_access&&!readonly?
+ '<button class="btn primary" data-id="'+esc(id)+'" onclick="showIrlNotification(this.dataset.id)">Notifier et programmer la révision</button>':'')+
+ '</div>':'')+
  '<p class="muted">Calcul uniquement sur l’indice IRL métropolitain publié par l’Insee. Les charges ne sont pas indexées par cette simulation.</p>'+
  '<div class="status" id="modalStatus"></div></div></div>';
 };
@@ -444,6 +452,76 @@ window.prepareIrlProposal=async id=>{
   const st=$('modalStatus');
   if(st){st.className='status ok';st.textContent='Simulation : '+money(Number(result.base_rent))+' → '+money(Number(result.proposed_rent))+'. '+(result.created?'Proposition créée.':'Proposition existante, sans doublon.')+' Aucun loyer ni courriel modifié.'}
  }catch(e){status.className='status err';status.textContent=e.message||'Calcul refusé'}
+};
+
+
+window.printIrlNotice=id=>{
+ const lease=(db.leases||[]).find(x=>x.id===id);
+ const rule=(db.irl_rules||[]).find(x=>x.lease_id===id);
+ const proposal=(db.irl_proposals||[]).find(x=>x.lease_id===id&&x.revision_due_on===rule?.revision_due_on);
+ if(!lease||!proposal){alert('Préparez d’abord une proposition IRL pour ce bail.');return}
+ const property=(db.properties||[]).find(x=>x.id===lease.property_id);
+ const issuer=lease.issuer_name||String(setting('landlord_name',''))||'[Bailleur]';
+ const address=lease.issuer_address||String(setting('landlord_address',''))||'[Adresse du bailleur]';
+ const noticeDate=new Date().toLocaleDateString('fr-FR',{timeZone:'Europe/Paris'});
+ const win=window.open('about:blank','_blank');
+ if(!win){alert('Autorisez les fenêtres surgissantes pour préparer le courrier.');return}
+ const html='<!doctype html><html lang="fr"><head><meta charset="UTF-8"><title>Projet de courrier IRL</title>'+
+ '<style>body{font:16px/1.6 Georgia,serif;max-width:720px;margin:45px auto;color:#202b3b;padding:0 20px}h1{font-size:21px;text-align:center;margin:35px 0}p{margin:12px 0}.warn{border:1px solid #ae6c15;background:#fff7e5;padding:12px;margin:20px 0}footer{margin-top:38px;font-size:12px}@media print{.warn{font-size:11px}}</style></head><body>'+
+ '<div class="warn">PROJET À VÉRIFIER — Non envoyé par Marne Invest. Vérifiez la date, la clause du bail, les indices et le DPE. La révision ne peut prendre effet avant la demande notifiée au locataire.</div>'+
+ '<p><b>'+esc(issuer)+'</b><br>'+esc(address)+'</p>'+
+ '<p>À l’attention de : '+esc(lease.tenant_name||'[Locataire]')+'<br>Adresse du logement : '+esc(property?.name||'[Adresse complète du logement à compléter]')+'</p>'+
+ '<p>Le '+esc(noticeDate)+'</p><h1>Notification de révision annuelle du loyer</h1>'+
+ '<p>Madame, Monsieur,</p><p>Conformément à la clause de révision annuelle figurant dans votre contrat de location, je vous informe du calcul de révision du loyer hors charges applicable après vérification des conditions légales.</p>'+
+ '<p>Révision prévue au bail : <b>'+esc(rule?.revision_due_on||'à vérifier')+'</b>. Référence : trimestre '+esc(String(proposal.reference_quarter))+' ; indice '+esc(String(proposal.baseline_year))+': <b>'+esc(String(proposal.baseline_index))+
+ '</b>, indice '+esc(String(proposal.target_year))+': <b>'+esc(String(proposal.target_index))+'</b>.</p>'+
+ '<p>Loyer actuel hors charges : <b>'+money(Number(proposal.base_monthly_rent))+'</b>.</p>'+
+ '<p>Calcul : '+money(Number(proposal.base_monthly_rent))+' × '+esc(String(proposal.target_index))+' / '+esc(String(proposal.baseline_index))+
+ ' = <b>'+money(Number(proposal.proposed_monthly_rent))+'</b> hors charges. Les charges ne sont pas modifiées par ce calcul.</p>'+
+ '<p><b>Date de prise d’effet annoncée au locataire : [à indiquer selon votre demande et la date d’envoi]</b>. Sans demande, la révision ne s’applique pas automatiquement.</p>'+
+ '<p>Je vous prie de recevoir, Madame, Monsieur, mes salutations distinguées.</p>'+
+ '<p>'+esc(issuer)+'<br>[Signature]</p>'+
+ '<footer>Courrier généré pour impression. Conservez une preuve d’envoi et reportez sa date dans Marne Invest après expédition.</footer>'+
+ '</body></html>';
+ win.document.open();win.document.write(html);win.document.close();
+};
+window.showIrlNotification=id=>{
+ if(!db.current_user?.payment_void_access||db.current_user?.read_only)return;
+ const proposal=(db.irl_proposals||[]).find(p=>p.lease_id===id&&p.status==='draft');
+ if(!proposal){alert('Aucune proposition en attente de notification.');return}
+ const lease=(db.leases||[]).find(l=>l.id===id);
+ $('modal').innerHTML='<div class="modal"><div class="box" style="max-width:760px"><div class="top"><div><h2>Programmer une révision IRL</h2><p class="muted">'+esc(lease?.tenant_name||'')+'</p></div>'+
+ '<button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<div class="note">Cette action est réservée à une notification <b>déjà réellement remise ou expédiée</b>. Elle ne déclenche aucun e-mail, courrier ou paiement. Le nouveau loyer sera programmé au premier jour du prochain mois complet, sans rétroactivité, sous réserve des contrôles serveur.</div>'+
+ '<p>Montant actuel : <b>'+money(Number(proposal.base_monthly_rent))+'</b> · proposé : <b>'+money(Number(proposal.proposed_monthly_rent))+'</b>.</p>'+
+ '<div class="fields"><div><label>Date réelle d’envoi / remise</label><input id="irl-notice-date" type="date" required></div>'+
+ '<div><label>Mode de notification vérifiable</label><select id="irl-notice-method">'+
+ '<option value="registered_post">Lettre recommandée</option><option value="hand_signed">Remise en main propre avec signature</option></select></div></div>'+
+ '<label class="payment-confirm"><input id="irl-notice-confirm" type="checkbox"> Je confirme avoir réellement notifié le locataire à cette date, vérifié les indices Insee, le bail, le DPE et les échéances. Je conserve la preuve d’envoi.</label>'+
+ '<div class="actions"><button class="btn primary" id="irl-schedule-button" data-proposal="'+esc(proposal.id)+'" onclick="scheduleIrlNotice(this.dataset.proposal)">Programmer le nouveau loyer</button></div>'+
+ '<div class="status" id="modalStatus"></div></div></div>';
+};
+window.scheduleIrlNotice=async proposalId=>{
+ const status=$('modalStatus'),button=$('irl-schedule-button');
+ const notice_sent_on=$('irl-notice-date')?.value||'';
+ const notice_method=$('irl-notice-method')?.value||'';
+ if(!status||!button)return;
+ if(!$('irl-notice-confirm')?.checked||!notice_sent_on){
+  status.className='status err';status.textContent='Indiquez la date réelle et confirmez la notification au locataire.';return;
+ }
+ if(!confirm('Confirmez-vous la notification réelle ? Les échéances futures non réglées seront ajustées, puis le bail à la date prévue. Les mois passés ne seront pas modifiés.'))return;
+ button.disabled=true;status.className='status';status.textContent='Contrôle et programmation de la révision…';
+ try{
+  const result=await api('schedule-irl','POST',{proposal_id:proposalId,notice_sent_on,notice_method,confirmed:true});
+  closeModal();await refresh();
+  const proposal=(db.irl_proposals||[]).find(x=>x.id===proposalId);
+  if(proposal)openIrlLease(proposal.lease_id);
+  const next=$('modalStatus');
+  if(next){next.className='status ok';next.textContent='Révision programmée le '+result.effective_on+' : '+money(Number(result.rent_before))+' → '+money(Number(result.rent_after))+
+    '. '+result.updated_future_installments+' échéance(s) future(s) ajustée(s). Aucun courrier envoyé automatiquement.'}
+ }catch(e){
+  status.className='status err';status.textContent=e.message||'Programmation impossible';button.disabled=false;
+ }
 };
 
 function renderContracts(){
