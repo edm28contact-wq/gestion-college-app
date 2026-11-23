@@ -135,7 +135,7 @@
 <body>
 <section id="login" class="login"><div class="box"><h1>Administration Collège</h1><p class="muted">Connexion avec un compte autorisé par la Holding.</p><label>Utilisateur</label><input id="user" value="holding-admin" autocomplete="username"><br><br><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><br><br><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div class="muted" style="text-align:center;margin-top:8px">Version 2026.10.24-apps4</div><div id="loginStatus" class="status"></div></div></section>
 <section id="passwordChange" class="login hide"><div class="box"><h1>Nouveau mot de passe requis</h1><p class="muted">Avant toute opération sensible, choisissez un mot de passe d’au moins 10 caractères. Une nouvelle connexion sera ensuite demandée.</p><label>Nouveau mot de passe</label><input id="newPass1" type="password" autocomplete="new-password"><br><br><label>Confirmer</label><input id="newPass2" type="password" autocomplete="new-password"><br><br><button class="btn primary" style="width:100%" onclick="changePassword()">Enregistrer le nouveau mot de passe</button><div id="passwordStatus" class="status"></div></div></section>
-<section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" href="../../admin/holding/">Holding</a><a class="btn secondary" href="../../secretariat/">Secrétariat</a><a class="btn secondary" href="../../secretariat/planning/">Planning du personnel / Paie</a><a class="btn secondary" href="../../comptabilite/">Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
+<section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" data-site-access="holding" href="../../admin/holding/" hidden>Holding</a><a class="btn secondary" data-site-access="secretariat" href="../../secretariat/" hidden>Secrétariat</a><a class="btn secondary" data-site-access="planning" href="../../secretariat/planning/" hidden>Planning du personnel / Paie</a><a class="btn secondary" data-site-access="accounting" href="../../comptabilite/" hidden>Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
 <div id="modal"></div>
 <script src="./site-designer.js?v=2"></script>
 <script src="./apps-organizer.js?v=1"></script>
@@ -156,9 +156,40 @@ async function changePassword(){const a=$('newPass1').value,b=$('newPass2').valu
 function logout(reload=true){['college_admin_token','edm_admin_token','holding_admin_token'].forEach(k=>localStorage.removeItem(k));token='';db=null;sensitiveToken='';sensitiveExpires=0;readerSettings=null;if(reload)location.reload();else{$('app').classList.add('hide');$('passwordChange').classList.add('hide');$('login').classList.remove('hide')}}
 const accessByPage={dashboard:["dashboard.read","products.read","stock.read","analytics.read"],products:["products.read","products.write","stock.read","stock.write"],apps:["apps.read","apps.write"],categories:["products.read","products.write"],subcategories:["products.read","products.write"],purchases:["purchases.read","purchases.write"],commandes:["secretariat.orders.write","purchases.read","purchases.write"],events:["stock.read","stock.write"],historicalStock:["stock.read"],salaires:["college.salaires.read","college.salaires.write"],cuisine:["cuisine.manage"],stats:["analytics.read"],advanced:[],manual:["dashboard.read","products.read","stock.read","analytics.read"],readerSettings:[],siteDesigner:[]};
 function canPage(p){const u=db?.current_user;if(!u)return true;if(u.role==="admin"||u.permissions?.college_admin===true)return true;return(accessByPage[p]||[]).some(k=>u.permissions?.[k]===true)}
+function updateSiteShortcuts(){
+ const user=db?.current_user,p=user?.permissions||{},full=user?.role==='admin';
+ const allowed={
+  holding:full,
+  secretariat:full||['secretariat','secretariat.read','secretariat.orders.write','secretariat.invoices.write'].some(k=>p[k]===true),
+  planning:full||['secretariat','secretariat.read','personnel.planning.read','personnel.planning.write','college.salaires.read','college.salaires.write'].some(k=>p[k]===true),
+  accounting:full||['accounting','accounting.read','accounting.write'].some(k=>p[k]===true)
+ };
+ document.querySelectorAll('[data-site-access]').forEach(link=>link.hidden=allowed[link.dataset.siteAccess]!==true);
+}
+let rightsCheckAt=0;
+async function recheckAccountRights(){
+ if(!token||!db||document.hidden||Date.now()-rightsCheckAt<30000)return;
+ rightsCheckAt=Date.now();
+ const checkedToken=token;
+ try{
+  const response=await fetch(ROOT+'/college-access-context',{headers:{'x-admin-session':checkedToken},cache:'no-store',signal:AbortSignal.timeout(10000)});
+  if(checkedToken!==token)return;
+  if(response.status===401){logout(false);$('loginStatus').className='status err';$('loginStatus').textContent='Vos accès ont changé ou la session a expiré. Reconnectez-vous.';return}
+  if(!response.ok)return;
+  const info=await response.json();
+  if(!info?.ok||checkedToken!==token)return;
+  db.current_user.permissions=info.permissions;
+  db.current_user.read_only=info.read_only;
+  updateSiteShortcuts();
+  if(!canPage(page))render();
+ }catch{}
+}
+window.addEventListener('focus',recheckAccountRights);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)recheckAccountRights()});
+
 function init(){$('nav').innerHTML=pages.filter(([k])=>canPage(k)).map(([k,n])=>`<button data-p="${k}" onclick="show('${k}')">${n}</button>`).join('')}
 async function enterApp(){init();$('login').classList.add('hide');$('passwordChange').classList.add('hide');$('app').classList.remove('hide');await refresh()}
-async function refresh(){const main=await call(ADMIN,'data');const isGlobal=main.current_user?.role==='admin'||main.current_user?.permissions?.college_admin===true;const sites=isGlobal?await call(SITE,'list'):{applications:main.applications||[],application_products:main.application_products||[]};db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+esc(main.current_user?.display_name||main.current_user?.username||'');render();if(page==='salaires')salaryLoad();loadAdminCollegeSettings();if(page==='products'&&requestedProduct&&db.products.some(p=>p.id===requestedProduct)&&!window._productDeepLinkOpened){window._productDeepLinkOpened=true;editProduct(requestedProduct)}}
+async function refresh(){const main=await call(ADMIN,'data');const isGlobal=main.current_user?.role==='admin'||main.current_user?.permissions?.college_admin===true;const sites=isGlobal?await call(SITE,'list'):{applications:main.applications||[],application_products:main.application_products||[]};db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];updateSiteShortcuts();rightsCheckAt=0;if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+esc(main.current_user?.display_name||main.current_user?.username||'');render();if(page==='salaires')salaryLoad();loadAdminCollegeSettings();if(page==='products'&&requestedProduct&&db.products.some(p=>p.id===requestedProduct)&&!window._productDeepLinkOpened){window._productDeepLinkOpened=true;editProduct(requestedProduct)}}
 function show(p){if(db&&!canPage(p)){showStatus('Cette fenêtre n’est pas autorisée pour votre compte.');return}page=p;render();if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(p==='salaires')salaryLoad();if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
 function render(){if(!db)return;if(!canPage(page)){page=pages.find(([k])=>canPage(k))?.[0]||'dashboard'}init();document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page||(b.dataset.p==='advanced'&&['categories','subcategories','apps','stats','readerSettings','siteDesigner','manual'].includes(page))));$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,historicalStock:historicalStockPage,purchases,commandes,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage,siteDesigner:siteDesignerPage,salaires:salaryPage,cuisine:window.kitchenAdminPage}[page]||dashboard)()}
 const bal=id=>Number(db.balances.find(x=>x.product_id===id)?.quantity||0),cat=id=>db.categories.find(x=>x.id===id),sub=id=>(db.subcategories||[]).find(x=>x.id===id),prod=id=>db.products.find(x=>x.id===id),appById=id=>db.applications.find(x=>x.id===id);

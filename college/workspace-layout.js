@@ -167,32 +167,10 @@
    if(!menu.children.length)continue;
    group.append(heading,menu);aside.append(group);
   }
-  const applySecretaryRestriction=(role)=>{
-    if(area!=="secretariat")return;
-    const restricted=role==="secretariat";
-    for(const group of aside.querySelectorAll(".school-nav-section[data-restricted-section]")){
-     group.hidden=restricted||!role;
-    }
-    for(const group of aside.querySelectorAll(".school-nav-section[data-restricted-shortcuts]")){
-     group.hidden=restricted||!role;
-    }
-    for(const control of aside.querySelectorAll(".school-nav-links a")){
-     try{
-      const destination=new URL(control.href);
-      const outside=!destination.pathname.startsWith(base.pathname+"secretariat/")&&!destination.pathname.startsWith(base.pathname+"lecteur-veryfi/");
-      control.hidden=(restricted&&outside)||control.dataset.configHidden==="true";
-     }catch{control.hidden=restricted||control.dataset.configHidden==="true"}
-    }
-    brand.href=restricted?url("secretariat/"):url("college/admin/");
-    filterMenu();
-  };
-  if(area==="secretariat"){
-   document.addEventListener("college:secretariat-role",event=>applySecretaryRestriction(event.detail?.role));
-   applySecretaryRestriction(target.dataset.schoolRole||"");
-  }
+  let applyAuthorizedNavigation=()=>{for(const el of aside.querySelectorAll(".school-nav-links a, .school-nav-links button"))el.hidden=true;for(const group of aside.querySelectorAll(".school-nav-section"))group.hidden=true;filterMenu();};
   const footer=document.createElement("div");
   footer.className="school-nav-footer";
-  footer.textContent="Accès conservés selon les droits de chaque compte.";
+  footer.textContent="Vérification des droits…";footer.setAttribute("aria-live","polite");
   aside.append(footer);
   const body=document.createElement("div");
   body.className="school-workspace-main";
@@ -203,6 +181,14 @@
   if(config.hideTabs)target.classList.add("school-tabs-in-sidebar");
   const host=target.closest("main")||target;
   host.classList.add("school-workspace-host");
+  applyAuthorizedNavigation();
+  import(url("college/workspace-access.mjs?v=20261123-2")).then(({attach})=>{
+   applyAuthorizedNavigation=attach({aside,brand,footer,base,area,target,filterMenu});
+  }).catch(()=>{
+   footer.textContent="Contrôle des accès indisponible. Liens non vérifiés masqués.";
+   applyAuthorizedNavigation();
+  });
+
   // Display-only settings are public; mutations require server-verified administrator sessions.
   const configURL="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/college-site-settings?site="+encodeURIComponent(area);
   fetch(configURL,{cache:"no-store",signal:AbortSignal.timeout(12000)}).then(r=>{
@@ -247,10 +233,7 @@
     }
     if(nav.children.length){
      sec.append(title,nav);footer.before(sec);
-     if(area==="secretariat"){
-      sec.dataset.restrictedShortcuts="true";
-      sec.hidden=target.dataset.schoolRole!=="admin";
-     }
+     applyAuthorizedNavigation();
     }
    }
    if(Array.isArray(custom.blocks)&&custom.blocks.length){
@@ -264,7 +247,7 @@
     }
     if(panel.children.length)body.prepend(panel);
    }
-   filterMenu();
+   applyAuthorizedNavigation();
   }).catch(()=>{});
   if(bindings.length&&typeof MutationObserver==="function"){
    const observer=new MutationObserver(()=>bindings.forEach(({update})=>update()));
