@@ -1,0 +1,17 @@
+/* Style commun du choix d'autorisations entre la fiche utilisateur et les pouvoirs. */
+.holding-rights-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0}
+.holding-rights-toolbar input{flex:1;min-width:220px;max-width:100%;font:inherit}
+.holding-rights-toolbar [data-access-count]{font-size:13px;color:#586a79;font-weight:650;white-space:nowrap}
+.holding-rights-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+.holding-rights-group{border:1px solid #dce5ed;background:#f9fbfd;border-radius:10px;min-width:0;overflow:hidden}
+.holding-rights-group summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;cursor:pointer;color:#263d51;font-size:14px;font-weight:750}
+.holding-rights-group summary::marker{color:#51728e}
+.holding-rights-group[open] summary{background:#eef4fa;border-bottom:1px solid #dce5ed}
+.holding-rights-counter{color:#556b80;font-size:12px;white-space:nowrap}
+.holding-rights-items{display:grid;gap:5px;padding:9px}
+.holding-right{display:flex!important;align-items:center!important;gap:9px;margin:0!important;border:1px solid #e3eaf0;border-radius:8px;padding:9px;background:#fff;font-size:13px!important;font-weight:500!important;cursor:pointer;line-height:1.4}
+.holding-right input{width:17px!important;height:17px!important;flex:none;min-height:0!important;margin:0}
+.holding-right span{flex:1}
+.holding-right:has(input:checked){background:#edf6ff;border-color:#9dbedb}
+.holding-right[hidden],.holding-rights-group[hidden]{display:none!important}
+@media(max-width:850px){.holding-rights-grid{grid-template-columns:1fr}}
