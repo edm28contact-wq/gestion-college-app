@@ -100,6 +100,8 @@
 .health-issues{display:grid;gap:9px;margin:14px 0}
 .health-item{display:flex;gap:12px;border:1px solid #dbe4ef;border-radius:10px;padding:12px;align-items:flex-start}
 .health-item p{margin:5px 0 0}
+@media(max-width:1000px){.shell{grid-template-columns:minmax(0,1fr)}.side{min-width:0}.nav{max-width:100%}}
+@media(max-width:620px){.main{padding:0 12px 20px}.top{margin:0 -12px 16px;padding:14px 12px}.top .actions{width:100%}.kv{grid-template-columns:minmax(0,1fr)}.health-item>div,.release-entry>div{min-width:0;overflow-wrap:anywhere}}
 </style>
 </head>
 <body>
@@ -108,16 +110,27 @@
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
-const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='';
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_logged_out')==='1'?'':localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='',refreshGeneration=0;
 const pages=[['dashboard','Dashboard','⌂'],['pilotage','Version finale','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
 async function api(action,method='GET',body){const r=await fetch(API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401&&action!=='login'){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
-window.login=async()=>{try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});token=j.token;localStorage.setItem('marne_invest_admin_token',token);$('login').classList.add('hide');$('app').classList.remove('hide');initNav();await refresh()}catch(e){$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
-window.logout=()=>{token='';db=null;selectedRow=null;localStorage.removeItem('marne_invest_admin_token');$('app').classList.add('hide');$('login').classList.remove('hide')};
+window.login=async()=>{try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});token=j.token;localStorage.setItem('marne_invest_admin_token',token);localStorage.removeItem('marne_invest_logged_out');$('pass').value='';$('loginStatus').textContent='';$('login').classList.add('hide');$('app').classList.remove('hide');initNav();await refresh()}catch(e){$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
+window.logout=()=>{token='';db=null;selectedRow=null;bankCsvPreview=null;irlLive=null;irlChecked=false;refreshGeneration++;localStorage.removeItem('marne_invest_admin_token');localStorage.setItem('marne_invest_logged_out','1');for(const id of ['modal','content','releaseMini','serverTime'])$(id).textContent='';$('pass').value='';$('app').classList.add('hide');$('login').classList.remove('hide')};
 function initNav(){$('nav').innerHTML=pages.map(([k,l,i])=>`<button data-p="${k}" onclick="showPage('${k}')"><span class="nav-icon">${i}</span>${l}</button>`).join('')}
 window.showPage=p=>{page=p;searchQuery='';$('globalSearch').value='';render()};window.searchAll=q=>{searchQuery=String(q||'').trim().toLocaleLowerCase('fr');render()};
-window.refresh=async()=>{try{db=await api('data');$('serverTime').textContent='Données actualisées : '+new Date(db.server_time).toLocaleString('fr-FR');render();if(!irlChecked)fetchIrl()}catch(e){alert(e.message)}};
+window.refresh=async()=>{
+ const generation=++refreshGeneration,session=token;
+ try{
+  const data=await api('data');
+  if(generation!==refreshGeneration||!token||token!==session)return false;
+  db=data;$('serverTime').textContent='Données actualisées : '+new Date(db.server_time).toLocaleString('fr-FR');render();if(!irlChecked)fetchIrl();return true;
+ }catch(e){
+  if(generation!==refreshGeneration){if(!token){$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Session expirée'}return false}
+  db=null;$('modal').textContent='';$('releaseMini').textContent='';$('serverTime').textContent='Données indisponibles — actualisation nécessaire';
+  $('content').innerHTML='<section class="card" role="alert"><h2>Actualisation impossible</h2><p>'+esc(e.message||'Erreur serveur')+'</p><p class="muted">Les anciens soldes sont masqués jusqu’au prochain chargement réussi.</p><button class="btn primary" onclick="refresh()">Réessayer</button></section>';return false;
+ }
+};
 function render(){if(!db)return;if($('releaseMini'))$('releaseMini').innerHTML=releaseMini();document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page));$('pageTitle').textContent=pages.find(x=>x[0]===page)?.[1]||'';({dashboard:renderDashboard,tenants:renderTenants,properties:renderProperties,config:renderConfig,guide:renderGuide,contracts:renderContracts,transactions:renderTransactions,emails:renderEmails,mail:renderMail,works:renderWorks,documents:renderDocuments,reports:renderReports,pilotage:renderPilotage}[page]||renderDashboard)()}
 function setting(key,fallback){return db.settings.find(x=>x.setting_key===key)?.value??fallback}
 
@@ -145,7 +158,7 @@ const releaseMilestones=[
  ['Application IRL après notification vérifiée','done','Courrier préparé, date d’envoi attestée, prise d’effet différée ; aucun envoi automatique'],
  ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
  ['Diagnostic quotidien des anomalies','done','Vérification de 5 planifications, paiements, loyers, archives et réception Free, sans opérations automatiques'],
- ['Recette de bout en bout en production','partial','21 tests de régression et contrôles SQL ; recette navigateur authentifiée à réaliser']
+ ['Recette de bout en bout en production','partial','Tests de régression du site et de l’API, contrôles SQL et navigateur sur données de test ; recette avec les comptes réels à réaliser']
 ];
 function releaseStatus(){
  const total=releaseMilestones.length,done=releaseMilestones.filter(x=>x[1]==='done').length,partial=releaseMilestones.filter(x=>x[1]==='partial').length;
@@ -173,22 +186,24 @@ function renderPropertyReadiness(){
  const checks=props.map(p=>{
   const relatedLeases=leases.filter(l=>l.property_id===p.id);
   const active=relatedLeases.find(l=>l.status==='active'&&l.verified_at&&l.start_date&&
-    l.monthly_rent!==null&&l.charges_amount!==null&&l.due_day>=1&&l.due_day<=31);
-  const tenant=tenants.find(t=>t.property_id===p.id);
+    l.start_date<=todayParis()&&(!l.end_date||l.end_date>=todayParis())&&
+    l.monthly_rent!=null&&Number.isFinite(Number(l.monthly_rent))&&Number(l.monthly_rent)>=0&&
+    l.charges_amount!=null&&Number.isFinite(Number(l.charges_amount))&&Number(l.charges_amount)>=0&&l.due_day>=1&&l.due_day<=31);
+  const tenant=active?tenants.find(t=>t.id===active.tenant_row_id&&t.property_id===p.id):null;
   const archived=docs.filter(d=>d.property_id===p.id).length;
   return {p,active,lease:active||relatedLeases.find(l=>l.status==='draft')||relatedLeases[0],tenant,archived,ready:!!active&&!!tenant};
  });
  const ready=checks.filter(x=>x.ready).length;
  const percent=props.length?Math.round(100*ready/props.length):0;
  return '<section class="release-block"><div class="section-head"><div><h3>Préparation des '+props.length+' logements</h3>'+
- '<p class="muted">Contrôle individuel des données réelles : dossier locataire lié et bail actif vérifié. Ce taux n’est pas le pourcentage de développement.</p></div>'+
+ '<p class="muted">Contrôle individuel des données réelles : dossier du locataire du bail lié au logement et bail vérifié en cours. Ce taux n’est pas le pourcentage de développement.</p></div>'+
  '<strong>'+ready+' / '+props.length+' prêts ('+percent+' %)</strong></div>'+
  '<div class="release-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'">'+
  '<div class="release-fill" style="width:'+percent+'%"></div></div>'+
  dataTable(['Logement','Locataire','Bail','Archives','Action'],checks.map(x=>
  '<tr><td><b>'+esc(x.p.name)+'</b></td>'+
  '<td><span class="mini-tag '+(x.tenant?'':'warn')+'">'+(x.tenant?'Lié':'À relier')+'</span></td>'+
- '<td><span class="mini-tag '+(x.active?'':'warn')+'">'+(x.active?'Vérifié et actif':x.lease?'Brouillon à vérifier':'Bail manquant')+'</span></td>'+
+ '<td><span class="mini-tag '+(x.active?'':'warn')+'">'+(x.active?'Vérifié et en cours':x.lease?.status==='draft'?'Brouillon à vérifier':x.lease?'Dates et statut à vérifier':'Bail manquant')+'</span></td>'+
  '<td>'+x.archived+' pièce(s)</td><td class="item-actions">'+
  (x.lease?'<button class="btn secondary" data-id="'+esc(x.lease.id)+'" onclick="editLease(this.dataset.id)">Vérifier le bail</button>':'<button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Contrats</button>')+
  '<button class="btn secondary" data-property="'+esc(x.p.id)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents</button></td></tr>'))+
@@ -196,11 +211,21 @@ function renderPropertyReadiness(){
 }
 
 
+function healthReportState(report,now=Date.now()){
+ if(!report)return {tone:'warn',title:'Contrôle à lancer',message:'Aucun diagnostic enregistré. Lancez un contrôle pour obtenir un résultat.'};
+ const checked=Date.parse(report.checked_at),age=now-checked;
+ if(!['ok','attention','anomaly'].includes(report.status)||!Number.isFinite(checked)||age< -300000)
+  return {tone:'warn',title:'Résultat à vérifier',message:'Le résultat ou la date du dernier diagnostic est invalide. Relancez le contrôle.'};
+ if(age>26*60*60*1000)return {tone:'warn',title:'Diagnostic à actualiser',message:'Le dernier contrôle remonte à plus de 26 heures. Il ne permet pas de confirmer l’état actuel du système.'};
+ if(report.status==='anomaly'||Number(report.critical_count)>0)return {tone:'bad',title:'Anomalies à traiter',message:'Consultez les anomalies du dernier contrôle.'};
+ if(report.status==='attention'||Number(report.warning_count)>0)return {tone:'warn',title:'Points de vigilance',message:'Des vérifications restent nécessaires.'};
+ return {tone:'',title:'Aucune anomalie détectée',message:'Aucune anomalie détectée dans le dernier contrôle. Les opérations non encore configurées sont suivies dans « À compléter » ci-dessous.'};
+}
 function renderOperationsHealth(){
  if(!db.current_user?.payment_void_access)return '';
  const reports=db.health_reports||[],latest=reports[0];
- const state=latest?.status==='anomaly'?'Anomalies à traiter':latest?.status==='attention'?'Points de vigilance':'Aucune anomalie détectée';
- const stamp=latest?.checked_at?new Date(latest.checked_at).toLocaleString('fr-FR'):'Aucune exécution';
+ const state=healthReportState(latest);
+ const stamp=Number.isFinite(Date.parse(latest?.checked_at))?new Date(latest.checked_at).toLocaleString('fr-FR',{timeZone:'Europe/Paris'}):'Aucune exécution datée';
  const issues=Array.isArray(latest?.checks)?latest.checks:[];
  const metrics=latest?.metrics||{};
  const messages={
@@ -213,17 +238,22 @@ function renderOperationsHealth(){
   BANK_BACKLOG:'Rapprocher les virements en attente dans Transactions',
   MAIL_SYNC_STALE:'Tester IMAP dans Paramètres et vérifier la connexion Free',
   CRON_NOT_ACTIVE:'Contrôler les tâches de Supabase Cron',
-  CRON_LAST_FAILURE:'Consulter le dernier échec de la tâche dans Supabase Cron'
+  CRON_LAST_FAILURE:'Consulter le dernier échec de la tâche dans Supabase Cron',
+  CRON_NEVER_RUN:'Attendre le premier passage prévu puis vérifier son exécution',
+  CRON_STALLED:'Contrôler la tâche encore en cours et les erreurs du serveur',
+  CRON_STALE:'Vérifier la dernière exécution et le calendrier de la tâche dans Supabase Cron',
+  CRON_SCHEDULE_CHANGED:'Vérifier le nouvel horaire et mettre à jour le suivi si le changement est volontaire'
  };
  const lastRows=reports.slice(0,7).map(r=>'<div class="kv"><span>'+esc(new Date(r.checked_at).toLocaleString('fr-FR'))+
   ' · '+esc(r.trigger_type==='daily'?'Automatique':'Manuel')+'</span><b>'+esc(r.status==='ok'?'Sans anomalie':r.status==='attention'?'Attention':'Anomalies')+
   ' · '+Number(r.critical_count||0)+' critique(s), '+Number(r.warning_count||0)+' avertissement(s)</b></div>').join('');
  return '<section class="release-block" id="operationsHealth"><div class="section-head"><div><h3>Diagnostic automatique du système</h3>'+
-  '<p class="muted">Contrôle quotidien à 09h05 UTC. Lecture seule des contrats et des paiements, sans correction ni envoi automatique.</p></div>'+
+  '<p class="muted">Contrôle quotidien à 10h05 en hiver et 11h05 en été, heure de Paris (09h05 UTC). Lecture seule des contrats et des paiements, sans correction ni envoi automatique.</p></div>'+
   '<button class="btn primary" id="health-run-button" onclick="runMarneHealth()" '+(db.current_user?.read_only?'disabled':'')+'>Lancer un diagnostic</button></div>'+
   '<div class="kv"><b>Dernier passage</b><span>'+esc(stamp)+'</span></div>'+
-  '<div class="kv"><b>Intégrité des données contrôlées</b><span><b>'+esc(latest?state:'Contrôle à lancer')+'</b></span></div>'+
+  '<div class="kv"><b>Intégrité des données contrôlées</b><span class="mini-tag '+state.tone+'">'+esc(state.title)+'</span></div>'+
   '<div class="kv"><b>Automatisations enregistrées</b><span>'+esc(String(metrics.cron_jobs??'—'))+' active(s)</span></div>'+
+  '<div class="kv"><b>Automatisations déjà observées</b><span>'+esc(String(metrics.cron_jobs_observed??'—'))+' avec une trace d’exécution SQL ; résultat externe à vérifier séparément</span></div>'+
   '<p class="muted">Ce contrôle vérifie les incohérences détectables dans la base. Il ne prouve ni une connexion bancaire réelle, ni le bon fonctionnement des intégrations externes, ni la validation des baux.</p>'+
   (issues.length?'<div class="health-issues">'+issues.map(i=>
    '<div class="health-item"><span class="mini-tag '+(i.severity==='critical'?'bad':'warn')+'">'+
@@ -231,7 +261,7 @@ function renderOperationsHealth(){
    esc(String(i.message||'Anomalie'))+' ('+Number(i.count||0)+')</b><p class="muted">'+
    esc(messages[i.code]||'Consulter les données concernées et vérifier leur cohérence.')+
    '</p></div></div>').join('')+'</div>':
-   '<p class="muted">Aucune anomalie détectée dans le dernier contrôle. Les opérations non encore configurées sont suivies dans « À compléter » ci-dessous.</p>')+
+   '')+'<p class="muted">'+esc(state.message)+'</p>'+
   (reports.length?'<details><summary>Historique des derniers diagnostics</summary>'+lastRows+'</details>':'')+
   '<div class="status" id="healthRunStatus" role="status"></div></section>';
 }
@@ -244,7 +274,7 @@ window.runMarneHealth=async()=>{
   const result=await api('health-run','POST',{confirmed:true});
   await refresh();
   const next=$('healthRunStatus');
-  if(next){next.className=result.report?.critical_count?'status err':'status ok';
+  if(next){next.className=result.report?.critical_count?'status err':result.report?.warning_count?'status warn':'status ok';
     next.textContent='Diagnostic terminé : '+Number(result.report?.critical_count||0)+' anomalie(s) critique(s), '+
     Number(result.report?.warning_count||0)+' point(s) à vérifier.'}
  }catch(e){
@@ -279,9 +309,9 @@ function renderPilotage(){
  const blockers='<section class="release-block"><h3>À compléter avant la mise en production finale</h3><p class="muted">Ce sont des blocages réels, pas des bugs supposés.</p>'+
  '<div class="kv"><b>Baux à valider</b><span>'+draft+' · <button class="btn secondary" onclick="showPage(&quot;contracts&quot;)">Ouvrir Contrats</button></span></div>'+
  '<div class="kv"><b>Adresses e-mail locataires manquantes</b><span>'+Math.max(0,tenants.length-emails)+' · <button class="btn secondary" onclick="showPage(&quot;tenants&quot;)">Ouvrir Locataires</button></span></div>'+
- '<div class="kv"><b>Messagerie Free</b><span>'+(db.mail_sync_state?.imap_verified_at?'IMAP vérifié ; SMTP à contrôler':db.current_user?.mail_configured?'Test IMAP/SMTP requis':'Mot de passe à configurer')+' · <button class="btn secondary" onclick="showPage(&quot;config&quot;)">Paramètres</button></span></div></section>';
+  '<div class="kv"><b>Messagerie Free</b><span>'+(db.current_user?.mail_configured?('IMAP '+(db.mail_sync_state?.imap_verified_at?'vérifié':'à tester')+' ; SMTP '+(db.mail_sync_state?.smtp_verified_at?'vérifié':'à tester')):'Mot de passe à configurer')+' · <button class="btn secondary" onclick="showPage(&quot;config&quot;)">Paramètres</button></span></div></section>';
  const checklist='<section class="release-block"><h3>Feuille de route de la version finale</h3>'+
- '<div class="note">21 tests de régression du site sont enregistrés dans GitHub Actions. Cela ne remplace pas les tests réels avec vos comptes Free, bancaires et les contrats signés.</div>'+
+ '<div class="note">Les tests du site, de l’API et du navigateur sont exécutés dans GitHub Actions sur des données de test. Cela ne remplace pas la recette avec vos comptes Free, bancaires et les contrats signés.</div>'+
  '<p class="muted">Méthode de calcul : 1 point par lot livré ; un lot partiel ou planifié n’est pas compté. Le pourcentage évolue lors des prochaines livraisons vérifiées.</p>'+
  '<div class="release-list">'+releaseMilestones.map(([label,state,desc])=>{
  const name=state==='done'?'Livré':state==='partial'?'Partiel':'À développer';
@@ -363,7 +393,7 @@ function renderIrlPublicationPanel(){
  '<a class="btn secondary" target="_blank" rel="noopener noreferrer" href="https://www.insee.fr/fr/statistiques/serie/001515333">Voir la série officielle</a></div>'+
  (pending.length?'<div class="section-head"><h3>'+pending.length+' nouvelle(s) valeur(s) à vérifier</h3></div>'+
  pending.map(c=>'<div class="kv"><b>T'+esc(c.quarter)+' '+esc(c.year)+' — '+esc(c.value)+'</b><span>'+
- (db.current_user?.payment_void_access?
+ (db.current_user?.payment_void_access&&!db.current_user?.read_only?
  '<button class="btn secondary" data-id="'+esc(c.id)+'" onclick="approveIrlCandidate(this.dataset.id)">Valider après consultation Insee</button>':
  '<span class="muted">Validation administrateur requise</span>')+'</span></div>').join(''):
  '<p class="muted">Aucune nouvelle publication en attente de validation.</p>')+'</div>';
@@ -377,7 +407,7 @@ window.checkIrlPublication=async()=>{
  }catch(e){alert('Contrôle Insee non abouti : '+(e.message||'Source momentanément indisponible'))}
 };
 window.approveIrlCandidate=async id=>{
- if(!db.current_user?.payment_void_access)return;
+ if(!db.current_user?.payment_void_access||db.current_user?.read_only)return;
  const c=(db.irl_candidates||[]).find(x=>x.id===id);
  if(!c||c.status!=='pending')return;
  const date=prompt('Date officielle de publication de l’indice T'+c.quarter+' '+c.year+
@@ -406,7 +436,7 @@ function renderConfig(){
  '<div class="fields"><div><label for="central-mail-password">Mot de passe de la boîte Free</label>'+
  '<input id="central-mail-password" type="password" maxlength="256" autocomplete="new-password" placeholder="'+(configured?'Laisser vide pour conserver le mot de passe':'Saisir le mot de passe de la boîte Free')+'" '+(allowed?'':'disabled')+'><p class="muted">Laisser vide si le mot de passe n’a pas changé.</p></div>'+
  '<div><label>Configuration du serveur</label><div class="note">IMAP : <code>imap.free.fr:993</code> (TLS)<br>SMTP : <code>smtp.free.fr:465</code> (TLS)</div></div></div>'+
- '<div class="actions"><button class="btn secondary" onclick="testMailConnection()" '+(configured?'':'disabled')+'>Tester IMAP / SMTP</button>'+
+ '<div class="actions"><button class="btn secondary" onclick="testMailConnection()" '+(configured&&allowed?'':'disabled')+'>Tester IMAP / SMTP</button>'+
  '<button class="btn secondary" onclick="showPage(&quot;mail&quot;)">Ouvrir la messagerie</button></div>'+
  '<p class="muted">L’enregistrement n’envoie aucun e-mail. Une validation distincte reste obligatoire pour expédier un message.</p></section>';
  const historical=['current_irl','irl_label','revision_threshold','reminder_7_days','reminder_14_days','irl_url_1','irl_url_2','main_sheet_name','property_sheet_prefix'];
@@ -532,7 +562,7 @@ window.saveIrlRule=async id=>{
    geographic_scope:$('irl-region')?.value,revision_due_on:$('irl-date')?.value,
    reference_quarter:Number($('irl-quarter')?.value),confirmed:true};
  status.className='status';status.textContent='Enregistrement sécurisé des règles IRL…';
- try{await api('save-irl-rule','POST',body);closeModal();await refresh();openIrlLease(id)}
+ try{await api('save-irl-rule','POST',body);closeModal();if(await refresh())openIrlLease(id)}
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 window.prepareIrlProposal=async id=>{
@@ -542,7 +572,7 @@ window.prepareIrlProposal=async id=>{
  status.className='status';status.textContent='Contrôle des conditions et calcul officiel…';
  try{
   const result=await api('prepare-irl','POST',{lease_id:id,confirmed:true});
-  closeModal();await refresh();openIrlLease(id);
+  closeModal();if(await refresh())openIrlLease(id);
   const st=$('modalStatus');
   if(st){st.className='status ok';st.textContent='Simulation : '+money(Number(result.base_rent))+' → '+money(Number(result.proposed_rent))+'. '+(result.created?'Proposition créée.':'Proposition existante, sans doublon.')+' Aucun loyer ni courriel modifié.'}
  }catch(e){status.className='status err';status.textContent=e.message||'Calcul refusé'}
@@ -654,7 +684,7 @@ window.editLease=id=>{
  '<div class="section-title">Notes</div><textarea id="lease-notes" '+(locked?'disabled':'')+'>'+esc(lease.notes||'')+'</textarea>'+
  (locked?'':'<div class="actions" style="margin-top:12px"><button class="btn secondary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,false)">Enregistrer le brouillon</button><button class="btn primary" data-id="'+esc(id)+'" onclick="saveLease(this.dataset.id,true)">Vérifier et activer</button></div>')+
  '<div class="section-title">Échéances mensuelles</div>'+
- (lease.status==='active'?'<div class="toolbar"><input id="installment-month" type="month" value="'+month+'" style="width:180px"><button class="btn primary" data-id="'+esc(id)+'" onclick="generateInstallment(this.dataset.id)">Créer une échéance</button></div>':'<div class="muted">Validez le bail pour pouvoir créer une échéance.</div>')+
+ (lease.status==='active'?'<div class="toolbar"><input id="installment-month" type="month" value="'+month+'" style="width:180px" '+(!db.current_user?.payment_access||db.current_user?.read_only?'disabled':'')+'><button class="btn primary" data-id="'+esc(id)+'" onclick="generateInstallment(this.dataset.id)" '+(!db.current_user?.payment_access||db.current_user?.read_only?'disabled':'')+'>Créer une échéance</button></div>':'<div class="muted">Validez le bail pour pouvoir créer une échéance.</div>')+
  renderObjectTable(items.map(x=>({'Mois':x.period,'Échéance':x.due_on,'Loyer':money(Number(x.rent_amount)),'Charges':money(Number(x.charges_amount)),'Total':money(Number(x.total_due)),'État':x.status})))+
  '<div class="status" id="modalStatus"></div></div></div>';
 };
@@ -666,10 +696,11 @@ window.saveLease=async(id,activate)=>{
  try{await api('save-lease','POST',body);closeModal();await refresh();}catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 window.generateInstallment=async(id)=>{
+ if(!db?.current_user?.payment_access||db.current_user?.read_only)return;
  const period=$('installment-month')?.value,status=$('modalStatus');if(!period)return;
  if(!confirm('Créer une échéance de '+period+' à partir du bail validé ?'))return;
  status.className='status';status.textContent='Enregistrement…';
- try{const result=await api('generate-installment','POST',{lease_id:id,period});await refresh();editLease(id);$('modalStatus').textContent=result.already_exists?'Échéance déjà existante, aucun doublon.':'Échéance créée, sans paiement supposé.';}
+ try{const result=await api('generate-installment','POST',{lease_id:id,period});if(!await refresh())return;editLease(id);$('modalStatus').textContent=result.already_exists?'Échéance déjà existante, aucun doublon.':'Échéance créée, sans paiement supposé.';}
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 
@@ -696,29 +727,30 @@ function bankCsvRows(csv){
  const score=sep=>first.split(sep).length-1;
  const sep=[';','\t',','].sort((a,b)=>score(b)-score(a))[0];
  if(!score(sep))throw Error('Séparateur CSV non reconnu (; , ou tabulation).');
- let rows=[],row=[],field='',quoted=false;
+ let rows=[],row=[],field='',quoted=false,closedQuote=false;
  for(let i=0;i<clean.length;i++){
   const c=clean[i];
   if(c==='"'){
    if(quoted&&clean[i+1]==='"'){field+='"';i++}
-   else if(!quoted&&field.trim()!=='')throw Error('Guillemet CSV mal placé.');
-   else quoted=!quoted;
-  }else if(c===sep&&!quoted){row.push(field.trim());field=''}
+   else if(!quoted&&(closedQuote||field.trim()!==''))throw Error('Guillemet CSV mal placé.');
+   else{quoted=!quoted;if(!quoted)closedQuote=true}
+  }else if(c===sep&&!quoted){row.push(field.trim());field='';closedQuote=false}
   else if((c==='\r'||c==='\n')&&!quoted){
    if(c==='\r'&&clean[i+1]==='\n')i++;
    row.push(field.trim());
    if(row.some(v=>v!==''))rows.push(row);
-   row=[];field='';
+   row=[];field='';closedQuote=false;
    if(rows.length>202)throw Error('Un relevé doit contenir au maximum 200 mouvements.');
-  }else{field+=c}
+  }else{if(closedQuote&&!quoted&&!/[ \t]/.test(c))throw Error('Caractère inattendu après un champ CSV entre guillemets.');field+=c}
  }
  if(quoted)throw Error('Fichier CSV : guillemets non fermés.');
  row.push(field.trim());if(row.some(v=>v!==''))rows.push(row);
  if(rows.length<2)throw Error('Le CSV doit contenir une ligne d’en-tête et au moins un mouvement.');
  if(rows.length>201)throw Error('Maximum 200 mouvements par relevé.');
  const headers=rows.shift().map(bankNormalizeHeader);
- const index=aliases=>headers.findIndex(h=>aliases.includes(h));
- const dateIdx=index(['date','dateoperation','datedoperation','datedeoperation','datecomptable','datecomptabilisation','datevaleur','datedecriture','bookingdate']);
+ if(new Set(headers.filter(Boolean)).size!==headers.filter(Boolean).length)throw Error('Colonnes CSV en doublon : vérifiez les en-têtes.');
+ const index=aliases=>{for(const name of aliases){const found=headers.indexOf(name);if(found>=0)return found}return -1};
+ const dateIdx=index(['bookingdate','datecomptable','datecomptabilisation','datedecriture','dateoperation','datedoperation','datedeoperation','date','datevaleur']);
  const labelIdx=index(['libelle','libelleoperation','libelledeloperation','description','details','operation','intitule','motif','objet']);
  const amountIdx=index(['montant','montanteur','montantoperation','amount']);
  const creditIdx=index(['credit','crediteur','crediteneuros','montantcredit','recette','entree','versement']);
@@ -738,15 +770,23 @@ function bankCsvRows(csv){
   return [y,String(m).padStart(2,'0'),String(d).padStart(2,'0')].join('-');
  }
  function parseMoney(v){
-  let raw=String(v??'').trim().replace(/[\u00a0\u202f\s€]/g,'');
+  let raw=String(v??'').trim();
   if(!raw)return null;
   let negative=false;
-  if(/^\(.*\)$/.test(raw)){negative=true;raw=raw.slice(1,-1)}
+  const parentheses=/^\(.*\)$/.test(raw);
+  if(parentheses){negative=true;raw=raw.slice(1,-1).trim()}
+  raw=raw.replace(/^€\s*|\s*€$/g,'').trim();
+  if(parentheses&&/^[+-]/.test(raw))throw Error('Montant ambigu : signe et parenthèses combinés.');
   if(raw.startsWith('-')){negative=true;raw=raw.slice(1)}
   else if(raw.startsWith('+'))raw=raw.slice(1);
+  if(/[ \u00a0\u202f]/.test(raw)){
+   if(!/^\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d{1,2})?$/.test(raw))throw Error('Montant ambigu : groupement des milliers incorrect.');
+   raw=raw.replace(/[ \u00a0\u202f]/g,'');
+  }
   if(raw.includes(',')&&raw.includes('.')){
-   const comma=raw.lastIndexOf(','),dot=raw.lastIndexOf('.');
-   raw=comma>dot?raw.replace(/\./g,'').replace(',','.'):raw.replace(/,/g,'');
+   if(/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(raw))raw=raw.replace(/\./g,'').replace(',','.');
+   else if(/^\d{1,3}(?:,\d{3})+\.\d{1,2}$/.test(raw))raw=raw.replace(/,/g,'');
+   else throw Error('Montant ambigu : groupement des milliers incorrect.');
   }else if(raw.includes(','))raw=raw.replace(',','.');
   if(!/^\d{1,9}(\.\d{1,2})?$/.test(raw))throw Error('Montant ambigu : '+String(v)+'. Vérifiez le format décimal.');
   const amount=Number(raw)*(negative?-1:1);
@@ -754,18 +794,19 @@ function bankCsvRows(csv){
   return amount;
  }
  return rows.map((cells,i)=>{
+  if(cells.length!==headers.length)throw Error('Ligne '+(i+2)+' : nombre de colonnes différent des en-têtes. Placez les montants avec virgule entre guillemets dans un CSV séparé par des virgules.');
   const get=n=>n>=0?String(cells[n]??'').trim():'';
   const booking_date=parseDate(get(dateIdx));
   const description=get(labelIdx).replace(/\s+/g,' ').trim();
   const reference=get(refIdx);
-  let amount;
-  if(amountIdx>=0 && get(amountIdx)!==''){amount=parseMoney(get(amountIdx))}
-  else{
-   const credit=parseMoney(get(creditIdx)),debit=parseMoney(get(debitIdx));
-   if((credit!==null&&credit!==0)&&(debit!==null&&debit!==0))
-    throw Error('Ligne '+(i+2)+' : débit et crédit présents simultanément.');
-   amount=credit!==null&&credit!==0?Math.abs(credit):debit!==null?-Math.abs(debit):null;
-  }
+  const credit=parseMoney(get(creditIdx)),debit=parseMoney(get(debitIdx));
+  if(credit!==null&&credit<0)throw Error('Ligne '+(i+2)+' : crédit négatif, vérifiez le sens du mouvement.');
+  if((credit!==null&&credit!==0)&&(debit!==null&&debit!==0))
+   throw Error('Ligne '+(i+2)+' : débit et crédit présents simultanément.');
+  const splitAmount=credit!==null&&credit!==0?credit:debit!==null?-Math.abs(debit):null;
+  const amount=amountIdx>=0&&get(amountIdx)!==''?parseMoney(get(amountIdx)):splitAmount;
+  if(amountIdx>=0&&get(amountIdx)!==''&&splitAmount!==null&&splitAmount!==0&&Math.abs(amount-splitAmount)>0.005)
+   throw Error('Ligne '+(i+2)+' : montant et colonnes débit/crédit contradictoires.');
   if(amount===null||amount===0||description.length<2||description.length>500||reference.length>120)
    throw Error('Ligne '+(i+2)+' : montant, libellé ou référence invalide.');
   return {booking_date,amount:amount.toFixed(2),description,reference};
@@ -916,7 +957,7 @@ function renderTransactions(){
  const allocated=installments.reduce((s,i)=>s+(ledger.byInstallment.get(i.id)||0),0);
  const received=active.reduce((s,p)=>s+Number(p.amount||0),0);
  const unallocated=active.reduce((s,p)=>s+Math.max(0,Number(p.amount)- (ledger.byPayment.get(p.id)||0)),0);
- const canWrite=!db.current_user?.read_only,canVoid=!!db.current_user?.payment_void_access;
+ const canWrite=!db.current_user?.read_only,canVoid=!!db.current_user?.payment_void_access&&canWrite;
  const actions=(canWrite?'<button class="btn primary" onclick="openPaymentModal()">+ Enregistrer un paiement</button>':'')+
  '<button class="btn secondary" onclick="exportMarne(&quot;ledger&quot;)">Exporter le registre CSV</button>';
  $('content').innerHTML=section('Paiements et rapprochement','Registre autonome. Les anciens paiements du tableur ne sont pas importés automatiquement.',actions)+
@@ -936,8 +977,7 @@ function renderTransactions(){
   const done=ledger.byInstallment.get(i.id)||0,remaining=Math.max(0,Number(i.total_due)-done);
   return '<tr><td>'+esc(i.period)+'</td><td>'+esc(activeLeaseName((db.leases||[]).find(l=>l.id===i.lease_id)||{}))+'</td><td>'+esc(i.due_on)+'</td><td>'+money(Number(i.total_due))+'</td><td>'+money(done)+'</td><td>'+money(remaining)+'</td><td><span class="mini-tag '+(remaining>0.005?'warn':'')+'">'+(remaining>0.005?'À régler':'Soldée')+'</span></td></tr>';
  }))+
- '<div class="note" style="margin-top:14px">La liaison bancaire directe n’est pas encore activée. Vous pouvez importer un relevé CSV et rapprocher chaque crédit après vérification. Un paiement saisi manuellement doit correspondre à une réception réellement constatée. Une avance non affectée n’est pas une quittance. Les montants « Paiement reçu » du tableur sont conservés séparément et ne sont jamais additionnés à ce registre.</div>'+
- ((ledger.payments.length>=1000||(db.payment_allocations||[]).length>=1000)?'<div class="note">Seuls les 1 000 derniers mouvements sont chargés ; les totaux présentés ici peuvent être incomplets. Une pagination serveur sera nécessaire.</div>':'');
+ '<div class="note" style="margin-top:14px">La liaison bancaire directe n’est pas encore activée. Vous pouvez importer un relevé CSV et rapprocher chaque crédit après vérification. Un paiement saisi manuellement doit correspondre à une réception réellement constatée. Une avance non affectée n’est pas une quittance. Les montants « Paiement reçu » du tableur sont conservés séparément et ne sont jamais additionnés à ce registre.</div>';
 }
 window.openPaymentModal=()=>{
  if(!db.current_user?.payment_access||db.current_user?.read_only)return;
@@ -1091,7 +1131,7 @@ window.saveWorkDetails=async id=>{
  try{
   await api('work-details','POST',{id,provider_name:$('work-provider')?.value||'',provider_contact:$('work-contact')?.value||'',
     estimate_amount:$('work-estimate')?.value||null,actual_amount:$('work-actual')?.value||null,scheduled_for:$('work-scheduled')?.value||null});
-  closeModal();await refresh();openWorkOrder(id);
+  closeModal();if(await refresh())openWorkOrder(id);
  }catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 window.advanceWorkOrder=async id=>{
@@ -1099,7 +1139,7 @@ window.advanceWorkOrder=async id=>{
  if(!next||!o)return;
  if(!confirm('Passer le ticket « '+o.title+' » de « '+(workStatusLabels[o.status]||o.status)+' » à « '+(workStatusLabels[next]||next)+' » ? Aucune commande n’est envoyée au prestataire.'))return;
  const status=$('modalStatus');status.className='status';status.textContent='Modification du statut…';
- try{await api('work-transition','POST',{id,next,confirmed:true});closeModal();await refresh();openWorkOrder(id)}
+ try{await api('work-transition','POST',{id,next,confirmed:true});closeModal();if(await refresh())openWorkOrder(id)}
  catch(e){status.className='status err';status.textContent=e.message||'Erreur'}
 };
 
@@ -1263,7 +1303,7 @@ function renderReports(){
  stats([['Biens',props.length],['Lignes locataires',tenants.length],['Échéances du registre',money(due)],['Paiements saisis',money(paid)]])+
  stats([['Affecté aux échéances',money(applied)],['Reste sur échéances',money(Math.max(0,due-applied))],['Avances ou non affectés',money(unallocated)],['Baux validés',(db.leases||[]).filter(l=>l.status==='active').length]])+
  dataTable(['Bien','Loyer contractuel validé','Paiements saisis dans le registre'],filtered(perProperty,x=>x.join(' ')).map(x=>'<tr><td><b>'+esc(x[0])+'</b></td><td>'+money(x[1])+'</td><td>'+money(x[2])+'</td></tr>'))+
- '<div class="note" style="margin-top:15px">Les montants historiques du tableur ne sont pas intégrés dans ces totaux. Les règlements annulés sont exclus. Le rapprochement bancaire et les quittances automatisées ne sont pas encore activés.</div>';
+ '<div class="note" style="margin-top:15px">Les montants historiques du tableur ne sont pas intégrés dans ces totaux. Les règlements annulés sont exclus. Le rapprochement des relevés CSV se fait dans Transactions après vérification manuelle. Aucun envoi de quittance n’est automatique.</div>';
 }
 
 async function fetchIrl(){irlChecked=true;irlLive={loading:true};if(page==='config')render();try{const r=await fetch('https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/marne-irl',{cache:'no-store'});const d=await r.json();if(!r.ok||!d.ok||!Number.isFinite(d.index))throw Error(d.error||'IRL non disponible');irlLive=d}catch(e){irlLive={error:e.message||'IRL non disponible'}}if(page==='config')render()}
@@ -1373,7 +1413,7 @@ function renderMail(){
  const imapVerified=!!sync?.imap_verified_at&&connected;
  const smtpVerified=!!sync?.smtp_verified_at&&connected;
  const recentSync=sync?.last_sync_at?new Date(sync.last_sync_at).toLocaleString('fr-FR'):'Aucune synchronisation vérifiée';
- const tools='<button class="btn secondary" onclick="testMailConnection()">Tester IMAP / SMTP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
+ const tools=db.current_user?.read_only?'<span class="mini-tag">Lecture seule</span>':'<button class="btn secondary" onclick="testMailConnection()">Tester IMAP / SMTP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
  const setup=connected?'<div class="note mail-banner">Identifiants enregistrés côté serveur. IMAP : <b>'+(imapVerified?'Vérifié':'À tester')+'</b> · SMTP : <b>'+(smtpVerified?'Vérifié':'À tester')+'</b>.<p class="muted">Réception automatique programmée de 06h à 21h UTC, une fois par heure, et déclenchée uniquement après vérification IMAP. Dernière réception réussie : '+esc(recentSync)+'. Aucun envoi automatique.</p></div>':
  '<div class="note mail-banner"><b>Connexion à effectuer :</b> ouvre <b>Paramètres</b>, saisis l’adresse du compte Free et son mot de passe, puis enregistre. Le mot de passe est chiffré dans Vault. <button class="btn primary" onclick="showPage(&quot;config&quot;)">Configurer la messagerie</button></div>';
  $('content').innerHTML=section('Messagerie Free',esc(db.current_user?.mail_account||setting('sender_email','ph.danglade@free.fr'))+' — réception IMAP 993 et envoi SMTP 465.',tools)+
@@ -1387,16 +1427,18 @@ function renderMail(){
  const labels={draft:'Brouillon',sending:'En cours',sent:'Envoyé',uncertain:'À vérifier',cancelled:'Annulé'};
  return '<tr><td>'+esc(m.created_at?.slice(0,10)||'—')+'</td><td>'+esc(m.recipient_email)+'</td><td>'+esc(m.subject)+'</td><td><span class="mini-tag '+(m.status==='uncertain'?'warn':'')+'">'+esc(labels[m.status]||m.status)+'</span></td>'+
  '<td class="item-actions"><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="viewMailDraft(this.dataset.id)">Lire</button>'+
- (m.status==='draft'?'<button class="btn primary" data-id="'+esc(m.id)+'" onclick="sendFreeMail(this.dataset.id)" '+(connected?'':'disabled')+'>Envoyer</button><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="cancelFreeMailDraft(this.dataset.id)">Annuler</button>':'')+'</td></tr>';
+ (m.status==='draft'&&!db.current_user?.read_only?'<button class="btn primary" data-id="'+esc(m.id)+'" onclick="sendFreeMail(this.dataset.id)" '+(connected?'':'disabled')+'>Envoyer</button><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="cancelFreeMailDraft(this.dataset.id)">Annuler</button>':'')+'</td></tr>';
  }))+
- '<p class="module-note">Les 150 derniers courriels sont affichés. Après authentification IMAP réussie, la boîte est consultée chaque heure entre 06h et 21h UTC. Les messages restent conservés sur Free ; aucun message reçu ne déclenche une opération comptable ou un envoi automatique.</p>';
+ '<p class="module-note">Les 150 derniers courriels importés sont affichés. Chaque synchronisation examine au plus les 30 derniers messages de moins de 700 Ko : cette vue n’est pas une archive complète de la boîte Free. Après authentification IMAP réussie, la boîte est consultée chaque heure entre 06h et 21h UTC. Les messages restent conservés sur Free ; aucun message reçu ne déclenche une opération comptable ou un envoi automatique.</p>';
 }
 window.testMailConnection=async()=>{
- try{const x=await api('mail-test','POST',{});alert('Réception IMAP : '+(x.imap_authenticated?'OK':'Non vérifiée')+'\nEnvoi SMTP : '+(x.smtp_authenticated?'OK':'Non vérifié')+'\nMessages sur Free : '+(x.mailbox_total??'—'))}
+ if(!db?.current_user?.mail_access||db.current_user?.read_only)return;
+ try{const x=await api('mail-test','POST',{});await refresh();alert('Réception IMAP : '+(x.imap_authenticated?'OK':'Non vérifiée')+'\nEnvoi SMTP : '+(x.smtp_authenticated?'OK':'Non vérifié')+'\nMessages sur Free : '+(x.mailbox_total??'—'))}
  catch(e){alert('Test non abouti : '+e.message)}
 };
 window.syncFreeMail=async()=>{
- if(!db.current_user?.mail_configured){alert('Configurez la clé MARNE_FREE_MAIL_PASSWORD dans les secrets Supabase.');return}
+ if(!db?.current_user?.mail_access||db.current_user?.read_only)return;
+ if(!db.current_user?.mail_configured){alert('Renseignez le compte Free et son mot de passe dans Paramètres, puis testez IMAP / SMTP.');showPage('config');return}
  if(!confirm('Importer les derniers courriels en lecture seule depuis Free ?'))return;
  try{const x=await api('mail-sync','POST',{});await refresh();alert((x.imported||0)+' message(s) importé(s), '+(x.skipped_large||0)+' trop volumineux ignoré(s).')}
  catch(e){alert('Synchronisation indisponible : '+e.message)}
@@ -1454,3 +1496,4 @@ if(token){$('login').classList.add('hide');$('app').classList.remove('hide');ini
 })();
 </script>
 </body></html>
+

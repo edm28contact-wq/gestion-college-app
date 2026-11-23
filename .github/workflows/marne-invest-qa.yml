@@ -3,18 +3,24 @@ on:
   push:
     paths:
       - 'admin/marne-invest/index.html'
-      - 'tests/marne-invest-ui.test.mjs'
+      - 'tests/marne-invest-*.test.mjs'
+      - 'tests/employee-profile-lateness.test.cjs'
+      - 'supabase/functions/rental-admin-api/**'
+      - 'supabase/migrations/**'
       - '.github/workflows/marne-invest-qa.yml'
   pull_request:
     paths:
       - 'admin/marne-invest/index.html'
-      - 'tests/marne-invest-ui.test.mjs'
+      - 'tests/marne-invest-*.test.mjs'
+      - 'tests/employee-profile-lateness.test.cjs'
+      - 'supabase/functions/rental-admin-api/**'
+      - 'supabase/migrations/**'
       - '.github/workflows/marne-invest-qa.yml'
 permissions:
   contents: read
 jobs:
   test:
-    name: Controle du site et des imports bancaires
+    name: Site, API et regressions metier
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -23,4 +29,20 @@ jobs:
         with:
           node-version: '22'
       - name: Executer les tests sans connexion ni secrets
-        run: node --test tests/marne-invest-ui.test.mjs
+        run: node --test tests/marne-invest-ui.test.mjs tests/marne-invest-bank.test.mjs tests/marne-invest-api.test.mjs tests/*.test.cjs
+  browser:
+    name: Recette navigateur sur donnees fictives
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Installer Playwright version fixe
+        run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+      - name: Installer Chromium
+        run: npx playwright install --with-deps --only-shell chromium
+      - name: Verifier navigation, mobile, droits et sessions
+        run: node --test tests/marne-invest-browser.test.mjs
+

@@ -38,7 +38,12 @@ test("Fiche individuelle réservée à la page des salaires; toutes les période
  assert.match(source,/salaryStaffKey\(e\.personnel_name\)===employeeKey/);
  assert.match(source,/data-salary-profile-pdf/);
  assert.match(admin,/salary-profile-kpis/);
- assert.match(admin,/salaires\.js\?v=20261119-global-hours-v3/);
+ const salaryScripts=[...admin.matchAll(/<script\b[^>]*\bsrc=(["'])([^"']+)\1[^>]*>/g)]
+  .map(match=>new URL(match[2],"https://test.invalid/college/admin/"))
+  .filter(url=>url.origin==="https://test.invalid"&&url.pathname==="/college/admin/salaires.js");
+ assert.equal(salaryScripts.length,1,"Un seul script local salaires.js doit être chargé");
+ assert.ok(salaryScripts[0].searchParams.get("v")?.trim(),"La version du script doit être renseignée");
+ assert.ok(fs.existsSync("."+salaryScripts[0].pathname),"Le script salaires référencé doit exister");
 });
 
 test("Départs anticipés et incidents sont totalisés séparément sans fabriquer des retards",()=>{
