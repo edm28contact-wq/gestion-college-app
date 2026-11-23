@@ -72,8 +72,8 @@ test('Les emails entrants sont affiches sous forme de texte protege',()=>{
 });
 test('Archivage des documents soumis a session',()=>{
  assert.match(script,/window\.uploadRentalDocument\s*=\s*async/);
- assert.match(script,/action=document-download/);
- assert.match(script,/authorization:'Bearer '\+token/);
+ assert.match(script,/api\(['"]document-download['"],\s*['"]GET['"]/);
+ assert.match(script,/api\(['"]document-upload['"],\s*['"]POST['"]/);
 });
 
 test('IRL: lettre projet et notification restent une action humaine',()=>{

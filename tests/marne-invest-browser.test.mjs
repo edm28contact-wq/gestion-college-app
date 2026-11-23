@@ -77,6 +77,7 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
   t.after(() => context.close());
   const errors = [], dialogs = [], requests = [], unexpected = [];
   const expectedHttpStatuses = new Set();
+  const pendingActions = new Map(), privateDownloads = [];
   let expired = false, dataFailure = null, pendingData = null;
   await context.addInitScript(({ authenticated, fallback }) => {
     if (!sessionStorage.getItem('qa-initialized')) {
@@ -91,6 +92,10 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
       headers: { 'access-control-allow-origin': origin, 'access-control-allow-headers': 'authorization,content-type' },
       body: JSON.stringify(body) });
     if (url.origin === origin && url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: html });
+    if (url.origin === origin && url.pathname === '/private-fixture.pdf') {
+      privateDownloads.push(req.url());
+      return route.fulfill({ contentType: 'text/plain', body: 'DOCUMENT_CONFIDENTIEL_FIXTURE' });
+    }
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: {
       'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET,POST,OPTIONS',
       'access-control-allow-headers': 'authorization,content-type',
@@ -100,8 +105,14 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
     }
     if (url.pathname === '/functions/v1/rental-admin-api') {
       const action = url.searchParams.get('action');
-      requests.push({ action, method: req.method() });
+      const headers = await req.allHeaders();
+      requests.push({ action, method: req.method(), id: url.searchParams.get('id'),
+        authorization: headers.authorization, contentType: headers['content-type'] || '', body: req.postData() || '' });
+      const actionGate = pendingActions.get(action);
+      if (actionGate) { pendingActions.delete(action); actionGate.markReceived(); await actionGate.response; }
+      if (actionGate?.reply) return json(actionGate.reply.body, actionGate.reply.status);
       if (expired) return json({ error: 'Session expirée' }, 401);
+      if (action === 'login' && req.method() === 'POST') return json({ token: 'synthetic-reconnected-token' });
       if (action === 'data' && req.method() === 'GET') {
         const gate = pendingData;
         pendingData = null;
@@ -109,10 +120,23 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
         if (dataFailure) return json({ error: dataFailure.message }, dataFailure.status);
         return json(data);
       }
-      if (action === 'mail-message' && req.method() === 'GET') return json({ item: {
-        id: mailId, subject: '<img src=x onerror="window.qaInjected=true">', sender_email: 'fixture@example.test',
-        plain_body: '<script>window.qaInjected=true</script>\nTexte reçu', is_seen: true, has_attachments: false,
-      } });
+      if (action === 'mail-message' && req.method() === 'GET') {
+        const id = url.searchParams.get('id');
+        return json({ item: { id,
+          subject: id === mailId ? '<img src=x onerror="window.qaInjected=true">' : 'Message récent de test',
+          sender_email: 'fixture@example.test',
+          plain_body: id === mailId ? '<script>window.qaInjected=true</script>\nTexte reçu' : 'MESSAGE_RECENT_FIXTURE',
+          is_seen: true, has_attachments: false,
+        } });
+      }
+      if (action === 'document-download' && req.method() === 'GET') return json({ url: origin + '/private-fixture.pdf' });
+      if (action === 'document-upload' && req.method() === 'POST') return json({ ok: true, id: 'new-document-fixture' });
+      if (action === 'receipt-preview' && req.method() === 'POST') return json({
+        document_type: 'recu', period: '2026-11', period_from: '2026-11-01', period_to: '2026-11-30',
+        generated_on: '2026-11-23', issuer: 'BAILLEUR_CONFIDENTIEL_FIXTURE', issuer_address: 'Adresse de test',
+        tenant: 'LOCATAIRE_CONFIDENTIEL_FIXTURE', property_name: 'LOGEMENT_CONFIDENTIEL_FIXTURE', address: 'Adresse de test',
+        rent: 600, charges: 50, paid: 400, remaining: 250,
+      });
     }
     if (url.origin === origin && url.pathname === '/favicon.ico') return route.fulfill({ status: 204 });
     unexpected.push({ url: req.url(), method: req.method() });
@@ -133,7 +157,7 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
     await page.waitForFunction(() => document.querySelector('#serverTime')?.textContent.includes('Données actualisées'));
   }
   return {
-    page, errors, dialogs, requests, unexpected,
+    page, errors, dialogs, requests, unexpected, privateDownloads,
     expire() { expired = true; expectedHttpStatuses.add(401); },
     failData() { dataFailure = { status: 503, message: 'Service de test momentanément indisponible' }; expectedHttpStatuses.add(503); },
     recoverData() { dataFailure = null; },
@@ -143,6 +167,15 @@ async function openApp(t, { viewport = { width: 1280, height: 900 }, data = fixt
       const response = new Promise(resolve => { release = resolve; });
       const received = new Promise(resolve => { markReceived = resolve; });
       pendingData = { response, markReceived };
+      return { received, release };
+    },
+    delayAction(action, reply = null) {
+      assert.equal(pendingActions.has(action), false, 'Une seule réponse par action peut être retenue à la fois');
+      let release, markReceived;
+      const response = new Promise(resolve => { release = resolve; });
+      const received = new Promise(resolve => { markReceived = resolve; });
+      if (reply?.status >= 400) expectedHttpStatuses.add(reply.status);
+      pendingActions.set(action, { response, markReceived, reply });
       return { received, release };
     },
   };
@@ -341,4 +374,220 @@ test('Navigateur : une réponse data tardive après déconnexion ne restaure auc
     assert.deepEqual(app.errors, []);
     assert.deepEqual(app.unexpected, []);
   } finally { held.release(); }
+});
+
+test('Navigateur : un HTTP 401 lors de la lecture du courriel ferme la session privée', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'mail' });
+  app.expire();
+  await app.page.evaluate(id => window.openFreeInboxMail(id), mailId);
+  assert.equal(await app.page.locator('#login').isVisible(), true);
+  assert.equal(await app.page.locator('#app').isVisible(), false);
+  assert.equal(await app.page.locator('#content').innerHTML(), '');
+  assert.equal(await app.page.evaluate(() => localStorage.getItem('marne_invest_admin_token')), null);
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+});
+
+test('Navigateur : un HTTP 401 lors du téléchargement ferme la session et ne télécharge rien', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'documents' });
+  app.expire();
+  const held = app.delayAction('document-download');
+  try {
+    const popupEvent = app.page.waitForEvent('popup');
+    await app.page.evaluate(() => { window.qaPrivateAction = window.downloadRentalDocument('document-fixture'); });
+    const popup = await popupEvent;
+    await held.received;
+    held.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    assert.equal(await app.page.locator('#login').isVisible(), true);
+    assert.equal(await app.page.locator('#app').isVisible(), false);
+    assert.equal(await app.page.locator('#content').innerHTML(), '');
+    assert.deepEqual(app.privateDownloads, []);
+    if (!popup.isClosed()) assert.doesNotMatch(await popup.locator('body').innerText(), /CONFIDENTIEL_FIXTURE/);
+    assert.deepEqual(app.errors, []);
+    assert.deepEqual(app.unexpected, []);
+  } finally { held.release(); }
+});
+
+test('Navigateur : un HTTP 401 lors du dépôt ferme la session et le formulaire de document', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'documents' });
+  await app.page.evaluate(() => window.openDocumentUploader());
+  await app.page.locator('#document-label').fill('Archive de test');
+  await app.page.locator('#document-file').setInputFiles({ name: 'fixture.pdf', mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%%EOF') });
+  app.expire();
+  await app.page.evaluate(() => window.uploadRentalDocument());
+  assert.equal(await app.page.locator('#login').isVisible(), true);
+  assert.equal(await app.page.locator('#app').isVisible(), false);
+  assert.equal(await app.page.locator('#modal').innerHTML(), '');
+  assert.equal(await app.page.locator('#content').innerHTML(), '');
+  assert.equal(await app.page.evaluate(() => localStorage.getItem('marne_invest_admin_token')), null);
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+});
+
+test('Navigateur : une URL de document reçue après déconnexion ne déclenche aucun téléchargement', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'documents' });
+  const held = app.delayAction('document-download');
+  try {
+    const popupEvent = app.page.waitForEvent('popup');
+    await app.page.evaluate(() => { window.qaPrivateAction = window.downloadRentalDocument('document-fixture'); });
+    const popup = await popupEvent;
+    await held.received;
+    await app.page.evaluate(() => window.logout());
+    held.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    if (!popup.isClosed()) await popup.waitForEvent('close', { timeout: 10000 });
+    assert.equal(popup.isClosed(), true, 'La fenêtre de préparation doit être fermée');
+    assert.equal(await app.page.locator('#login').isVisible(), true);
+    assert.equal(await app.page.locator('#content').innerHTML(), '');
+    assert.deepEqual(app.privateDownloads, []);
+    assert.deepEqual(app.errors, []);
+    assert.deepEqual(app.unexpected, []);
+  } finally { held.release(); }
+});
+
+test('Navigateur : un aperçu de paiement reçu après déconnexion ne révèle aucune donnée dans son onglet', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'documents' });
+  const held = app.delayAction('receipt-preview');
+  try {
+    const popupEvent = app.page.waitForEvent('popup');
+    await app.page.evaluate(id => { window.qaPrivateAction = window.openPaymentDocument(id); }, installmentId);
+    const popup = await popupEvent;
+    await held.received;
+    await app.page.evaluate(() => window.logout());
+    held.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    if (!popup.isClosed()) await popup.waitForEvent('close', { timeout: 10000 });
+    assert.equal(popup.isClosed(), true, 'La fenêtre de préparation doit être fermée');
+    assert.equal(await app.page.locator('#login').isVisible(), true);
+    assert.equal(await app.page.locator('#content').innerHTML(), '');
+    assert.deepEqual(app.errors, []);
+    assert.deepEqual(app.unexpected, []);
+  } finally { held.release(); }
+});
+
+test('Navigateur : un ancien HTTP 401 ne déconnecte pas une nouvelle session', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'mail' });
+  const held = app.delayAction('mail-message', { status: 401, body: { error: 'Ancienne session expirée' } });
+  try {
+    await app.page.evaluate(id => { window.qaPrivateAction = window.openFreeInboxMail(id); }, mailId);
+    await held.received;
+    await app.page.evaluate(() => window.logout());
+    await app.page.locator('#user').fill('qa-fixture');
+    await app.page.locator('#pass').fill('synthetic-fixture-password');
+    await app.page.getByRole('button', { name: 'Se connecter', exact: true }).click();
+    await app.page.waitForFunction(() => document.querySelector('#serverTime')?.textContent.includes('Données actualisées'));
+    assert.equal(await app.page.evaluate(() => localStorage.getItem('marne_invest_admin_token')), 'synthetic-reconnected-token');
+    held.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    assert.equal(await app.page.locator('#app').isVisible(), true);
+    assert.equal(await app.page.locator('#login').isVisible(), false);
+    assert.equal(await app.page.evaluate(() => localStorage.getItem('marne_invest_admin_token')), 'synthetic-reconnected-token');
+    assert.doesNotMatch(await app.page.locator('#content').innerText(), /Ancienne session expirée/);
+    assert.deepEqual(app.errors, []);
+    assert.deepEqual(app.unexpected, []);
+  } finally { held.release(); }
+});
+
+test('Navigateur : une ancienne lecture de mail ne remplace pas la dernière sélection', { timeout: 30000 }, async t => {
+  const data = fixture(), secondId = '00000000-0000-4000-8000-000000000007';
+  data.mail_inbox.push({ ...data.mail_inbox[0], id: secondId, subject: 'Message récent de test' });
+  const app = await openApp(t, { data, pageName: 'mail' });
+  const held = app.delayAction('mail-message', { status: 200, body: { item: {
+    id: mailId, subject: 'Message ancien de test', sender_email: 'fixture@example.test',
+    plain_body: 'MESSAGE_ANCIEN_FIXTURE', is_seen: true, has_attachments: false,
+  } } });
+  try {
+    await app.page.evaluate(id => { window.qaPrivateAction = window.openFreeInboxMail(id); }, mailId);
+    await held.received;
+    await app.page.evaluate(id => window.openFreeInboxMail(id), secondId);
+    assert.match(await app.page.locator('#mailReader .mail-text').innerText(), /MESSAGE_RECENT_FIXTURE/);
+    held.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    assert.match(await app.page.locator('#mailReader .mail-text').innerText(), /MESSAGE_RECENT_FIXTURE/);
+    assert.doesNotMatch(await app.page.locator('#mailReader').innerText(), /MESSAGE_ANCIEN_FIXTURE/);
+    assert.deepEqual(app.errors, []);
+    assert.deepEqual(app.unexpected, []);
+  } finally { held.release(); }
+});
+
+test('Navigateur : une session valide peut télécharger un document et consulter un aperçu de paiement', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'documents' });
+  const download = app.delayAction('document-download');
+  try {
+    const popupEvent = app.page.waitForEvent('popup');
+    await app.page.evaluate(() => { window.qaPrivateAction = window.downloadRentalDocument('document-fixture'); });
+    const popup = await popupEvent;
+    await download.received;
+    download.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    await popup.waitForURL(origin + '/private-fixture.pdf');
+    assert.match(await popup.locator('body').innerText(), /DOCUMENT_CONFIDENTIEL_FIXTURE/);
+    assert.deepEqual(app.privateDownloads, [origin + '/private-fixture.pdf']);
+    const request = app.requests.find(req => req.action === 'document-download');
+    assert.equal(request.id, 'document-fixture');
+    assert.equal(request.authorization, 'Bearer synthetic-fixture-token');
+    await popup.close();
+  } finally { download.release(); }
+  const receipt = app.delayAction('receipt-preview');
+  try {
+    const popupEvent = app.page.waitForEvent('popup');
+    await app.page.evaluate(id => { window.qaPrivateAction = window.openPaymentDocument(id); }, installmentId);
+    const popup = await popupEvent;
+    await receipt.received;
+    receipt.release();
+    await app.page.evaluate(() => window.qaPrivateAction);
+    assert.match(await popup.locator('body').innerText(), /LOCATAIRE_CONFIDENTIEL_FIXTURE/);
+    assert.match(await popup.locator('body').innerText(), /400,00/);
+    const request = app.requests.find(req => req.action === 'receipt-preview');
+    assert.equal(JSON.parse(request.body).installment_id, installmentId);
+    assert.equal(request.authorization, 'Bearer synthetic-fixture-token');
+    await popup.close();
+  } finally { receipt.release(); }
+  assert.equal(await app.page.locator('#app').isVisible(), true);
+  assert.equal(await app.page.locator('#login').isVisible(), false);
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
+});
+
+test('Navigateur : un dépôt autorisé conserve les champs et la frontière multipart du navigateur', { timeout: 30000 }, async t => {
+  const app = await openApp(t, { pageName: 'documents' });
+  await app.page.evaluate(() => {
+    const send = window.fetch.bind(window);
+    window.fetch = (resource, init) => {
+      if (new URL(resource).searchParams.get('action') === 'document-upload') {
+        const body = init.body, multipart = body instanceof FormData, file = multipart && body.get('file');
+        window.qaUploadPayload = {
+          multipart, explicitContentType: new Headers(init.headers).get('content-type'),
+          propertyId: multipart && body.get('property_id'), label: multipart && body.get('label'),
+          file: file && { name: file.name, type: file.type, size: file.size },
+        };
+        window.qaUploadFileText = file && typeof file.text === 'function' ? file.text() : Promise.resolve(null);
+      }
+      return send(resource, init);
+    };
+  });
+  await app.page.evaluate(() => window.openDocumentUploader());
+  await app.page.locator('#document-label').fill('Archive de test');
+  await app.page.locator('#document-file').setInputFiles({ name: 'fixture.pdf', mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%%EOF') });
+  await app.page.evaluate(() => window.uploadRentalDocument());
+  const uploads = app.requests.filter(req => req.action === 'document-upload');
+  assert.equal(uploads.length, 1);
+  const request = uploads[0], boundary = request.contentType.match(/^multipart\/form-data;\s*boundary="?([^";]+)"?$/i)?.[1];
+  assert.ok(boundary, 'La frontière multipart doit être créée par le navigateur');
+  assert.equal(request.authorization, 'Bearer synthetic-fixture-token');
+  const payload = await app.page.evaluate(async () => ({ ...window.qaUploadPayload, text: await window.qaUploadFileText }));
+  assert.equal(payload.multipart, true);
+  assert.equal(payload.explicitContentType, null, 'Le code applicatif ne doit pas imposer de Content-Type au FormData');
+  assert.equal(payload.propertyId, propertyId);
+  assert.equal(payload.label, 'Archive de test');
+  assert.deepEqual(payload.file, { name: 'fixture.pdf', type: 'application/pdf', size: Buffer.byteLength('%PDF-1.4\n%%EOF') });
+  assert.equal(payload.text, '%PDF-1.4\n%%EOF');
+  assert.equal(await app.page.locator('#modal').innerHTML(), '');
+  assert.equal(await app.page.locator('#pageTitle').innerText(), 'Documents');
+  assert.equal(await app.page.locator('#app').isVisible(), true);
+  assert.deepEqual(app.errors, []);
+  assert.deepEqual(app.unexpected, []);
 });

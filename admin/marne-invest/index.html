@@ -110,13 +110,22 @@
 <script>
 (()=>{'use strict';
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
-const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_logged_out')==='1'?'':localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='',refreshGeneration=0;
+const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_logged_out')==='1'?'':localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='',refreshGeneration=0,sessionGeneration=0,mailReaderGeneration=0;
 const pages=[['dashboard','Dashboard','⌂'],['pilotage','Version finale','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
-async function api(action,method='GET',body){const r=await fetch(API+'?action='+encodeURIComponent(action),{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse invalide'}));if(r.status===401&&action!=='login'){logout();throw new Error('Session expirée')}if(!r.ok)throw new Error(j.error||'Erreur serveur');return j}
-window.login=async()=>{try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});token=j.token;localStorage.setItem('marne_invest_admin_token',token);localStorage.removeItem('marne_invest_logged_out');$('pass').value='';$('loginStatus').textContent='';$('login').classList.add('hide');$('app').classList.remove('hide');initNav();await refresh()}catch(e){$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
-window.logout=()=>{token='';db=null;selectedRow=null;bankCsvPreview=null;irlLive=null;irlChecked=false;refreshGeneration++;localStorage.removeItem('marne_invest_admin_token');localStorage.setItem('marne_invest_logged_out','1');for(const id of ['modal','content','releaseMini','serverTime'])$(id).textContent='';$('pass').value='';$('app').classList.add('hide');$('login').classList.remove('hide')};
+async function api(action,method='GET',body,query={}){
+ const session=token,generation=sessionGeneration,multipart=body instanceof FormData;
+ const r=await fetch(API+'?'+new URLSearchParams({...query,action}),{
+  method,headers:{...(!multipart?{'content-type':'application/json'}:{}),...(session?{authorization:'Bearer '+session}:{})},
+  body:multipart?body:body?JSON.stringify(body):undefined,cache:'no-store'
+ }),j=await r.json().catch(()=>({error:'Réponse invalide'}));
+ if(generation!==sessionGeneration||session!==token)throw new Error('Session modifiée');
+ if(r.status===401&&action!=='login'){logout();$('loginStatus').className='status err';$('loginStatus').textContent='Session expirée';throw new Error('Session expirée')}
+ if(!r.ok)throw new Error(j.error||'Erreur serveur');return j
+}
+window.login=async()=>{const generation=++sessionGeneration;try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});if(generation!==sessionGeneration)return;token=j.token;localStorage.setItem('marne_invest_admin_token',token);localStorage.removeItem('marne_invest_logged_out');$('pass').value='';$('loginStatus').textContent='';$('login').classList.add('hide');$('app').classList.remove('hide');initNav();await refresh()}catch(e){if(generation!==sessionGeneration)return;$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
+window.logout=()=>{sessionGeneration++;token='';db=null;selectedRow=null;bankCsvPreview=null;irlLive=null;irlChecked=false;refreshGeneration++;localStorage.removeItem('marne_invest_admin_token');localStorage.setItem('marne_invest_logged_out','1');for(const id of ['modal','content','releaseMini','serverTime'])$(id).textContent='';$('pass').value='';$('app').classList.add('hide');$('login').classList.remove('hide')};
 function initNav(){$('nav').innerHTML=pages.map(([k,l,i])=>`<button data-p="${k}" onclick="showPage('${k}')"><span class="nav-icon">${i}</span>${l}</button>`).join('')}
 window.showPage=p=>{page=p;searchQuery='';$('globalSearch').value='';render()};window.searchAll=q=>{searchQuery=String(q||'').trim().toLocaleLowerCase('fr');render()};
 window.refresh=async()=>{
@@ -358,9 +367,9 @@ function renderTenants(){const heads=db.tenant_headers;const filteredTenants=db.
 window.selectRow=r=>{selectedRow=r;renderTenants()};
 function fieldType(h){if(['Loyer de base','Charge','IRL','Écart révision','Montant révisé','Loyer actualisé','Paiement dû','Paiement reçu','Solde précédent','Solde'].includes(h))return 'number';if(h.startsWith('Date ')||h==='Dernière nouvelle'||h==='Dernier run'||h==='Date entrée locataire'||h==='Date fin de bail')return 'text';return 'text'}
 window.editTenant=rowNumber=>{const row=rowNumber?db.tenants.find(x=>x.row_number===rowNumber):null,data={...(row?.data||{})};$('modal').innerHTML=`<div class="modal"><div class="box"><div class="top"><div><h2>${row?'Modifier le locataire':'Nouveau locataire'}</h2><div class="muted">Colonnes identiques à Suivi_Locataires</div></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div><div class="editor-grid">${db.tenant_headers.map(h=>`<div class="${h==='Corps locataire'||h==='Notes'?'full':''}"><label>${esc(h)}</label>${h==='Corps locataire'||h==='Notes'?`<textarea data-field="${esc(h)}">${esc(data[h]??'')}</textarea>`:`<input data-field="${esc(h)}" type="${fieldType(h)}" step="any" value="${esc(data[h]??'')}">`}${db.comments?.[h]?`<div class="muted">${esc(db.comments[h])}</div>`:''}</div>`).join('')}</div><br><div class="actions"><button class="btn primary" onclick="saveTenant('${row?.id||''}')">Enregistrer</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status"></div></div></div>`};
-window.saveTenant=async id=>{try{const data={};document.querySelectorAll('#modal [data-field]').forEach(el=>{let v=el.value;if(v==='')return;if(el.type==='number'){const x=Number(v);v=Number.isFinite(x)?x:v}data[el.dataset.field]=v});$('modalStatus').textContent='Enregistrement…';await api('save-tenant','POST',{id,data});closeModal();await refresh()}catch(e){$('modalStatus').className='status err';$('modalStatus').textContent=e.message}};
+window.saveTenant=async id=>{const status=$('modalStatus');try{const data={};document.querySelectorAll('#modal [data-field]').forEach(el=>{let v=el.value;if(v==='')return;if(el.type==='number'){const x=Number(v);v=Number.isFinite(x)?x:v}data[el.dataset.field]=v});status.textContent='Enregistrement…';await api('save-tenant','POST',{id,data});if(status.isConnected)closeModal();await refresh()}catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message}}};
 window.newProperty=()=>{$('modal').innerHTML=`<div class="modal"><div class="box" style="max-width:600px"><h2>Nouveau logement</h2><div class="fields"><div><label>Nom du logement</label><input id="npName"></div><div><label>Adresse</label><input id="npAddress"></div></div><br><div class="actions"><button class="btn primary" onclick="saveNewProperty()">Créer le logement et sa ligne</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status"></div></div></div>`};
-window.saveNewProperty=async()=>{try{$('modalStatus').textContent='Création…';const j=await api('new-property','POST',{name:$('npName').value,address:$('npAddress').value});selectedRow=j.row.row_number;closeModal();await refresh();page='properties';render()}catch(e){$('modalStatus').className='status err';$('modalStatus').textContent=e.message}};
+window.saveNewProperty=async()=>{const status=$('modalStatus');try{status.textContent='Création…';const j=await api('new-property','POST',{name:$('npName').value,address:$('npAddress').value});selectedRow=j.row.row_number;if(status.isConnected)closeModal();if(!await refresh())return;page='properties';render()}catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message}}};
 window.createPropertySheet=async()=>{if(!selectedRow)return;try{await api('create-property-sheet','POST',{row_number:selectedRow});await refresh();page='properties';render()}catch(e){alert(e.message)}};
 window.runSystem=()=>{alert('Recalcul des loyers désactivé par sécurité : le calcul serveur existant utilise un indice de base fixe 100 et ne contrôle pas les clauses de chaque bail. Consultez l’IRL officiel dans Paramètres avant toute révision.');};
 function linkedTenant(propertyId){return (db.tenants||[]).find(t=>t.property_id===propertyId)||null}
@@ -1223,28 +1232,24 @@ window.uploadRentalDocument=async()=>{
  data.append('file',file,file.name);
  button.disabled=true;status.className='status';status.textContent='Contrôle du format et archivage sécurisé…';
  try{
-  const r=await fetch(API+'?action=document-upload',{
-    method:'POST',headers:{authorization:'Bearer '+token},body:data,cache:'no-store'
-  });
-  const result=await r.json().catch(()=>({error:'Réponse serveur illisible'}));
-  if(!r.ok)throw Error(result.error||'Échec du dépôt');
-  closeModal();await refresh();
+  await api('document-upload','POST',data);
+  if(status.isConnected)closeModal();if(!await refresh())return;
   documentPropertyFilter=property_id;
   showPage('documents');
- }catch(e){button.disabled=false;status.className='status err';status.textContent=e.message||'Enregistrement impossible'}
+ }catch(e){if(status.isConnected){button.disabled=false;status.className='status err';status.textContent=e.message||'Enregistrement impossible'}}
 };
 window.downloadRentalDocument=async id=>{
- const target=window.open('about:blank','_blank');
+ const generation=sessionGeneration,target=window.open('about:blank','_blank');
  if(!target){alert('Autorisez l’ouverture d’un onglet pour télécharger ce document.');return}
  target.document.body.textContent='Préparation du téléchargement privé…';
  try{
-  const result=await fetch(API+'?action=document-download&id='+encodeURIComponent(id),{
-    method:'GET',headers:{authorization:'Bearer '+token},cache:'no-store'
-  });
-  const payload=await result.json().catch(()=>({error:'Réponse serveur illisible'}));
-  if(!result.ok)throw Error(payload.error||'Accès au document refusé');
+  const payload=await api('document-download','GET',undefined,{id});
+  if(generation!==sessionGeneration||!token){target.close();return}
+  if(target.closed)return;
   target.location.assign(payload.url);
  }catch(e){
+  if(generation!==sessionGeneration||!token){target.close();return}
+  if(target.closed)return;
   target.document.body.textContent='Téléchargement impossible : '+(e.message||'Erreur');
  }
 };
@@ -1267,11 +1272,13 @@ function renderDocuments(){
  renderDocumentArchive()+'<div class="section-head" style="margin-top:22px"><div><h2>Exports de gestion</h2></div></div>'+csvHtml;
 }
 window.openPaymentDocument=async installmentId=>{
- const printWindow=window.open('','_blank');
+ const generation=sessionGeneration,printWindow=window.open('','_blank');
  if(!printWindow){alert('Autorisez les fenêtres du site pour obtenir un aperçu PDF.');return;}
  printWindow.document.write('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Préparation du document</title><body><p>Vérification des règlements…</p></body></html>');
  try{
   const d=await api('receipt-preview','POST',{installment_id:installmentId});
+  if(generation!==sessionGeneration||!token){printWindow.close();return}
+  if(printWindow.closed)return;
   const title=d.document_type==='quittance'?'QUITTANCE DE LOYER':'REÇU DE PAIEMENT PARTIEL';
   const pretty=v=>new Date(v+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric',timeZone:'UTC'});
   const rows=d.document_type==='quittance'
@@ -1291,7 +1298,7 @@ window.openPaymentDocument=async installmentId=>{
   '<p class="note">Document généré à partir des règlements saisis et affectés dans Marne Invest. Ce document n’a pas été envoyé automatiquement et aucun exemplaire PDF n’a été archivé par ce traitement.</p>'+
   '</body></html>';
   printWindow.document.open();printWindow.document.write(html);printWindow.document.close();
- }catch(e){printWindow.document.open();printWindow.document.write('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Document indisponible</title><body><h2>Le document ne peut pas être généré.</h2><p>'+esc(e.message||'Erreur serveur')+'</p><p>Vérifiez le bail, les paiements et les coordonnées de l’émetteur.</p></body></html>');printWindow.document.close();}
+ }catch(e){if(generation!==sessionGeneration||!token){printWindow.close();return}if(printWindow.closed)return;printWindow.document.open();printWindow.document.write('<!doctype html><html lang="fr"><meta charset="utf-8"><title>Document indisponible</title><body><h2>Le document ne peut pas être généré.</h2><p>'+esc(e.message||'Erreur serveur')+'</p><p>Vérifiez le bail, les paiements et les coordonnées de l’émetteur.</p></body></html>');printWindow.document.close();}
 };
 function renderReports(){
  const tenants=db.tenants||[],props=(db.properties||[]).filter(p=>!p.is_example),ledger=rentalLedger(),active=[...ledger.valid.values()];
@@ -1449,17 +1456,17 @@ window.syncFreeMail=async()=>{
  catch(e){alert('Synchronisation indisponible : '+e.message)}
 };
 window.openFreeInboxMail=async id=>{
- const pane=$('mailReader');if(!pane)return;pane.textContent='Chargement…';
+ const pane=$('mailReader'),generation=++mailReaderGeneration,session=sessionGeneration;if(!pane)return;pane.textContent='Chargement…';
+ const current=()=>generation===mailReaderGeneration&&session===sessionGeneration&&pane.isConnected;
  try{
-  const r=await fetch(API+'?action=mail-message&id='+encodeURIComponent(id),{headers:{authorization:'Bearer '+token},cache:'no-store'});
-  const j=await r.json();if(!r.ok)throw Error(j.error||'Lecture impossible');const m=j.item;
+  const j=await api('mail-message','GET',undefined,{id});if(!current())return;const m=j.item;
   pane.innerHTML='<h3>'+esc(m.subject||'(Sans objet)')+'</h3><p class="muted">De : '+esc(m.sender_email||'')+'</p>'+
   '<pre class="mail-text">'+esc(m.plain_body||'Corps texte non disponible')+'</pre>'+
   (m.has_attachments?'<p class="note">'+Number(m.attachment_count||0)+' pièce(s) jointe(s) détectée(s), téléchargement non activé.</p>':'')+
   '<button class="btn primary" id="reply-free-mail">Répondre</button>';
   $('reply-free-mail').onclick=()=>composeMail(m.sender_email,'Re: '+m.subject,'',m.id);
-  if(!m.is_seen){await api('mail-mark-read','POST',{id});const local=(db.mail_inbox||[]).find(x=>x.id===id);if(local)local.is_seen=true;}
- }catch(e){pane.innerHTML='<p class="muted">'+esc(e.message||'Erreur')+'</p>'}
+  if(!m.is_seen){await api('mail-mark-read','POST',{id});if(!current())return;const local=(db.mail_inbox||[]).find(x=>x.id===id);if(local)local.is_seen=true;}
+ }catch(e){if(current())pane.innerHTML='<p class="muted">'+esc(e.message||'Erreur')+'</p>'}
 };
 window.composeMail=(to='',subject='',body='',replyId='')=>{
  const key=crypto.randomUUID();
