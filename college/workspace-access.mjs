@@ -66,6 +66,8 @@ function allowedTab(selector,context,area){
  return true;
 }
 
+export {allowedLink, allowedTab, tokenKeys};
+
 export function attach({aside,brand,footer,base,area,target,filterMenu}){
  const keys=tokenKeys(area);
  let access=null,lastToken="",lastCheck=0,inFlight=false;
