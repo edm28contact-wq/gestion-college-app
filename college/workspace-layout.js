@@ -12,6 +12,7 @@
  const tab=(label,selector)=>({label,selector});
  const scroll=(label,selector)=>({label,scrollTo:selector});
  const common=[
+  link("Mes espaces","portail/"),
   link("Administration Collège","college/admin/"),
   link("Gestion Cuisine","college/admin/?page=cuisine"),
   link("Cuisine","cuisine/"),
@@ -22,6 +23,7 @@
   link("Administration centrale","admin/holding/")
  ];
  const holding=[
+  link("Mes espaces","portail/"),
   link("Accueil Holding","admin/holding/"),
   link("Utilisateurs et accès","admin/holding/utilisateurs/"),
    link("Pouvoirs et autorisations","admin/holding/pouvoirs/"),
@@ -182,7 +184,7 @@
   const host=target.closest("main")||target;
   host.classList.add("school-workspace-host");
   applyAuthorizedNavigation();
-  import(url("college/workspace-access.mjs?v=20261123-2")).then(({attach})=>{
+  import(url("college/workspace-access.mjs?v=20261123-stable-2")).then(({attach})=>{
    applyAuthorizedNavigation=attach({aside,brand,footer,base,area,target,filterMenu});
   }).catch(()=>{
    footer.textContent="Contrôle des accès indisponible. Liens non vérifiés masqués.";
