@@ -112,6 +112,7 @@
 const API='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/rental-admin-api';
 const requestedPage=new URLSearchParams(location.search).get('page');let token=localStorage.getItem('marne_invest_logged_out')==='1'?'':localStorage.getItem('marne_invest_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=['dashboard','tenants','properties','config','guide','contracts','transactions','works','documents','reports','emails','mail','pilotage'].includes(requestedPage||'')?requestedPage:'dashboard',selectedRow=null,searchQuery='',irlLive=null,irlChecked=false,documentPropertyFilter='',refreshGeneration=0,sessionGeneration=0,mailReaderGeneration=0;
 const pages=[['dashboard','Dashboard','⌂'],['pilotage','Mise en service','◉'],['properties','Mes Biens','▥'],['tenants','Locataires','♙'],['contracts','Contrats','▤'],['transactions','Transactions','↗'],['emails','Relances et e-mails','✉'],['mail','Messagerie Free','✉'],['works','Travaux','⚒'],['documents','Documents','▱'],['reports','Rapports','▥'],['config','Paramètres','⚙']];
+let mailAutomationConfig=null,bankConnectionState=null,bankReturnNotice='';
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=v=>Number(v||0),fmt=v=>Number(v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}),short=v=>{const s=String(v??'');return s.length>80?s.slice(0,77)+'…':s};
 async function api(action,method='GET',body,query={}){
@@ -125,7 +126,7 @@ async function api(action,method='GET',body,query={}){
  if(!r.ok)throw new Error(j.error||'Erreur serveur');return j
 }
 window.login=async()=>{const generation=++sessionGeneration;try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await api('login','POST',{username:$('user').value,password:$('pass').value});if(generation!==sessionGeneration)return;token=j.token;localStorage.setItem('marne_invest_admin_token',token);localStorage.removeItem('marne_invest_logged_out');$('pass').value='';$('loginStatus').textContent='';$('login').classList.add('hide');$('app').classList.remove('hide');initNav();await refresh()}catch(e){if(generation!==sessionGeneration)return;$('loginStatus').className='status err';$('loginStatus').textContent=e.message||'Erreur'}};
-window.logout=()=>{sessionGeneration++;token='';db=null;selectedRow=null;bankCsvPreview=null;irlLive=null;irlChecked=false;refreshGeneration++;localStorage.removeItem('marne_invest_admin_token');localStorage.setItem('marne_invest_logged_out','1');for(const id of ['modal','content','releaseMini','serverTime'])$(id).textContent='';$('pass').value='';$('app').classList.add('hide');$('login').classList.remove('hide')};
+window.logout=()=>{sessionGeneration++;token='';db=null;selectedRow=null;bankCsvPreview=null;irlLive=null;irlChecked=false;mailAutomationConfig=null;bankConnectionState=null;bankReturnNotice='';sessionStorage.removeItem('marne-bank-connect-state');refreshGeneration++;localStorage.removeItem('marne_invest_admin_token');localStorage.setItem('marne_invest_logged_out','1');for(const id of ['modal','content','releaseMini','serverTime'])$(id).textContent='';$('pass').value='';$('app').classList.add('hide');$('login').classList.remove('hide')};
 function initNav(){$('nav').innerHTML=pages.map(([k,l,i])=>`<button data-p="${k}" onclick="showPage('${k}')"><span class="nav-icon">${i}</span>${l}</button>`).join('')}
 window.showPage=p=>{page=p;searchQuery='';$('globalSearch').value='';render()};window.searchAll=q=>{searchQuery=String(q||'').trim().toLocaleLowerCase('fr');render()};
 window.refresh=async()=>{
@@ -280,20 +281,20 @@ function renderPilotage(){
  const parameterNames={landlord_name:'nom du bailleur ou mandataire',landlord_address:'adresse du bailleur ou mandataire'};
  const sections=[
   ['1. Paramètres communs',x.parameters.length?'À compléter':'Coordonnées du bailleur renseignées',x.parameters.length?'À renseigner : '+x.parameters.map(key=>parameterNames[key]).join(', ')+'.':'Ces coordonnées sont proposées dans les nouveaux baux. Vérifiez aussi les adresses e-mail et le libellé du compte bancaire.','config','Ouvrir Paramètres'],
-  ['2. Fiches biens',!x.props.length?'Premier bien à créer':x.addresses?x.addresses+' adresse(s) à compléter':x.props.length+' bien(s) avec une adresse','Renseignez le nom et l’adresse de chaque bien. Les pièces et l’historique restent accessibles depuis sa fiche.','properties','Ouvrir Mes biens'],
+  ['2. Fiches biens',!x.props.length?'Premier bien à créer':x.addresses?x.addresses+' adresse(s) à compléter':x.props.length+' bien(s) avec une adresse','Renseignez l’adresse, les caractéristiques, les diagnostics et les conditions proposées. Affectez ensuite le locataire depuis cette fiche.','properties','Ouvrir Mes biens'],
   ['3. Fiches locataires et baux',named+' locataire(s) renseigné(s) · '+x.drafts+' brouillon(s)','Complétez les coordonnées, dates, loyer, charges et jour d’échéance dans la fiche locataire. Confirmez ensuite les conditions du bail.','tenants','Ouvrir Locataires']
  ];
  const checklist='<div class="release-grid">'+sections.map(([title,state,description,target,label])=>'<section class="release-block"><h3>'+esc(title)+'</h3><b>'+esc(state)+'</b><p class="muted">'+esc(description)+'</p><button class="btn secondary" data-page="'+target+'" onclick="showPage(this.dataset.page)">'+label+'</button></section>').join('')+'</div>';
  const modules='<section class="release-block"><h3>Fonctions disponibles et informations attendues</h3>'+dataTable(['Fonction','Condition de démarrage','Accès'],[
   ['Loyers et échéances',x.current?x.current+' bail(s) vérifié(s) en cours. Les mois complets sont préparés automatiquement.':'En attente d’un bail renseigné et activé depuis une fiche locataire.','contracts','Contrats'],
-  ['Règlements et rapprochement CSV','Saisissez un paiement réellement reçu ou importez un relevé CSV, puis confirmez son affectation.','transactions','Transactions'],
+  ['Banque et rapprochement','Connectez une banque depuis Paramètres ou importez un relevé CSV, puis confirmez l’affectation des mouvements.','transactions','Transactions'],
   ['Quittances et reçus','Disponibles à partir des paiements affectés à une échéance, avec les coordonnées du bailleur et le type de bail vérifiés.','transactions','Règlements'],
-  ['Relances','Les échéances impayées produisent des brouillons à vérifier avant tout envoi.','emails','Relances'],
+  ['Mails et relances','Choisissez les modèles et les modes brouillon ou envoi automatique dans Paramètres, après vérification de la boîte Free.','emails','Relances'],
   ['Messagerie Free',!mailConfigured?'Renseignez l’adresse Free et son mot de passe dans Paramètres, puis testez la connexion.':'Réception IMAP : '+(imap?'vérifiée':'à tester')+' · Envoi SMTP : '+(smtp?'vérifié':'à tester')+'.','config','Configurer / tester'],
-  ['Documents et travaux','Déposez les pièces et ouvrez les dossiers de travaux depuis le bien concerné.','properties','Mes biens'],
+  ['Plaintes et travaux','Examinez les propositions issues des courriels, confirmez le bien concerné puis suivez le dossier et ses messages.','works','Travaux'],
   ['Révision IRL','Pour les baux d’habitation : renseignez la clause, le DPE et l’indice de référence avant de préparer une proposition.','contracts','Contrats']
  ].map(([name,condition,target,label])=>'<tr><td><b>'+name+'</b></td><td>'+esc(condition)+'</td><td><button class="btn secondary" data-page="'+target+'" onclick="showPage(this.dataset.page)">'+label+'</button></td></tr>'))+
- '<p class="module-note">L’import bancaire fonctionne avec un fichier CSV. Une connexion bancaire directe n’est pas configurée.</p></section>';
+ '<p class="module-note">La connexion bancaire nécessite un accès Powens et le consentement pour les comptes choisis. Le rapprochement reste une validation explicite.</p></section>';
  const monitoring='<section class="release-block"><h3>Suivi des échéances</h3><p class="muted">Les mois complets des baux actifs vérifiés sont contrôlés chaque jour. L’activation prépare aussi les échéances admissibles du mois courant et du suivant. Les montants des mois incomplets se renseignent séparément dans le bail.</p>'+
  '<div class="kv"><b>Dernière exécution</b><span>'+esc(runStatus)+'</span></div>'+
  '<div class="kv"><b>Résultat</b><span>'+(recent?esc(Number(recent.created||0)+' échéance(s) créée(s), '+Number(recent.skipped||0)+' ignorée(s)'):'En attente du premier passage')+'</span></div>'+
@@ -354,6 +355,7 @@ function leaseFields(lease,locked,history={}){
  field('end','Date de fin prévue (facultative)',formDate(value('end_date','Date fin de bail')),'date')+
  field('rent','Loyer mensuel hors charges (€)',amount('monthly_rent','Loyer de base'),'number','min="0" step="0.01"')+
  field('charges','Charges mensuelles (€)',amount('charges_amount','Charge'),'number','min="0" step="0.01"')+
+ field('deposit','Dépôt de garantie contractuel (€, facultatif)',amount('deposit_amount','Dépôt de garantie'),'number','min="0" step="0.01"')+
  field('day','Jour d’échéance (1 à 31)',value('due_day','Jour d’échéance'),'number','min="1" max="31" step="1"')+
  '<div><label for="lease-kind">Nature du bail</label><select id="lease-kind" '+(locked?'disabled':'')+'>'+kinds.map(([v,label])=>'<option value="'+v+'" '+((value('lease_kind','Nature du bail')||'unverified')===v?'selected':'')+'>'+label+'</option>').join('')+'</select></div>'+
  field('issuer-name','Bailleur / mandataire',value('issuer_name','Bailleur du bail')||(locked?'':String(setting('landlord_name',''))),'text','maxlength="200"')+
@@ -363,7 +365,7 @@ function leaseFields(lease,locked,history={}){
 }
 function readLeaseFields(){
  const raw=key=>$('lease-'+key)?.value??'';
- return {start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),due_day:raw('day'),lease_kind:raw('kind'),issuer_name:raw('issuer-name').trim(),issuer_address:raw('issuer-address').trim(),receipt_email_consent:!!$('lease-email-consent')?.checked,notes:raw('notes')};
+ return {start_date:raw('start'),end_date:raw('end'),monthly_rent:raw('rent'),charges_amount:raw('charges'),deposit_amount:raw('deposit'),due_day:raw('day'),lease_kind:raw('kind'),issuer_name:raw('issuer-name').trim(),issuer_address:raw('issuer-address').trim(),receipt_email_consent:!!$('lease-email-consent')?.checked,notes:raw('notes')};
 }
 function leaseMissing(lease,property,tenant){
  const missing=[];
@@ -407,7 +409,7 @@ window.editTenant=(rowNumber,propertyId='')=>{
  '<div class="fields">'+field('name','Nom et prénom / dénomination',data.Locataire,'text','maxlength="200"')+
  field('email','E-mail du locataire',data['Mail locataire'],'email','maxlength="254"')+
  field('phone','Téléphone du locataire',data['Téléphone locataire'],'tel','maxlength="40"')+
- '<div><label for="tenant-property">Bien associé</label><select id="tenant-property" '+(readonly||linkedLease?'disabled':'')+'><option value="">À sélectionner</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===property?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div></div>'+
+ '<div><label for="tenant-property">Bien associé</label><select id="tenant-property" onchange="updateTenantPropertyContext()" '+(readonly||linkedLease?'disabled':'')+'><option value="">À sélectionner</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===property?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div></div><div id="tenant-property-summary" data-inherit="'+(!contractLocked?'yes':'no')+'" data-issuer-name-default="'+(!lease&&!data['Bailleur du bail']?'yes':'no')+'" data-issuer-address-default="'+(!lease&&!data['Adresse du bailleur']?'yes':'no')+'"></div>'+
  (linkedLease?'<p class="muted">Le bien est lié à l’historique du bail. Une nouvelle location dans un autre bien utilise une nouvelle fiche.</p>':'')+
  '<label for="tenant-notes">Notes du dossier</label><textarea id="tenant-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea>'+contract+
  '<div class="actions" style="margin-top:16px">'+(readonly?'':'<button class="btn primary" id="tenant-save" data-id="'+esc(row?.id||'')+'" onclick="saveTenant(this.dataset.id,false)">Enregistrer la fiche</button>')+
@@ -415,6 +417,22 @@ window.editTenant=(rowNumber,propertyId='')=>{
  (['active','closed'].includes(lease?.status)&&financial?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="editLease(this.dataset.id)">Échéances et règlements du bail</button>'+(lease.status==='active'&&lease.lease_kind==='residential'?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="openIrlLease(this.dataset.id)">Révision IRL</button>':'')+(!readonly&&lease.status==='active'?'<button class="btn secondary" data-id="'+esc(lease.id)+'" onclick="openLeaseClosure(this.dataset.id)">Clôturer le bail</button>':''):'')+
  (property?'<button class="btn secondary" data-property="'+esc(property)+'" onclick="showPropertyDocuments(this.dataset.property)">Documents du bien</button>':'')+'</div>'+
  '<details style="margin-top:16px"><summary>Données historiques conservées</summary>'+kv(data)+'</details><div class="status" id="modalStatus" role="status"></div></div></div>';
+ updateTenantPropertyContext(true);
+};
+window.updateTenantPropertyContext=(initial=false)=>{
+ const pane=$('tenant-property-summary'),p=(db.properties||[]).find(x=>x.id===$('tenant-property')?.value);if(!pane)return;
+ pane.innerHTML=p?'<div class="note"><b>Données reprises de la fiche bien : '+esc(p.name)+'</b><p>'+esc(propertyPostalAddress(p)||'Adresse à compléter')+'</p><p class="muted">'+esc([p.data?.['Type de bien'],p.data?.['Surface habitable (m²)']?p.data['Surface habitable (m²)']+' m²':'',p.data?.['Nombre de pièces']?p.data['Nombre de pièces']+' pièce(s)':'',p.data?.DPE?'DPE '+p.data.DPE:''].filter(Boolean).join(' · '))+'</p><p class="muted">L’adresse et les caractéristiques restent rattachées au bien. Les conditions proposées préremplissent les champs libres du bail ; les valeurs déjà saisies sont conservées.</p></div>':'<p class="muted">Choisissez un bien pour reprendre son adresse, ses caractéristiques et les conditions de location proposées.</p>';
+ if(pane.dataset.inherit!=='yes')return;
+ const defaults={'rent':p?.data?.['Loyer de base'],'charges':p?.data?.Charge,'deposit':p?.data?.['Dépôt de garantie'],'day':p?.data?.['Jour d’échéance'],'kind':p?.data?.['Nature du bail'],'issuer-name':p?.data?.['Bailleur du bail']||setting('landlord_name',''),'issuer-address':p?.data?.['Adresse du bailleur']||setting('landlord_address','')};
+ for(const [key,value] of Object.entries(defaults)){
+  const input=$('lease-'+key);if(!input||input.disabled)continue;
+  const fromSettings=initial&&key.startsWith('issuer-')&&pane.getAttribute('data-'+key+'-default')==='yes'&&input.value===String(setting(key==='issuer-name'?'landlord_name':'landlord_address',''));
+  if(input.value===''||input.value==='unverified'||input.dataset.inheritedValue!==undefined&&input.value===input.dataset.inheritedValue||fromSettings){
+   const next=value===undefined||value===null||value===''?(key==='kind'?'unverified':''):String(value).trim();
+   input.value=input.type==='number'?next.replace(',','.'):next;
+   input.dataset.inheritedValue=input.value;
+  }
+ }
 };
 window.saveTenant=async(id,activate=false)=>{
  const status=$('modalStatus');if(!status||db.current_user?.read_only)return;
@@ -428,7 +446,7 @@ window.saveTenant=async(id,activate=false)=>{
  const contract=saveContract?readLeaseFields():null;
  if(contract){
   data['Date entrée locataire']=contract.start_date;data['Date fin de bail']=contract.end_date;
-  data['Loyer de base']=contract.monthly_rent;data.Charge=contract.charges_amount;
+  data['Loyer de base']=contract.monthly_rent;data.Charge=contract.charges_amount;data['Dépôt de garantie']=contract.deposit_amount;
   if(!lease)Object.assign(data,{'Jour d’échéance':contract.due_day,'Nature du bail':contract.lease_kind,'Bailleur du bail':contract.issuer_name,'Adresse du bailleur':contract.issuer_address,'Quittance par e-mail acceptée':contract.receipt_email_consent,'Notes du bail':contract.notes});
  }
  if(activate){
@@ -456,8 +474,8 @@ window.saveTenant=async(id,activate=false)=>{
  }catch(e){if(status.isConnected){status.className='status err';status.textContent=(saved?'Fiche enregistrée ; la préparation du bail reste à terminer : ':'Enregistrement impossible : ')+(e.message||'Erreur serveur')}}
  finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
 };
-window.newProperty=()=>{$('modal').innerHTML=`<div class="modal"><div class="box" style="max-width:600px"><h2>Nouveau logement</h2><div class="fields"><div><label>Nom du logement</label><input id="npName"></div><div><label>Adresse</label><input id="npAddress"></div></div><br><div class="actions"><button class="btn primary" onclick="saveNewProperty()">Créer le logement et sa ligne</button><button class="btn secondary" onclick="closeModal()">Annuler</button></div><div id="modalStatus" class="status"></div></div></div>`};
-window.saveNewProperty=async()=>{const status=$('modalStatus');try{status.textContent='Création…';const j=await api('new-property','POST',{name:$('npName').value,address:$('npAddress').value});selectedRow=j.row.row_number;if(status.isConnected)closeModal();if(!await refresh())return;page='properties';render()}catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message}}};
+window.newProperty=()=>openPropertyEditor('');
+window.saveNewProperty=()=>saveProperty('');
 window.createPropertySheet=async()=>{if(!selectedRow)return;try{await api('create-property-sheet','POST',{row_number:selectedRow});await refresh();page='properties';render()}catch(e){alert(e.message)}};
 window.runSystem=()=>{alert('Recalcul des loyers désactivé par sécurité : le calcul serveur existant utilise un indice de base fixe 100 et ne contrôle pas les clauses de chaque bail. Consultez l’IRL officiel dans Paramètres avant toute révision.');};
 function linkedTenant(propertyId){
@@ -475,10 +493,10 @@ function propertyCompleteness(p,t){
  const lease=leaseForTenant(t),data=t?.data||{};
  const needed=[
  ['Adresse du bien',!!String(p.data?.Adresse||'').trim()],
- ['Loyer valide',formMoney(lease?.monthly_rent??data['Loyer de base'])],
+ ['Loyer valide',formMoney(lease?.monthly_rent??data['Loyer de base']??p.data?.['Loyer de base'])],
  ['Date d’entrée valide',!!formDate(lease?.start_date||data['Date entrée locataire'])],
  ['E-mail locataire valide',/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(data['Mail locataire']||''))],
- ['Charges valides',formMoney(lease?.charges_amount??data.Charge)]
+ ['Charges valides',formMoney(lease?.charges_amount??data.Charge??p.data?.Charge)]
  ];
  return {missing:needed.filter(([,valid])=>!valid).map(([label])=>label),complete:needed.filter(([,valid])=>valid).length};
 }
@@ -487,9 +505,9 @@ function renderProperties(){
  $('content').innerHTML=section('Patrimoine immobilier','Renseignez chaque bien puis ouvrez sa fiche locataire pour préparer la location.',
  '<button class="btn primary" onclick="newProperty()" '+(db.current_user?.read_only?'disabled':'')+'>+ Ajouter un logement</button>')+
  '<div class="property-grid">'+filteredProperties.map(p=>{
-  const t=linkedTenant(p.id),lease=leaseForTenant(t),quality=propertyCompleteness(p,t),rent=lease?.monthly_rent??t?.data?.['Loyer de base'];
+  const t=linkedTenant(p.id),lease=leaseForTenant(t),quality=propertyCompleteness(p,t),rent=lease?.monthly_rent??t?.data?.['Loyer de base']??p.data?.['Loyer de base'];
   return '<div class="card property-card"><div class="section-head"><h3>'+esc(p.name)+'</h3><span class="mini-tag '+(quality.missing.length?'warn':'')+'">'+quality.complete+'/5 champs vérifiés</span></div>'+
-  '<p class="muted">'+esc(p.data?.Adresse||'Adresse à renseigner')+'</p><p><b>'+esc(t?.data?.Locataire||((db.tenants||[]).filter(x=>x.property_id===p.id).length>1?'Plusieurs dossiers : choisir dans la fiche':'Fiche locataire à compléter'))+'</b></p>'+
+ '<p class="muted">'+esc(propertyPostalAddress(p)||'Adresse à renseigner')+'</p><p><b>'+esc(t?.data?.Locataire||((db.tenants||[]).filter(x=>x.property_id===p.id).length>1?'Plusieurs dossiers : choisir dans la fiche':'Locataire à affecter'))+'</b></p>'+
   '<p class="muted">'+(lease?.status==='active'?'Bail actif':lease?.status==='closed'?'Dernier bail clôturé':'Bail à préparer / valider')+' · Loyer : '+(formMoney(rent)?money(Number(String(rent).replace(',','.'))):'À renseigner')+'</p>'+
   (quality.missing.length?'<p class="muted">À compléter : '+esc(quality.missing.join(', '))+'.</p>':'')+
   '<div class="actions"><button class="btn primary" data-id="'+esc(p.id)+'" onclick="openProperty(this.dataset.id)">Ouvrir le bien</button><button class="btn secondary" data-id="'+esc(p.id)+'" onclick="openPropertyTenant(this.dataset.id)">Fiche locataire</button></div></div>';
@@ -505,31 +523,84 @@ window.openProperty=id=>{
  '<div class="section-title">Informations du bien</div><div class="card">'+kv(p.data)+'</div>'+
  '<div class="section-title">Fiches locataires et baux</div>'+
  (tenants.length?tenants.map(t=>{const l=leaseForTenant(t);return '<div class="kv"><span><b>'+esc(t.data?.Locataire||'Fiche à compléter')+'</b><br>'+esc(l?.status==='active'?'Bail actif':l?.status==='closed'?'Historique · bail clôturé':l?'Bail en brouillon':'Bail à préparer')+'</span><button class="btn secondary" data-row="'+t.row_number+'" onclick="editTenant(Number(this.dataset.row))">Ouvrir la fiche locataire</button></div>'}).join(''):'<p class="muted">Aucun locataire renseigné.</p>')+
- (!readonly?'<div class="actions"><button class="btn secondary" data-id="'+esc(id)+'" onclick="editTenant(undefined,this.dataset.id)">+ Nouvelle fiche locataire</button></div>':'')+
+ (!readonly?'<div class="actions"><button class="btn primary" data-id="'+esc(id)+'" onclick="openPropertyAssignment(this.dataset.id)">Affecter un locataire</button><button class="btn secondary" data-id="'+esc(id)+'" onclick="editTenant(undefined,this.dataset.id)">+ Nouvelle fiche locataire</button></div>':'')+
  '<details style="margin-top:15px"><summary>Historique du bien</summary>'+renderObjectTable(p.tenant_history)+renderObjectTable(p.payment_schedule)+'</details><div id="modalStatus" class="status"></div></div></div>';
 };
 window.openPropertyTenant=id=>{
  const tenant=linkedTenant(id),related=(db.tenants||[]).filter(t=>t.property_id===id);
  if(tenant)editTenant(tenant.row_number);else if(related.length>1)openProperty(id);else editTenant(undefined,id);
 };
-window.openPropertyEditor=id=>{
- const p=(db.properties||[]).find(x=>x.id===id);if(!p)return;
+const propertyFieldGroups=[
+ ['Identification et adresse',[
+  ['address','Adresse','Adresse du bien','text',500],['city','Ville','Ville','text',100],['postcode','Code postal','Code postal','text',20],['type','Type de bien','Type de bien','text',100],
+  ['lot','Numéro de lot','Numéro de lot','text',80],['cadastral','Référence cadastrale','Référence cadastrale','text',120]
+ ]],
+ ['Caractéristiques et équipements',[
+  ['surface','Surface habitable (m²)','Surface habitable (m²)','number',null,'min="0" step="0.01"'],['rooms','Nombre de pièces','Nombre de pièces','number',null,'min="0" step="1"'],['floor','Étage','Étage','text',40],
+  ['furnished','Meublé','Logement meublé','select',[['','À renseigner'],['OUI','Oui'],['NON','Non']]],['heating','Chauffage','Chauffage','text',300],['hotwater','Eau chaude','Eau chaude','text',300],
+  ['equipment','Équipements','Équipements inclus','textarea',3000],['access','Consignes accès','Consignes d’accès pour la gestion','textarea',1000]
+ ]],
+ ['Conditions proposées pour la prochaine location',[
+  ['rent','Loyer de base','Loyer mensuel hors charges (€)','number',null,'min="0" step="0.01"'],['charges','Charge','Charges mensuelles (€)','number',null,'min="0" step="0.01"'],
+  ['deposit','Dépôt de garantie','Dépôt de garantie proposé (€)','number',null,'min="0" step="0.01"'],['due','Jour d’échéance','Jour d’échéance','number',null,'min="1" max="31" step="1"'],
+  ['kind','Nature du bail','Nature du bail','select',[['','À renseigner'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']]],
+  ['charges-mode','Régime des charges','Régime des charges','select',[['','À renseigner'],['provisions','Provisions avec régularisation'],['forfait','Forfait'],['sans','Sans charges']]],
+  ['available','Date disponibilité','Disponibilité prévue','date'],['owner','Propriétaire','Propriétaire du bien','text',200],
+  ['issuer-name','Bailleur du bail','Bailleur / mandataire pour ce bien','text',200],['issuer-address','Adresse du bailleur','Adresse du bailleur / mandataire','text',500]
+ ]],
+ ['Diagnostics',[
+  ['dpe','DPE','Classe énergétique DPE','select',[['','À renseigner'],...['A','B','C','D','E','F','G'].map(x=>[x,x]),['non_applicable','Non applicable']]],
+  ['dpe-date','Date du DPE','Date du diagnostic','date'],['dpe-expiry','Date fin validité DPE','Fin de validité indiquée sur le DPE','date'],['dpe-number','Numéro DPE','Numéro du diagnostic','text',100]
+ ]],
+ ['Copropriété, assurance et suivi',[
+  ['syndic','Contact syndic','Syndic / gestionnaire de copropriété','text',200],['syndic-phone','Téléphone syndic','Téléphone du syndic','tel',40],['syndic-email','E-mail syndic','E-mail du syndic','email',254],
+  ['insurance','Assurance immeuble','Assurance du bien / référence de contrat','text',250],['insurance-end','Fin assurance immeuble','Échéance de l’assurance','date'],['notes','Notes','Notes du bien','textarea',4000]
+ ]]
+];
+function propertyFormField(field,data,readonly){
+ const [id,key,label,type='text',limit,attrs='']=field,value=data[key]??'',disabled=readonly?'disabled':'';
+ const control=type==='select'?'<select id="property-'+id+'" '+disabled+'>'+limit.map(([v,l])=>'<option value="'+esc(v)+'" '+(String(value)===v?'selected':'')+'>'+esc(l)+'</option>').join('')+'</select>':
+ type==='textarea'?'<textarea id="property-'+id+'" maxlength="'+limit+'" '+disabled+'>'+esc(value)+'</textarea>':
+ '<input id="property-'+id+'" type="'+type+'" value="'+esc(type==='number'?String(value).replace(',','.'):type==='date'?formDate(value):value)+'" '+(limit?'maxlength="'+limit+'" ':'')+attrs+' '+disabled+'>';
+ return '<div><label for="property-'+id+'">'+esc(label)+'</label>'+control+'</div>';
+}
+window.openPropertyEditor=(id='')=>{
+ const p=id?(db.properties||[]).find(x=>x.id===id):{name:'',data:{}};if(!p)return;
  const readonly=!!db.current_user?.read_only,data=p.data||{};
- const field=(key,label,value,max)=>'<div><label for="property-'+key+'">'+label+'</label><input id="property-'+key+'" value="'+esc(value??'')+'" maxlength="'+max+'" '+(readonly?'disabled':'')+'></div>';
- $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Modifier le bien</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
- '<div class="fields">'+field('name','Nom du bien',p.name,180)+field('address','Adresse complète du bien',data.Adresse,500)+field('city','Ville',data.Ville,100)+field('postcode','Code postal',data['Code postal'],20)+field('type','Type de bien',data['Type de bien'],100)+'</div>'+
- '<label for="property-notes">Notes du bien</label><textarea id="property-notes" maxlength="4000" '+(readonly?'disabled':'')+'>'+esc(data.Notes||'')+'</textarea>'+
- '<div class="actions" style="margin-top:15px"><button class="btn primary" id="property-save" data-id="'+esc(id)+'" onclick="saveProperty(this.dataset.id)" '+(readonly?'disabled':'')+'>Enregistrer le bien</button></div><div class="status" id="modalStatus" role="status"></div></div></div>';
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><div><h2>'+(id?'Modifier le bien':'Nouveau bien')+'</h2><p class="muted">Complétez le logement, puis affectez son locataire. Vous pouvez enregistrer une fiche incomplète.</p></div><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<label for="property-name">Nom du bien</label><input id="property-name" required maxlength="180" value="'+esc(p.name)+'" '+(readonly?'disabled':'')+'>'+
+ propertyFieldGroups.map(([title,fields])=>'<section class="config-section"><h3>'+esc(title)+'</h3>'+(title.startsWith('Conditions')?'<p class="muted">Ces valeurs préremplissent les nouveaux dossiers. Elles ne modifient pas les conditions des baux déjà enregistrés. Les coordonnées du bailleur laissées vides seront reprises depuis Paramètres.</p>':'')+'<div class="fields">'+fields.map(field=>propertyFormField(field,data,readonly)).join('')+'</div></section>').join('')+
+ '<div class="actions" style="margin-top:15px"><button class="btn primary" id="property-save" data-id="'+esc(id)+'" onclick="saveProperty(this.dataset.id)" '+(readonly?'disabled':'')+'>'+(id?'Enregistrer le bien':'Créer le bien')+'</button></div><div class="status" id="modalStatus" role="status"></div></div></div>';
 };
 window.saveProperty=async id=>{
  const status=$('modalStatus'),button=$('property-save');if(!status||!button||db.current_user?.read_only)return;
  const name=$('property-name').value.trim();
  if(!name){status.className='status err';status.textContent='Renseignez le nom du bien.';return}
- const data={Adresse:$('property-address').value.trim(),Ville:$('property-city').value.trim(),'Code postal':$('property-postcode').value.trim(),'Type de bien':$('property-type').value.trim(),Notes:$('property-notes').value};
+ const invalid=[...$('modal').querySelectorAll('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')].find(input=>!input.checkValidity());
+ if(invalid){status.className='status err';status.textContent='Corrigez le champ « '+($('modal').querySelector('label[for="'+invalid.id+'"]')?.textContent||'valeur saisie')+' ».';invalid.focus();return}
+ const data=Object.fromEntries(propertyFieldGroups.flatMap(([,fields])=>fields.map(([key,label])=>[label,$('property-'+key).value.trim()])));
+ if(data['Date du DPE']&&data['Date fin validité DPE']&&data['Date fin validité DPE']<data['Date du DPE']){status.className='status err';status.textContent='La fin de validité du DPE doit être postérieure à sa date.';return}
  button.disabled=true;status.className='status';status.textContent='Enregistrement du bien…';
- try{await api('save-property','POST',{id,name,data});if(!await refresh())return;openProperty(id);$('modalStatus').className='status ok';$('modalStatus').textContent='Bien enregistré.'}
+ try{const result=await api(id?'save-property':'new-property','POST',id?{id,name,data}:{name,address:data.Adresse,data,property_only:true});const propertyId=id||result.property?.id;
+  if(!propertyId)throw Error('Le serveur n’a pas renvoyé la fiche du bien.');
+  if(button.isConnected)button.dataset.id=propertyId;
+  if(!await refresh())return;openProperty(propertyId);$('modalStatus').className='status ok';$('modalStatus').textContent='Bien enregistré. Vous pouvez maintenant lui affecter un locataire.'}
  catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Enregistrement impossible'}}
  finally{if(button.isConnected)button.disabled=false}
+};
+window.openPropertyAssignment=id=>{
+ const p=(db.properties||[]).find(x=>x.id===id);if(!p||db.current_user?.read_only)return;
+ const eligible=(db.tenants||[]).filter(t=>!t.property_id&&!(db.leases||[]).some(l=>l.tenant_row_id===t.id));
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Affecter un locataire — '+esc(p.name)+'</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div><p class="note">L’affectation prépare le dossier. L’activation du bail sera confirmée après vérification des dates et des montants.</p>'+
+ (eligible.length?'<label for="assignment-tenant">Fiche locataire existante sans bien</label><select id="assignment-tenant"><option value="">Choisir un locataire</option>'+eligible.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.data?.Locataire||'Fiche à compléter')+'</option>').join('')+'</select><div class="actions"><button class="btn primary" id="assignment-save" data-id="'+esc(id)+'" onclick="assignPropertyTenant(this.dataset.id)">Affecter et ouvrir le dossier</button></div>':'<p class="muted">Aucune fiche locataire sans bien disponible.</p>')+
+ '<div class="actions"><button class="btn secondary" data-id="'+esc(id)+'" onclick="editTenant(undefined,this.dataset.id)">Créer un nouveau locataire pour ce bien</button></div><div class="status" id="modalStatus" role="status"></div></div></div>';
+};
+window.assignPropertyTenant=async propertyId=>{
+ const button=$('assignment-save'),status=$('modalStatus'),tenantId=$('assignment-tenant')?.value;if(!button||!status)return;
+ if(!tenantId){status.className='status err';status.textContent='Choisissez un locataire.';return}
+ button.disabled=true;status.className='status';status.textContent='Affectation du locataire…';
+ try{const result=await api('assign-tenant','POST',{property_id:propertyId,tenant_row_id:tenantId});if(!await refresh())return;const tenant=(db.tenants||[]).find(t=>t.id===tenantId)||result.item;if(!tenant)throw Error('Fiche locataire introuvable après affectation.');editTenant(tenant.row_number);$('modalStatus').textContent='Bien affecté. Vérifiez les conditions reprises avant d’activer le bail.'}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Affectation impossible'}}finally{if(button.isConnected)button.disabled=false}
 };
 function renderObjectTable(rows){if(!rows?.length)return '<div class="card muted">Aucune ligne.</div>';const hs=[...new Set(rows.flatMap(Object.keys))];return `<div class="table-wrap" style="max-height:320px"><table><thead><tr>${hs.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${hs.map(h=>`<td>${cellHtml(h,r[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
 
@@ -614,6 +685,119 @@ window.approveIrlCandidate=async id=>{
  }catch(e){alert(e.message||'Validation impossible')}
 };
 
+const automationKinds={reminder_7:'Relance amiable à J+7',reminder_14:'Deuxième relance à J+14',irl_update:'Information sur une révision IRL validée',work_received:'Prise en compte d’un dossier de travaux',work_scheduled:'Intervention planifiée',work_completed:'Travaux terminés'};
+const automationRequirements={account_missing:'Adresse Free manquante',credential_missing:'Mot de passe Free à enregistrer',imap_unverified:'Réception IMAP à tester',smtp_unverified:'Envoi SMTP à tester',landlord_name_missing:'Nom du bailleur à renseigner',landlord_address_missing:'Adresse du bailleur à renseigner',templates_invalid:'Modèles à corriger',lookup_failed:'État de la connexion indisponible'};
+const automationVariables={common:['tenant_name','property_name','property_address','landlord_name'],reminder:['due_on','amount_due','reminder_stage'],irl:['old_rent','new_rent','effective_on','notice_sent_on'],work:['work_title','work_status','scheduled_for','provider_name']};
+window.loadMailAutomationConfig=async()=>{
+ const panel=$('mail-automation-config');if(!panel)return;const generation=sessionGeneration;
+ panel.innerHTML='<p class="muted">Chargement des modèles…</p>';
+ try{const result=await api('mail-automation-config');if(generation!==sessionGeneration||!panel.isConnected)return;mailAutomationConfig=result;renderMailAutomationConfig(panel)}
+ catch(e){if(generation===sessionGeneration&&panel.isConnected)panel.innerHTML='<p class="status err">'+esc(e.message||'Configuration indisponible')+'</p><button class="btn secondary" onclick="loadMailAutomationConfig()">Réessayer</button>'}
+};
+function renderMailAutomationConfig(panel){
+ const config=mailAutomationConfig;if(!config||!panel)return;
+ const allowed=!!db.current_user?.mail_access&&!db.current_user?.read_only,missing=config.readiness?.missing||[];
+ panel.innerHTML='<p><span class="mini-tag '+(config.readiness?.ready?'':'warn')+'">'+(config.readiness?.ready?'Messagerie prête pour l’automatisation':'Configuration à terminer')+'</span></p>'+
+ (missing.length?'<p class="muted">'+missing.map(x=>esc(automationRequirements[x]||x)).join(' · ')+'</p>':'')+
+ '<label class="payment-confirm"><input id="auto-send-enabled" type="checkbox" '+(config.settings?.send_enabled?'checked':'')+' '+(allowed?'':'disabled')+'> Autoriser les envois automatiques des catégories réglées sur « Envoi automatique »</label>'+
+ '<div class="fields"><div><label for="auto-daily-limit">Plafond quotidien d’envois automatiques</label><input id="auto-daily-limit" type="number" min="1" max="25" step="1" value="'+Number(config.settings?.daily_limit||10)+'" '+(allowed?'':'disabled')+'></div></div>'+
+ '<p class="note">Chaque catégorie peut rester désactivée, préparer des brouillons ou envoyer automatiquement. Un envoi au résultat incertain reste à vérifier. L’information IRL suit une révision déjà validée ; les dates de travaux viennent du dossier d’intervention.</p>'+
+ (config.templates||[]).filter(t=>automationKinds[t.kind]).map(t=>{
+  const vars=[...automationVariables.common,...automationVariables[t.kind.startsWith('reminder')?'reminder':t.kind==='irl_update'?'irl':'work']];
+  return '<details class="config-section"><summary><b>'+esc(automationKinds[t.kind])+'</b> · '+esc({off:'Désactivé',draft:'Brouillon',automatic:'Envoi automatique'}[t.mode]||t.mode)+'</summary><div class="fields"><div><label for="auto-mode-'+t.kind+'">Fonctionnement</label><select id="auto-mode-'+t.kind+'" '+(allowed?'':'disabled')+'>'+[['off','Désactivé'],['draft','Préparer un brouillon'],['automatic','Envoi automatique']].map(([value,label])=>'<option value="'+value+'" '+(t.mode===value?'selected':'')+'>'+label+'</option>').join('')+'</select></div></div>'+
+  '<label for="auto-subject-'+t.kind+'">Objet du message</label><input id="auto-subject-'+t.kind+'" maxlength="240" value="'+esc(t.subject_template)+'" '+(allowed?'':'disabled')+'>'+
+  '<label for="auto-body-'+t.kind+'">Texte du message</label><textarea id="auto-body-'+t.kind+'" maxlength="12000" rows="8" '+(allowed?'':'disabled')+'>'+esc(t.body_template)+'</textarea><p class="muted">Champs disponibles : '+vars.map(v=>'<code>{{'+v+'}}</code>').join(' · ')+'</p>'+
+  '<button class="btn secondary" data-kind="'+t.kind+'" onclick="previewAutomaticMail(this.dataset.kind)">Aperçu avec des données fictives</button><div id="auto-preview-'+t.kind+'" role="status"></div></details>';
+ }).join('')+
+ (allowed?'<button class="btn primary" id="auto-config-save" onclick="saveMailAutomationConfig()">Enregistrer les modèles et les règles</button>':'')+'<div class="status" id="auto-config-status" role="status"></div>';
+}
+window.previewAutomaticMail=async kind=>{
+ const pane=$('auto-preview-'+kind);if(!pane||!automationKinds[kind])return;const generation=sessionGeneration;
+ pane.textContent='Préparation de l’aperçu…';
+ try{const x=await api('mail-template-preview','POST',{kind,subject_template:$('auto-subject-'+kind).value,body_template:$('auto-body-'+kind).value});if(generation!==sessionGeneration||!pane.isConnected)return;if(x.example!==true)throw Error('L’aperçu doit utiliser des données fictives.');pane.innerHTML='<p class="mini-tag">EXEMPLE — aucun envoi</p><h4>'+esc(x.subject)+'</h4><pre class="mail-text">'+esc(x.plain_body)+'</pre>'}
+ catch(e){if(generation===sessionGeneration&&pane.isConnected)pane.innerHTML='<p class="status err">'+esc(e.message||'Aperçu indisponible')+'</p>'}
+};
+window.saveMailAutomationConfig=async()=>{
+ const button=$('auto-config-save'),status=$('auto-config-status');if(!button||!status)return;
+ const settings={send_enabled:$('auto-send-enabled').checked,daily_limit:Number($('auto-daily-limit').value)};
+ if(!$('auto-daily-limit').checkValidity()||!Number.isInteger(settings.daily_limit)){status.className='status err';status.textContent='Choisissez un plafond compris entre 1 et 25.';return}
+ const templates=(mailAutomationConfig?.templates||[]).filter(t=>automationKinds[t.kind]).map(t=>({kind:t.kind,mode:$('auto-mode-'+t.kind).value,subject_template:$('auto-subject-'+t.kind).value,body_template:$('auto-body-'+t.kind).value}));
+ if(settings.send_enabled&&templates.some(t=>t.mode==='automatic')&&!confirm('Activer l’envoi automatique pour les catégories choisies, dans la limite de '+settings.daily_limit+' messages par jour ?'))return;
+ button.disabled=true;status.className='status';status.textContent='Enregistrement des règles…';
+ try{await api('mail-automation-save','POST',{settings,templates,confirmed:true});if(!db)return;db.mail_automation=settings;await loadMailAutomationConfig();const done=$('auto-config-status');if(done){done.className='status ok';done.textContent='Modèles et règles enregistrés. Les messages admissibles suivront les modes choisis.'}}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Enregistrement impossible'}}finally{if(button.isConnected)button.disabled=false}
+};
+window.generateAutomaticMails=async()=>{
+ if(!db.current_user?.mail_access||db.current_user?.read_only)return;
+ const button=$('auto-generate'),status=$('auto-generate-status');if(button)button.disabled=true;if(status)status.textContent='Préparation des messages admissibles…';
+ try{const x=await api('mail-automation-generate','POST',{});if(!await refresh())return;const next=$('auto-generate-status');if(next){next.className='status ok';next.textContent=Number(x.created||0)+' message(s) préparé(s), '+Number(x.updated||0)+' actualisé(s), '+Number(x.complaints_created||0)+' signalement(s) à examiner. Aucun envoi déclenché par cette commande.'}}
+ catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message||'Préparation impossible'}}finally{if(button?.isConnected)button.disabled=false}
+};
+
+function inspectBankReturn(){
+ const params=new URLSearchParams(location.search);if(!params.has('state')&&!params.has('connection_id'))return;
+ let pending=null;try{pending=JSON.parse(sessionStorage.getItem('marne-bank-connect-state')||'null')}catch{}
+ const valid=!!pending&&params.get('state')===pending.state&&Number(pending.expires_at)>Date.now();
+ bankReturnNotice=valid?(params.has('error')?'La connexion bancaire n’a pas abouti. Vous pouvez relancer le parcours.':'Retour du parcours bancaire reçu. Rechargez les comptes pour vérifier le consentement, puis choisissez ceux à synchroniser.'):'Le retour bancaire ne correspond pas à une connexion en cours dans cet onglet. Relancez le parcours depuis les paramètres.';
+ sessionStorage.removeItem('marne-bank-connect-state');history.replaceState(null,'',location.pathname+'?page=config');page='config';
+}
+window.loadBankConnection=async()=>{
+ if(page!=='config')showPage('config');const panel=$('bank-connection-config');if(!panel)return;const generation=sessionGeneration;
+ panel.innerHTML='<p class="muted">Chargement de la connexion bancaire…</p>';
+ try{const x=await api('bank-status');if(generation!==sessionGeneration||!panel.isConnected)return;bankConnectionState=x;renderBankConnection(panel)}
+ catch(e){if(generation===sessionGeneration&&panel.isConnected)panel.innerHTML='<p class="status err">'+esc(e.message||'Connexion indisponible')+'</p><button class="btn secondary" onclick="loadBankConnection()">Réessayer</button>'}
+};
+function renderBankConnection(panel){
+ const s=bankConnectionState;if(!s||!panel)return;const allowed=!!db.current_user?.bank_access&&!db.current_user?.read_only;
+ const accounts=s.accounts||[],connections=s.connections||[];
+ const field=(id,label,value,type='text',max=200)=>'<div><label for="bank-'+id+'">'+esc(label)+'</label><input id="bank-'+id+'" type="'+type+'" maxlength="'+max+'" value="'+esc(value||'')+'" '+(allowed?'':'disabled')+(type==='password'?' autocomplete="new-password"':'')+'></div>';
+ panel.innerHTML=(bankReturnNotice?'<p class="note">'+esc(bankReturnNotice)+'</p>':'')+
+ '<p><span class="mini-tag '+(s.connected?'':'warn')+'">'+(s.connected?'Comptes bancaires disponibles':s.configured?'Application enregistrée — consentement à vérifier':'Application Powens à configurer')+'</span> <span class="mini-tag">Lecture des comptes et mouvements</span></p>'+
+ '<p class="muted">Un accès Powens actif est nécessaire. Le domaine de test utilise des banques fictives ; un domaine de production doit être ouvert par Powens. Vos identifiants bancaires sont saisis dans le parcours sécurisé du fournisseur.</p>'+
+ '<div class="fields">'+field('domain','Domaine Powens',s.domain)+field('client-id','Identifiant de l’application',s.client_id)+field('client-secret','Secret de l’application (vide = conserver)','','password',1000)+
+ '<div><label for="bank-environment">Environnement</label><select id="bank-environment" '+(allowed?'':'disabled')+'><option value="sandbox" '+(s.environment!=='production'?'selected':'')+'>Test — banques fictives</option><option value="production" '+(s.environment==='production'?'selected':'')+'>Production — vraies banques</option></select></div></div>'+
+ (s.auth_uncertain?'<p class="note">La création de l’accès Powens a donné un résultat incertain. Retrouvez l’utilisateur dans la console Powens pour reprendre cet accès.</p>'+field('recovery-user','Identifiant utilisateur Powens à récupérer','','number',20):'')+
+ '<label class="payment-confirm"><input id="bank-auto-sync" type="checkbox" '+(s.auto_sync?'checked':'')+' '+(allowed?'':'disabled')+'> Synchroniser automatiquement les comptes sélectionnés après connexion</label>'+
+ '<p class="muted">Adresse de retour à autoriser dans l’application Powens : <code style="overflow-wrap:anywhere">'+esc(s.redirect_uri||'https://edm28contact-wq.github.io/gestion-college-app/admin/marne-invest/?page=config')+'</code></p>'+
+ (allowed?'<div class="actions"><button class="btn primary" id="bank-config-save" onclick="saveBankConfiguration()">Enregistrer la configuration bancaire</button><button class="btn secondary" data-action="connect" onclick="bankConnectionAction(this.dataset.action)" '+(s.configured?'':'disabled')+'>Connecter une banque</button><button class="btn secondary" data-action="manage" onclick="bankConnectionAction(this.dataset.action)" '+(s.configured?'':'disabled')+'>Gérer le consentement</button><button class="btn secondary" data-action="accounts" onclick="bankConnectionAction(this.dataset.action)" '+(s.configured?'':'disabled')+'>Recharger les comptes</button></div>':'')+
+ '<p class="muted">Enregistrez les paramètres avant de connecter la banque. Les montants importés restent à rapprocher et à confirmer dans Transactions.</p>'+
+ (connections.some(c=>c.error_code||c.state&&c.state!=='connected')?'<p class="note">État des connexions : '+connections.map(c=>esc(c.error_code||c.state||'À vérifier')).join(' · ')+'. Si le consentement a expiré, ouvrez « Gérer le consentement ».</p>':'')+
+ (accounts.length?dataTable(['Importer','Compte','Identifiant','Devise','Dernière synchronisation','Action'],accounts.map(a=>'<tr><td><input type="checkbox" class="bank-account-choice" aria-label="Sélectionner '+esc(a.name)+'" data-id="'+esc(a.provider_account_id)+'" '+(a.selected?'checked':'')+' '+(!allowed||a.disabled||a.deleted||a.currency!=='EUR'?'disabled':'')+'></td><td>'+esc(a.name||'Compte')+(a.disabled||a.deleted?'<br><span class="mini-tag warn">Indisponible</span>':'')+'</td><td>'+esc(a.masked_iban||'—')+'</td><td>'+esc(a.currency)+'</td><td>'+esc(a.last_sync_at?new Date(a.last_sync_at).toLocaleString('fr-FR'):'Pas encore importé')+(a.has_more?'<br>Suite à importer':'')+(a.warning_count?'<br>'+Number(a.warning_count)+' mouvement(s) à contrôler':'')+'</td><td>'+(allowed&&a.selected&&!a.disabled&&!a.deleted&&a.currency==='EUR'?'<button class="btn secondary" data-id="'+esc(a.provider_account_id)+'" onclick="syncBankAccount(this.dataset.id)">'+(a.has_more?'Importer la suite':'Synchroniser')+'</button>':'')+'</td></tr>'))+(allowed?'<button class="btn secondary" onclick="saveBankSelection()">Enregistrer les comptes sélectionnés</button>':''):'<p class="muted">Les comptes apparaîtront après le consentement et le rechargement de la liste.</p>')+
+ '<div class="status" id="bank-connection-status" role="status"></div>';
+}
+function bankConfigHasChanges(){return !!$('bank-client-secret')?.value||$('bank-domain')?.value.trim()!==String(bankConnectionState?.domain||'')||$('bank-client-id')?.value.trim()!==String(bankConnectionState?.client_id||'')||$('bank-environment')?.value!==(bankConnectionState?.environment||'sandbox')||$('bank-auto-sync')?.checked!==!!bankConnectionState?.auto_sync}
+window.saveBankConfiguration=async()=>{
+ const status=$('bank-connection-status'),button=$('bank-config-save');if(!status||!button)return;
+ const body={domain:$('bank-domain').value.trim(),client_id:$('bank-client-id').value.trim(),client_secret:$('bank-client-secret').value,environment:$('bank-environment').value,auto_sync:$('bank-auto-sync').checked,confirmed:true};
+ if($('bank-recovery-user')?.value){if(!/^[1-9]\d*$/.test($('bank-recovery-user').value)){status.className='status err';status.textContent='Renseignez l’identifiant numérique de l’utilisateur Powens à récupérer.';return}body.recovery_user_id=$('bank-recovery-user').value;}
+ if(!/^[a-z0-9][a-z0-9-]*\.biapi\.pro$/i.test(body.domain)||!body.client_id){status.className='status err';status.textContent='Renseignez le domaine Powens (nom.biapi.pro) et l’identifiant de l’application.';return}
+ button.disabled=true;status.className='status';status.textContent='Enregistrement sécurisé de la configuration…';
+ try{await api('bank-configure','POST',body);if($('bank-client-secret'))$('bank-client-secret').value='';await loadBankConnection();const done=$('bank-connection-status');if(done){done.className='status ok';done.textContent='Configuration enregistrée. Ouvrez le parcours bancaire pour donner le consentement.'}}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Configuration impossible'}}finally{if(button.isConnected)button.disabled=false}
+};
+window.bankConnectionAction=async action=>{
+ const status=$('bank-connection-status');if(!status)return;
+ if(bankConfigHasChanges()){status.className='status err';status.textContent='Enregistrez les modifications bancaires avant de continuer.';return}
+ const buttons=[...$('bank-connection-config').querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);status.className='status';status.textContent=action==='accounts'?'Chargement des comptes autorisés…':'Préparation du parcours sécurisé…';
+ try{if(action==='accounts'){await api('bank-accounts','POST',{confirmed:true});await loadBankConnection();return}
+  if(!['connect','manage'].includes(action))throw Error('Action bancaire inconnue.');
+  const x=await api('bank-connect','POST',{confirmed:true,mode:action}),url=new URL(x.url);
+  if(url.protocol!=='https:'||url.hostname!=='webview.powens.com'||!['/fr/connect','/fr/manage'].includes(url.pathname)||!x.state)throw Error('Adresse de connexion bancaire invalide.');
+  sessionStorage.setItem('marne-bank-connect-state',JSON.stringify({state:x.state,expires_at:Date.now()+Math.min(Number(x.expires_in)||1800,1800)*1000}));location.assign(url.href);
+ }catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Connexion impossible'}}finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
+};
+window.saveBankSelection=async()=>{
+ const status=$('bank-connection-status');if(!status)return;const account_ids=[...document.querySelectorAll('.bank-account-choice:checked:not(:disabled)')].map(x=>x.dataset.id);
+ try{await api('bank-selection','POST',{account_ids,confirmed:true});await loadBankConnection();const done=$('bank-connection-status');if(done){done.className='status ok';done.textContent='Sélection enregistrée.'}}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Sélection impossible'}}
+};
+window.syncBankAccount=async account_id=>{
+ const status=$('bank-connection-status');if(!status)return;if(bankConfigHasChanges()){status.className='status err';status.textContent='Enregistrez les paramètres bancaires avant de synchroniser.';return}
+ const buttons=[...$('bank-connection-config').querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);status.className='status';status.textContent='Import des mouvements autorisés…';
+ try{const x=await api('bank-sync','POST',{account_id,confirmed:true});await loadBankConnection();const done=$('bank-connection-status');if(done){done.className='status ok';done.textContent=Number(x.imported||0)+' mouvement(s) importé(s). '+(x.has_more?'Un autre lot reste à importer. ':'')+'Ouvrez Transactions pour les rapprocher.'}}
+ catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Synchronisation impossible'}}finally{buttons.forEach(b=>{if(b.isConnected)b.disabled=false})}
+};
+
 function renderConfig(){
  const allowed=!!db.current_user?.mail_access&&!db.current_user?.read_only;
  const configured=!!db.current_user?.mail_configured;
@@ -632,17 +816,18 @@ function renderConfig(){
  '<div><label>Configuration du serveur</label><div class="note">IMAP : <code>imap.free.fr:993</code> (TLS)<br>SMTP : <code>smtp.free.fr:465</code> (TLS)</div></div></div>'+
  '<div class="actions"><button class="btn secondary" onclick="testMailConnection()" '+(configured&&allowed?'':'disabled')+'>Tester IMAP / SMTP</button>'+
  '<button class="btn secondary" onclick="showPage(&quot;mail&quot;)">Ouvrir la messagerie</button></div>'+
- '<p class="muted">L’enregistrement n’envoie aucun e-mail. Une validation distincte reste obligatoire pour expédier un message.</p></section>';
+ '<p class="muted">L’enregistrement configure la boîte. Les envois automatiques se règlent séparément, par catégorie, dans la section suivante.</p></section>';
  const historical=['current_irl','irl_label','revision_threshold','reminder_7_days','reminder_14_days','irl_url_1','irl_url_2','main_sheet_name','property_sheet_prefix'];
  const legacy='<details class="card config-section"><summary style="cursor:pointer;font-weight:700">Paramètres historiques du classeur (lecture seule)</summary><p class="muted">Ces valeurs ne commandent pas les nouvelles échéances ni les révisions de loyer. Les modifier directement serait trompeur.</p>'+
  historical.map(key=>{const item=(db.settings||[]).find(x=>x.setting_key===key);return item?'<div class="kv"><b>'+esc(item.label)+'</b><span>'+esc(String(item.value??'—'))+'</span></div>':''}).join('')+'</details>';
- const automation='<section class="card config-section"><h3>3. Automatisations</h3><p class="muted">Les brouillons de relance sont préparés à J+7 puis J+14, sans envoi automatique. Les révisions de loyers nécessitent la vérification des baux.</p>'+
- '<div id="config-irl-live">'+irlPanel()+'</div>'+renderIrlPublicationPanel()+'</section>';
+ const automation='<section class="card config-section"><h3>3. Mails automatiques et modèles</h3><p class="muted">Relances J+7/J+14, information IRL et suivi des travaux. Personnalisez les textes et choisissez le fonctionnement de chaque catégorie.</p><div id="mail-automation-config"><button class="btn secondary" onclick="loadMailAutomationConfig()" '+(db.current_user?.mail_access?'':'disabled')+'>Configurer les modèles et les règles</button></div></section>';
+ const bank='<section class="card config-section"><h3>4. Connexion bancaire</h3><p class="muted">Connectez une banque via Powens pour importer ses mouvements dans le rapprochement. L’import CSV reste disponible.</p>'+(bankReturnNotice?'<p class="note">'+esc(bankReturnNotice)+'</p>':'')+'<div id="bank-connection-config"><button class="btn secondary" onclick="loadBankConnection()" '+(db.current_user?.bank_access?'':'disabled')+'>Configurer / consulter la connexion bancaire</button></div></section>';
+ const indices='<section class="card config-section"><h3>5. Références IRL</h3><div id="config-irl-live">'+irlPanel()+'</div>'+renderIrlPublicationPanel()+'</section>';
  const save='<section class="card config-section"><div class="section-head"><div><h3>Appliquer les paramètres</h3><p class="muted">Un seul enregistrement met à jour les coordonnées et, si renseigné, le secret de la boîte Free.</p></div>'+
  (allowed?'<button id="central-config-save" class="btn primary" onclick="saveCentralConfig()">Enregistrer et appliquer</button>':'<span class="mini-tag warn">Accès administrateur requis</span>')+
  '</div><div id="central-config-status" class="status" role="status"></div></section>';
  $('content').innerHTML=section('Paramètres centralisés','Une seule saisie pour les informations communes aux modules, avec préservation des contrats validés.')+
- '<div class="config-layout">'+general+mail+automation+save+legacy+'</div>';
+ '<div class="config-layout">'+general+mail+save+automation+bank+indices+legacy+'</div>';
 }
 window.saveCentralConfig=async()=>{
  if(!db.current_user?.mail_access||db.current_user?.read_only)return;
@@ -1155,8 +1340,8 @@ function renderBankReconciliation(){
  const canWrite=!db.current_user?.read_only;
  const rows=filtered(lines,l=>[l.description,l.booking_date,l.bank_reference,bankImportLabel(l.import_id)].join(' '));
  return '<div class="bank-box"><div class="section-head"><div><h2>Import et rapprochement bancaire</h2>'+
- '<p class="muted">Importez un relevé CSV. Les virements sont proposés au rapprochement, jamais comptabilisés sans validation.</p></div>'+
- (canWrite?'<button class="btn primary" onclick="openBankCsvImporter()">Importer un relevé CSV</button>':'')+'</div>'+
+ '<p class="muted">Les mouvements proviennent des comptes connectés ou d’un relevé CSV. Confirmez leur rapprochement avec les loyers.</p></div>'+
+ (canWrite?'<div class="actions"><button class="btn secondary" onclick="loadBankConnection()">Connexion bancaire</button><button class="btn primary" onclick="openBankCsvImporter()">Importer un relevé CSV</button></div>':'')+'</div>'+
  stats([['Mouvements importés',lines.length],['Crédits à vérifier',pendingCredit],['Rapprochements valides',matches],['Paiements annulés à vérifier',anomalies]])+
  dataTable(['Date','Compte','Libellé','Montant','État','Action'],rows.map(l=>{
   const amount=Number(l.amount),overlap=bankOverlappingLines(l),alreadyMatched=overlap.some(x=>x.status==='matched');
@@ -1372,6 +1557,48 @@ const workStatusLabels={open:'Signalé',in_review:'Évaluation',quoted:'Devis re
 const workTransitions={open:['in_review','cancelled'],in_review:['quoted','cancelled'],quoted:['approved','cancelled'],approved:['in_progress','cancelled'],in_progress:['completed','cancelled']};
 const workCategories={plomberie:'Plomberie',electricite:'Électricité',chauffage:'Chauffage',serrurerie:'Serrurerie',entretien:'Entretien',autre:'Autre'};
 function workProperty(id){return (db.properties||[]).find(p=>p.id===id)}
+function renderMailComplaints(){
+ if(!db.current_user?.mail_access)return '';
+ const rows=(db.mail_complaints||[]).filter(c=>c.status==='suggested'),allowed=!!db.current_user?.work_access&&!db.current_user?.read_only;
+ return '<section class="card" style="margin:16px 0"><h3>Signalements proposés depuis les e-mails</h3><p class="muted">Les textes reçus peuvent suggérer une catégorie et une priorité. Confirmez le logement et les faits avant de créer un dossier de travaux.</p>'+
+ (rows.length?dataTable(['Courriel','Bien proposé','Lecture','Action'],rows.map(c=>'<tr><td><b>'+esc(c.subject||'(Sans objet)')+'</b><div class="muted">'+esc(c.sender_email)+'</div><p>'+esc(c.excerpt||'')+'</p></td><td>'+esc(workProperty(c.property_id)?.name||'À identifier')+'<br><span class="mini-tag '+(c.match_state==='matched'?'':'warn')+'">'+esc({matched:'Expéditeur connu',ambiguous:'Plusieurs dossiers possibles',unknown:'Expéditeur à identifier'}[c.match_state]||'À vérifier')+'</span></td><td>'+esc(c.content_incomplete?'Contenu incomplet — consulter Free':'Texte importé')+'</td><td>'+(allowed?'<button class="btn primary" data-id="'+esc(c.id)+'" onclick="openMailComplaint(this.dataset.id)">Examiner le signalement</button>':'Lecture seule')+'</td></tr>')):'<p class="muted">Aucun signalement en attente. Vous pouvez analyser un message depuis la messagerie ou préparer les messages admissibles dans Relances et e-mails.</p>')+'</section>';
+}
+window.analyzeMailComplaint=async message_id=>{
+ if(!db.current_user?.mail_access||!db.current_user?.work_access||db.current_user?.read_only)return;
+ const button=$('analyze-mail-complaint'),pane=$('mail-complaint-status');if(button)button.disabled=true;if(pane)pane.textContent='Analyse du texte importé…';
+ try{const x=await api('mail-complaint-analyze','POST',{message_id});if(!x.detected||!x.item){if(pane?.isConnected)pane.textContent='Aucun signalement de travaux reconnu dans le texte disponible. Une intervention peut être créée manuellement dans Travaux.';return}
+  if(!await refresh())return;if(!(db.mail_complaints||[]).some(c=>c.id===x.item.id))(db.mail_complaints||=[]).push(x.item);openMailComplaint(x.item.id);
+ }catch(e){if(pane?.isConnected){pane.className='status err';pane.textContent=e.message||'Analyse indisponible'}}finally{if(button?.isConnected)button.disabled=false}
+};
+window.openMailComplaint=id=>{
+ const c=(db.mail_complaints||[]).find(x=>x.id===id);if(!c||!db.current_user?.work_access)return;
+ const props=(db.properties||[]).filter(p=>!p.is_example),readonly=!!db.current_user?.read_only||c.status!=='suggested';
+ $('modal').innerHTML='<div class="modal"><div class="box"><div class="top"><h2>Vérifier le signalement reçu</h2><button class="btn secondary" onclick="closeModal()">Fermer</button></div>'+
+ '<p><b>'+esc(c.subject||'(Sans objet)')+'</b><br>'+esc(c.sender_email)+'</p><pre class="mail-text">'+esc(c.excerpt||'Extrait indisponible')+'</pre>'+
+ (c.content_incomplete?'<p class="note">Le texte importé est incomplet. Consultez le courriel complet dans Free avant de confirmer le dossier.</p>':'')+
+ '<div class="fields"><div><label for="complaint-property">Bien concerné</label><select id="complaint-property" onchange="updateComplaintLeases()" '+(readonly?'disabled':'')+'><option value="">À identifier</option>'+props.map(p=>'<option value="'+esc(p.id)+'" '+(c.property_id===p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></div><div><label for="complaint-lease">Locataire / bail lié au signalement</label><select id="complaint-lease" '+(readonly?'disabled':'')+'></select></div>'+ 
+ '<div><label for="complaint-category">Catégorie proposée</label><select id="complaint-category" '+(readonly?'disabled':'')+'>'+Object.entries(workCategories).map(([value,label])=>'<option value="'+value+'" '+(c.category===value?'selected':'')+'>'+label+'</option>').join('')+'</select></div><div><label for="complaint-priority">Priorité à vérifier</label><select id="complaint-priority" '+(readonly?'disabled':'')+'><option value="standard">Standard</option><option value="urgent" '+(c.priority==='urgent'?'selected':'')+'>Urgent</option></select></div></div>'+
+ '<label for="complaint-title">Objet du dossier de travaux</label><input id="complaint-title" maxlength="180" value="'+esc(c.suggested_title||c.subject||'')+'" '+(readonly?'disabled':'')+'><label for="complaint-description">Faits à retenir</label><textarea id="complaint-description" maxlength="4000" rows="6" '+(readonly?'disabled':'')+'>'+esc(c.suggested_description||c.excerpt||'')+'</textarea>'+
+ '<label class="payment-confirm"><input id="complaint-verified" type="checkbox" '+(readonly?'disabled':'')+'> J’ai vérifié le contenu du courriel, le bien et le locataire concernés.</label><p class="muted">Le dossier sera créé au statut « Signalé ». Le devis, le prestataire et la date d’intervention seront renseignés ensuite.</p>'+
+ (!readonly?'<div class="actions"><button class="btn primary" id="complaint-convert" data-id="'+esc(id)+'" onclick="convertMailComplaint(this.dataset.id)">Créer le dossier de travaux</button><button class="btn secondary" data-id="'+esc(id)+'" onclick="ignoreMailComplaint(this.dataset.id)">Écarter ce signalement</button></div>':'')+'<div id="modalStatus" class="status" role="status"></div></div></div>';
+ updateComplaintLeases(c.lease_id||'');
+};
+window.updateComplaintLeases=(selected='')=>{
+ const field=$('complaint-lease');if(!field)return;const property_id=$('complaint-property')?.value;
+ const leases=(db.leases||[]).filter(l=>l.property_id===property_id&&l.status==='active'&&l.verified_at);
+ field.innerHTML='<option value="">Aucun locataire identifié</option>'+leases.map(l=>'<option value="'+esc(l.id)+'" '+(l.id===selected?'selected':'')+'>'+esc(l.tenant_name||'Locataire à vérifier')+'</option>').join('');
+};
+window.convertMailComplaint=async id=>{
+ const status=$('modalStatus'),button=$('complaint-convert');if(!status||!button)return;
+ if(!$('complaint-verified').checked||!$('complaint-property').value){status.className='status err';status.textContent='Choisissez le bien et confirmez la vérification du courriel.';return}
+ const body={id,property_id:$('complaint-property').value,lease_id:$('complaint-lease').value||null,title:$('complaint-title').value.trim(),description:$('complaint-description').value.trim(),category:$('complaint-category').value,priority:$('complaint-priority').value,confirmed:true};
+ if(body.title.length<5){status.className='status err';status.textContent='Renseignez un objet d’au moins cinq caractères.';return}button.disabled=true;status.className='status';status.textContent='Création du dossier lié au courriel…';
+ try{const x=await api('mail-complaint-convert','POST',body);closeModal();if(!await refresh())return;showPage('works');if(x.work_order?.id)openWorkOrder(x.work_order.id)}catch(e){if(status.isConnected){status.className='status err';status.textContent=e.message||'Création impossible'}}finally{if(button.isConnected)button.disabled=false}
+};
+window.ignoreMailComplaint=async id=>{
+ const status=$('modalStatus');if(!confirm('Écarter cette proposition de travaux ? Le courriel reste conservé.'))return;
+ try{await api('mail-complaint-ignore','POST',{id});closeModal();await refresh()}catch(e){if(status?.isConnected){status.className='status err';status.textContent=e.message||'Action impossible'}}
+};
 function renderWorks(){
  if(!db.current_user?.work_access){$('content').innerHTML=section('Travaux et interventions','Accès réservé aux gestionnaires autorisés.')+'<div class="card empty-state">Accès aux interventions indisponible.</div>';return}
  const orders=db.work_orders||[],active=orders.filter(o=>!['completed','cancelled'].includes(o.status));
@@ -1382,7 +1609,7 @@ function renderWorks(){
  const canWrite=!db.current_user?.read_only;
  $('content').innerHTML=section('Travaux et interventions','Signalements, devis, validations et historique des interventions par logement.',
  canWrite?'<button class="btn primary" onclick="newWorkOrder()">+ Signaler une intervention</button>':'')+
- stats([['Interventions en cours',active.length],['Urgentes',urgent],['Devis saisis',money(estimates),'Montants indicatifs, non payés'],['Coût terminé saisi',money(actual),'Pas d’écriture comptable créée']])+
+ stats([['Interventions en cours',active.length],['Urgentes',urgent],['Devis saisis',money(estimates),'Montants indicatifs, non payés'],['Coût terminé saisi',money(actual),'Pas d’écriture comptable créée']])+renderMailComplaints()+
  dataTable(['Logement','Intervention','Priorité','Prestataire','Devis','État','Actions'],rows.map(o=>{
   const p=workProperty(o.property_id),state=workStatusLabels[o.status]||o.status;
   return '<tr><td><b>'+esc(p?.name||'Logement')+'</b></td><td><b>'+esc(o.title)+'</b><div class="muted">'+esc(workCategories[o.category]||o.category)+'</div></td>'+
@@ -1622,8 +1849,9 @@ window.refreshIrl=()=>{irlChecked=false;fetchIrl()};
 function irlPanel(){const ok=irlLive?.ok;const live=ok?'Indice INSEE vérifié : '+fmt(irlLive.index)+' — '+irlLive.period:irlLive?.loading?'Vérification INSEE en cours…':'IRL non vérifié dans cette session — actualisez depuis l’INSEE';const source='<a href="https://www.insee.fr/fr/statistiques/serie/001515333" target="_blank" rel="noopener noreferrer">Consulter la série officielle INSEE</a>';return '<div class="card" style="margin-bottom:15px"><div class="section-head"><div><h3>Indice de référence des loyers (IRL)</h3><p class="muted">Consultation de la dernière publication INSEE, sans modification des baux.</p></div><button class="btn primary" onclick="refreshIrl()">Actualiser depuis l’INSEE</button></div><div class="kpi">'+esc(live)+'</div><p class="muted">'+(ok?'Dernier contrôle : '+esc(new Date(irlLive.checked_at).toLocaleString('fr-FR')):irlLive?.error?'Actualisation indisponible : '+esc(irlLive.error):'Référence du 15 octobre 2026. Actualisation en ligne non confirmée.')+'</p><p>'+source+'</p><div class="note"><b>Révision des loyers :</b> l’indice de base dépend du trimestre prévu au bail, avec contrôle de la date de révision, du DPE et des restrictions applicables. Le recalcul automatique des loyers reste désactivé pour éviter des montants erronés.</div></div>'}
 function emailAutomationPanel(){
  const sender=setting('sender_email',''),configured=!!db.current_user?.mail_configured,verified=configured&&!!db.mail_sync_state?.smtp_verified_at;
- const state=verified?'Authentification SMTP vérifiée. Les envois restent soumis à une confirmation manuelle.':configured?'Identifiants enregistrés. Vérifiez la connexion SMTP dans Paramètres.':'Configurez ce compte dans Paramètres puis vérifiez la connexion SMTP.';
- return '<div class="card" style="margin-bottom:15px"><h3>Envois automatiques de courriels</h3><p><span class="mini-tag warn">Envoi automatique désactivé</span></p><p class="muted">Adresse d’expédition prévue : <b>'+esc(String(sender||'Non configurée'))+'</b>. '+esc(state)+'</p><button class="btn secondary" onclick="showPage(\'emails\')">Voir les courriels à préparer</button></div>';
+ const enabled=!!db.mail_automation?.send_enabled;
+ const state=verified?'Authentification SMTP vérifiée.':configured?'Identifiants enregistrés. Vérifiez la connexion SMTP dans Paramètres.':'Configurez ce compte dans Paramètres puis vérifiez la connexion SMTP.';
+ return '<div class="card" style="margin-bottom:15px"><h3>Mails automatiques et modèles</h3><p><span class="mini-tag '+(enabled?'':'warn')+'">'+(enabled?'Envoi activé selon les règles choisies':'Envoi automatique désactivé')+'</span></p><p class="muted">Adresse d’expédition : <b>'+esc(String(sender||'Non configurée'))+'</b>. '+esc(state)+'</p><div class="actions"><button class="btn secondary" onclick="showPage(\'config\');loadMailAutomationConfig()">Configurer les modèles</button>'+(db.current_user?.mail_access&&!db.current_user?.read_only?'<button class="btn primary" id="auto-generate" onclick="generateAutomaticMails()">Préparer les messages admissibles</button>':'')+'</div><div class="status" id="auto-generate-status" role="status"></div></div>';
 }
 function mailUrl(to,subject,body){return 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)}
 window.openTenantEmail=row=>{
@@ -1637,6 +1865,11 @@ window.openTenantEmail=row=>{
 };
 function isEmailAddress(value){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||''))}
 function reminderDayDiff(due,today){return Math.floor((Date.parse(today+'T00:00:00Z')-Date.parse(due+'T00:00:00Z'))/86400000)}
+function reminderDelivery(draft){
+ if(!draft)return null;
+ const messages=(db.mail_outbox||[]).filter(m=>m.source_id===draft.id&&m.automation_kind==='reminder_'+draft.stage&&m.recipient_email===draft.recipient_email&&m.status!=='cancelled');
+ return messages.find(m=>m.status==='sent')||messages.find(m=>['uncertain','sending'].includes(m.status))||messages.find(m=>m.status==='draft')||null;
+}
 function reminderPlan(i,ledger,today){
  const l=(db.leases||[]).find(x=>x.id===i.lease_id);
  const t=(db.tenants||[]).find(x=>x.id===l?.tenant_row_id),p=(db.properties||[]).find(x=>x.id===i.property_id);
@@ -1646,7 +1879,9 @@ function reminderPlan(i,ledger,today){
  const drafts=(db.reminder_drafts||[]).filter(x=>x.installment_id===i.id);
  const first=drafts.find(x=>x.stage===7),second=drafts.find(x=>x.stage===14);
  const stale=r=>r&&(Math.abs(Number(r.due_at_preparation)-outstanding)>=0.005||String(r.recipient_email||'').trim().toLowerCase()!==String(t?.data?.['Mail locataire']||'').trim().toLowerCase());
- const canAdvance=first?.status==='declared_sent'&&first.declared_sent_at&&reminderDayDiff(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(first.declared_sent_at)),today)>=7;
+ const firstMail=reminderDelivery(first),secondMail=reminderDelivery(second),firstSent=first?.status==='declared_sent'||firstMail?.status==='sent',secondSent=second?.status==='declared_sent'||secondMail?.status==='sent';
+ const firstSentAt=first?.declared_sent_at||firstMail?.sent_at;
+ const canAdvance=firstSent&&firstSentAt&&reminderDayDiff(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(firstSentAt)),today)>=7;
  let stage=0,reason='';
  if(!l||!l.verified_at)reason='Bail non vérifié';
  else if(l.status!=='active')reason=l.status==='closed'?'Bail clôturé · suivi manuel du solde':'Bail non actif';
@@ -1654,14 +1889,15 @@ function reminderPlan(i,ledger,today){
  else if(pending>0.005)reason='Règlement à rapprocher';
  else if(days<7)reason='Délai J+7 non atteint';
  else if(!isEmailAddress(t?.data?.['Mail locataire']))reason='E-mail manquant';
- else if(!first||first.status==='cancelled'&&!first.declared_sent_at){stage=7;reason=first?'Rappel J+7 à repréparer':'Rappel J+7 prêt à préparer'}
- else if(first.status==='prepared'&&stale(first)){stage=7;reason='Solde ou destinataire modifié · rappel J+7 à repréparer'}
- else if(first.status==='prepared')reason='Brouillon J+7 préparé';
- else if(first.status==='declared_sent'&&days>=14&&canAdvance&&(!second||second.status==='cancelled'&&!second.declared_sent_at||second.status==='prepared'&&stale(second))){stage=14;reason=second?'Rappel J+14 à repréparer':'Rappel J+14 prêt à préparer'}
+ else if([firstMail,secondMail].some(m=>m&&['sending','uncertain'].includes(m.status)))reason='Envoi en cours ou résultat à vérifier dans la messagerie';
+ else if(!firstSent&&(!first||first.status==='cancelled'&&!first.declared_sent_at)){stage=7;reason=first?'Rappel J+7 à repréparer':'Rappel J+7 prêt à préparer'}
+ else if(!firstSent&&first.status==='prepared'&&stale(first)){stage=7;reason='Solde ou destinataire modifié · rappel J+7 à repréparer'}
+ else if(!firstSent&&first.status==='prepared')reason='Brouillon J+7 préparé';
+ else if(firstSent&&!secondSent&&days>=14&&canAdvance&&(!second||second.status==='cancelled'&&!second.declared_sent_at||second.status==='prepared'&&stale(second))){stage=14;reason=second?'Rappel J+14 à repréparer':'Rappel J+14 prêt à préparer'}
+ else if(secondSent)reason='Rappel J+14 envoyé';
  else if(second?.status==='prepared')reason='Brouillon J+14 préparé';
- else if(second?.status==='declared_sent')reason='Rappel J+14 déclaré envoyé';
- else if(first.status==='declared_sent'&&!canAdvance)reason='Attente de 7 jours après le premier rappel';
- else reason='Premier rappel déclaré envoyé';
+ else if(firstSent&&!canAdvance)reason='Attente de 7 jours après le premier rappel';
+ else reason='Premier rappel envoyé';
  return {i,l,t,p,outstanding,pending,days,stage,reason,drafts};
 }
 function renderEmails(){
@@ -1674,9 +1910,9 @@ function renderEmails(){
  const drafts=db.reminder_drafts||[],ready=plans.filter(x=>x.stage>0).length;
  const withPending=plans.filter(x=>x.outstanding>0.005&&x.pending>0.005).length;
  const verified=plans.filter(x=>x.outstanding>0.005&&x.days>=7&&x.stage===0).length;
- const output=section('Relances locatives','Les délais J+7 et J+14 créent des propositions, jamais un envoi automatique.','<button class="btn secondary" onclick="refresh()">Actualiser les règlements</button>')+
+ const output=section('Relances locatives','Suivi des impayés et modèles de communication. Les modes d’envoi se règlent dans Paramètres.','<button class="btn secondary" onclick="refresh()">Actualiser les règlements</button>')+emailAutomationPanel()+
  stats([['Échéances à suivre',plans.filter(x=>x.outstanding>0.005).length],['Rappels préparables',ready],['Règlements à rapprocher',withPending],['Relances en attente',verified]])+
- '<div class="note">Les relances sont préparées en brouillon pour vérification. Les paiements non affectés doivent être rapprochés avant une relance. Un envoi depuis Messagerie Free demande une connexion SMTP vérifiée et votre confirmation du message.</div>'+
+ '<div class="note">Les paiements non affectés doivent être rapprochés avant une relance. Les messages automatiques contrôlent à nouveau le solde et le destinataire avant l’envoi. Les brouillons manuels ci-dessous restent disponibles.</div>'+
  '<div class="section-head" style="margin-top:18px"><div><h2>Échéances et situations</h2></div></div>'+
  dataTable(['Bien / locataire','Échéance','En retard de','Reste dû','Situation','Action'],cases.sort((a,b)=>a.i.due_on.localeCompare(b.i.due_on)).map(x=>
  '<tr><td><b>'+esc(x.p?.name||'—')+'</b><div class="muted">'+esc(x.l?.tenant_name||'—')+'</div></td><td>'+esc(x.i.due_on)+'</td><td>'+Math.max(0,x.days)+' j</td><td><b>'+money(x.outstanding)+'</b></td><td><span class="mini-tag '+(x.stage>0?'warn':'')+'">'+esc(x.reason)+'</span></td><td>'+
@@ -1687,9 +1923,10 @@ function renderEmails(){
   const l=(db.leases||[]).find(x=>x.id===r.lease_id);
   const p=(db.properties||[]).find(x=>x.id===l?.property_id);
   const plan=plans.find(x=>x.i.id===r.installment_id);
+  const delivery=reminderDelivery(r),deliveryLabel=delivery?{sent:'Envoyé par la messagerie',sending:'Envoi en cours',uncertain:'Résultat d’envoi à vérifier',draft:'Message préparé dans la messagerie'}[delivery.status]:'';
   const safe=plan&&plan.l?.status==='active'&&plan.l.verified_at&&plan.outstanding>0.005&&plan.pending<=0.005&&Math.abs(Number(r.due_at_preparation)-plan.outstanding)<0.005&&String(r.recipient_email||'').trim().toLowerCase()===String(plan.t?.data?.['Mail locataire']||'').trim().toLowerCase();
-  return '<tr><td>'+esc(p?.name||'—')+'</td><td>J+'+esc(r.stage)+'</td><td>'+esc(r.recipient_email||'—')+'</td><td>'+esc(r.prepared_at?.slice(0,10)||'—')+'</td><td><span class="mini-tag '+(r.status==='declared_sent'?'':'warn')+'">'+esc(r.status==='prepared'?(safe?'À envoyer manuellement':'À revérifier'):r.status==='declared_sent'?'Déclaré envoyé':'Annulé')+'</span></td><td><div class="item-actions">'+
- (r.status==='prepared'&&safe&&!db.current_user?.read_only?'<button class="btn secondary" data-id="'+esc(r.id)+'" onclick="composeRentalReminder(this.dataset.id)">Ouvrir le brouillon</button><button class="btn secondary" data-id="'+esc(r.id)+'" onclick="confirmRentalReminderSent(this.dataset.id)">Déclarer envoyé</button>':'—')+
+  return '<tr><td>'+esc(p?.name||'—')+'</td><td>J+'+esc(r.stage)+'</td><td>'+esc(r.recipient_email||'—')+'</td><td>'+esc(r.prepared_at?.slice(0,10)||'—')+'</td><td><span class="mini-tag '+(r.status==='declared_sent'||delivery?.status==='sent'?'':'warn')+'">'+esc(deliveryLabel||(r.status==='prepared'?(safe?'À envoyer manuellement':'À revérifier'):r.status==='declared_sent'?'Déclaré envoyé':'Annulé'))+'</span></td><td><div class="item-actions">'+
+ (delivery?'<button class="btn secondary" data-id="'+esc(delivery.id)+'" onclick="viewMailDraft(this.dataset.id)">Consulter le message</button>':r.status==='prepared'&&safe&&!db.current_user?.read_only?'<button class="btn secondary" data-id="'+esc(r.id)+'" onclick="composeRentalReminder(this.dataset.id)">Ouvrir le brouillon</button><button class="btn secondary" data-id="'+esc(r.id)+'" onclick="confirmRentalReminderSent(this.dataset.id)">Déclarer envoyé</button>':'—')+
  '</div></td></tr>';
  }))+
  '<div class="section-head" style="margin-top:22px"><div><h2>Courriels ponctuels</h2><p class="muted">Ouvrir une rédaction manuelle, sans envoi automatique.</p></div></div>'+
@@ -1735,22 +1972,22 @@ function renderMail(){
  const recentSync=sync?.last_sync_at?new Date(sync.last_sync_at).toLocaleString('fr-FR'):'Aucune synchronisation vérifiée';
  const catchup=sync?.catchup_pending===true?'<p class="note">Rattrapage en cours : d’autres messages restent à examiner. Les prochains passages reprendront au dernier message traité.</p>':sync?.catchup_pending===false?'<p class="muted">Rattrapage terminé pour les messages disponibles au début du dernier passage.</p>':'';
  const tools=db.current_user?.read_only?'<span class="mini-tag">Lecture seule</span>':'<button class="btn secondary" onclick="testMailConnection()">Tester IMAP / SMTP</button><button class="btn secondary" onclick="syncFreeMail()">Synchroniser</button><button class="btn primary" onclick="composeMail()">+ Rédiger</button>';
- const setup=connected?'<div class="note mail-banner">Identifiants enregistrés côté serveur. IMAP : <b>'+(imapVerified?'Vérifié':'À tester')+'</b> · SMTP : <b>'+(smtpVerified?'Vérifié':'À tester')+'</b>.<p class="muted">Réception automatique programmée de 06h à 21h UTC, une fois par heure, et déclenchée uniquement après vérification IMAP. Dernière réception réussie : '+esc(recentSync)+'. Aucun envoi automatique.</p></div>':
+ const setup=connected?'<div class="note mail-banner">Identifiants enregistrés côté serveur. IMAP : <b>'+(imapVerified?'Vérifié':'À tester')+'</b> · SMTP : <b>'+(smtpVerified?'Vérifié':'À tester')+'</b>.<p class="muted">Réception automatique programmée de 06h à 21h UTC, une fois par heure, après vérification IMAP. Dernière réception réussie : '+esc(recentSync)+'.</p></div>':
  '<div class="note mail-banner"><b>Connexion à effectuer :</b> ouvre <b>Paramètres</b>, saisis l’adresse du compte Free et son mot de passe, puis enregistre. Le mot de passe est chiffré dans Vault. <button class="btn primary" onclick="showPage(&quot;config&quot;)">Configurer la messagerie</button></div>';
  $('content').innerHTML=section('Messagerie Free',esc(db.current_user?.mail_account||setting('sender_email','')||'Adresse à renseigner')+' — réception IMAP 993 et envoi SMTP 465.',tools)+
- stats([['Reçus affichés',(db.mail_inbox||[]).length],['Non lus affichés',(db.mail_inbox||[]).filter(m=>!m.is_seen).length],['Brouillons affichés',(db.mail_outbox||[]).filter(m=>m.status==='draft').length],['Connexion',imapVerified?'IMAP vérifié':connected?'Test requis':'À configurer']])+setup+catchup+
+ stats([['Reçus affichés',(db.mail_inbox||[]).length],['Non lus affichés',(db.mail_inbox||[]).filter(m=>!m.is_seen).length],['Brouillons affichés',(db.mail_outbox||[]).filter(m=>m.status==='draft').length],['Connexion',imapVerified?'IMAP vérifié':connected?'Test requis':'À configurer']])+setup+catchup+emailAutomationPanel()+
  '<div class="section-head"><div><h2>Boîte de réception</h2><p class="muted">Lecture en texte seul ; les pièces jointes ne sont pas encore téléchargeables.</p></div></div>'+
  '<div class="mail-split"><div class="mail-list">'+(inbox.length?inbox.map(m=>
  '<button class="mail-item '+(m.is_seen?'':'unread')+'" data-id="'+esc(m.id)+'" onclick="openFreeInboxMail(this.dataset.id)"><b>'+esc(m.sender_email||'Expéditeur inconnu')+'</b><b>'+esc(m.subject||'(Sans objet)')+'</b><small>'+esc(m.received_at?new Date(m.received_at).toLocaleString('fr-FR'):'Date inconnue')+(m.body_status==='metadata_only'?' · En-têtes seuls':m.body_status==='truncated'?' · Texte tronqué':'')+(m.has_attachments?' · Pièces jointes':'')+'</small></button>').join(''):'<div class="empty-state">Aucun courriel synchronisé.</div>')+
  '</div><div class="mail-reader" id="mailReader"><p class="muted">Sélectionnez un message pour le lire. Aucun contenu reçu ne déclenche d’action automatiquement.</p></div></div>'+
- '<div class="section-head" style="margin-top:20px"><div><h2>Brouillons et messages envoyés</h2><p class="muted">Envoi manuel explicite ; aucun renvoi automatique des messages incertains.</p></div></div>'+
+ '<div class="section-head" style="margin-top:20px"><div><h2>Brouillons et messages envoyés</h2><p class="muted">Messages manuels et préparés par les règles. Aucun renvoi automatique des messages au résultat incertain.</p></div></div>'+
  dataTable(['Date','Destinataire','Objet','Statut','Actions'],outbox.map(m=>{
  const labels={draft:'Brouillon',sending:'En cours',sent:'Envoyé',uncertain:'À vérifier',cancelled:'Annulé'};
- return '<tr><td>'+esc(m.created_at?.slice(0,10)||'—')+'</td><td>'+esc(m.recipient_email)+'</td><td>'+esc(m.subject)+'</td><td><span class="mini-tag '+(m.status==='uncertain'?'warn':'')+'">'+esc(labels[m.status]||m.status)+'</span></td>'+
+ return '<tr><td>'+esc(m.created_at?.slice(0,10)||'—')+'</td><td>'+esc(m.recipient_email)+'</td><td>'+esc(m.subject)+(m.automation_kind?'<div class="muted">'+esc(automationKinds[m.automation_kind]||m.automation_kind)+'</div>':'')+'</td><td><span class="mini-tag '+(m.status==='uncertain'?'warn':'')+'">'+esc(labels[m.status]||m.status)+'</span></td>'+
  '<td class="item-actions"><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="viewMailDraft(this.dataset.id)">Lire</button>'+
  (m.status==='draft'&&!db.current_user?.read_only?'<button class="btn primary" data-id="'+esc(m.id)+'" onclick="sendFreeMail(this.dataset.id)" '+(connected?'':'disabled')+'>Envoyer</button><button class="btn secondary" data-id="'+esc(m.id)+'" onclick="cancelFreeMailDraft(this.dataset.id)">Annuler</button>':'')+'</td></tr>';
  }))+
- '<p class="module-note">Les 150 derniers courriels importés sont affichés. Le rattrapage progresse par lots de 30 messages au maximum et reprend au dernier message traité. Au-delà de 700 Ko, ou si leur texte est indisponible, seuls les en-têtes sont importés. Un texte dépassant 30 000 caractères est signalé comme tronqué. Consultez Free pour le contenu complet et les pièces jointes. Après authentification IMAP réussie, la boîte est consultée chaque heure entre 06h et 21h UTC. Les messages restent conservés sur Free ; aucun message reçu ne déclenche une opération comptable ou un envoi automatique.</p>';
+ '<p class="module-note">Les 150 derniers courriels importés sont affichés. Le rattrapage progresse par lots de 30 messages au maximum et reprend au dernier message traité. Au-delà de 700 Ko, ou si leur texte est indisponible, seuls les en-têtes sont importés. Un texte dépassant 30 000 caractères est signalé comme tronqué. Consultez Free pour le contenu complet et les pièces jointes. Les signalements détectés restent à vérifier avant création d’un dossier de travaux. Les messages restent conservés sur Free.</p>';
 }
 window.testMailConnection=async()=>{
  if(!db?.current_user?.mail_access||db.current_user?.read_only)return;
@@ -1777,7 +2014,7 @@ window.openFreeInboxMail=async id=>{
   pane.innerHTML='<h3>'+esc(m.subject||'(Sans objet)')+'</h3><p class="muted">De : '+esc(m.sender_email||'')+'</p>'+
   mailContentNote(m)+(m.body_status==='metadata_only'?'':'<pre class="mail-text">'+esc(m.plain_body||'Corps texte non disponible')+'</pre>')+
   (m.has_attachments?'<p class="note">'+Number(m.attachment_count||0)+' pièce(s) jointe(s) détectée(s), téléchargement non activé.</p>':'')+
-  '<button class="btn primary" id="reply-free-mail">Répondre</button>';
+  '<div class="actions"><button class="btn primary" id="reply-free-mail">Répondre</button>'+(db.current_user?.work_access&&!db.current_user?.read_only?'<button class="btn secondary" id="analyze-mail-complaint" data-id="'+esc(id)+'" onclick="analyzeMailComplaint(this.dataset.id)">Analyser pour les travaux</button>':'')+'</div><div id="mail-complaint-status" class="status" role="status"></div>';
   $('reply-free-mail').onclick=()=>composeMail(m.sender_email,'Re: '+m.subject,'',m.id);
   if(!m.is_seen){await api('mail-mark-read','POST',{id});if(!current())return;const local=(db.mail_inbox||[]).find(x=>x.id===id);if(local)local.is_seen=true;}
  }catch(e){if(current())pane.innerHTML='<p class="muted">'+esc(e.message||'Erreur')+'</p>'}
@@ -1818,6 +2055,7 @@ window.cancelFreeMailDraft=async id=>{
 
 function renderGuide(){$('content').innerHTML=`<div class="card"><h3>Commandes reproduites</h3>${db.commands.map(c=>`<div class="kv"><b>${esc(c.label)}</b><div><code>${esc(c.function)}</code><div class="muted">${esc(c.description)}</div></div></div>`).join('')}</div><br><div class="card"><h3>Organisation du classeur reproduite</h3><p>Suivi_Locataires : ${db.tenant_headers.length} colonnes, avec les listes OUI/NON et les états d’alerte conservés dans les données.</p><p>Config : paramètres IRL, seuil de révision, délais de relance, liens INSEE et préfixe des dossiers.</p><p>Modele_Dossier_Logement : informations logement, locataire actuel, historique, échéancier et synthèse.</p><p>Dossier_Exemple : les valeurs du classeur sont présentes dans l’onglet « Dossiers logement ».</p></div>`}
 window.closeModal=()=>{$('modal').innerHTML=''};
+inspectBankReturn();
 if(token){$('login').classList.add('hide');$('app').classList.remove('hide');initNav();refresh()}else $('login').classList.remove('hide');
 })();
 </script>

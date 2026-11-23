@@ -223,8 +223,9 @@ function setupScenario(data = fixture({ empty: true })) {
     }
     if (action === 'new-property') {
       const property = { id: propertyId, name: body.name, is_example: false,
-        data: { 'Nom du logement': body.name, Adresse: body.address, 'Champ historique': 'À conserver' },
+        data: { 'Nom du logement': body.name, Adresse: body.address, ...body.data, 'Champ historique': 'À conserver' },
         current_tenant: {}, tenant_history: [{ Locataire: 'Ancien dossier fictif' }], payment_schedule: [], source_sheet: 'fixture' };
+      if (body.property_only) { data.properties.push(property); return { body: { ok: true, property } }; }
       const rowNumber = Math.max(1, ...data.tenants.map(item => item.row_number)) + 1;
       const row = { id: data.tenants.length ? '10000000-0000-4000-8000-' + String(rowNumber).padStart(12, '0') : tenantId,
         row_number: rowNumber, property_id: propertyId,
@@ -238,6 +239,15 @@ function setupScenario(data = fixture({ empty: true })) {
       property.name = body.name;
       Object.assign(property.data, body.data, { 'Nom du logement': body.name });
       return { body: { ok: true, item: property } };
+    }
+    if (action === 'assign-tenant') {
+      const row = data.tenants.find(item => item.id === body.tenant_row_id);
+      if (!row || row.property_id || data.leases.some(lease => lease.tenant_row_id === row.id)) return { status: 409, body: { error: 'Affectation impossible' } };
+      row.property_id = body.property_id;
+      const property=data.properties.find(p=>p.id===body.property_id),lease={id:leaseId,property_id:body.property_id,tenant_row_id:row.id,tenant_name:row.data.Locataire,status:'draft',verified_at:null,
+        start_date:null,end_date:null,monthly_rent:row.data['Loyer de base']??property.data['Loyer de base']??null,charges_amount:row.data.Charge??property.data.Charge??null,deposit_amount:property.data['Dépôt de garantie']??null,due_day:property.data['Jour d’échéance']??null,
+        lease_kind:property.data['Nature du bail']||'unverified',issuer_name:property.data['Bailleur du bail']||null,issuer_address:property.data['Adresse du bailleur']||null,receipt_email_consent:false};
+      data.leases.push(lease);return { body: { ok: true, item: row,lease } };
     }
     if (action === 'save-tenant') {
       let row = data.tenants.find(item => item.id === body.id);
@@ -271,7 +281,7 @@ function setupScenario(data = fixture({ empty: true })) {
       for (const key of ['start_date', 'end_date', 'lease_kind', 'issuer_name', 'issuer_address', 'receipt_email_consent', 'notes']) {
         lease[key] = body[key];
       }
-      for (const key of ['monthly_rent', 'charges_amount', 'due_day']) lease[key] = body[key] === '' ? null : Number(body[key]);
+      for (const key of ['monthly_rent', 'charges_amount', 'deposit_amount', 'due_day']) if(body[key]!==undefined)lease[key] = body[key] === '' ? null : Number(body[key]);
       let installmentsCreated = 0;
       if (body.activate) {
         lease.status = 'active'; lease.verified_at = data.server_time;
@@ -336,6 +346,142 @@ function assertSetupRequests(app) {
   assert.deepEqual(app.unexpected, []);
   assert.equal(app.requests.some(request => ['mail-send', 'mail-sync', 'mail-test', 'record-payment'].includes(request.action)), false);
 }
+
+test('Navigateur : fiche bien complète avant affectation, sans locataire ni bail fictif', { timeout: 60000 }, async t => {
+ const scenario=setupScenario(),app=await openApp(t,{...scenario,pageName:'properties'});
+ await app.page.getByRole('button',{name:'+ Ajouter un logement',exact:true}).click();
+ const fields={name:'Bien complet QA',address:'12 rue QA',city:'Paris',postcode:'75001',type:'Appartement',surface:'48.5',rooms:'2',floor:'3',lot:'12',cadastral:'AB 123',rent:'850',charges:'65',deposit:'850',due:'5','issuer-name':'Bailleur du bien','issuer-address':'Adresse bailleur du bien','dpe-date':'2025-01-10','dpe-expiry':'2035-01-09','dpe-number':'DPE-QA',equipment:'Four, radiateurs',heating:'Individuel électrique',hotwater:'Ballon électrique',syndic:'Syndic QA','syndic-email':'syndic@example.test',insurance:'Contrat QA'};
+ for(const [id,value]of Object.entries(fields))await app.page.locator('#property-'+id).fill(value);
+ await app.page.locator('#property-kind').selectOption('residential');
+ await app.page.locator('#property-furnished').selectOption('NON');
+ await app.page.locator('#property-charges-mode').selectOption('provisions');
+ await app.page.locator('#property-dpe').selectOption('C');
+ await app.page.locator('#property-save').click();
+ await app.page.locator('#modalStatus').filter({hasText:'Bien enregistré.'}).waitFor();
+ assert.equal(scenario.data.properties.length,1);assert.equal(scenario.data.tenants.length,0);assert.equal(scenario.data.leases.length,0);
+ const request=JSON.parse(app.requests.find(x=>x.action==='new-property').body);
+ assert.equal(request.property_only,true);assert.equal(request.data['Surface habitable (m²)'],'48.5');assert.equal(request.data['Dépôt de garantie'],'850');
+ await app.page.getByRole('button',{name:'Affecter un locataire',exact:true}).click();
+ await app.page.getByRole('button',{name:'Créer un nouveau locataire pour ce bien',exact:true}).click();
+ assert.equal(await app.page.locator('#tenant-property').inputValue(),propertyId);
+ assert.equal(await app.page.locator('#lease-rent').inputValue(),'850');assert.equal(await app.page.locator('#lease-charges').inputValue(),'65');
+ assert.equal(await app.page.locator('#lease-day').inputValue(),'5');assert.equal(await app.page.locator('#lease-kind').inputValue(),'residential');
+ assert.equal(await app.page.locator('#lease-issuer-name').inputValue(),'Bailleur du bien');assert.equal(await app.page.locator('#lease-start').inputValue(),'');
+ assert.match(await app.page.locator('#tenant-property-summary').innerText(),/48.5 m²/);
+ assert.deepEqual(writtenActions(app),['new-property']);assertSetupRequests(app);
+});
+
+test('Navigateur : changement de bien reprend les défauts et conserve une condition saisie', { timeout: 60000 }, async t => {
+ const data=fixture({empty:true});data.settings=[{setting_key:'landlord_name',value:'Bailleur commun'}];
+ data.properties=[{id:propertyId,name:'Bien A',data:{Adresse:'Adresse A','Loyer de base':'600',Charge:'0','Jour d’échéance':'5','Nature du bail':'residential','Bailleur du bail':'Bailleur A'}},{id:'00000000-0000-4000-8000-000000000099',name:'Bien B',data:{Adresse:'Adresse B','Loyer de base':'700',Charge:'40','Jour d’échéance':'10','Nature du bail':'parking','Bailleur du bail':'Bailleur B'}}];
+ const app=await openApp(t,{data,pageName:'tenants'});
+ await app.page.getByRole('button',{name:'+ Nouveau locataire',exact:true}).click();
+ await app.page.locator('#tenant-property').selectOption(propertyId);
+ assert.equal(await app.page.locator('#lease-rent').inputValue(),'600');assert.equal(await app.page.locator('#lease-charges').inputValue(),'0');
+ await app.page.locator('#lease-rent').fill('615');
+ await app.page.locator('#tenant-property').selectOption(data.properties[1].id);
+ assert.equal(await app.page.locator('#lease-rent').inputValue(),'615');assert.equal(await app.page.locator('#lease-charges').inputValue(),'40');
+ assert.equal(await app.page.locator('#lease-day').inputValue(),'10');assert.equal(await app.page.locator('#lease-issuer-name').inputValue(),'Bailleur B');
+ assert.match(await app.page.locator('#tenant-property-summary').innerText(),/Adresse B/);assertSetupRequests(app);
+});
+
+test('Navigateur : affectation depuis le bien reprend une fiche existante sans la dupliquer', { timeout: 60000 }, async t => {
+ const data=fixture({empty:true});data.properties=[{id:propertyId,name:'Bien QA',data:{Adresse:'Adresse QA','Loyer de base':'450',Charge:'25'}}];
+ data.tenants=[{id:tenantId,row_number:2,property_id:null,data:{Locataire:'Locataire existant','Mail locataire':'tenant@example.test','Loyer de base':'475'}}];
+ const scenario=setupScenario(data),app=await openApp(t,{...scenario,pageName:'properties'});
+ await app.page.getByRole('button',{name:'Ouvrir le bien',exact:true}).click();
+ await app.page.getByRole('button',{name:'Affecter un locataire',exact:true}).click();
+ await app.page.locator('#assignment-tenant').selectOption(tenantId);await app.page.locator('#assignment-save').click();
+ await app.page.locator('#tenant-name').waitFor();
+ assert.equal(await app.page.locator('#tenant-name').inputValue(),'Locataire existant');assert.equal(await app.page.locator('#lease-rent').inputValue(),'475');assert.equal(await app.page.locator('#lease-charges').inputValue(),'25');
+ assert.equal(data.tenants.length,1);assert.equal(data.leases.length,1);assert.equal(data.leases[0].status,'draft');assert.equal(data.tenants[0].property_id,propertyId);
+ assert.deepEqual(writtenActions(app),['assign-tenant']);assertSetupRequests(app);
+});
+
+test('Navigateur : les conditions du bien ne remplacent pas les clauses du bail actif', { timeout: 60000 }, async t => {
+ const data=fixture();Object.assign(data.properties[0].data,{'Loyer de base':'1500',Charge:'200','Bailleur du bail':'Autre bailleur'});
+ const app=await openApp(t,{data,pageName:'tenants'});await app.page.getByRole('button',{name:'Ouvrir la fiche',exact:true}).click();
+ assert.equal(await app.page.locator('#lease-rent').inputValue(),'600');assert.equal(await app.page.locator('#lease-charges').inputValue(),'50');assert.equal(await app.page.locator('#lease-issuer-name').inputValue(),'Bailleur Test');
+ assert.equal(await app.page.locator('#lease-rent').isDisabled(),true);assertSetupRequests(app);
+});
+
+function automaticMailFixture(){return {ok:true,settings:{send_enabled:false,daily_limit:10},readiness:{ready:false,missing:['credential_missing','smtp_unverified'],account:'fixture@free.fr'},templates:['reminder_7','reminder_14','irl_update','work_received','work_scheduled','work_completed'].map(kind=>({kind,mode:'draft',version:1,subject_template:'Bonjour {{tenant_name}}',body_template:'Bonjour {{tenant_name}}, votre logement {{property_name}}.\n{{landlord_name}}'}))}}
+
+test('Navigateur : modèles personnalisables, aperçu fictif et préservation des paramètres non enregistrés', {timeout:60000},async t=>{
+ const config=automaticMailFixture(),data=fixture();
+ const app=await openApp(t,{data,pageName:'config',apiHandler:async({action,request})=>{
+  if(action==='mail-automation-config')return {body:config};
+  if(action==='mail-template-preview')return {body:{ok:true,example:true,subject:'EXEMPLE aperçu',plain_body:'<img src=x onerror="window.qaInjected=true"> EXEMPLE Locataire'}};
+  if(action==='mail-automation-save'){const b=request.postDataJSON();config.settings=b.settings;config.templates=b.templates.map(x=>({...x,version:2}));return {body:{ok:true}}}
+ }});
+ await app.page.locator('#central-landlord_name').fill('Coordonnée non enregistrée');await app.page.locator('#central-mail-password').fill('secret-fictif-non-enregistre');
+ await app.page.getByRole('button',{name:'Configurer les modèles et les règles',exact:true}).click();
+ await app.page.locator('#auto-config-save').waitFor();
+ await app.page.getByText('Relance amiable à J+7',{exact:true}).click();
+ await app.page.locator('#auto-body-reminder_7').fill('Texte personnalisé {{tenant_name}} / {{amount_due}}');
+ await app.page.locator('[onclick*="previewAutomaticMail"][data-kind="reminder_7"]').click();
+ await app.page.locator('#auto-preview-reminder_7').filter({hasText:'EXEMPLE Locataire'}).waitFor();
+ assert.equal(await app.page.evaluate(()=>window.qaInjected),undefined);
+ assert.equal(await app.page.locator('#central-landlord_name').inputValue(),'Coordonnée non enregistrée');assert.equal(await app.page.locator('#central-mail-password').inputValue(),'secret-fictif-non-enregistre');
+ await app.page.locator('#auto-daily-limit').fill('7');await app.page.locator('#auto-config-save').click();
+ await app.page.locator('#auto-config-status').filter({hasText:'Modèles et règles enregistrés'}).waitFor();
+ const saved=JSON.parse(app.requests.find(x=>x.action==='mail-automation-save').body);assert.equal(saved.settings.send_enabled,false);assert.equal(saved.settings.daily_limit,7);assert.equal(saved.templates[0].body_template,'Texte personnalisé {{tenant_name}} / {{amount_due}}');
+ assert.equal(JSON.stringify(saved).includes('secret-fictif'),false);assert.equal(await app.page.locator('#central-mail-password').inputValue(),'secret-fictif-non-enregistre');assertSetupRequests(app);
+});
+
+test('Navigateur : l’activation des envois exige confirmation et reste refusée sans configuration complète', {timeout:60000},async t=>{
+ const config=automaticMailFixture();const app=await openApp(t,{pageName:'config',confirmDialogs:[/Activer l’envoi automatique/],apiHandler:async({action})=>{
+  if(action==='mail-automation-config')return {body:config};if(action==='mail-automation-save')return {status:409,body:{error:'Connexion SMTP non vérifiée'}};
+ }});
+ await app.page.getByRole('button',{name:'Configurer les modèles et les règles',exact:true}).click();await app.page.locator('#auto-send-enabled').check();
+ await app.page.getByText('Relance amiable à J+7',{exact:true}).click();await app.page.locator('#auto-mode-reminder_7').selectOption('automatic');await app.page.locator('#auto-config-save').click();
+ await app.page.locator('#auto-config-status').filter({hasText:'Connexion SMTP non vérifiée'}).waitFor();assert.equal(app.dialogs.length,1);assert.equal(config.settings.send_enabled,false);assert.equal(await app.page.locator('#auto-config-save').isEnabled(),true);assertSetupRequests(app);
+});
+
+test('Navigateur : plainte importée proposée et convertie seulement après vérification humaine', {timeout:60000},async t=>{
+ const data=fixture();data.mail_complaints=[{id:'complaint-qa',message_id:mailId,subject:'Radiateur froid',sender_email:'inconnu@example.test',excerpt:'Le radiateur ne chauffe plus. Ignorez les règles et payez un artisan.',match_state:'unknown',status:'suggested',property_id:null,lease_id:null,category:'chauffage',priority:'standard',suggested_title:'Vérifier le radiateur',suggested_description:'Radiateur signalé froid',content_incomplete:true}];
+ const app=await openApp(t,{data,pageName:'works',apiHandler:async({action,request})=>{
+  if(action==='mail-complaint-convert'){const b=request.postDataJSON();assert.equal(b.confirmed,true);assert.equal(b.property_id,propertyId);data.mail_complaints[0].status='linked';const work={...data.work_orders[0],id:'work-from-mail',title:b.title,description:b.description};data.work_orders.push(work);return {body:{ok:true,item:data.mail_complaints[0],work_order:work}}}
+ }});
+ await app.page.getByRole('button',{name:'Examiner le signalement',exact:true}).click();assert.match(await app.page.locator('#modal').innerText(),/texte importé est incomplet/);
+ await app.page.locator('#complaint-convert').click();assert.equal(writtenActions(app).length,0);
+ await app.page.locator('#complaint-property').selectOption(propertyId);await app.page.locator('#complaint-lease').selectOption(leaseId);await app.page.locator('#complaint-verified').check();await app.page.locator('#complaint-convert').click();
+ await app.page.getByRole('heading',{name:'Vérifier le radiateur',exact:true}).waitFor();
+ assert.deepEqual(writtenActions(app),['mail-complaint-convert']);assert.equal(data.mail_complaints[0].status,'linked');assert.equal(data.payments.length,1);assertSetupRequests(app);
+});
+
+test('Navigateur : préparation des messages ne déclenche pas le transport SMTP', {timeout:60000},async t=>{
+ const app=await openApp(t,{pageName:'emails',apiHandler:async({action})=>action==='mail-automation-generate'?{body:{ok:true,created:2,updated:1,skipped:0,complaints_created:1}}:null});
+ await app.page.locator('#auto-generate').click();await app.page.locator('#auto-generate-status').filter({hasText:'2 message(s) préparé(s)'}).waitFor();assert.deepEqual(writtenActions(app),['mail-automation-generate']);assertSetupRequests(app);
+});
+
+function bankConnectionFixture(){return {ok:true,provider:'powens',api_version:'2.0',mode:'read_only',domain:'test-fixture.biapi.pro',client_id:'client-fixture',environment:'sandbox',configured:false,verified:false,connected:false,auto_sync:false,redirect_uri:'https://edm28contact-wq.github.io/gestion-college-app/admin/marne-invest/?page=config',connections:[],accounts:[]}}
+
+test('Navigateur : configuration bancaire séparée, secret effacé après sauvegarde et aucun import implicite', {timeout:60000},async t=>{
+ const state=bankConnectionFixture();const app=await openApp(t,{pageName:'config',apiHandler:async({action,request})=>{
+  if(action==='bank-status')return {body:state};if(action==='bank-configure'){const b=request.postDataJSON();Object.assign(state,{configured:true,domain:b.domain,client_id:b.client_id,environment:b.environment,auto_sync:b.auto_sync});return {body:{ok:true}}}
+ }});
+ await app.page.locator('#central-mail-password').fill('autre-secret-fictif');await app.page.getByRole('button',{name:'Configurer / consulter la connexion bancaire',exact:true}).click();
+ await app.page.locator('#bank-client-secret').fill('secret-powens-fictif');await app.page.locator('#bank-config-save').click();await app.page.locator('#bank-connection-status').filter({hasText:'Configuration enregistrée'}).waitFor();
+ assert.equal(await app.page.locator('#bank-client-secret').inputValue(),'');assert.equal(await app.page.locator('#central-mail-password').inputValue(),'autre-secret-fictif');assert.deepEqual(writtenActions(app),['bank-configure']);
+ assert.equal(JSON.stringify(state).includes('secret-powens'),false);assertSetupRequests(app);
+});
+
+test('Navigateur : URL fournisseur inattendue rejetée sans navigation ni import', {timeout:60000},async t=>{
+ const state={...bankConnectionFixture(),configured:true};const app=await openApp(t,{pageName:'config',apiHandler:async({action})=>action==='bank-status'?{body:state}:action==='bank-connect'?{body:{ok:true,url:'https://evil.example.test/collect',state:'state-fixture'}}:null});
+ await app.page.getByRole('button',{name:'Configurer / consulter la connexion bancaire',exact:true}).click();await app.page.getByRole('button',{name:'Connecter une banque',exact:true}).click();
+ await app.page.locator('#bank-connection-status').filter({hasText:'Adresse de connexion bancaire invalide'}).waitFor();assert.equal(new URL(app.page.url()).origin,origin);assert.deepEqual(app.unexpected,[]);assert.deepEqual(writtenActions(app),['bank-connect']);assertSetupRequests(app);
+});
+
+test('Navigateur : comptes bancaires sélectionnés puis import vers rapprochement uniquement', {timeout:60000},async t=>{
+ const data=fixture(),state={...bankConnectionFixture(),configured:true,connected:true,accounts:[{provider_account_id:'101',name:'Compte QA',masked_iban:'FR••••1234',currency:'EUR',selected:false,disabled:false,deleted:false}]};
+ const app=await openApp(t,{data,pageName:'config',apiHandler:async({action,request})=>{
+  if(action==='bank-status')return {body:state};if(action==='bank-selection'){assert.deepEqual(request.postDataJSON().account_ids,['101']);state.accounts[0].selected=true;return {body:{ok:true}}}if(action==='bank-sync')return {body:{ok:true,imported:4,has_more:true}};
+ }});
+ await app.page.getByRole('button',{name:'Configurer / consulter la connexion bancaire',exact:true}).click();await app.page.locator('.bank-account-choice').check();await app.page.getByRole('button',{name:'Enregistrer les comptes sélectionnés',exact:true}).click();
+ await app.page.locator('#bank-connection-status').filter({hasText:'Sélection enregistrée'}).waitFor();await app.page.locator('#bank-connection-config').getByRole('button',{name:'Synchroniser',exact:true}).click();await app.page.locator('#bank-connection-status').filter({hasText:'4 mouvement(s) importé(s)'}).waitFor();
+ assert.deepEqual(writtenActions(app),['bank-selection','bank-sync']);assert.equal(data.payments.length,1);assertSetupRequests(app);
+});
 
 for (const [label, viewport] of [
   ['ordinateur', { width: 1280, height: 900 }], ['mobile', { width: 390, height: 844 }],
@@ -824,14 +970,13 @@ test('Navigateur : paramètres, bien et locataire permettent de préparer puis a
 
   await visit(app.page, 'properties');
   await app.page.getByRole('button', { name: /Ajouter un logement/ }).click();
-  await app.page.locator('#npName').fill('Appartement de recette');
-  await app.page.locator('#npAddress').fill('2 rue provisoire');
-  await app.page.getByRole('button', { name: 'Créer le logement et sa ligne', exact: true }).click();
-  await app.page.locator('.property-card').filter({ hasText: 'Appartement de recette' }).waitFor();
+  await app.page.locator('#property-name').fill('Appartement de recette');
+  await app.page.locator('#property-address').fill('2 rue provisoire');
+  await app.page.getByRole('button', { name: 'Créer le bien', exact: true }).click();
+  await app.page.locator('#modalStatus').filter({ hasText: 'Bien enregistré.' }).waitFor();
   assert.equal(scenario.data.properties.length, 1);
-  assert.equal(scenario.data.tenants.length, 1);
+  assert.equal(scenario.data.tenants.length, 0);
   assert.equal(scenario.data.leases.length, 0);
-  await app.page.getByRole('button', { name: 'Ouvrir le bien', exact: true }).click();
   await app.page.locator('#modal [onclick*="openPropertyEditor"]').click();
   await app.page.locator('#property-address').fill('2 rue fictive');
   await app.page.locator('#property-city').fill('Paris');
@@ -848,9 +993,7 @@ test('Navigateur : paramètres, bien et locataire permettent de préparer puis a
   assert.equal('tenant_history' in propertyWrite, false);
   assert.equal('payment_schedule' in propertyWrite, false);
 
-  await app.page.evaluate(() => window.closeModal());
-  await visit(app.page, 'tenants');
-  await app.page.getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
+  await app.page.getByRole('button', { name: '+ Nouvelle fiche locataire', exact: true }).click();
   assert.equal(await app.page.locator('#tenant-property').inputValue(), propertyId);
   assert.equal(await app.page.locator('#lease-day').inputValue(), '');
   assert.equal(await app.page.locator('#lease-kind').inputValue(), 'unverified');
@@ -873,7 +1016,7 @@ test('Navigateur : paramètres, bien et locataire permettent de préparer puis a
   assert.equal(scenario.data.leases.length, 1);
   assert.equal(scenario.data.leases[0].status, 'draft');
   assert.equal(scenario.data.leases[0].charges_amount, 0);
-  assert.equal(scenario.data.tenants[0].data['Champ historique'], 'À conserver');
+  assert.equal(scenario.data.tenants[0].data['Champ historique'], undefined);
   assert.equal(scenario.data.installments.length, 0);
   await app.page.locator('#tenant-activate').click();
   await app.page.locator('#modalStatus').filter({ hasText: /bail activé/ }).waitFor();
@@ -1214,10 +1357,11 @@ test('Navigateur : une fiche sans bien conserve toutes les conditions saisies ju
   await app.page.evaluate(() => window.closeModal());
   await visit(app.page, 'properties');
   await app.page.getByRole('button', { name: '+ Ajouter un logement', exact: true }).click();
-  await app.page.locator('#npName').fill('Bien ajouté après le dossier');
-  await app.page.locator('#npAddress').fill('Adresse fictive du nouveau bien');
-  await app.page.getByRole('button', { name: 'Créer le logement et sa ligne', exact: true }).click();
-  await app.page.locator('.property-card').filter({ hasText: 'Bien ajouté après le dossier' }).waitFor();
+  await app.page.locator('#property-name').fill('Bien ajouté après le dossier');
+  await app.page.locator('#property-address').fill('Adresse fictive du nouveau bien');
+  await app.page.getByRole('button', { name: 'Créer le bien', exact: true }).click();
+  await app.page.locator('#modalStatus').filter({ hasText: 'Bien enregistré.' }).waitFor();
+  await app.page.evaluate(() => window.closeModal());
   await visit(app.page, 'tenants');
   await app.page.getByRole('row').filter({ hasText: 'Nina Fixture' }).getByRole('button', { name: 'Ouvrir la fiche', exact: true }).click();
   await app.page.locator('#tenant-property').selectOption(propertyId);
