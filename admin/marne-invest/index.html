@@ -96,6 +96,10 @@
 
 .irl-block{margin:18px 0;background:white;border:1px solid #dce5ef;border-radius:12px;padding:18px}
 .irl-block .note{margin:12px 0}.irl-block .data-table{margin-top:12px}
+
+.health-issues{display:grid;gap:9px;margin:14px 0}
+.health-item{display:flex;gap:12px;border:1px solid #dbe4ef;border-radius:10px;padding:12px;align-items:flex-start}
+.health-item p{margin:5px 0 0}
 </style>
 </head>
 <body>
@@ -140,6 +144,7 @@ const releaseMilestones=[
  ['Propositions IRL encadrées par bail','done','Calcul Insee avec clause, DPE et trimestre ; aucun loyer modifié'],
  ['Application IRL après notification vérifiée','done','Courrier préparé, date d’envoi attestée, prise d’effet différée ; aucun envoi automatique'],
  ['Archivage privé des PDF et pièces','done','PDF et images déposés par logement, accès contrôlé et téléchargements temporaires'],
+ ['Diagnostic quotidien des anomalies','done','Vérification de 5 planifications, paiements, loyers, archives et réception Free, sans opérations automatiques'],
  ['Recette de bout en bout en production','partial','18 tests de régression et contrôles SQL ; recette navigateur authentifiée à réaliser']
 ];
 function releaseStatus(){
@@ -190,6 +195,65 @@ function renderPropertyReadiness(){
  '<p class="module-note">Les biens ne sont jamais activés automatiquement : vérifiez les contrats signés et les informations d’entrée. Les documents servent à l’archivage et ne constituent pas à eux seuls une validation contractuelle.</p></section>';
 }
 
+
+function renderOperationsHealth(){
+ if(!db.current_user?.payment_void_access)return '';
+ const reports=db.health_reports||[],latest=reports[0];
+ const state=latest?.status==='anomaly'?'Anomalies à traiter':latest?.status==='attention'?'Points de vigilance':'Aucune anomalie détectée';
+ const stamp=latest?.checked_at?new Date(latest.checked_at).toLocaleString('fr-FR'):'Aucune exécution';
+ const issues=Array.isArray(latest?.checks)?latest.checks:[];
+ const metrics=latest?.metrics||{};
+ const messages={
+  DUPLICATE_ACTIVE_LEASE:'Ouvrir les baux et identifier les contrats actifs en doublon',
+  INSTALLMENT_OVERPAID:'Contrôler les affectations dans Transactions',
+  PAYMENT_OVERALLOCATED:'Contrôler les paiements et leur répartition',
+  BANK_PAYMENT_INVALID:'Vérifier les rapprochements bancaires et les paiements annulés',
+  DOCUMENT_MISSING:'Contrôler les fichiers privés de la rubrique Documents',
+  IRL_ACTIVATION_DELAY:'Contrôler les révisions IRL programmées dans Contrats',
+  BANK_BACKLOG:'Rapprocher les virements en attente dans Transactions',
+  MAIL_SYNC_STALE:'Tester IMAP dans Paramètres et vérifier la connexion Free',
+  CRON_NOT_ACTIVE:'Contrôler les tâches de Supabase Cron',
+  CRON_LAST_FAILURE:'Consulter le dernier échec de la tâche dans Supabase Cron'
+ };
+ const lastRows=reports.slice(0,7).map(r=>'<div class="kv"><span>'+esc(new Date(r.checked_at).toLocaleString('fr-FR'))+
+  ' · '+esc(r.trigger_type==='daily'?'Automatique':'Manuel')+'</span><b>'+esc(r.status==='ok'?'Sans anomalie':r.status==='attention'?'Attention':'Anomalies')+
+  ' · '+Number(r.critical_count||0)+' critique(s), '+Number(r.warning_count||0)+' avertissement(s)</b></div>').join('');
+ return '<section class="release-block" id="operationsHealth"><div class="section-head"><div><h3>Diagnostic automatique du système</h3>'+
+  '<p class="muted">Contrôle quotidien à 09h05 UTC. Lecture seule des contrats et des paiements, sans correction ni envoi automatique.</p></div>'+
+  '<button class="btn primary" id="health-run-button" onclick="runMarneHealth()" '+(db.current_user?.read_only?'disabled':'')+'>Lancer un diagnostic</button></div>'+
+  '<div class="kv"><b>Dernier passage</b><span>'+esc(stamp)+'</span></div>'+
+  '<div class="kv"><b>Intégrité des données contrôlées</b><span><b>'+esc(latest?state:'Contrôle à lancer')+'</b></span></div>'+
+  '<div class="kv"><b>Automatisations enregistrées</b><span>'+esc(String(metrics.cron_jobs??'—'))+' active(s)</span></div>'+
+  '<p class="muted">Ce contrôle vérifie les incohérences détectables dans la base. Il ne prouve ni une connexion bancaire réelle, ni le bon fonctionnement des intégrations externes, ni la validation des baux.</p>'+
+  (issues.length?'<div class="health-issues">'+issues.map(i=>
+   '<div class="health-item"><span class="mini-tag '+(i.severity==='critical'?'bad':'warn')+'">'+
+   esc(i.severity==='critical'?'Critique':'À vérifier')+'</span><div><b>'+
+   esc(String(i.message||'Anomalie'))+' ('+Number(i.count||0)+')</b><p class="muted">'+
+   esc(messages[i.code]||'Consulter les données concernées et vérifier leur cohérence.')+
+   '</p></div></div>').join('')+'</div>':
+   '<p class="muted">Aucune anomalie détectée dans le dernier contrôle. Les opérations non encore configurées sont suivies dans « À compléter » ci-dessous.</p>')+
+  (reports.length?'<details><summary>Historique des derniers diagnostics</summary>'+lastRows+'</details>':'')+
+  '<div class="status" id="healthRunStatus" role="status"></div></section>';
+}
+window.runMarneHealth=async()=>{
+ if(!db.current_user?.payment_void_access||db.current_user?.read_only)return;
+ const button=$('health-run-button'),state=$('healthRunStatus');
+ if(button)button.disabled=true;
+ if(state){state.className='status';state.textContent='Contrôle serveur en cours…'}
+ try{
+  const result=await api('health-run','POST',{confirmed:true});
+  await refresh();
+  const next=$('healthRunStatus');
+  if(next){next.className=result.report?.critical_count?'status err':'status ok';
+    next.textContent='Diagnostic terminé : '+Number(result.report?.critical_count||0)+' anomalie(s) critique(s), '+
+    Number(result.report?.warning_count||0)+' point(s) à vérifier.'}
+ }catch(e){
+  const next=$('healthRunStatus');
+  if(next){next.className='status err';next.textContent=e.message||'Diagnostic impossible'}
+  else alert(e.message||'Diagnostic impossible');
+ }finally{const btn=$('health-run-button');if(btn)btn.disabled=false}
+};
+
 function renderPilotage(){
  const x=releaseStatus(),props=(db.properties||[]).filter(p=>!p.is_example),tenants=db.tenants||[],leases=db.leases||[];
  const linked=props.filter(p=>tenants.some(t=>t.property_id===p.id)).length;
@@ -225,7 +289,7 @@ function renderPilotage(){
  '<div><b>'+esc(label)+'</b><div class="muted">'+esc(desc)+'</div></div></div>';
  }).join('')+'</div></section>';
  $('content').innerHTML=section('Version finale et contrôles','Suivi transparent du développement et des données à compléter.')+
- releaseBanner()+health+renderPropertyReadiness()+monitoring+blockers+checklist;
+ releaseBanner()+health+renderOperationsHealth()+renderPropertyReadiness()+monitoring+blockers+checklist;
 }
 window.runAutomaticInstallments=async()=>{
  if(!db.current_user?.payment_access||db.current_user?.read_only)return;
