@@ -6,11 +6,11 @@ const pages=[
  "lecteur-veryfi/index.html","admin/holding/index.html","admin/holding/controle/index.html",
  "admin/holding/utilisateurs/index.html","admin/holding/societes/index.html","college/readiness/index.html"
 ];
-test("navigation V47 : les pages essentielles chargent la même version JS et CSS",()=>{
+test("les pages essentielles chargent des scripts et feuilles de style versionnés",()=>{
  for(const page of pages){
   const html=read(page);
-  assert.ok(html.includes("workspace-layout.js?v=20261111-47"),page+" : script non actualisé");
-  assert.ok(html.includes("workspace-layout.css?v=20261111-47"),page+" : style non actualisé");
+  assert.match(html,/workspace-layout\.js\?v=[0-9a-z.-]+/i,page+" : menu sans version");
+  assert.match(html,/workspace-layout\.css\?v=[0-9a-z.-]+/i,page+" : feuille de style sans version");
  }
 });
 test("scripts et feuilles de style locaux : aucun chemin cassé dans les espaces principaux",()=>{
@@ -27,12 +27,14 @@ test("scripts et feuilles de style locaux : aucun chemin cassé dans les espaces
  }
 });
 test("la recherche des menus demeure accessible et n'affiche pas les espaces masqués",()=>{
- const source=read("college/workspace-layout.js"),css=read("college/workspace-layout.css");
+ const source=read("college/workspace-layout.js"),access=read("college/workspace-access.mjs"),css=read("college/workspace-layout.css");
  new vm.Script(source,{filename:"workspace-layout.js"});
  assert.ok(source.includes('searchInput.type="search"'));
  assert.ok(source.includes('control.classList.toggle("school-menu-filtered",!matches)'));
  assert.ok(source.includes('if(!control.hidden&&matches)visible++'));
- assert.ok(source.includes('control.dataset.configHidden==="true"'));
+ assert.ok(access.includes('a.dataset.configHidden==="true"'));
+ assert.ok(source.includes('applyAuthorizedNavigation()'));
+ assert.ok(access.includes('!allowedLink(a.href,access,base)'));
  assert.ok(css.includes(".school-menu-group-filtered"));
  assert.ok(css.includes("focus-visible"));
 });

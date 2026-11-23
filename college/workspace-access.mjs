@@ -9,6 +9,8 @@ function tokenKeys(area){
  if(area==="veryfi")return new URLSearchParams(location.search).get("origine")==="comptabilite"
    ?["college_accounting_token",...shared]:["college_secretariat_token","college_accounting_token",...shared];
  if(area.startsWith("holding"))return shared;
+ if(area==="cuisine")return ["kitchen_token","college_admin_token","college_secretariat_token",...shared];
+ if(area==="marne-invest")return ["marne_invest_admin_token",...shared];
  if(area==="marne-accounting")return ["marne_invest_admin_token",...shared];
  return ["college_admin_token",...shared,"college_secretariat_token","college_accounting_token","marne_invest_admin_token"];
 }
@@ -25,6 +27,7 @@ function allowedLink(href,context,base){
   if(page==="products")return !!p.college_products;
   return !!p.college;
  }
+ if(route==="portail/")return !!context;
  if(route==="secretariat/")return !!p.secretariat;
  if(route==="comptabilite/")return !!p.accounting;
  if(route==="secretariat/planning/")return !!p.planning;
@@ -72,10 +75,10 @@ export {allowedLink, allowedTab, tokenKeys};
 
 export function attach({aside,brand,footer,base,area,target,filterMenu}){
  const keys=tokenKeys(area);
- let access=null,lastToken="",lastCheck=0,inFlight=false;
+ let access=null,lastToken="",lastCheck=0,inFlight=false,invalidToken="";
  const currentToken=()=>{
   if(area==="marne-accounting"&&localStorage.getItem("marne_invest_logged_out")==="1")return "";
-  return keys.map(k=>localStorage.getItem(k)||"").find(t=>t.includes("."))||"";
+  return keys.map(k=>k==="kitchen_token"?(sessionStorage.getItem(k)||""):(localStorage.getItem(k)||"")).find(t=>t.includes("."))||"";
  };
  const apply=()=>{
   for(const a of aside.querySelectorAll(".school-nav-links a")){
@@ -97,13 +100,15 @@ export function attach({aside,brand,footer,base,area,target,filterMenu}){
  };
  const refresh=async(force=false)=>{
   const token=currentToken();
-  if(!token){access=null;lastToken="";lastCheck=0;footer.textContent="Connectez-vous pour voir les espaces autorisés.";apply();return;}
+  if(!token){access=null;lastToken="";lastCheck=0;invalidToken="";footer.textContent="Connectez-vous pour voir les espaces autorisés.";apply();return;}
+  if(token===invalidToken){access=null;footer.textContent="Session expirée ou droits modifiés. Reconnectez-vous.";apply();return;}
+  if(invalidToken&&invalidToken!==token)invalidToken="";
   if(token!==lastToken)access=null;
   if(inFlight||(!force&&token===lastToken&&Date.now()-lastCheck<30000))return;
   inFlight=true;
   try{
    const response=await fetch(endpoint,{headers:{"x-admin-session":token},cache:"no-store",signal:AbortSignal.timeout(12000)});
-   if(!response.ok)throw Error(response.status===401?"Droits modifiés ou session expirée : reconnectez-vous.":"Vérification des droits indisponible.");
+   if(!response.ok){if(response.status===401)invalidToken=token;throw Error(response.status===401?"Droits modifiés ou session expirée : reconnectez-vous.":"Vérification des droits indisponible.");}
    const result=await response.json();
    if(!result?.ok||token!==currentToken()){access=null;return;}
    access=result;lastToken=token;lastCheck=Date.now();
@@ -120,7 +125,7 @@ export function attach({aside,brand,footer,base,area,target,filterMenu}){
  window.addEventListener("storage",event=>{if(!event.key||keys.includes(event.key))refresh(true)});
  window.addEventListener("focus",()=>refresh());
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
- const timer=setInterval(()=>{if(!document.hidden)refresh()},45000);
+ const timer=setInterval(()=>{if(!document.hidden&&access)refresh()},45000);
  window.addEventListener("pagehide",()=>clearInterval(timer),{once:true});
  new MutationObserver(()=>{if(!target.classList.contains("hide"))refresh()}).observe(target,{attributes:true,attributeFilter:["class"]});
  apply();

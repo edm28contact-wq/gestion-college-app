@@ -384,8 +384,8 @@ function leaseFields(lease,locked,history={},property=null){
  const field=(key,title,value,type,attrs='')=>'<div><label for="lease-'+key+'">'+esc(title)+'</label><input id="lease-'+key+'" type="'+type+'" value="'+esc(value??'')+'" '+(locked?'disabled':'')+' '+attrs+'></div>';
  const kinds=[['unverified','À renseigner'],['residential','Habitation'],['parking','Parking / garage indépendant'],['commercial','Commercial'],['other','Autre']];
  const value=(key,legacy)=>{
-  const actual=lease?.[key],historical=history?.[legacy];
-  if(actual!==null&&actual!==undefined&&actual!=='')return actual;
+  if(lease&&Object.prototype.hasOwnProperty.call(lease,key))return lease[key]??'';
+  const historical=history?.[legacy];
   if(historical!==null&&historical!==undefined&&historical!=='')return historical;
   return !lease||lease.status==='draft'?propertyDefault(property,key):'';
  };
