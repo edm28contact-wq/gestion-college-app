@@ -56,6 +56,17 @@ p{line-height:1.5}
 .big-number{font-size:26px;font-weight:850;letter-spacing:-.03em}
 .stat-box{background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px}
 .stat-box .muted{font-size:12px}
+.cold-live-section{margin-bottom:20px}
+.cold-live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:12px}
+.cold-live-tile{min-width:0;background:#f8fafb;border:1px solid var(--line);border-radius:13px;padding:16px}
+.cold-live-tile.cold-live-alert{background:#fff5f3;border-color:#d9a5a0}
+.cold-live-top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px}
+.cold-live-top h3{margin:0;flex:1;font-size:16px;min-width:120px;overflow-wrap:anywhere}
+.cold-live-value{font-size:clamp(28px,4vw,37px);font-weight:850;font-variant-numeric:tabular-nums;color:var(--navy);margin:12px 0 6px}
+.cold-live-alert .cold-live-value,.cold-live-warning{color:#a32929}
+.cold-live-warning{font-size:13px;font-weight:750;margin:10px 0 0}
+.cold-live-tile .help{margin:10px 0 0}
+
 .tag{display:inline-flex;align-items:center;gap:5px;border-radius:40px;padding:6px 10px;font-size:12px;font-weight:750;background:#eef2f5;color:#466073}
 .tag-ok{background:#e1f3e9;color:#165f3b}
 .tag-warn{background:#fff1dc;color:#7e4c08}
@@ -177,6 +188,6 @@ p{line-height:1.5}
 </section>
 </main>
 <script src="./releve-export.js?v=20261120-2" defer></script>
-<script src="./cuisine.js?v=20261123-roles-v3" defer></script>
+<script src="./cuisine.js?v=20261124-cold-auto-10m" defer></script>
 </body>
 </html>
