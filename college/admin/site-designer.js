@@ -10,7 +10,7 @@ const SITE_LABELS={
  "admin-accounting-setup":"Configuration comptable","windows-agent":"Agent Windows"
 };
 const SITE_NAV_ENTRIES={
- "admin-college":[["Accueil","tab:#dashboard"],["Produits","tab:#products"],["Applications","tab:#apps"],["Catégories","tab:#categories"],["Achats","tab:#purchases"],["Commandes","tab:#commandes"],["Mouvements","tab:#events"],["Salaires","tab:#salaires"],["Outils avancés","tab:#advanced"]],
+ "admin-college":[["Accueil","tab:#dashboard"],["Statistiques","tab:#stats"],["Produits","tab:#products"],["Catégories","tab:#categories"],["Sous-catégories","tab:#subcategories"],["Achats","tab:#purchases"],["Commandes","tab:#commandes"],["Mouvements","tab:#events"],["Inventaires historiques","tab:#historicalStock"],["Salaires","tab:#salaires"],["Gestion Cuisine","tab:#cuisine"],["Applications","tab:#apps"],["Lecteur PDF & IA","tab:#readerSettings"],["Configuration des sites","tab:#siteDesigner"],["Manuel d’utilisation","tab:#manual"],["Outils avancés","tab:#advanced"]],
  secretariat:[["Stocks et produits","tab:#tStocks"],["Commandes fournisseurs","tab:#tOrders"],["Factures · Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"],["Planning des incidents","link:secretariat/planning/"],["Paramètres","tab:#tSettings"],["Mot de passe","tab:#tPassword"],["Admin Collège","link:college/admin/"],["Comptabilité","link:comptabilite/"],["Holding","link:admin/holding/"]],
  comptabilite:[["Tableau de bord","tab:#td"],["Recettes","tab:#trc"],["Factures fournisseurs","tab:#tde"],["Import de factures","tab:#ti"],["Lecteur Veryfi","link:lecteur-veryfi/?origine=comptabilite"],["Livres et documents","tab:#tdoc"],["Outils avancés","tab:#tadv"]],
  planning:[["Registre des incidents","scroll:#rows"],["Nouvel incident","tab:#new"],["Filtrer le mois","scroll:#month"]],
@@ -156,6 +156,10 @@ function applyAdminCollegeSettings(s){
  const heading=document.querySelector("#app .brand");
  if(heading)heading.textContent=s?.title||"Société Collège";
  const nav=document.getElementById("nav");
+ if(nav&&typeof init==="function"&&typeof db!=="undefined"&&db?.current_user){
+  init();
+  nav.querySelectorAll("button[data-p]").forEach(btn=>{const active=btn.dataset.p===page;btn.classList.toggle("active",active);if(active)btn.setAttribute("aria-current","page");});
+ }
  if(nav){
   for(const btn of nav.querySelectorAll("button[data-p]")){
    const opt=s?.menu?.["tab:#"+btn.dataset.p];
