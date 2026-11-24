@@ -194,11 +194,11 @@ function renderColdOverview(){
   '<div class="cold-live-grid">'+(tiles||'<div class="empty">Aucune chambre froide active.</div>')+'</div></section>';
 }
 async function refreshDashboardReadings(){
- if(!data||!token||page!=="dashboard"||busy||dashboardRefreshInFlight||document.hidden)return;
+ if(!data||!token||page!=="dashboard"||busy||dashboardRefreshInFlight||document.hidden||document.getElementById("kitchenTaskEditor"))return;
  const currentToken=token;dashboardRefreshInFlight=true;
  try{
   const fresh=await request("list");
-  if(token!==currentToken||!data||page!=="dashboard")return;
+  if(token!==currentToken||!data||page!=="dashboard"||document.getElementById("kitchenTaskEditor"))return;
   data=fresh;dashboardRefreshAt=Date.now();dashboardRefreshError="";
   renderDashboard();updateCriticalAlert();
  }catch(err){
@@ -215,8 +215,8 @@ function renderDashboard(){
  const open=data.reheats.filter(r=>r.status==="en_cours");
  const alarms=[...latestByRoom().values()].filter(r=>r.is_alert&&rooms.some(room=>room.id===r.room_id)).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
  $("content").innerHTML=
- '<div class="banner"><div class="eyebrow">Aujourd’hui en cuisine</div><h1>Que voulez-vous faire ?</h1><p>Choisissez une action. Vous n’avez besoin que de quelques saisies pour enregistrer chaque contrôle.</p></div>'+
  renderColdOverview()+
+ '<div class="card"><div class="section-heading"><div><div class="eyebrow">Organisation quotidienne</div><h2>Tâches du jour</h2></div><button type="button" class="btn btn-outline btn-small" data-go="tasks">Toutes les tâches</button></div>'+renderTaskItems(data.tasks)+'</div>'+
  '<div class="grid-3" style="margin-bottom:20px">'+
  '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+rooms.length+'</div></div>'+
  '<div class="stat-box"><div class="muted">Remises en température en cours</div><div class="big-number">'+open.length+'</div></div>'+
@@ -287,20 +287,35 @@ function renderReheat(){
  '<p class="guided-note">Le minuteur est une aide à l’organisation, pas une preuve de conformité sanitaire. Les mesures sont conservées avec leur heure de saisie et les alertes restent visibles en administration.</p>';
 }
 
-function renderTasks(){
- const day=today(),checks=data.checks.filter(t=>t.performed_on===day),done=new Set(checks.map(x=>x.task_id));
- $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage</h1><p>Validez uniquement les tâches réellement réalisées aujourd’hui.</p></div><span class="tag">'+done.size+' / '+data.tasks.length+' validées</span></div>'+
- '<div class="card"><div class="task-list">'+data.tasks.map(t=>{
- const c=checks.find(x=>x.task_id===t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id;
- return '<div class="task-item '+(done.has(t.id)?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small></div>'+
- (done.has(t.id)?'<span class="tag tag-ok">Réalisée</span>':'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':'Marquer comme réalisée')+'</button>')+'</div>'
- }).join("")+'</div></div>'+
- '<p class="guided-note">Un clic crée une validation horodatée au nom de l’agent connecté. Les tâches non faites restent visibles dans le suivi administratif.</p>';
+function canManageTasks(){return data?.me.scope==="admin"}
+function canCheckTasks(){return data?.me.scope==="staff"&&!data.me.existingAccount}
+function renderTaskItems(tasks){
+ const done=new Map(data.checks.filter(c=>c.performed_on===today()).map(c=>[c.task_id,c]));
+ return '<div class="task-list">'+(tasks.map(t=>{
+ const c=done.get(t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id;
+ const state=c?'<span class="tag tag-ok">Réalisée</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':'Marquer comme réalisée')+'</button>':'<span class="tag tag-warn">À réaliser</span>';
+ return '<div class="task-item '+(c?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+' · '+esc(window.KitchenUI.scheduleLabel(t))+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small>'+(t.description?'<p class="kt-task-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="kt-task-notes"><b>Consignes :</b> '+esc(t.instructions)+'</p>':'')+'</div><div class="kt-task-actions">'+state+(canManageTasks()?'<button class="btn btn-outline btn-small" type="button" data-edit-kitchen-task="'+esc(t.id)+'">Modifier</button>':'')+'</div></div>';
+ }).join("")||'<p class="muted">Aucune tâche à afficher.</p>')+'</div>';
 }
-
+function renderTasks(){
+ const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
+ const tasks=canManageTasks()?(data.task_settings||data.tasks):data.tasks;
+ $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage et tâches</h1><p>Validez uniquement les tâches réellement réalisées aujourd’hui.</p></div><div class="kt-task-actions"><span class="tag">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+' validées</span>'+(canManageTasks()?'<button type="button" class="btn btn-primary" data-add-kitchen-task>Ajouter une tâche</button>':'')+'</div></div><div class="card">'+renderTaskItems(tasks)+'</div><p class="guided-note">Les validations sont horodatées.</p>';
+}
+async function fetchTaskSettings(day){
+ const response=await fetch(API+"?"+new URLSearchParams({action:"task-settings",date:day}),{headers:{"x-admin-session":token},cache:"no-store"});
+ const json=await response.json().catch(()=>({error:"Réponse invalide"}));if(!response.ok||!Array.isArray(json.tasks))throw Error(json.error||"Configuration indisponible");return json.tasks;
+}
+function editKitchenTask(id){
+ if(!canManageTasks()||busy)return;
+ const task=id?(data.task_settings||data.tasks).find(t=>t.id===id):null;if(id&&!task)return;
+ const currentToken=token;
+ window.KitchenUI.open({task,staff:data.staff,completed:!!task&&data.checks.some(c=>c.task_id===id&&c.performed_on===today()),fetchTasks:fetchTaskSettings,save:async(action,body)=>{if(currentToken!==token||!canManageTasks())throw Error("Session modifiée");await request(action,"POST",body)},onSaved:async()=>{await load();status("Tâche enregistrée.")}});
+}
+document.addEventListener("click",e=>{const btn=e.target.closest?.("[data-edit-kitchen-task],[data-add-kitchen-task]");if(btn)editKitchenTask(btn.dataset.editKitchenTask||null)});
 async function save(action,body){if(busy)return;busy=true;try{const result=await request(action,"POST",body);await load();if(result.alert)status("Contrôle enregistré avec anomalie : prévenir le responsable et effectuer une action corrective.",true);else status("Enregistré avec date, heure et nom de l’agent.");}catch(e){status(e.message,true);}finally{busy=false}}
 document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else if(form.dataset.finish){if(!canFinish(form.dataset.due)){status("Saisie bloquée : attendez les 5 dernières minutes.",true);return;}save("finish-reheat",{id:form.dataset.finish,temperature_c:t})}});
-document.addEventListener("click",e=>{const b=e.target.closest?.("button[data-task]");if(b)save("task-check",{task_id:b.dataset.task})});
+document.addEventListener("click",e=>{const b=e.target.closest?.("button[data-task]");if(b&&canCheckTasks())save("task-check",{task_id:b.dataset.task})});
 $("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("connectAccount")?.addEventListener("click",connectAccount);$("accountLoginForm")?.addEventListener("submit",e=>{e.preventDefault();loginCentralAccount()});$("kitchenFirstPassword")?.addEventListener("submit",e=>{e.preventDefault();finishKitchenFirstPassword()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
 document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.page)));
 document.addEventListener("click",e=>{const b=e.target.closest?.("[data-go]");if(b)switchPage(b.dataset.go)});

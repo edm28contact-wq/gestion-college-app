@@ -142,8 +142,8 @@
  rows(coldHistory,[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Résultat",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?(followedByGood(x)?"Ancien écart · recontrôlé":"Hors seuil"):"Dans la plage")+'</span>'],["",x=>'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>']])+
  '<div class="actions"><button class="btn secondary" type="button" data-admin-cold-page="previous" '+(coldHistoryOffset===0?'disabled':'')+'>Précédent</button><button class="btn secondary" type="button" data-admin-cold-page="next" '+(coldHistoryOffset+50>=coldHistoryTotal?'disabled':'')+'>Suivant</button></div></div>'+
  '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Évaluation",x=>x.status==="alerte"?"Température hors cible":x.status==="en_cours"?"En cours":"Température cible atteinte"],["Contrôle horaire",x=>x.ended_at?(new Date(x.ended_at)>new Date(x.due_at)?"Relevé après le rappel":"Relevé avant le rappel"):"Contrôle en cours"],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
- '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Exportez le suivi quotidien en PDF : validations, agents, heures et tâches non validées.</p><div class="grid"><div><label for="kitchenTasksReportDate">Date du rapport</label><input id="kitchenTasksReportDate" type="date" value="'+day+'"></div><div><label>Rapport</label><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button></div></div>'+rows(s.tasks,[["Tâche",x=>e(x.label)],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":"Non validée"]])+
- '<h3>Ajouter une tâche</h3><form id="kitchenAddTask" class="grid"><div><label>Libellé</label><input required name="label" maxlength="100"></div><div><label>Responsable</label><select name="assigned_to"><option value="">Commune</option>'+s.staff.filter(x=>x.active).map(x=>'<option value="'+attr(x,"id")+'">'+e(x.name)+'</option>').join("")+'</select></div><div><button class="btn primary" type="submit">Ajouter une tâche</button></div></form></div>'+
+ '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Exportez le suivi quotidien en PDF : validations, agents, heures et tâches non validées.</p><div class="grid"><div><label for="kitchenTasksReportDate">Date du rapport</label><input id="kitchenTasksReportDate" type="date" value="'+day+'"></div><div><label>Rapport</label><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button></div></div>'+rows(s.task_settings||s.tasks,[["Tâche",x=>e(x.label)+'<div class="muted">'+e(window.KitchenUI.scheduleLabel(x))+'</div>'],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":x.active===false?"Désactivée":x.scheduled===false?"Non prévue":"Non validée"],["Action",x=>s.me.scope==="admin"?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':""]])+
+ (s.me.scope==="admin"?'<div class="actions"><button type="button" class="btn primary" data-add-admin-task>Ajouter une tâche</button></div>':'')+'<p id="kitchenTaskFeedback" class="status" role="status"></p></div>'+
  '<div class="card"><h2>Journal des relevés invalidés</h2><p class="muted">Historique d’audit uniquement : ces valeurs ne comptent plus dans les résultats HACCP ni dans les exports standards.</p>'+rows((s.invalidated||[]),[["Mesure d’origine",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Valeur initiale",x=>t(x.temperature_c)+" °C"],["Correction",x=>when(x.invalidated_at)],["Motif",x=>e(x.invalidation_reason)],["Par",x=>e(x.invalidated_by)]])+'</div>'+
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
  
@@ -187,7 +187,8 @@
        '<div><small>Réchauffages en cours</small><strong>'+active.length+'</strong></div>'+
        '<div><small>Nettoyage terminé aujourd’hui</small><strong>'+done.size+' / '+s.tasks.length+'</strong></div>'+
        '<div><small>Alertes (historique chargé)</small><strong>'+alerts+'</strong></div>';
-     wrapper.append(summary);
+     const monitor=document.createElement("div");monitor.id="adminKitchenColdOverview";monitor.className="kt-admin-cold";monitor.innerHTML=window.KitchenUI.coldOverview(s,{buttonAttributes:'data-kitchen-cold-go'});wrapper.prepend(monitor);
+ const daily=document.createElement("div");daily.className="card";daily.innerHTML='<h2>Tâches du jour</h2><div class="kt-day-list">'+(s.tasks.map(x=>'<div class="kt-day-row"><div><strong>'+e(x.label)+'</strong><div class="muted">'+(x.assigned_to?e(staff(x.assigned_to)):"Commune")+' · '+e(window.KitchenUI.scheduleLabel(x))+'</div></div><div class="kt-task-actions"><span>'+(done.has(x.id)?"Réalisée":"À réaliser")+'</span>'+(s.me.scope==="admin"?'<button class="btn secondary" type="button" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':'')+'</div></div>').join("")||'<p class="muted">Aucune tâche prévue aujourd’hui.</p>')+'</div><button type="button" class="btn secondary" data-kitchen-task-go>Gérer les tâches</button>';wrapper.append(daily,summary);
      const tip=document.createElement("div");tip.className="card";tip.style.marginTop="16px";tip.innerHTML='<h3>Utilisation quotidienne</h3><p>Les agents travaillent dans l’espace Cuisine. Ici, vous vérifiez les relevés, contrôlez les anomalies et adaptez les équipements ou tâches.</p>';wrapper.append(tip);
    }
    for(const el of groups[key])wrapper.append(el);
@@ -220,7 +221,7 @@
   if(pageBtn)refreshColdHistory(Math.max(0,coldHistoryOffset+(pageBtn.dataset.adminColdPage==="next"?50:-50)));
  });
  document.addEventListener("submit",evt=>{
- const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate],[data-govee-room],[data-room-schedule]"))return;evt.preventDefault();
+ const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate],[data-govee-room],[data-room-schedule]"))return;evt.preventDefault();
  const f=new FormData(form),values=Object.fromEntries(f.entries());
  if(form.matches("[data-room-schedule]")){saveCollectionSchedule(form,values);return;}
  if(form.matches("[data-govee-associate]")){action("govee-add-sensor",{device:form.dataset.goveeAssociate,sku:form.dataset.sku,room_id:values.room_id,raw_unit:values.raw_unit});return;}
@@ -233,7 +234,7 @@
  if(form.id==="kitchenAddDish")action("add-dish-type",{label:values.label});
  if(form.matches("[data-dish-edit]"))action("update-dish-type",{id:form.dataset.dishEdit,label:values.label});
  if(form.id==="kitchenSaveDefaults")action("save-defaults",{default_cold_room_id:values.default_cold_room_id,default_oven_id:values.default_oven_id,default_dish_type_id:values.default_dish_type_id,target_start_c:Number(values.target_start_c),target_end_c:Number(values.target_end_c),reminder_minutes:Number(values.reminder_minutes)});
- if(form.id==="kitchenAddTask")action("add-task",{label:values.label,assigned_to:values.assigned_to||null});
+ 
  if(form.id==="kitchenGoveeKey"){saveGoveeKeyAndTest(String(values.api_key||""));return;}
  if(form.id==="kitchenProbeRegister")action("probe-register",{label:values.label,model:values.model});
  });
@@ -363,6 +364,25 @@
 
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-corrective]");if(b)openCorrectiveDialog(b.dataset.corrective,b.dataset.id)});
  document.addEventListener("click",evt=>{if(evt.target.closest?.("#kitchenTasksPdf"))exportTasksPDF()});
+ async function fetchTaskSettings(day){
+ const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
+ const r=await fetch(API+"?"+new URLSearchParams({action:"task-settings",date:day}),{headers:{"x-admin-session":token},cache:"no-store"});
+ const j=await r.json().catch(()=>({error:"Réponse invalide"}));if(!r.ok||!Array.isArray(j.tasks))throw Error(j.error||"Configuration indisponible");return j.tasks;
+ }
+ function editAdminTask(id){
+ if(busy||snapshot?.me.scope!=="admin")return;
+ const task=id?(snapshot.task_settings||snapshot.tasks).find(t=>t.id===id):null;if(id&&!task)return;
+ window.KitchenUI.open({task,staff:snapshot.staff,completed:!!task&&snapshot.checks.some(c=>c.task_id===id&&c.performed_on===window.KitchenUI.today()),fetchTasks:fetchTaskSettings,save:(name,body)=>api(name,"POST",body),onSaved:async()=>{kitchenTab="staff";await load();const msg=node("kitchenTaskFeedback");if(msg)msg.textContent="Tâche enregistrée."}});
+ }
+ document.addEventListener("click",evt=>{const btn=evt.target.closest?.("[data-edit-admin-task],[data-add-admin-task]");if(btn&&node("kitchen-tabs"))editAdminTask(btn.dataset.editAdminTask||null);if(evt.target.closest?.("[data-kitchen-cold-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="records"]')?.click();if(evt.target.closest?.("[data-kitchen-task-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="staff"]')?.click()});
+ let adminColdRefreshing=false;
+ async function refreshAdminColdOverview(){
+ const target=node("adminKitchenColdOverview");if(!target||target.closest("[hidden]")||document.hidden||busy||adminColdRefreshing||node("kitchenTaskEditor"))return;
+ adminColdRefreshing=true;try{const fresh=await api("list");if(target===node("adminKitchenColdOverview")&&!node("kitchenTaskEditor"))target.innerHTML=window.KitchenUI.coldOverview(fresh,{buttonAttributes:'data-kitchen-cold-go'});}
+ catch(err){if(target===node("adminKitchenColdOverview")){let warning=target.querySelector(".kt-refresh-warning");if(!warning){warning=document.createElement("p");warning.className="kt-refresh-warning";target.prepend(warning);}warning.textContent="Actualisation indisponible. Vérifiez la date des températures affichées.";}}
+ finally{adminColdRefreshing=false;}
+ }
+ setInterval(refreshAdminColdOverview,60000);
  window.kitchenAdminOpenGovee=function(){kitchenTab="govee";window.kitchenAdminPage()};
  window.kitchenAdminPage=function(){node("content").innerHTML='<div class="card">Chargement des relevés Cuisine…</div>';load()};
  window.kitchenAdminLoad=load;

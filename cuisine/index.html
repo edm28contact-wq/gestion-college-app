@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#203447">
-<title>Espace Cuisine · Cours Chambertin</title>
+<title>Gestion Cantine · Cours Chambertin</title>
 <style>
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#213347;background:#f4f6f8;--navy:#203447;--navy2:#2e4960;--teal:#116e68;--line:#dce4e9;--muted:#657585;--soft:#edf4f3;--error:#aa3030}
 *{box-sizing:border-box}
@@ -137,9 +137,10 @@ p{line-height:1.5}
 @media(max-width:760px){.shell{padding:20px 13px 70px}.card{padding:18px}.grid,.grid-3,.field-grid{grid-template-columns:1fr}.nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.nav button{font-size:13px;padding:10px 7px}.action-card{min-height:155px}.session{align-items:flex-start}.timer-details span{display:block}}
 @media(prefers-reduced-motion:reduce){.timer-track>div{transition:none}}
 </style>
+<link rel="stylesheet" href="./kitchen-ui.css?v=20261124-task-editor">
 </head>
 <body>
-<header class="site-header"><div class="header-inner"><div class="brand-mark" aria-hidden="true">CC</div><div><div class="brand-name">Cours Chambertin</div><div class="brand-sub">Espace Cuisine · Suivi des contrôles</div></div></div></header>
+<header class="site-header"><div class="header-inner"><div class="brand-mark" aria-hidden="true">CC</div><div><div class="brand-name">Cours Chambertin</div><div class="brand-sub">Gestion Cantine · Suivi des contrôles</div></div></div></header>
 <main class="shell">
 <section id="login" class="card login">
  <div class="eyebrow">Accès sécurisé</div><h1>Connexion Cuisine</h1>
@@ -188,6 +189,7 @@ p{line-height:1.5}
 </section>
 </main>
 <script src="./releve-export.js?v=20261120-2" defer></script>
-<script src="./cuisine.js?v=20261124-room-schedule" defer></script>
+<script src="./kitchen-ui.js?v=20261124-task-editor" defer></script>
+<script src="./cuisine.js?v=20261124-task-editor" defer></script>
 </body>
 </html>
