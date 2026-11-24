@@ -163,7 +163,7 @@ test("Cuisine : exporter le suivi des tâches ménagères en PDF à une date cho
  assert.match(pdf,/Non validee/);
  assert.match(pdf,/Validee/);
  assert.match(pdf,/Une tache non validee/);
- assert.match(read("college/admin/index.html"),/releve-export\.js\?v=20261120-2/);
+ assert.match(read("college/admin/index.html"),/releve-export\.js\?v=\d{8}-[a-z0-9.-]+/);
 });
 test("Cuisine : l’admin invalide les fautes de saisie avec conservation de l’audit",()=>{
  const admin=read("college/admin/cuisine-admin.js");
