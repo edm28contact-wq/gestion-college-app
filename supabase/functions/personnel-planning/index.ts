@@ -80,7 +80,7 @@ Deno.serve(async(req:Request)=>{
  if(action==="staff-schedule-history"&&req.method==="GET"){
   if(!user.admin)return reply({error:"Consultation des archives horaires non autorisée"},403);
   const q=await db.from("college_personnel_schedule_history")
-   .select("id,personnel_id,employee_name,source_start,source_end,school_weekly_work_slots,vacation_weekly_work_slots,source_document")
+   .select("id,personnel_id,employee_name,schedule_scope,source_sheet_name,source_start,source_end,school_weekly_work_slots,vacation_weekly_work_slots,source_document")
    .order("employee_name",{ascending:true}).limit(200);
   if(q.error)throw q.error;
   if((q.data||[]).length===200)return reply({error:"Liste des archives incomplète"},409);
