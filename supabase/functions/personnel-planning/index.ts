@@ -44,7 +44,7 @@ Deno.serve(async(req:Request)=>{
   const batchSize=500,maxEvents=20000;
   for(let offset=0;offset<=maxEvents;offset+=batchSize){
    const q=await db.from("personnel_events")
-    .select("id,event_date,personnel_name,event_type,review_status")
+    .select("id,event_date,personnel_id,personnel_name,event_type,review_status")
     .order("event_date",{ascending:true}).order("id",{ascending:true})
     .range(offset,offset+batchSize-1);
    if(q.error)throw q.error;
@@ -59,7 +59,7 @@ Deno.serve(async(req:Request)=>{
      summaries.set(month,value);
     }
     value.events++;
-    const person=String(e.personnel_name||"").normalize("NFKC").replace(/\s+/g," ").trim().toLocaleLowerCase("fr");
+    const person=e.personnel_id||String(e.personnel_name||"").normalize("NFKC").replace(/\s+/g," ").trim().toLocaleLowerCase("fr");
     if(person)value.people.add(person);
     if(e.review_status==="a_verifier")value.pending++;
     if(e.event_type==="absence")value.absences++;
@@ -78,10 +78,12 @@ Deno.serve(async(req:Request)=>{
  const staffName=(x:any)=>String(x??"").normalize("NFKC").replace(/\s+/g," ").trim();
  const staffKey=(x:any)=>staffName(x).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"");
  if(action==="staff-list"&&req.method==="GET"){
-  const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,created_at,updated_at").order("name",{ascending:true}).limit(500);
+  const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
   if(q.error)throw q.error;
   if((q.data||[]).length===500)return reply({error:"Liste du personnel trop importante pour être affichée entièrement"},409);
-  return reply({ok:true,staff:user.admin?q.data:(q.data||[]).filter((x:any)=>!x.archived&&x.visible_in_planning).map((x:any)=>({id:x.id,name:x.name,name_key:x.name_key,visible_in_planning:x.visible_in_planning,archived:x.archived})),admin:user.admin});
+  const roles=user.admin?await db.from("college_personnel_roles").select("id,label,updated_at").order("label"):null;
+  if(roles?.error)throw roles.error;
+  return reply({ok:true,staff:user.admin?q.data:(q.data||[]).filter((x:any)=>!x.archived&&x.visible_in_planning).map((x:any)=>({id:x.id,name:x.name,name_key:x.name_key,visible_in_planning:x.visible_in_planning,archived:x.archived})),roles:roles?.data||[],admin:user.admin,salary_write:user.salaryWrite});
  }
  if(action==="calendar-month"&&req.method==="GET"){
   if(!user.admin)return reply({error:"Lecture Salaires non autorisée"},403);
@@ -100,11 +102,41 @@ Deno.serve(async(req:Request)=>{
   const vacations=vacationRows===null?null:[...new Map(vacationRows.filter((x:any)=>x&&typeof x.start_date==="string"&&typeof x.end_date==="string"&&(!x.population||/élèves|eleves|tous/i.test(x.population))).map((x:any)=>[x.description+"|"+x.start_date+"|"+x.end_date,{name:x.description,start:x.start_date.slice(0,10),end:x.end_date.slice(0,10)}])).values()];
   return reply({month,zone:"C",holidays,vacations,public_holidays_verified:holidays!==null,school_holidays_verified:vacations!==null,source_holidays:"https://calendrier.api.gouv.fr/jours-feries/metropole/"+year+".json",source_school:schoolUrl.toString()});
  }
+ if(action==="staff-profile-update"&&req.method==="POST"){
+  if(!user.salaryWrite)return reply({error:"Modification du personnel réservée aux droits Salaires"},403);
+  const x=await req.json().catch(()=>null),name=staffName(x?.name),key=staffKey(name);
+  const roleId=x?.professional_role_id??null;
+  if(!isUuid(x?.id)||name.length<2||name.length>120||key.length<2||key.length>120||
+     (roleId!==null&&!isUuid(roleId))||typeof x?.updated_at!=="string"||!Number.isFinite(Date.parse(x.updated_at)))
+   return reply({error:"Nom, rôle ou version de la fiche invalide"},400);
+  const q=await db.rpc("college_update_personnel_profile",{p_id:x.id,p_name:name,p_name_key:key,p_role_id:roleId,p_updated_at:x.updated_at,p_actor:user.username});
+  if(q.error)throw q.error;
+  const errors:Record<string,[string,number]>={not_found:["Salarié introuvable",404],conflict:["La fiche a été modifiée. Actualisez avant de recommencer.",409],role_not_found:["Rôle professionnel introuvable",400],duplicate_name:["Ce nom est déjà utilisé par un autre salarié ou agent de cuisine.",409],kitchen_name_too_long:["Nom limité à 80 caractères pour un agent de cuisine.",400]};
+  if(q.data?.error){const error=errors[q.data.error]||["Modification impossible",409];return reply({error:error[0]},error[1]);}
+  if(!q.data?.staff)return reply({error:"Modification non confirmée"},500);
+  return reply({ok:true,staff:q.data.staff});
+ }
+ if(action==="staff-role-save"&&req.method==="POST"){
+  if(!user.salaryWrite)return reply({error:"Modification des rôles réservée aux droits Salaires"},403);
+  const x=await req.json().catch(()=>null),label=staffName(x?.label),key=staffKey(label);
+  if(label.length<2||label.length>100||key.length<2||key.length>100||(x?.id!=null&&!isUuid(x.id)))
+   return reply({error:"Intitulé de rôle invalide (2 à 100 caractères)"},400);
+  const payload={label,label_key:key,updated_by:user.username,updated_at:new Date().toISOString()};
+  const q=x?.id
+   ?await db.from("college_personnel_roles").update(payload).eq("id",x.id).select("id,label,updated_at").maybeSingle()
+   :await db.from("college_personnel_roles").insert(payload).select("id,label,updated_at").single();
+  if(q.error?.code==="23505")return reply({error:"Ce rôle existe déjà"},409);
+  if(q.error)throw q.error;if(!q.data)return reply({error:"Rôle introuvable"},404);
+  return reply({ok:true,role:q.data},x?.id?200:201);
+ }
  if(action==="staff-add"&&req.method==="POST"){
   if(!user.salaryWrite)return reply({error:"Modification du personnel réservée aux droits Salaires"},403);
   const x=await req.json().catch(()=>null),name=staffName(x?.name),key=staffKey(name);
   if(name.length<2||name.length>120||key.length<2||key.length>120)return reply({error:"Nom invalide (2 à 120 caractères)"},400);
-  const q=await db.from("college_personnel").insert({name,name_key:key,visible_in_planning:x?.visible_in_planning===true,archived:false,created_by:user.username,updated_by:user.username}).select("id,name,visible_in_planning,archived").single();
+  const roleId=x?.professional_role_id??null;
+  if(roleId!==null&&!isUuid(roleId))return reply({error:"Rôle invalide"},400);
+  if(roleId!==null){const role=await db.from("college_personnel_roles").select("id").eq("id",roleId).maybeSingle();if(role.error)throw role.error;if(!role.data)return reply({error:"Rôle professionnel introuvable"},400);}
+  const q=await db.from("college_personnel").insert({name,name_key:key,professional_role_id:roleId,visible_in_planning:x?.visible_in_planning===true,archived:false,created_by:user.username,updated_by:user.username}).select("id,name,visible_in_planning,archived,professional_role_id").single();
   if(q.error?.code==="23505")return reply({error:"Ce salarié existe déjà. Réactivez-le dans la liste au lieu de le créer en double."},409);
   if(q.error)throw q.error;
   return reply({ok:true,staff:q.data},201);
@@ -120,7 +152,7 @@ Deno.serve(async(req:Request)=>{
   return reply({ok:true,staff:q.data});
  }
  if(action==="staff-payroll-update"&&req.method==="POST"){
-  if(!user.admin)return reply({error:"Lecture Salaires non autorisée"},403);
+  if(!user.salaryWrite)return reply({error:"Modification du personnel réservée aux droits Salaires"},403);
   const x=await req.json().catch(()=>null);
   if(!isUuid(x?.id))return reply({error:"Salarié invalide"},400);
   const days=x?.working_weekdays;
@@ -147,7 +179,12 @@ Deno.serve(async(req:Request)=>{
   const end=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),1));
   const next=end.toISOString().slice(0,10);
   const q=await db.from("personnel_events").select("*").gte("event_date",month+"-01").lt("event_date",next).order("event_date",{ascending:true}).order("created_at",{ascending:true}).limit(1000);
-  if(q.error)throw q.error;if((q.data||[]).length===1000)return reply({error:"Le nombre d’événements dépasse la limite de consultation. Contactez l’administration technique pour obtenir un export complet."},409);return reply({events:q.data||[],role:user.admin?"admin":"secretariat",read_only:user.readonly});
+  if(q.error)throw q.error;if((q.data||[]).length===1000)return reply({error:"Le nombre d’événements dépasse la limite de consultation. Contactez l’administration technique pour obtenir un export complet."},409);
+  const events=q.data||[],ids=[...new Set(events.map((e:any)=>e.personnel_id).filter(Boolean))];
+  const people=ids.length?await db.from("college_personnel").select("id,name").in("id",ids):null;
+  if(people?.error)throw people.error;
+  const names=new Map((people?.data||[]).map((p:any)=>[p.id,p.name]));
+  return reply({events:events.map((e:any)=>({...e,personnel_name_snapshot:e.personnel_name,personnel_name:names.get(e.personnel_id)||e.personnel_name})),role:user.admin?"admin":"secretariat",read_only:user.readonly});
  }
  if(action==="attachment-url"&&req.method==="GET"){
   const id=new URL(req.url).searchParams.get("id")||"";
@@ -251,22 +288,25 @@ Deno.serve(async(req:Request)=>{
   const x=await req.json(),name=staffName(x.personnel_name),date=x.event_date,type=x.event_type;
   if(!validDate(date)||!types.has(type)||name.length<2||name.length>150)return reply({error:"Date, catégorie ou nom invalide"},400);
   const existingId=x.id?String(x.id):null;
-  const prior=existingId?await db.from("personnel_events").select("id,personnel_name,review_status,version").eq("id",existingId).maybeSingle():null;
+  const prior=existingId?await db.from("personnel_events").select("id,personnel_id,personnel_name,review_status,version").eq("id",existingId).maybeSingle():null;
   if(prior?.error)throw prior.error;
   if(existingId&&!prior?.data)return reply({error:"Événement introuvable"},404);
   if(existingId&&prior?.data?.review_status!=="a_verifier")return reply({error:"Événement déjà traité : modification impossible"},409);
   const key=staffKey(name);
   const personnel=await db.from("college_personnel").select("id,name,archived,visible_in_planning").eq("name_key",key).maybeSingle();
   if(personnel.error)throw personnel.error;
-  const existingSameName=!!existingId&&staffKey(prior.data.personnel_name)===key;
+  const existingSameName=!!existingId&&(prior.data.personnel_id
+   ?prior.data.personnel_id===personnel.data?.id
+   :staffKey(prior.data.personnel_name)===key);
   if(!existingSameName&&(!personnel.data||personnel.data.archived||!personnel.data.visible_in_planning))
    return reply({error:"Ce salarié n’apparaît pas dans le planning. Sélectionnez un salarié actif."},409);
   const canonicalName=existingSameName?prior.data.personnel_name:personnel.data.name;
+  const personnelId=existingSameName?(prior.data.personnel_id??personnel.data?.id??null):personnel.data.id;
   const all=Boolean(x.all_day),duration=durationValue(x.duration_minutes),details=String(x.details||"").trim();
   if(details.length>2000||(!all&&(!Number.isInteger(duration)||duration<1||duration>1440)))
    return reply({error:"Durée invalide : indiquez entre 1 et 1440 minutes, ou cochez journée entière."},400);
   const justification=just.has(x.justification_status)?x.justification_status:"non_requis";
-  const input={event_date:date,personnel_name:canonicalName,event_type:type,all_day:all,start_time:null,end_time:null,duration_minutes:all?1440:duration,details,justification_status:justification,updated_by:user.username,updated_at:new Date().toISOString()};
+  const input={event_date:date,personnel_id:personnelId,personnel_name:canonicalName,event_type:type,all_day:all,start_time:null,end_time:null,duration_minutes:all?1440:duration,details,justification_status:justification,updated_by:user.username,updated_at:new Date().toISOString()};
   if(x.id){
    const q=await db.from("personnel_events").select("id,review_status,version").eq("id",x.id).maybeSingle();if(q.error)throw q.error;if(!q.data)return reply({error:"Événement introuvable"},404);
    if(q.data.review_status!=="a_verifier")return reply({error:"Événement déjà traité : modification impossible"},409);
