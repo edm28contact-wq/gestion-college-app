@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#203447">
 <title>Gestion Cantine · Cours Chambertin</title>
 <style>
+[hidden]{display:none!important}.work-section{scroll-margin-top:18px;margin-bottom:28px}.work-heading{margin-top:24px}.work-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.work-back,.work-admin{margin:14px 0}.work-done summary{cursor:pointer;font-weight:750}.work-done[open] summary{margin-bottom:16px}#workNav button{border:1px solid #cbd6df;color:#203447}#workNav button:first-child{background:#203447;color:white;border-color:#203447}@media(max-width:480px){.work-actions button{width:100%}.task-item .kt-task-actions{width:100%}.task-item .kt-task-actions button{width:100%}.work-heading{margin-top:15px}}
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#213347;background:#f4f6f8;--navy:#203447;--navy2:#2e4960;--teal:#116e68;--line:#dce4e9;--muted:#657585;--soft:#edf4f3;--error:#aa3030}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.52}
@@ -139,7 +140,6 @@ p{line-height:1.5}
 </style>
 <link rel="stylesheet" href="./kitchen-ui.css?v=20261124-task-editor">
 <link rel="stylesheet" href="./meater-ui.css?v=20261124-meater12">
-<link rel="stylesheet" href="./pms-ui.css?v=20261124-pms1">
 <link rel="stylesheet" href="./kitchen-photo.css?v=20261124-photo1">
 </head>
 <body>
@@ -167,7 +167,7 @@ p{line-height:1.5}
  </form><p class="muted">Les comptes autorisés peuvent accéder à la cuisine selon leurs pouvoirs. Les agents utilisent toujours leur code PIN pour les relevés.</p>
  <p class="help">Si votre compte n'apparaît pas, demandez l'activation à l'administration.</p>
 </section>
-<section id="app" class="hide"><div id="readonlyNotice" class="banner" hidden><b>Consultation uniquement.</b><p>Votre pouvoir autorise les relevés en lecture seule. Pour réaliser une saisie, un pouvoir de modification Cuisine ou une connexion agent autorisée est nécessaire.</p></div>
+<section id="app" class="hide"><div id="readonlyNotice" class="banner" hidden><b>Consultation uniquement.</b><p>Pour valider une tâche ou saisir une température, connectez-vous avec le code PIN d’un agent Cuisine.</p></div>
  <div class="session"><div><div class="eyebrow">Votre poste de travail</div><div class="agent" id="identity"></div><div class="subline" id="todayLabel"></div></div><div class="row"><button id="refresh" class="btn btn-outline btn-small" type="button">Actualiser</button><button id="logout" class="btn btn-light btn-small" type="button">Déconnexion</button></div></div>
  <aside id="kitchenCriticalAlert" class="critical-alert" role="region" aria-label="Alerte de contrôle de température" hidden>
   <div class="row between"><span id="kitchenAlertCount" class="alert-count"></span><strong id="kitchenAlertTime" class="alert-time" aria-hidden="true"></strong></div>
@@ -181,22 +181,19 @@ p{line-height:1.5}
   </div>
   <p id="kitchenAlertAudioHelp" class="alert-sound-note"></p>
  </aside>
- <nav class="nav" aria-label="Navigation Cuisine">
-  <button type="button" class="active" data-page="dashboard" aria-current="page">Accueil</button>
-  <button type="button" data-page="reheat">Remise en température</button>
-  <button type="button" data-page="cold">Chambres froides</button>
-  <button type="button" data-page="tasks">Nettoyage</button>
-  <button type="button" data-page="pms">Plan sanitaire · HACCP</button>
+ <nav id="workNav" class="nav" aria-label="Votre espace Cuisine">
+  <button class="btn btn-primary" type="button" data-section="dailyTasks">Tâches à faire</button>
+  <button class="btn btn-outline" type="button" data-section="sensorResults">Résultats des sondes</button>
  </nav>
+ <div class="work-back" id="workBack" hidden><button class="btn btn-outline" type="button" data-go="dashboard">← Retour aux tâches et sondes</button></div>
+ <a id="kitchenAdminLink" class="btn btn-outline work-admin" href="../college/admin/?page=cuisine" hidden>Administration Cuisine</a>
  <section id="content" aria-live="off"></section>
  <div id="message" class="toast" role="status" aria-live="polite"></div>
 </section>
 </main>
-<script src="./releve-export.js?v=20261124-photo1" defer></script>
 <script src="./kitchen-ui.js?v=20261124-cleaning7" defer></script>
-<script src="./meater-ui.js?v=20261124-meater12" defer></script>
-<script src="./pms-ui.js?v=20261124-pms1" defer></script>
+<script src="./meater-ui.js?v=20261124-workspace1" defer></script>
 <script src="./kitchen-photo.js?v=20261124-photo1" defer></script>
-<script src="./cuisine.js?v=20261124-photo1" defer></script>
+<script src="./cuisine.js?v=20261124-workspace1" defer></script>
 </body>
 </html>

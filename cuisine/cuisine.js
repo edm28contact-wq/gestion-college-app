@@ -2,7 +2,7 @@
 const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/kitchen-api";
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="dashboard",busy=false,coldRoomSelected="",coldHistory=[],coldTotal=0,coldOffset=0,coldLoading=false;
+let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="dashboard",busy=false,loadEpoch=0;
 let dashboardRefreshAt=0,dashboardRefreshInFlight=false,dashboardRefreshError="";
 let alarmAudio=null,alarmEnabled=false,alarmSilenced=false,lastSirenAt=0;
 const alarmed=new Set();
@@ -38,38 +38,6 @@ async function request(action,method="GET",body,authorized=true){
  const res=await fetch(API+"?action="+encodeURIComponent(action),{method,headers:{"Content-Type":"application/json",...(authorized?{"x-admin-session":token}:{})},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});
  const json=await res.json().catch(()=>({error:"Réponse du serveur invalide"}));
  if(!res.ok)throw Error(json.error||"Erreur du serveur");return json;
-}
-async function fetchColdPage(offset=0,limit=100,roomId=coldRoomSelected){
- const query=new URLSearchParams({action:"cold-history",offset:String(offset),limit:String(limit)});
- if(roomId)query.set("room_id",roomId);
- const res=await fetch(API+"?"+query,{headers:{"x-admin-session":token},cache:"no-store"});
- const json=await res.json().catch(()=>({error:"Réponse invalide"}));
- if(!res.ok)throw Error(json.error||"Impossible de charger les relevés");
- return json;
-}
-async function refreshColdHistory(offset=0){
- if(coldLoading)return;
- coldLoading=true;
- try{
-  const room=coldRoomSelected;
-  const result=await fetchColdPage(offset,25,room);
-  if(room!==coldRoomSelected)return;
-  coldHistory=result.readings;coldTotal=result.total;coldOffset=offset;
-  if(page==="cold")renderCold();
- }catch(err){status(err.message,true)}finally{coldLoading=false}
-}
-async function exportCold(format){
- const rooms=data.rooms,staff=data.staff,exportRoom=coldRoomSelected,label=exportRoom?roomName(exportRoom):"Toutes les chambres";
- const buttons=document.querySelectorAll("[data-cold-export]");buttons.forEach(b=>b.disabled=true);
- try{
-  const count=await window.CuisineReports[format]({
-   rooms,staff,roomLabel:label,
-   fetchPage:(offset,limit)=>fetchColdPage(offset,limit,exportRoom),
-   notify:(done,total)=>status("Préparation de l’export : "+done+" / "+total+" relevés…")
-  });
-  status("Export "+format.toUpperCase()+" généré : "+count+" relevé(s).");
- }catch(err){status("Export impossible : "+err.message,true)}
- finally{buttons.forEach(b=>b.disabled=false)}
 }
 async function staffList(){try{const v=await request("staff-list","GET",undefined,false);$("agent").innerHTML='<option value="">Sélectionner un agent</option>'+v.staff.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("");if(!v.staff.length)status("Aucun agent créé. Ouvrez Administration Collège → Gestion Cuisine.",true,"loginStatus")}catch(e){status(e.message,true,"loginStatus")}}
 async function login(){if(busy)return;busy=true;$("connect").disabled=true;try{
@@ -118,25 +86,36 @@ async function finishKitchenFirstPassword(){
   status("Mot de passe enregistré. Reconnectez-vous à la Cuisine.",false,"loginStatus");
  }catch(e){status(e.message||"Changement impossible",true,"loginStatus")}
 }
-function logout(){window.KitchenPhoto?.closeCapture();$("kitchenFirstPassword")?.classList.add("hide");$("accountLoginForm")?.classList.remove("hide");token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
-async function load(){try{data=await request("list");dashboardRefreshAt=Date.now();dashboardRefreshError="";$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();if(page==="cold")refreshColdHistory(coldOffset);checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
+function logout(){
+ window.KitchenPhoto?.closeCapture();loadEpoch++;token="";data=null;page="dashboard";dashboardRefreshAt=0;alarmEnabled=false;alarmSilenced=false;alarmed.clear();
+ $("content").replaceChildren();$("kitchenAdminLink").hidden=true;$("kitchenFirstPassword")?.classList.add("hide");$("accountLoginForm")?.classList.remove("hide");
+ document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList();
+}
+function updateTodayLabel(){$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());}
+async function load(){
+ const currentToken=token,epoch=++loadEpoch;
+ try{
+  const fresh=await request("list");
+  if(token!==currentToken||epoch!==loadEpoch)return false;
+  data=fresh;dashboardRefreshAt=Date.now();dashboardRefreshError="";
+  $("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;updateTodayLabel();render();checkReheatAlarms();return true;
+ }catch(e){if(token!==currentToken||epoch!==loadEpoch)return false;if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus");return false;}
+}
 function switchPage(next){
- if(!["dashboard","reheat","cold","tasks","pms"].includes(next))return;
+ if(!data||!["dashboard","reheat","cold"].includes(next))return;
+ if(next==="cold"&&!canRecordReheat())return;
  page=next;render();if(page==="dashboard"&&Date.now()-dashboardRefreshAt>=60000)refreshDashboardReadings();
- document.querySelector(".nav")?.scrollIntoView?.({block:"start",behavior:"smooth"});
+ $("workNav")?.scrollIntoView?.({block:"start",behavior:"smooth"});
 }
 function render(){
  if(!data)return;
- document.querySelectorAll("[data-page]").forEach(b=>{b.classList.toggle("active",b.dataset.page===page);if(b.dataset.page===page)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
- if(page==="dashboard")renderDashboard();
- else if(page==="cold"){renderCold();if(coldHistory.length===0&&coldTotal===0&&!coldLoading)refreshColdHistory(0);}
- else if(page==="reheat"){renderReheat();updateReheatControls();}
- else if(page==="pms")renderPms();
- else renderTasks();
+ $("workNav").hidden=page!=="dashboard";$("workBack").hidden=page==="dashboard";
+ $("kitchenAdminLink").hidden=data.me.scope!=="admin";
+ if(page==="reheat"){renderReheat();updateReheatControls();}
+ else if(page==="cold")renderCold();
+ else renderDashboard();
  updateCriticalAlert();
- const viewOnly=data.me.scope==="viewer";
- $("readonlyNotice").hidden=!viewOnly;
- for(const button of document.querySelectorAll("#content form button[type=submit]")){if(viewOnly)button.disabled=true}
+ $("readonlyNotice").hidden=canCheckTasks();
 }
 function dayOf(iso){return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(iso))}
 function latestByRoom(){const m=new Map();for(const r of data.cold)if(!m.has(r.room_id))m.set(r.room_id,r);return m}
@@ -191,89 +170,66 @@ function renderColdOverview(){
    '</article>';
  }).join("");
  return '<section class="card cold-live-section">'+
-  '<div class="section-heading"><div><div class="eyebrow">Surveillance des chambres froides</div><h2>Dernières températures reçues</h2><p>Collecte serveur selon la programmation de chaque chambre, même lorsque le site est fermé. Les valeurs affichées ne sont pas des mesures instantanées.</p></div><button type="button" class="btn btn-outline btn-small" data-go="cold">Voir les relevés</button></div>'+
+  '<div class="section-heading"><div><div class="eyebrow">Surveillance des chambres froides</div><h2>Dernières températures reçues</h2><p>Collecte serveur selon la programmation de chaque chambre, même lorsque le site est fermé. Les valeurs affichées ne sont pas des mesures instantanées.</p></div>'+(data.me?.scope==="staff"&&!data.me.existingAccount?'<button type="button" class="btn btn-outline btn-small" data-go="cold">Contrôle manuel</button>':'')+'</div>'+
   (dashboardRefreshError?'<p class="info info-warn">'+esc(dashboardRefreshError)+'</p>':'')+
   '<div class="cold-live-grid">'+(tiles||'<div class="empty">Aucune chambre froide active.</div>')+'</div></section>';
 }
 async function refreshDashboardReadings(){
- if(!data||!token||page!=="dashboard"||busy||dashboardRefreshInFlight||document.hidden||document.getElementById("kitchenTaskEditor"))return;
- const currentToken=token;dashboardRefreshInFlight=true;
+ if(!data||!token||page!=="dashboard"||busy||dashboardRefreshInFlight||document.hidden||document.getElementById("kitchenPhotoCapture"))return;
+ const currentToken=token,previousData=data,epoch=loadEpoch;dashboardRefreshInFlight=true;
  try{
   const fresh=await request("list");
-  if(token!==currentToken||!data||page!=="dashboard"||document.getElementById("kitchenTaskEditor"))return;
-  data=fresh;dashboardRefreshAt=Date.now();dashboardRefreshError="";
+  if(token!==currentToken||data!==previousData||epoch!==loadEpoch||page!=="dashboard"||busy||document.getElementById("kitchenPhotoCapture"))return;
+  data=fresh;dashboardRefreshAt=Date.now();dashboardRefreshError="";updateTodayLabel();
   renderDashboard();updateCriticalAlert();
  }catch(err){
-  if(token!==currentToken)return;
+  if(token!==currentToken||epoch!==loadEpoch)return;
   if(/Session expirée|accès non autorisé/i.test(String(err.message))){logout();return}
   dashboardRefreshError="Actualisation temporairement indisponible. Vérifiez la date des mesures.";
-  if(page==="dashboard"&&data)renderDashboard();
+  if(page==="dashboard"&&data&&!document.getElementById("kitchenPhotoCapture"))renderDashboard();
  }finally{dashboardRefreshInFlight=false}
 }
-
+function visibleTasks(tasks,me){
+ return (tasks||[]).filter(t=>me.scope!=="staff"||me.existingAccount||!t.assigned_to||t.assigned_to===me.id);
+}
 function renderDashboard(){
- const day=today(),rooms=activeRooms(),coldToday=data.cold.filter(r=>dayOf(r.measured_at)===day),checked=new Set(coldToday.filter(r=>rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
- const done=new Set(data.checks.filter(r=>r.performed_on===day).map(r=>r.task_id));
- const open=data.reheats.filter(r=>r.status==="en_cours");
+ const day=today(),rooms=activeRooms();
  const alarms=[...latestByRoom().values()].filter(r=>r.is_alert&&rooms.some(room=>room.id===r.room_id)).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
  $("content").innerHTML=
- renderColdOverview()+
- '<div class="card"><div class="section-heading"><div><div class="eyebrow">Organisation quotidienne</div><h2>Tâches du jour</h2></div><button type="button" class="btn btn-outline btn-small" data-go="tasks">Toutes les tâches</button></div>'+renderTaskItems(data.tasks)+'</div>'+
- '<div id="meaterDashboardPanel"></div>'+
- '<div class="grid-3" style="margin-bottom:20px">'+
- '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+rooms.length+'</div></div>'+
- '<div class="stat-box"><div class="muted">Remises en température en cours</div><div class="big-number">'+open.length+'</div></div>'+
- '<div class="stat-box"><div class="muted">Nettoyages validés</div><div class="big-number">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+'</div></div></div>'+
- '<div class="grid" style="margin-bottom:18px">'+
- '<div class="action-card"><div><span class="eyebrow">Cuisson</span><h2>Remise en température</h2><p>Départ de la chambre froide, lancement du four et mesure finale à cœur.</p></div><button class="btn btn-primary" type="button" data-go="reheat">Ouvrir les fours · '+open.length+' en cours</button></div>'+
- '<div class="action-card"><div><span class="eyebrow">Contrôle quotidien</span><h2>Chambres froides</h2><p>Saisissez la température réellement lue dans chaque chambre froide.</p></div><button class="btn btn-accent" type="button" data-go="cold">Faire un relevé · '+(rooms.length-checked.size)+' restant(s)</button></div>'+
- '<div class="action-card"><div><span class="eyebrow">Fin de service</span><h2>Nettoyage</h2><p>Cochez les tâches uniquement lorsqu’elles ont été effectuées.</p></div><button class="btn btn-outline" type="button" data-go="tasks">Voir les tâches</button></div>'+
- '<div class="action-card"><div><span class="eyebrow">Historique</span><h2>Suivi des contrôles</h2><p>Consultez les températures enregistrées et les alertes dans les pages correspondantes.</p></div><button class="btn btn-outline" type="button" data-go="reheat">Voir les remises en température</button></div></div>'+
- (alarms?'<div class="card info-warn"><strong>'+alarms+' anomalie(s) nécessitant une vérification.</strong> Prévenez le responsable et appliquez la procédure corrective prévue.</div>':'')+
- (open.length?'<div class="card"><div class="section-heading"><div><h2>Fours en cours</h2><p>Le compte à rebours continue même si vous changez de rubrique.</p></div><button type="button" class="btn btn-small btn-outline" data-go="reheat">Voir les cycles</button></div>'+
- open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">'+esc(r.cold_room_label_snapshot||roomName(r.cold_room_id))+'</div></div><strong>'+remaining(r.due_at)+'</strong></div>').join("")+'</div>':'');
+ '<section id="dailyTasks" class="work-section" aria-label="Tâches à faire">'+renderTasks()+'</section>'+
+ '<section id="sensorResults" class="work-section" aria-label="Résultats des sondes"><div class="section-heading work-heading"><div><div class="eyebrow">Mesures automatiques</div><h1>Résultats des sondes</h1><p>Dernières valeurs reçues et état des équipements. Les températures ne sont pas des mesures instantanées.</p></div></div>'+
+ (alarms?'<div class="card info-warn"><strong>'+alarms+' écart(s) nécessitant une vérification.</strong> Derniers relevés froids ou anomalies de réchauffage du jour. Prévenez le responsable.</div>':'')+
+ renderColdOverview()+'<div id="meaterDashboardPanel"><div class="card"><h2>Sondes MEATER</h2><p class="muted">Chargement des dernières mesures…</p></div></div></section>';
  window.KitchenMeater.mountDashboard($("meaterDashboardPanel"),request);
 }
-
 function renderCold(){
- const day=today(),rooms=activeRooms(),last=latestByRoom(),todayIds=new Set(data.cold.filter(r=>dayOf(r.measured_at)===day&&rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
- const selected=coldRoomSelected,visibleRooms=selected?rooms.filter(r=>r.id===selected):rooms;
- const options='<option value="">Toutes les chambres froides</option>'+rooms.map(r=>'<option value="'+esc(r.id)+'" '+(selected===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
- const historical=coldHistory||[];
+ const rooms=activeRooms(),last=latestByRoom();
  $("content").innerHTML=
- '<div class="section-heading"><div><div class="eyebrow">Contrôle des équipements</div><h1>Chambres froides</h1><p>Choisissez une chambre pour saisir sa température et retrouver les relevés correspondants.</p></div><span class="tag">'+todayIds.size+' / '+rooms.length+' contrôlées aujourd’hui</span></div>'+
- '<div class="card"><div class="field" style="max-width:440px"><label for="coldRoomSelector">Chambre froide à consulter</label><select id="coldRoomSelector">'+options+'</select></div>'+
- '<div class="row"><button class="btn btn-outline btn-small" type="button" data-cold-export="csv">Exporter les relevés en CSV</button><button class="btn btn-outline btn-small" type="button" data-cold-export="pdf">Exporter en PDF</button></div>'+
- '<p class="help">Les exports contiennent l’historique complet des chambres sélectionnées, même si la liste n’affiche qu’une page.</p></div>'+
- '<div class="grid">'+visibleRooms.map(r=>{
- const current=last.get(r.id),done=todayIds.has(r.id),sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.room_id===r.id&&d.provider==="govee");
+ '<div class="section-heading"><div><div class="eyebrow">Contrôle de service</div><h1>Contrôler une chambre froide</h1><p>Enregistrez uniquement une température réellement mesurée sur place.</p></div></div>'+
+ '<div class="grid">'+rooms.map(r=>{
+ const current=last.get(r.id),sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.room_id===r.id&&d.provider==="govee");
  const threshold=r.min_c===null?'≤ '+number(r.max_c)+' °C':number(r.min_c)+' à '+number(r.max_c)+' °C';
- return '<div class="tile"><div class="row between"><h3>'+esc(r.label)+'</h3><span class="tag '+(done?'tag-ok':'tag-warn')+'">'+(done?'Relevée aujourd’hui':'À contrôler')+'</span></div>'+
- '<div class="subline">Plage configurée : '+esc(threshold)+'</div>'+
- (sensor?'<p class="help">Capteur Govee : <strong>'+esc(sensor.status==='online'?'Dernière valeur reçue':'Non connecté')+'</strong>'+(sensor.last_temperature_c==null?'':' · '+number(sensor.last_temperature_c)+' °C')+(sensor.last_checked_at?' · '+clock(sensor.last_checked_at):'')+'</p>':'')+
- (current?'<p class="help">Dernier relevé : <strong>'+number(current.temperature_c)+' °C</strong> · '+clock(current.measured_at)+' <span class="tag '+(current.is_alert?'tag-alert':'tag-ok')+'">'+(current.is_alert?'Hors seuil':'Dans la plage')+'</span></p>':'<p class="help">Aucun relevé enregistré.</p>')+
- '<form data-cold="'+esc(r.id)+'"><div class="field"><label>Température mesurée (°C)</label><input type="number" required step="0.1" min="-60" max="60" name="temperature_c" inputmode="decimal" placeholder="Ex. 2,5"></div>'+
- '<button class="btn btn-primary" type="submit">Enregistrer la mesure</button></form></div>'}).join("")+'</div>'+
- '<div class="card" style="margin-top:17px"><div class="section-heading"><div><h2>Historique des relevés</h2><p>'+coldTotal+' résultat(s) · page '+(Math.floor(coldOffset/25)+1)+'</p></div></div>'+
- (historical.length?historical.map(r=>'<div class="line"><div><strong>'+esc(roomName(r.room_id))+'</strong><div class="subline">'+clock(r.measured_at)+' · '+(r.source==='govee_cloud'?'Capteur Govee':esc(staffName(r.taken_by)))+'</div></div><div class="row"><strong>'+number(r.temperature_c)+' °C</strong><span class="tag '+(r.is_alert?'tag-alert':'tag-ok')+'">'+(r.is_alert?'Hors seuil':'Dans la plage')+'</span></div></div>').join(""):'<div class="empty"><strong>Aucun relevé pour cette sélection</strong>Les mesures apparaîtront ici.</div>')+
- '<div class="row between" style="margin-top:15px"><button type="button" class="btn btn-outline btn-small" data-cold-page="prev" '+(coldOffset===0?'disabled':'')+'>Page précédente</button><button type="button" class="btn btn-outline btn-small" data-cold-page="next" '+(coldOffset+25>=coldTotal?'disabled':'')+'>Page suivante</button></div></div>';
+ return '<div class="tile card"><h3>'+esc(r.label)+'</h3><div class="subline">Plage configurée : '+esc(threshold)+'</div>'+
+ (sensor?'<p class="help">Capteur Govee : <strong>'+esc(sensor.status==='online'?'Dernière valeur reçue':'Non connecté')+'</strong></p>':'')+
+ (current?'<p class="help">Dernier relevé : <strong>'+number(current.temperature_c)+' °C</strong> · '+clock(current.measured_at)+' · '+(current.source==='govee_cloud'?'Capteur Govee':'Saisie manuelle')+' <span class="tag '+(current.is_alert?'tag-alert':'tag-ok')+'">'+(current.is_alert?'Hors seuil':'Dans la plage')+'</span></p>':'<p class="help">Aucun relevé enregistré.</p>')+
+ (canRecordReheat()?'<form data-cold="'+esc(r.id)+'"><div class="field"><label>Température mesurée (°C)</label><input type="number" required step="0.1" min="-60" max="60" name="temperature_c" inputmode="decimal" placeholder="Ex. 2,5"></div><button class="btn btn-primary" type="submit">Enregistrer la mesure</button></form>':'')+'</div>';
+ }).join("")+'</div>'+(rooms.length?'':'<div class="card empty">Aucune enceinte active.</div>');
 }
 function remaining(iso){const n=Math.ceil((new Date(iso).getTime()-Date.now())/1000);if(n<=0)return"Contrôle attendu";return Math.floor(n/60)+" min "+String(n%60).padStart(2,"0")+" s";}
 function renderReheat(){
- const open=data.reheats.filter(x=>x.status==="en_cours"),recent=data.reheats.filter(x=>x.status!=="en_cours").slice(0,12);
+ const open=data.reheats.filter(x=>x.status==="en_cours");
  const d=data.defaults||{},roomOptions=activeRooms().map(r=>'<option value="'+esc(r.id)+'" '+(d.default_cold_room_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
  const ovenOptions=(data.ovens||[]).map(r=>'<option value="'+esc(r.id)+'" '+(d.default_oven_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
  const dishOptions=(data.dishes||[]).map(r=>'<option value="'+esc(r.id)+'" '+(d.default_dish_type_id===r.id?'selected':'')+'>'+esc(r.label)+'</option>').join("");
- const equipment=r=>esc(r.cold_room_label_snapshot||roomName(r.cold_room_id))+' → '+esc(ovenName(r));
  $("content").innerHTML=
- '<div class="section-heading"><div><div class="eyebrow">De la chambre froide au four</div><h1>Remise en température</h1><p>Deux températures réelles, un minuteur et un historique.</p></div><button type="button" class="btn btn-outline btn-small" id="enableKitchenAlarm">Tester l’alarme</button></div>'+
- '<div class="card"><div class="section-heading"><div><h2>1. Démarrer un réchauffage</h2><p>Sélectionnez le plat, sa chambre froide et le four. Mesurez la température du plat à cœur avant de commencer.</p></div><span class="tag">Départ · chambre froide</span></div>'+
+ '<div class="section-heading"><div><div class="eyebrow">De la chambre froide au four</div><h1>Remise en température</h1><p>Effectuez les contrôles réels de départ et de fin du cycle.</p></div><button type="button" class="btn btn-outline btn-small" id="enableKitchenAlarm">Tester l’alarme</button></div>'+
+ (canRecordReheat()?'<div class="card"><div class="section-heading"><div><h2>1. Démarrer un réchauffage</h2><p>Sélectionnez le plat, sa chambre froide et le four. Mesurez la température du plat à cœur avant de commencer.</p></div><span class="tag">Départ · chambre froide</span></div>'+
  '<form id="startReheat"><div class="field-grid">'+
  '<div class="field"><label>Type de plat</label><select name="dish_type_id" required><option value="">Choisir un type</option>'+dishOptions+'</select></div>'+
  '<div class="field"><label>Chambre froide de départ</label><select name="cold_room_id" required><option value="">Choisir une chambre</option>'+roomOptions+'</select></div>'+
  '<div class="field"><label>Four utilisé</label><select name="oven_id" required><option value="">Choisir un four</option>'+ovenOptions+'</select></div>'+
  '<div class="field"><label>Température mesurée du plat avant réchauffage (°C)</label><input name="temperature_c" required type="number" step="0.1" min="-10" max="90" inputmode="decimal" placeholder="Ex. 2"></div></div>'+
- '<div class="row between"><div class="help">Référence de départ : '+number(d.target_start_c??2)+' °C. Ne saisissez pas une valeur non mesurée.</div><button type="submit" class="btn btn-primary">Démarrer le chronomètre</button></div></form></div>'+
+ '<div class="row between"><div class="help">Référence de départ : '+number(d.target_start_c??2)+' °C. Ne saisissez pas une valeur non mesurée.</div><button type="submit" class="btn btn-primary">Démarrer le chronomètre</button></div></form></div>':'')+
  '<div id="meaterReheatPanel"></div>'+
  '<div class="card"><div class="section-heading"><div><h2>2. Fours en cours</h2><p>Mesurez dès que le plat est prêt. Le rappel est un contrôle attendu, pas une autorisation de servir.</p></div><span class="tag">'+open.length+' cycle(s)</span></div>'+
  (open.length?open.map(r=>{
@@ -287,43 +243,30 @@ function renderReheat(){
  '<form class="finish-area" data-finish="'+esc(r.id)+'" data-due="'+esc(r.due_at)+'"><div class="field"><label>Température réelle à cœur à la sortie du four (°C)</label><input required type="number" step="0.1" min="-10" max="120" name="temperature_c" inputmode="decimal" placeholder="Minimum '+number(r.target_end_c??63)+' °C" '+(allow?'':'disabled')+'></div>'+
  '<button type="submit" class="btn btn-accent" '+(allow?'':'disabled')+'>Valider la température finale</button><p class="help" data-lock-message>'+(allow?'Saisie disponible. Relevez la température réelle à cœur.':'Saisie réservée à un agent connecté.')+'</p></form></div>'
  }).join(""):'<div class="empty"><strong>Aucun four en cours</strong>Lancez une remise en température dans le formulaire ci-dessus.</div>')+'</div>'+
- '<div class="card"><div class="section-heading"><div><h2>3. Derniers contrôles terminés</h2><p>Différence entre les températures réelles de départ et de fin.</p></div></div>'+
- (recent.length?recent.map(r=>'<div class="line"><div><strong>'+equipment(r)+'</strong><div class="subline">'+esc(dishName(r))+' · '+clock(r.started_at)+'</div><div class="subline">'+number(r.start_temperature_c)+' °C → '+number(r.end_temperature_c)+' °C · Écart : '+deltaC(r)+(r.ended_at&&new Date(r.ended_at)>new Date(r.due_at)?' · Mesure enregistrée après le rappel':'')+'</div></div><span class="tag '+(r.status==='alerte'?'tag-alert':'tag-ok')+'">'+(r.status==='alerte'?'À contrôler':'Seuils atteints')+'</span></div>').join(""):'<div class="empty"><strong>Aucun contrôle terminé</strong>Les contrôles apparaîtront ici.</div>')+'</div>'+
  '<p class="guided-note">Le minuteur est une aide à l’organisation, pas une preuve de conformité sanitaire. Les mesures sont conservées avec leur heure de saisie et les alertes restent visibles en administration.</p>';
- window.KitchenMeater.mountKitchen($("meaterReheatPanel"),request,()=>data);
+ window.KitchenMeater.mountKitchen($("meaterReheatPanel"),request,()=>data,{showTiles:false});
 }
 
-function renderPms(){
- $("content").innerHTML='<div id="kitchenPmsPanel"></div>';
- window.KitchenPMS.mount($("kitchenPmsPanel"),{api:request,get:async(action,params={})=>{const res=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":token},cache:"no-store"});const j=await res.json();if(!res.ok)throw Error(j.error||"Service indisponible");return j;},role:data.me.scope,canWrite:data.me.scope==="admin"||data.me.scope==="staff"&&!data.me.existingAccount});
-}
-function canManageTasks(){return data?.me.scope==="admin"}
 function canCheckTasks(){return data?.me.scope==="staff"&&!data.me.existingAccount}
 function renderTaskItems(tasks){
  const done=new Map(data.checks.filter(c=>c.performed_on===today()).map(c=>[c.task_id,c]));
  return '<div class="task-list">'+(tasks.map(t=>{
  const c=done.get(t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id,optional=(data.optional_tasks||[]).some(x=>x.id===t.id);
  const state=c?'<span class="tag tag-ok">Réalisée · '+(c.photo_bytes>0?'Photo enregistrée':'Ancienne validation')+'</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false&&!optional?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':optional?'Valider si utilisée · Photo':'Prendre une photo pour valider')+'</button>':optional?'<span class="tag">Selon utilisation</span>':'<span class="tag tag-warn">À réaliser</span>';
- return '<div class="task-item '+(c?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+' · '+esc(window.KitchenUI.scheduleLabel(t))+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small>'+(t.description?'<p class="kt-task-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="kt-task-notes"><b>Consignes :</b> '+esc(t.instructions)+'</p>':'')+'</div><div class="kt-task-actions">'+state+(canManageTasks()?'<button class="btn btn-outline btn-small" type="button" data-edit-kitchen-task="'+esc(t.id)+'">Modifier</button>':'')+'</div></div>';
+ return '<div class="task-item '+(c?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+(t.scheduled_time?' · '+esc(String(t.scheduled_time).slice(0,5)):'')+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small>'+(t.description?'<p class="kt-task-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="kt-task-notes">'+esc(t.instructions)+'</p>':'')+'</div><div class="kt-task-actions">'+state+'</div></div>';
  }).join("")||'<p class="muted">Aucune tâche à afficher.</p>')+'</div>';
 }
 function renderTasks(){
  const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
- const tasks=canManageTasks()?(data.task_settings||data.tasks):data.tasks;
- const optional=canManageTasks()?[]:(data.optional_tasks||[]);
- $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage et tâches</h1><p>Après chaque nettoyage, prenez une photo de la zone nettoyée pour valider la tâche.</p></div><div class="kt-task-actions"><span class="tag">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+' validées</span>'+(canManageTasks()?'<button type="button" class="btn btn-primary" data-add-kitchen-task>Ajouter une tâche</button>':'')+'</div></div><div class="card">'+renderTaskItems(tasks)+'</div>'+(optional.length?'<div class="card"><h2>Tâches selon utilisation</h2><p class="muted">À valider uniquement après utilisation et nettoyage effectifs. Ces tâches ne sont pas comptées comme obligatoires chaque jour.</p>'+renderTaskItems(optional)+'</div>':'')+'<p class="guided-note">Les validations sont horodatées.</p>';
+ const tasks=visibleTasks(data.tasks,data.me),optional=visibleTasks(data.optional_tasks,data.me),pending=tasks.filter(t=>!done.has(t.id)),pendingOptional=optional.filter(t=>!done.has(t.id)),completed=[...tasks,...optional].filter(t=>done.has(t.id));
+ const open=data.reheats.filter(r=>r.status==="en_cours");
+ return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div><span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+(tasks.length-pending.length)+' / '+tasks.length+' validées</span></div>'+
+ (canRecordReheat()||open.length?'<div class="card"><h2>Contrôles de service</h2><div class="work-actions">'+(canRecordReheat()?'<button class="btn btn-outline" type="button" data-go="reheat">Démarrer une remise en température</button><button class="btn btn-outline" type="button" data-go="cold">Contrôler une chambre froide</button>':'')+'</div>'+
+ (open.length?open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">Mesure finale à cœur · <span class="clock" data-due="'+esc(r.due_at)+'">'+esc(remaining(r.due_at))+'</span></div></div><button class="btn btn-primary btn-small" type="button" data-go="reheat">'+(canRecordReheat()?'Faire le contrôle':'Voir le contrôle')+'</button></div>').join(""):'')+'</div>':'')+
+ '<div class="card"><h2>Nettoyage à réaliser</h2><p class="help">Photo obligatoire après chaque nettoyage.</p>'+(pending.length?renderTaskItems(pending):'<div class="empty"><strong>'+(tasks.length?'Toutes les tâches prévues sont validées.':'Aucune tâche de nettoyage prévue aujourd’hui.')+'</strong></div>')+'</div>'+
+ (pendingOptional.length?'<div class="card"><h2>Tâches selon utilisation</h2><p class="help">À valider seulement si le matériel a été utilisé et nettoyé. Non comptées dans les obligations quotidiennes.</p>'+renderTaskItems(pendingOptional)+'</div>':'')+
+ (completed.length?'<details class="card work-done"><summary>'+completed.length+' tâche(s) réalisée(s) aujourd’hui</summary>'+renderTaskItems(completed)+'</details>':'');
 }
-async function fetchTaskSettings(day){
- const response=await fetch(API+"?"+new URLSearchParams({action:"task-settings",date:day}),{headers:{"x-admin-session":token},cache:"no-store"});
- const json=await response.json().catch(()=>({error:"Réponse invalide"}));if(!response.ok||!Array.isArray(json.tasks))throw Error(json.error||"Configuration indisponible");return json.tasks;
-}
-function editKitchenTask(id){
- if(!canManageTasks()||busy)return;
- const task=id?(data.task_settings||data.tasks).find(t=>t.id===id):null;if(id&&!task)return;
- const currentToken=token;
- window.KitchenUI.open({task,staff:data.staff,completed:!!task&&data.checks.some(c=>c.task_id===id&&c.performed_on===today()),fetchTasks:fetchTaskSettings,save:async(action,body)=>{if(currentToken!==token||!canManageTasks())throw Error("Session modifiée");await request(action,"POST",body)},onSaved:async()=>{await load();status("Tâche enregistrée.")}});
-}
-document.addEventListener("click",e=>{const btn=e.target.closest?.("[data-edit-kitchen-task],[data-add-kitchen-task]");if(btn)editKitchenTask(btn.dataset.editKitchenTask||null)});
 async function save(action,body){if(busy)return;busy=true;try{const result=await request(action,"POST",body);await load();if(result.alert)status("Contrôle enregistré avec anomalie : prévenir le responsable et effectuer une action corrective.",true);else status("Enregistré avec date, heure et nom de l’agent.");}catch(e){status(e.message,true);}finally{busy=false}}
 document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else if(form.dataset.finish){if(!canRecordReheat()){status("Une connexion agent est nécessaire.",true);return;}if(Number(t)<Math.max(63,Number(data.reheats.find(r=>r.id===form.dataset.finish)?.target_end_c||63))&&!confirm("Température sous la cible. Ne servez pas ce plat. Confirmer la fin du cycle avec anomalie ?"))return;save("finish-reheat",{id:form.dataset.finish,temperature_c:t})}});
 document.addEventListener("click",e=>{
@@ -338,23 +281,13 @@ document.addEventListener("click",e=>{
    const result=await request("task-check","POST",{task_id:task.id,day:currentDay,photo_jpeg:photo});
    if(!result.check)throw Error("Validation non confirmée. Actualisez les tâches.");
   },
-  onSaved:async()=>{if(token!==currentToken)return;await load();status("Tâche validée avec sa photo, la date, l’heure et le nom de l’agent.");}
+  onSaved:async()=>{if(token!==currentToken)return;if(await load())status("Tâche validée avec sa photo, la date, l’heure et le nom de l’agent.");}
  });
 });
 $("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("connectAccount")?.addEventListener("click",connectAccount);$("accountLoginForm")?.addEventListener("submit",e=>{e.preventDefault();loginCentralAccount()});$("kitchenFirstPassword")?.addEventListener("submit",e=>{e.preventDefault();finishKitchenFirstPassword()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
-document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.page)));
-document.addEventListener("click",e=>{const b=e.target.closest?.("[data-go]");if(b)switchPage(b.dataset.go)});
-document.addEventListener("change",event=>{
- if(event.target?.id==="coldRoomSelector"){
-  coldRoomSelected=event.target.value;coldHistory=[];coldOffset=0;coldTotal=0;
-  refreshColdHistory(0);
- }
-});
-document.addEventListener("click",event=>{
- const exp=event.target.closest?.("[data-cold-export]");
- if(exp){exportCold(exp.dataset.coldExport);return}
- const pg=event.target.closest?.("[data-cold-page]");
- if(pg){refreshColdHistory(Math.max(0,coldOffset+(pg.dataset.coldPage==="next"?25:-25)));return}
+document.addEventListener("click",e=>{
+ const go=e.target.closest?.("[data-go]");if(go){switchPage(go.dataset.go);return;}
+ const section=e.target.closest?.("[data-section]");if(section&&data&&page==="dashboard")$(section.dataset.section)?.scrollIntoView?.({block:"start",behavior:"smooth"});
 });
 function updateReheatControls(){
  if(!data)return;
@@ -381,10 +314,7 @@ function updateCriticalAlert(){
  const active=activeCriticalCycles(),panel=$("kitchenCriticalAlert");
  panel.hidden=active.length===0;
  document.title=active.length?"⚠ CONTRÔLE À FAIRE ("+active.length+") — Cuisine":initialTitle;
- document.querySelectorAll('.nav [data-page="reheat"]').forEach(b=>{
-  b.classList.toggle("has-check",active.length>0);
-  b.textContent=active.length?"Remise en température · "+active.length+" contrôle(s)":"Remise en température";
- });
+ $("kitchenAlertGo").textContent=canRecordReheat()?"Faire le contrôle maintenant":"Voir le contrôle";
  if(!active.length)return;
  const r=active[0],late=remainingMs(r.due_at)<=0;
  $("kitchenAlertCount").textContent=active.length+" contrôle(s) à effectuer";
@@ -434,7 +364,7 @@ document.addEventListener("click",e=>{
   document.querySelector('[data-reheat="'+current.id+'"] input[name="temperature_c"]')?.focus?.({preventScroll:true});
  }
 });
-setInterval(()=>{if(!data)return;if(page==="reheat")updateReheatControls();checkReheatAlarms();},1000);
+setInterval(()=>{if(!data)return;if(page==="reheat"||page==="dashboard")updateReheatControls();checkReheatAlarms();},1000);
 setInterval(refreshDashboardReadings,60000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-dashboardRefreshAt>=60000)refreshDashboardReadings()});
 if(token)load();else staffList();

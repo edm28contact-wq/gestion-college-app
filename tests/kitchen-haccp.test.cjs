@@ -49,7 +49,9 @@ test("Cuisine : le rappel reste actif et un agent peut mesurer avant les cinq de
 test("Cuisine : navigation agent guidée et rubriques administration séparées",()=>{
  const html=read("cuisine/index.html"),js=read("cuisine/cuisine.js");
  const admin=read("college/admin/cuisine-admin.js"),adminHtml=read("college/admin/index.html");
- for(const tab of ["dashboard","reheat","cold","tasks"])assert.match(html,new RegExp('data-page="'+tab+'"'));
+ for(const section of ["dailyTasks","sensorResults"])assert.match(html,new RegExp('data-section="'+section+'"'));
+ assert.doesNotMatch(html,/data-page="pms"/);
+ assert.match(js,/data-go="reheat"/);assert.match(js,/data-go="cold"/);
  assert.match(html,/id="loginForm"/);
  assert.match(js,/function renderDashboard\(\)/);
  assert.match(js,/function switchPage\(next\)/);
@@ -75,7 +77,7 @@ test("Cuisine : raccordement Govee identifiable et provenance des relevés prés
  assert.match(admin,/kitchenProbeRegister/);
  assert.match(admin,/testo 104-IR BT/);
  assert.match(kitchen,/sensor\.status==='online'/);
- assert.match(kitchen,/r\.source==='govee_cloud'/);
+ assert.match(kitchen,/current\.source==='govee_cloud'/);
 });
 
 test("Cuisine : l’archivage et la suppression conservent les contrôles historiques",()=>{
@@ -105,23 +107,22 @@ test("Cuisine : alerte prioritaire persistante et son répétitif sans faux cont
  assert.match(script,/status==="en_cours"&&canFinish/);
 });
 
-test("Cuisine : choisir les chambres et exporter la totalité des relevés",()=>{
+test("Cuisine : relevés manuels côté agent et exports complets réservés à l’administration",()=>{
  const admin=read("college/admin/cuisine-admin.js");
  const kitchen=read("cuisine/cuisine.js");
  const reports=read("cuisine/releve-export.js");
- assert.match(kitchen,/id="coldRoomSelector"/);
+ assert.match(kitchen,/data-cold="/);
  assert.match(admin,/id="adminColdRoomSelector"/);
- assert.match(kitchen,/data-cold-export="csv"/);
- assert.match(kitchen,/data-cold-export="pdf"/);
+ assert.doesNotMatch(kitchen,/data-cold-export=/);
  assert.match(admin,/data-admin-cold-export="csv"/);
  assert.match(admin,/data-admin-cold-export="pdf"/);
- assert.match(kitchen,/cold-history/);
+ assert.doesNotMatch(kitchen,/cold-history/);
  assert.match(admin,/cold-history/);
  assert.match(reports,/for\(let offset=0;offset<=1000000;offset\+=step\)/);
  assert.match(reports,/page\.has_more/);
  assert.match(reports,/window\.CuisineReports=/);
  assert.match(reports,/new jsPDF/);
- assert.match(read("cuisine/index.html"),/releve-export\.js/);
+ assert.doesNotMatch(read("cuisine/index.html"),/releve-export\.js/);
  assert.match(read("college/admin/index.html"),/releve-export\.js/);
  new vm.Script(reports,{filename:"releve-export.js"});
 });
@@ -130,7 +131,7 @@ test("Cuisine : un rappel dépassé n'est pas une anomalie thermique",()=>{
  const kitchen=read("cuisine/cuisine.js");
  assert.match(admin,/Température cible atteinte/);
  assert.match(admin,/Relevé après le rappel/);
- assert.match(kitchen,/Mesure enregistrée après le rappel/);
+ assert.match(kitchen,/Contrôle attendu/);
 });
 
 test("Cuisine : une mesure froide recontrôlée ne déclenche pas une alerte actuelle",()=>{
@@ -201,4 +202,28 @@ test("Cuisine : valeurs Fahrenheit H5179 affichées en Celsius et H5192 isolé",
  assert.equal(toC(32),0);
  assert.equal(toC(-0.4),-18);
  assert.equal(toC(212),100);
+});
+
+test("Espace Cuisine : tâches personnelles, communes, facultatives et validées séparées",()=>{
+ const script=read("cuisine/cuisine.js"),start=script.indexOf("function visibleTasks("),end=script.indexOf("async function save(action,body)");
+ assert.ok(start>=0&&end>start);
+ const today="2026-11-24",common={id:"common",label:"Bacs à légumes",active:true,scheduled:true},mine={id:"mine",label:"Vestiaires",assigned_to:"a",active:true,scheduled:true},other={id:"other",label:"Tâche autre agent",assigned_to:"b",active:true,scheduled:true},done={id:"done",label:"Sanitaires",active:true,scheduled:true},optional={id:"optional",label:"Friteuse",active:true,scheduled:false};
+ const context={data:{me:{scope:"staff",id:"a"},tasks:[common,mine,other,done],optional_tasks:[optional],checks:[{task_id:"done",performed_on:today,photo_bytes:100}],reheats:[]},today:()=>today,canRecordReheat:()=>true,esc:v=>String(v??""),clock:()=>"12:00",staffName:()=>"Agent"};
+ const html=vm.runInNewContext(script.slice(start,end)+";renderTasks()",context);
+ assert.match(html,/2 à réaliser · 1 \/ 3 validées/);
+ assert.match(html,/Bacs à légumes/);assert.match(html,/Vestiaires/);assert.doesNotMatch(html,/Tâche autre agent/);
+ assert.match(html,/Tâches selon utilisation/);assert.match(html,/Valider si utilisée · Photo/);
+ assert.match(html,/1 tâche\(s\) réalisée\(s\) aujourd’hui/);assert.match(html,/Photo enregistrée/);
+ assert.doesNotMatch(html,/data-edit-kitchen-task|data-add-kitchen-task/);
+});
+test("Espace Cuisine : deux accès, sondes réelles et administration séparée",()=>{
+ const html=read("cuisine/index.html"),script=read("cuisine/cuisine.js"),meater=read("cuisine/meater-ui.js");
+ assert.equal((html.match(/data-section="/g)||[]).length,2);
+ assert.match(html,/data-section="dailyTasks"/);assert.match(html,/data-section="sensorResults"/);
+ assert.match(script,/renderColdOverview\(\)/);assert.match(script,/KitchenMeater\.mountDashboard/);
+ assert.match(script,/kitchenAdminLink"\)\.hidden=data\.me\.scope!=="admin"/);
+ assert.doesNotMatch(html,/pms-ui\.js|releve-export\.js/);
+ assert.match(meater,/Aucune sonde associée\. Aucune mesure disponible/);
+ assert.match(meater,/function mountKitchen\(root,api,getData,\{showTiles=true\}/);
+ assert.match(script,/showTiles:false/);
 });
