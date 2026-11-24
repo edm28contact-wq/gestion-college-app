@@ -272,6 +272,7 @@ function toggleTimes(){
 }
 async function updateAutoDurationPreview(){
  const version=++durationPreviewVersion,box=$('autoDurationPreview');
+ previewCalculatedMinutes=null;
  if(!departureCalculationActive())return;
  const person=currentPlanningName(),date=$('date').value,departure=$('departureTime').value,
   noReturn=$('noReturn').checked,returned=$('returnTime').value;
