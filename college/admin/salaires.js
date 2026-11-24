@@ -864,7 +864,6 @@ function salaryAccountingPage(){
   return out;
  },{absence:{minutes:0,missing:0},retard:{minutes:0,missing:0},depart_anticipe:{minutes:0,missing:0}});
  const unfinished=rows.reduce((sum,r)=>sum+r.missingHours+r.unmatchedDays+r.overbookedDays,0);
- const pending=rows.reduce((sum,r)=>sum+r.pending,0);
  const incompleteCalendar=rows.filter(r=>r.plannedDays===null).length;
  const incompleteEquivalents=rows.filter(r=>r.estimatedWorkedDays===null).length;
  const incompleteBenefits=rows.filter(r=>r.benefits.total===null).length;
@@ -933,15 +932,15 @@ function salaryAccountingPage(){
    '<tr><td>'+esc(e.event_date||"")+'</td><td>'+esc(e.personnel_name||"")+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td>'+
    '<td>'+esc(salaryDuration(e))+'</td><td>'+esc(["absence","retard","depart_anticipe"].includes(e.event_type)?e.review_status==="sans_suite"?"Exclu du calcul":e.review_status==="valide"?"Comptabilisé":"Provisoire":e.event_type==="incident"?"Incident · non déduit":"Hors calcul")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td>'+
    '<td>'+(e.attachment_path?'<button type="button" class="btn secondary compact" data-accounting-pdf="'+esc(e.id)+'">Voir PDF</button>':'—')+'</td></tr>').join("");
-  return heading+items;
+  return '<tbody>'+heading+items+'</tbody>';
  }).join("");
  const detail='<details class="card salary-accounting-detail" open><summary>Détail des événements du mois ('+selectedEvents.length+') · classés par salarié</summary>'+
   '<div class="actions" style="margin:14px 0"><button class="btn secondary" id="salaryAccountingExport"'+(!ready||!selectedEvents.length?' disabled':'')+'>Exporter CSV</button>'+
   '<button class="btn secondary" id="salaryAccountingPrint"'+(!ready||!selectedEvents.length?' disabled':'')+'>Imprimer / PDF</button>'+
   '<a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></div>'+
-  '<div class="table"><table><thead><tr><th>Date</th><th>Salarié</th><th>Type</th><th>Durée renseignée</th><th>Prise en compte</th><th>Statut</th><th>Justificatif</th></tr></thead><tbody>'+
-  (eventsHtml||'<tr><td colspan="7">Aucun événement enregistré pour la sélection.</td></tr>')+
-  '</tbody></table></div></details>';
+  '<div class="table"><table><thead><tr><th>Date</th><th>Salarié</th><th>Type</th><th>Durée renseignée</th><th>Prise en compte</th><th>Statut</th><th>Justificatif</th></tr></thead>'+
+  (eventsHtml||'<tbody><tr><td colspan="7">Aucun événement enregistré pour la sélection.</td></tr></tbody>')+
+  '</table></div></details>';
  $('content').innerHTML=controls+cardHtml+'<section class="card" role="status">'+status+'</section>'+table+detail;
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
  $('salaryAccountingEmployee')?.addEventListener('change',e=>{salaryAccountingEmployeeId=e.target.value;salaryAccountingPage()});
