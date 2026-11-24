@@ -16,3 +16,8 @@ test("Publication qualifiée : déploiement dépendant des tests et activation e
  assert.match(source,/pages: write/);
  assert.match(source,/id-token: write/);
 });
+
+test("Identité : nom des contrôles GitHub Actions",()=>{
+ const source=read(".github/workflows/quality-gates.yml");
+ assert.match(source,/^name: Contrôles Gestion Cours Chambertin$/m);
+});
