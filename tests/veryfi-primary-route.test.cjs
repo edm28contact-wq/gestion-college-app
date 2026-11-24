@@ -32,7 +32,7 @@ test("Azure est annulé sans effacer ses anciennes analyses",()=>{
  assert.match(connector,/const ALLOWED = \["ocrspace"\]/);
  assert.doesNotMatch(settings,/data-provider="azure_invoice"/);
  assert.doesNotMatch(page,/Lire avec Azure/);
- assert.match(page,/Lire avec OCR.space/);
+ assert.match(page,/Saisir manuellement/);assert.match(page,/Historique des lectures/);assert.doesNotMatch(page,/Lire avec OCR.space/);
 });
 test("Aucun mouvement de stock provoqué par la file Secrétariat",()=>{
  assert.doesNotMatch(queue,/from\("stock_movements"\)|from\("stock_balances"\)/);

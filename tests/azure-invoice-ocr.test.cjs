@@ -34,6 +34,6 @@ test("OCR result history includes the provider and structured invoice fields",()
  assert.match(queue,/provider,attempt,engine/);
  assert.doesNotMatch(ui,/Lire avec Azure/);
  assert.match(ui,/Traiter avec Veryfi/);
- assert.match(ui,/Lire avec OCR.space/);
+ assert.match(ui,/Saisir manuellement/);assert.match(ui,/Historique des lectures/);assert.match(ui,/api\("ocr-results"/);
  assert.match(ui,/fields\.items/);
 });

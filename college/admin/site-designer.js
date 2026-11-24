@@ -1,17 +1,17 @@
-/* Interface Admin Collège : éditeur de présentation des sites, sans modification des droits ni du code métier. */
+/* Interface Admin Cours Chambertin : éditeur de présentation des sites, sans modification des droits ni du code métier. */
 const SITE_CONFIG_API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/college-site-settings";
 const SITE_LABELS={
- "admin-college":"Administration Collège",
+ "admin-college":"Administration Cours Chambertin",
  secretariat:"Secrétariat",comptabilite:"Comptabilité",planning:"Planning du personnel",
  veryfi:"Lecteur Veryfi",holding:"Administration centrale", "holding-control":"Supervision Holding",
  "holding-users":"Gestion des utilisateurs","holding-societes":"Sociétés",
  "admin-commandes":"Commandes","marne-accounting":"Comptabilité 9 Marne",
- readiness:"Contrôles Collège","admin-access":"Gestion des accès",
+ readiness:"Contrôles Cours Chambertin","admin-access":"Gestion des accès",
  "admin-accounting-setup":"Configuration comptable","windows-agent":"Agent Windows"
 };
 const SITE_NAV_ENTRIES={
  "admin-college":[["Accueil","tab:#dashboard"],["Statistiques","tab:#stats"],["Produits","tab:#products"],["Catégories","tab:#categories"],["Sous-catégories","tab:#subcategories"],["Achats","tab:#purchases"],["Commandes","tab:#commandes"],["Mouvements","tab:#events"],["Inventaires historiques","tab:#historicalStock"],["Salaires","tab:#salaires"],["Gestion Cuisine","tab:#cuisine"],["Applications","tab:#apps"],["Lecteur PDF & IA","tab:#readerSettings"],["Configuration des sites","tab:#siteDesigner"],["Manuel d’utilisation","tab:#manual"],["Outils avancés","tab:#advanced"]],
- secretariat:[["Stocks et produits","tab:#tStocks"],["Commandes fournisseurs","tab:#tOrders"],["Factures · Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"],["Planning des incidents","link:secretariat/planning/"],["Paramètres","tab:#tSettings"],["Mot de passe","tab:#tPassword"],["Admin Collège","link:college/admin/"],["Comptabilité","link:comptabilite/"],["Holding","link:admin/holding/"]],
+ secretariat:[["Stocks et produits","tab:#tStocks"],["Commandes fournisseurs","tab:#tOrders"],["Factures · Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"],["Planning des incidents","link:secretariat/planning/"],["Paramètres","tab:#tSettings"],["Mot de passe","tab:#tPassword"],["Admin Cours Chambertin","link:college/admin/"],["Comptabilité","link:comptabilite/"],["Holding","link:admin/holding/"]],
  comptabilite:[["Tableau de bord","tab:#td"],["Recettes","tab:#trc"],["Factures fournisseurs","tab:#tde"],["Import de factures","tab:#ti"],["Lecteur Veryfi","link:lecteur-veryfi/?origine=comptabilite"],["Livres et documents","tab:#tdoc"],["Outils avancés","tab:#tadv"]],
  planning:[["Registre des incidents","scroll:#rows"],["Nouvel incident","tab:#new"],["Filtrer le mois","scroll:#month"]],
  veryfi:[["Déposer un PDF","scroll:#drop"],["Suivi du quota","scroll:.usage-panel"],["Facture originale","scroll:.document-panel"],["Contrôle des produits","scroll:#lines"]],
@@ -19,12 +19,12 @@ const SITE_NAV_ENTRIES={
  "holding-control":[["Tableau de bord","tab:#tdash"],["Alertes","tab:#talerts"],["Journal","tab:#tactivity"],["Corbeille","tab:#ttrash"],["Sauvegarde","tab:#tbackup"],["Mode test","tab:#ttest"]],
  "holding-users":[["Accueil Holding","link:admin/holding/"],["Utilisateurs et accès","link:admin/holding/utilisateurs/"],["Sociétés","link:admin/holding/societes/"],["Centre de supervision","link:admin/holding/controle/"]],
  "holding-societes":[["Accueil Holding","link:admin/holding/"],["Utilisateurs et accès","link:admin/holding/utilisateurs/"],["Sociétés","link:admin/holding/societes/"]],
- "admin-commandes":[["Tableau de bord Collège","link:college/admin/"],["Achats et commandes","link:college/admin/?page=commandes"],["Secrétariat","link:secretariat/"],["Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"]],
+ "admin-commandes":[["Tableau de bord Cours Chambertin","link:college/admin/"],["Achats et commandes","link:college/admin/?page=commandes"],["Secrétariat","link:secretariat/"],["Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"]],
  "marne-accounting":[["Administration 9 Marne","link:admin/marne-invest/"],["Gestion locataires","link:admin/marne-invest/?page=tenants"],["Studios","link:admin/marne-invest/?page=properties"],["Comptabilité 9 Marne","link:admin/marne-invest/comptabilite/"]],
- readiness:[["Tableau de bord Collège","link:college/admin/"],["Contrôles pré-lancement","link:college/readiness/"],["Applications","link:college/admin/?page=apps"],["Centre de supervision","link:admin/holding/controle/"]],
+ readiness:[["Tableau de bord Cours Chambertin","link:college/admin/"],["Contrôles pré-lancement","link:college/readiness/"],["Applications","link:college/admin/?page=apps"],["Centre de supervision","link:admin/holding/controle/"]],
  "admin-access":[["Accès et liens","link:admin/acces.html"],["Gestion utilisateurs","link:admin/holding/utilisateurs/"],["Gestion sociétés","link:admin/holding/societes/"],["Gestion applications","link:college/admin/?page=apps"]],
- "admin-accounting-setup":[["Administration Collège","link:college/admin/"],["Compte Comptabilité","link:admin/comptabilite/"],["Comptabilité Collège","link:comptabilite/"]],
- "windows-agent":[["Comptabilité Collège","link:comptabilite/"],["Agent Windows","link:admin/windows-agent/"],["Gestion des accès","link:admin/holding/utilisateurs/"]]
+ "admin-accounting-setup":[["Administration Cours Chambertin","link:college/admin/"],["Compte Comptabilité","link:admin/comptabilite/"],["Comptabilité Cours Chambertin","link:comptabilite/"]],
+ "windows-agent":[["Comptabilité Cours Chambertin","link:comptabilite/"],["Agent Windows","link:admin/windows-agent/"],["Gestion des accès","link:admin/holding/utilisateurs/"]]
 };
 let siteEditorSite="secretariat",siteEditorRevision=0,siteEditorDraft={},siteEditorLoading=false;
 const siteEditorEsc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -154,7 +154,7 @@ let adminCollegeVisualSettings={};
 function applyAdminCollegeSettings(s){
  adminCollegeVisualSettings=s||{};
  const heading=document.querySelector("#app .brand");
- if(heading)heading.textContent=s?.title||"Société Collège";
+ if(heading)heading.textContent=s?.title||"Cours Chambertin";
  const nav=document.getElementById("nav");
  if(nav&&typeof init==="function"&&typeof db!=="undefined"&&db?.current_user){
   init();
