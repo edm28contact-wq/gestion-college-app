@@ -770,7 +770,7 @@ function salaryAccountingMetrics(staff,month){
  for(const [date,minutes] of dayTotals){
   if(minutes>calendar.scheduledMinutesByDate[date])overbookedDays++;
  }
- const equivalentReady=scheduleKnown&&missingHours===0&&unmatchedDays===0&&overbookedDays===0;
+ const equivalentReady=calendar.net!==null&&(entries.length===0||scheduleKnown&&missingHours===0&&unmatchedDays===0&&overbookedDays===0);
  const absenceDays=equivalentReady?[...dayTotals].reduce((sum,[date,minutes])=>sum+minutes/calendar.scheduledMinutesByDate[date],0):null;
  const benefits=salaryAccountingBenefits(staff);
  return {
@@ -809,28 +809,39 @@ function salaryAccountingPage(){
  const people=salaryAccountingEmployeeId==="all"?staffList:staffList.filter(s=>s.id===salaryAccountingEmployeeId);
  const ready=staffAvailable&&eventsAvailable;
  const rows=ready?people.map(staff=>salaryAccountingMetrics(staff,month)):[];
- const days=ready?salaryAccountingTotal(rows,"plannedDays"):null;
- const absenceMinutes=ready?salaryAccountingTotal(rows,"absenceMinutes"):null;
- const absenceDays=ready?salaryAccountingTotal(rows,"absenceDays"):null;
- const workedDays=ready?salaryAccountingTotal(rows,"estimatedWorkedDays"):null;
- const benefitsTotal=ready?(rows.some(r=>r.benefits.total===null)?null:rows.reduce((sum,r)=>sum+r.benefits.total,0)):null;
+ const aggregate=key=>{
+  const known=rows.filter(r=>r[key]!==null);
+  return {value:known.reduce((sum,r)=>sum+r[key],0),complete:known.length===rows.length,known:known.length,total:rows.length};
+ };
+ const days=aggregate("plannedDays"),absenceHours=aggregate("absenceMinutes"),
+  absenceDays=aggregate("absenceDays"),workedDays=aggregate("estimatedWorkedDays");
+ const benefitsKnown=rows.filter(r=>r.benefits.total!==null);
+ const benefitsTotal={value:benefitsKnown.reduce((sum,r)=>sum+r.benefits.total,0),
+  complete:benefitsKnown.length===rows.length,known:benefitsKnown.length,total:rows.length};
  const knownAbsenceMinutes=rows.reduce((sum,r)=>sum+r.knownAbsenceMinutes,0);
  const unfinished=rows.reduce((sum,r)=>sum+r.missingHours+r.unmatchedDays+r.overbookedDays,0);
  const pending=rows.reduce((sum,r)=>sum+r.pending,0);
+ const incompleteCalendar=rows.filter(r=>r.plannedDays===null).length;
+ const incompleteEquivalents=rows.filter(r=>r.estimatedWorkedDays===null).length;
+ const incompleteBenefits=rows.filter(r=>r.benefits.total===null).length;
  const unmatched=ready&&salaryAccountingEmployeeId==="all"?salaryEvents.filter(e=>!salaryStaff.some(staff=>salaryAccountingMatchesStaff(e,staff))).length:0;
  const word=salaryAccountingEmployeeId==="all"?"jours-salariés":"jours";
  const noValue="—";
+ const indicator=(stats,formatter)=>!ready||stats.total===0||stats.known===0?noValue:
+  (stats.complete?"":"≥ ")+formatter(stats.value);
+ const metricDetail=(stats,description)=>stats.complete?description:stats.known+"/"+stats.total+" salarié(s) calculable(s) · total incomplet";
  const cardHtml='<section class="salary-accounting-kpis" aria-label="Indicateurs de comptabilité salariale">'+
-  salaryAccountingKpi("Jours programmés",days===null?noValue:salaryAccountingMetricFormat(days),
-   "Jours théoriques du mois · "+word)+
-  salaryAccountingKpi("Jours équivalents après absences",workedDays===null?noValue:salaryAccountingMetricFormat(workedDays),
-   "Estimation : jours programmés moins absences équivalentes")+
-  salaryAccountingKpi("Heures d’absence",absenceMinutes===null?noValue:salaryFormatLate(absenceMinutes),
-   absenceMinutes===null?(unfinished?salaryFormatLate(knownAbsenceMinutes)+" connues · absences à vérifier":"Données incomplètes"):"Absences déclarées, hors retards et départs anticipés")+
-  salaryAccountingKpi("Absences en jours équivalents",absenceDays===null?noValue:salaryAccountingMetricFormat(absenceDays),
-   "Conversion d’après la durée prévue de chaque journée")+
-  salaryAccountingKpi("Avantages en nature",benefitsTotal===null?noValue:salaryAccountingMoney(benefitsTotal),
-   "Valorisation mensuelle enregistrée · à vérifier pour la paie")+
+  salaryAccountingKpi("Jours programmés",indicator(days,salaryAccountingMetricFormat),
+   metricDetail(days,"Jours théoriques du mois · "+word))+
+  salaryAccountingKpi("Jours travaillés estimés",indicator(workedDays,salaryAccountingMetricFormat),
+   metricDetail(workedDays,"Jours programmés moins absences équivalentes · sans pointage"))+
+  salaryAccountingKpi("Heures d’absence",ready&&absenceHours.complete?salaryFormatLate(absenceHours.value):
+   ready&&knownAbsenceMinutes>0?"≥ "+salaryFormatLate(knownAbsenceMinutes):noValue,
+   metricDetail(absenceHours,"Absences déclarées, hors retards et départs anticipés"))+
+  salaryAccountingKpi("Absences en jours équivalents",indicator(absenceDays,salaryAccountingMetricFormat),
+   metricDetail(absenceDays,"Conversion selon la durée prévue de chaque journée"))+
+  salaryAccountingKpi("Avantages en nature",indicator(benefitsTotal,salaryAccountingMoney),
+   metricDetail(benefitsTotal,"Valorisation mensuelle enregistrée · à vérifier pour la paie"))+
   '</section>';
  const options='<option value="all"'+(salaryAccountingEmployeeId==="all"?' selected':'')+'>Tous les salariés</option>'+
   staffList.map(staff=>'<option value="'+esc(staff.id)+'"'+(salaryAccountingEmployeeId===staff.id?' selected':'')+'>'+esc(staff.name)+'</option>').join("");
@@ -843,13 +854,15 @@ function salaryAccountingPage(){
  const status=ready?
   (sourceStatus?'<p class="err">'+esc(sourceStatus)+'</p>':'')+
   (unfinished?'<p class="err">'+unfinished+' durée(s) ou équivalence(s) d’absence à vérifier : les indicateurs incomplets ne sont pas estimés arbitrairement.</p>':'')+
+  (incompleteCalendar||incompleteEquivalents||incompleteBenefits?'<p class="muted">Calculs incomplets : '+incompleteCalendar+' planning(s) non vérifié(s), '+incompleteEquivalents+' équivalence(s) indisponible(s), '+incompleteBenefits+' valorisation(s) d’avantages à contrôler. Les totaux partiels sont signalés par « ≥ ».</p>':'')+
   (pending?'<p class="muted">'+pending+' absence(s) en attente de validation : résultats provisoires.</p>':'')+
   (unmatched?'<p class="err">'+unmatched+' événement(s) non rapproché(s) d’une fiche salarié : non inclus dans les indicateurs.</p>':'')+
-  '<p class="muted">Les jours équivalents sont calculés à partir des horaires prévus, et non d’un pointage réel. Les avantages en nature sont les valeurs mensuelles paramétrées, non des montants de bulletin de paie.</p>':
+  '<p class="muted">Les jours équivalents sont calculés à partir des horaires prévus, et non d’un pointage réel. Les absences classées « Sans suite » sont exclues. Les avantages en nature sont les valeurs mensuelles paramétrées, non des montants de bulletin de paie.</p>':
   '<p class="muted">'+esc(salaryStaffError||salaryError||"Chargement des horaires, événements et calendriers officiels…")+'</p>';
  const rowHtml=rows.map(r=>{
   const statusText=r.missingHours||r.unmatchedDays||r.overbookedDays?
-   'À vérifier':r.pending?'Provisoire':'Calcul disponible';
+   'Absence à vérifier':r.plannedDays===null||r.estimatedWorkedDays===null?'Planning à compléter':
+   r.benefits.total===null?'Avantages à vérifier':r.pending?'Provisoire':'Calcul disponible';
   return '<tr><th scope="row">'+esc(r.staff.name)+'</th>'+
    '<td class="salary-accounting-num">'+(r.plannedDays===null?noValue:esc(salaryAccountingMetricFormat(r.plannedDays)))+'</td>'+
    '<td class="salary-accounting-num">'+(r.estimatedWorkedDays===null?noValue:esc(salaryAccountingMetricFormat(r.estimatedWorkedDays)))+'</td>'+
