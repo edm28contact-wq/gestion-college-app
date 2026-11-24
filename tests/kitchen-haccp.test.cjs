@@ -262,3 +262,17 @@ test("Checklist : compteurs par rubrique et tâches selon utilisation sans fauss
  assert.doesNotMatch(html,/id="cleaning-froid"/);
  assert.equal((html.match(/aria-checked="true"/g)||[]).length,2);
 });
+
+test("Checklist : planning complet non dû et aperçu du prochain jour sans validation anticipée",()=>{
+ const script=read("cuisine/cuisine.js"),start=script.indexOf("function visibleTasks("),end=script.indexOf("async function save(action,body)");
+ const today="2026-11-24",old={id:"old",label:"Nettoyage des fours",active:true,scheduled:true},weekly={id:"w",label:"Armoires",recurrence:"weekly",weekdays:[5]},future={id:"new",label:"Bacs à légumes",recurrence:"daily"};
+ const context={data:{me:{scope:"staff",id:"a"},tasks:[old],optional_tasks:[],checks:[],reheats:[],task_plan:{date:today,tasks:[old,weekly]},task_plan_next:{date:"2026-11-25",tasks:[future]}},today:()=>today,canRecordReheat:()=>true,esc:v=>String(v??""),clock:()=>"12:00",staffName:()=>"Agent"};
+ const html=vm.runInNewContext(script.slice(start,end)+";renderTasks()",context);
+ assert.match(html,/1 à réaliser · 0 \/ 1 validées/);assert.match(html,/Planning complet à partir du 25\/11\/2026/);
+ assert.match(html,/Chaque semaine · vendredi/);assert.match(html,/Non prévue aujourd’hui/);assert.match(html,/Bacs à légumes/);
+ assert.equal((html.match(/role="checkbox"/g)||[]).length,1);
+ assert.doesNotMatch(html,/data-task="(?:new|w)"/);
+ assert.doesNotMatch(html,/Autres tâches/);
+ const api=read("supabase/functions/kitchen-api/index.ts");
+ assert.match(api,/p_day:nextTaskDay/);assert.match(api,/task_plan_next:JSON.stringify\(taskPlan\)!==JSON.stringify\(nextTaskPlan\)/);
+});

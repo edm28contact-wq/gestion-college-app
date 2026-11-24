@@ -295,7 +295,8 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  }
  if(action==="list"&&req.method==="GET"){
  const taskDay=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
- const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,coldOverview]=await Promise.all([
+ const nextTaskDay=new Date(Date.parse(taskDay+"T12:00:00Z")+86400000).toISOString().slice(0,10);
+ const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,coldOverview,nextTasks]=await Promise.all([
  query(await c.from("kitchen_cold_rooms").select("*").order("room_type").order("room_number")),
  query(await c.from("kitchen_ovens").select("*").eq("active",true).order("oven_number")),
  query(await c.from("kitchen_dish_types").select("*").eq("active",true).order("label")),
@@ -309,10 +310,13 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  query(await c.from("kitchen_connected_devices").select("id,kind,provider,label,model,room_id,device_identifier,raw_unit,status,last_checked_at,last_temperature_c,last_error,created_at").order("created_at",{ascending:false}).limit(80)),
  u.scope==="admin"?(async()=>{const q=await c.from("kitchen_govee_credentials").select("id").eq("id",1).maybeSingle();if(q.error)throw q.error;return {govee_key_configured:!!q.data}})():Promise.resolve(null),
  u.scope==="admin"?query(await c.from("kitchen_cold_readings").select("id,room_id,temperature_c,measured_at,invalidated_at,invalidated_by,invalidation_reason").not("invalidated_at","is",null).order("invalidated_at",{ascending:false}).limit(200)):Promise.resolve([]),
- query(await c.rpc("kitchen_cold_room_overview"))
-
+ query(await c.rpc("kitchen_cold_room_overview")),
+ query(await c.rpc("kitchen_task_calendar",{p_day:nextTaskDay}))
  ]);
- return answer({me:u,rooms,ovens,dishes,defaults,tasks:tasks.filter((t:any)=>t.scheduled),optional_tasks:tasks.filter((t:any)=>!t.scheduled&&t.active&&t.recurrence==="on_demand"&&t.starts_on<=taskDay&&(!t.ends_on||t.ends_on>=taskDay)),task_settings:u.scope==="admin"?tasks:undefined,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
+ const catalog=(rows:any[],day:string)=>rows.filter(t=>t.active&&t.starts_on<=day&&(!t.ends_on||t.ends_on>=day)&&(t.recurrence!=="once"||t.starts_on===day||t.single_day)&&(u.scope!=="staff"||u.existingAccount||!t.assigned_to||t.assigned_to===u.id))
+ .map(t=>({id:t.id,label:t.label,assigned_to:t.assigned_to,recurrence:t.recurrence,weekdays:t.weekdays,scheduled_time:t.scheduled_time,starts_on:t.starts_on,ends_on:t.ends_on})).sort((a,b)=>a.id.localeCompare(b.id));
+ const taskPlan=catalog(tasks,taskDay),nextTaskPlan=catalog(nextTasks,nextTaskDay);
+ return answer({me:u,rooms,ovens,dishes,defaults,task_plan:{date:taskDay,tasks:taskPlan},task_plan_next:JSON.stringify(taskPlan)!==JSON.stringify(nextTaskPlan)?{date:nextTaskDay,tasks:nextTaskPlan}:null,tasks:tasks.filter((t:any)=>t.scheduled),optional_tasks:tasks.filter((t:any)=>!t.scheduled&&t.active&&t.recurrence==="on_demand"&&t.starts_on<=taskDay&&(!t.ends_on||t.ends_on>=taskDay)),task_settings:u.scope==="admin"?tasks:undefined,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
  }
  
 if(action==="cold-history"&&req.method==="GET"){

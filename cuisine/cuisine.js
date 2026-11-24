@@ -262,46 +262,65 @@ function renderTaskItems(tasks){
  (t.description&&t.description!=="Protocole 7 – nettoyage du self"?'<p class="checklist-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="checklist-notes">'+esc(t.instructions)+'</p>':'')+'</li>';
  }).join("")||'<li class="muted checklist-empty">Aucune tâche à afficher.</li>')+'</ul>';
 }
-function cleaningSections(tasks,optional){
+function cleaningSections(tasks,optional,unscheduled=[]){
  const categories=[
   ["preparation","Préparation et hygiène",["Plans de travail","Bacs à légumes","Lave-mains"]],
-  ["plonge","Plonge et vaisselle",["Lave-vaisselle","Bacs à vaisselle","Supports à couverts","Chauffe-assiettes"]],
-  ["cuisson","Cuisson et remise en température",["Fours de remise en température","Bain-marie","Micro-ondes","Hottes et grilles","Friteuse / huile","Friteuse"]],
+  ["plonge","Plonge et vaisselle",["Lave-vaisselle","Bacs à vaisselle","Supports à couverts","Chauffe-assiettes","Nettoyage de la plonge","Nettoyage du lave-vaisselle"]],
+  ["cuisson","Cuisson et remise en température",["Fours de remise en température","Bain-marie","Micro-ondes","Hottes et grilles","Friteuse / huile","Friteuse","Nettoyage des fours"]],
   ["froid","Froid et rangement",["Meubles réfrigérés","Armoires","Congélateur"]],
-  ["service","Distribution et salle de restaurant",["Chariots de service","Tables","Caisse","Salle de restaurant","Table des condiments","Chaises","Cafetières","Point d’eau du self"]],
+  ["service","Distribution et salle de restaurant",["Chariots de service","Tables","Caisse","Salle de restaurant","Table des condiments","Chaises","Cafetières","Point d’eau du self","Nettoyage de la ligne de self"]],
   ["locaux","Sols, locaux et déchets",["Poubelles","Sol","Sols de cuisine et siphons","Carrelages"]],
   ["sanitaires","Sanitaires et vestiaires",["Sanitaires","Vestiaires"]]
  ];
  const normalize=v=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[’‘]/g,"'").trim().replace(/\s+/g," ").toLowerCase();
  const byLabel=new Map(),groups=categories.map(([key,title,labels])=>{
-  const group={key,title,tasks:[],optional:[]};
+  const group={key,title,tasks:[],optional:[],unscheduled:[]};
   for(const label of labels)byLabel.set(normalize(label),group);
   return group;
  });
- const other={key:"other",title:"Autres tâches",tasks:[],optional:[]};
+ const other={key:"other",title:"Autres tâches",tasks:[],optional:[],unscheduled:[]};
  for(const task of tasks)(byLabel.get(normalize(task.label))||other).tasks.push(task);
  for(const task of optional)(byLabel.get(normalize(task.label))||other).optional.push(task);
- return [...groups,other].filter(g=>g.tasks.length||g.optional.length);
+ for(const task of unscheduled)(byLabel.get(normalize(task.label))||other).unscheduled.push(task);
+ return [...groups,other].filter(g=>g.tasks.length||g.optional.length||g.unscheduled.length);
 }
-function renderCleaningSections(tasks,optional,done){
- return cleaningSections(tasks,optional).map(g=>{
+function cleaningFrequency(t){
+ const days=["","lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"],names=(t.weekdays||[]).map(n=>days[n]).filter(Boolean).join(", ");
+ return t.recurrence==="daily"?"Tous les jours":t.recurrence==="weekly"?"Chaque semaine"+(names?" · "+names:""):t.recurrence==="monthly"?"Une fois par mois"+(names?" · premier "+names:""):t.recurrence==="on_demand"?"Selon utilisation":t.recurrence==="once"?"Ponctuelle":"Selon programmation";
+}
+function renderScheduledPreview(tasks,upcoming=false){
+ return '<ul class="checklist-planned">'+tasks.map(t=>'<li><span><strong>'+esc(t.label)+'</strong><small>'+esc(cleaningFrequency(t))+'</small></span><span class="checklist-planned-state">'+(upcoming?'À venir':'Non prévue aujourd’hui')+'</span></li>').join("")+'</ul>';
+}
+function renderUpcomingPlan(plan){
+ if(!plan||!Array.isArray(plan.tasks)||!plan.tasks.length)return "";
+ const date=String(plan.date||"").split("-").reverse().join("/");
+ return '<div class="card checklist-card checklist-upcoming"><div class="row between"><h2>Planning complet à partir du '+esc(date)+'</h2><span class="tag">'+plan.tasks.length+' tâches</span></div><p class="help">Aperçu du prochain planning. Aucune de ces tâches ne peut être validée ici avant sa date prévue.</p>'+
+ cleaningSections([],[],plan.tasks).map(g=>'<section class="checklist-section"><header class="checklist-section-heading"><h3>'+esc(g.title)+'</h3><span class="checklist-section-count">'+g.unscheduled.length+' tâches</span></header>'+renderScheduledPreview(g.unscheduled,true)+'</section>').join("")+'</div>';
+}
+function renderCleaningSections(tasks,optional,done,unscheduled=[]){
+ return cleaningSections(tasks,optional,unscheduled).map(g=>{
   const complete=g.tasks.filter(t=>done.has(t.id)).length,total=g.tasks.length;
-  const count=total?'<span class="checklist-section-count '+(complete===total?'is-complete':'')+'">'+complete+' / '+total+' validées</span>':'<span class="checklist-section-count">Selon utilisation</span>';
+  const count=total?'<span class="checklist-section-count '+(complete===total?'is-complete':'')+'">'+complete+' / '+total+' validées</span>':'<span class="checklist-section-count">'+(g.optional.length?'Selon utilisation':'Non prévue aujourd’hui')+'</span>';
   const optionalCount=g.optional.filter(t=>done.has(t.id)).length;
   return '<section class="checklist-section" aria-labelledby="cleaning-'+g.key+'"><header class="checklist-section-heading"><h3 id="cleaning-'+g.key+'">'+esc(g.title)+'</h3>'+count+'</header>'+
   (total?renderTaskItems(g.tasks):'')+
-  (g.optional.length?'<div class="checklist-optional"><div class="checklist-optional-heading"><strong>Tâches selon utilisation</strong><span>'+optionalCount+' / '+g.optional.length+' réalisées</span></div><p class="help">À cocher uniquement si le matériel a été utilisé et nettoyé. Hors obligations quotidiennes.</p>'+renderTaskItems(g.optional)+'</div>':'')+'</section>';
+  (g.optional.length?'<div class="checklist-optional"><div class="checklist-optional-heading"><strong>Tâches selon utilisation</strong><span>'+optionalCount+' / '+g.optional.length+' réalisées</span></div><p class="help">À cocher uniquement si le matériel a été utilisé et nettoyé. Hors obligations quotidiennes.</p>'+renderTaskItems(g.optional)+'</div>':'')+
+  (g.unscheduled.length?renderScheduledPreview(g.unscheduled):'')+'</section>';
  }).join("");
 }
 function renderTasks(){
  const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
  const tasks=visibleTasks(data.tasks,data.me),optional=visibleTasks(data.optional_tasks,data.me),pending=tasks.filter(t=>!done.has(t.id)),completed=tasks.length-pending.length,progress=tasks.length?Math.round(completed/tasks.length*100):0;
+ const shown=new Set([...tasks,...optional].map(t=>t.id)),notDue=visibleTasks(data.task_plan?.date===today()?data.task_plan.tasks:[],data.me).filter(t=>!shown.has(t.id));
+ const nextPlan=data.task_plan_next?{...data.task_plan_next,tasks:visibleTasks(data.task_plan_next.tasks,data.me)}:null;
  const open=data.reheats.filter(r=>r.status==="en_cours");
  return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div><span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+completed+' / '+tasks.length+' validées</span></div>'+
  '<div class="card checklist-card"><div class="row between"><h2>Checklist de nettoyage</h2><strong class="checklist-percent">'+progress+' %</strong></div><div class="checklist-progress" role="progressbar" aria-label="Avancement du nettoyage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><span style="width:'+progress+'%"></span></div><p class="help">Cochez une tâche après nettoyage. Prenez une photo : la case sera cochée uniquement après son enregistrement.</p>'+
  (!tasks.length?'<div class="empty"><strong>Aucune tâche de nettoyage prévue aujourd’hui.</strong></div>':'')+
- renderCleaningSections(tasks,optional,done)+
+ (nextPlan?.tasks.length?'<p class="checklist-plan-note">Le planning du jour est encore en vigueur. Le prochain planning complet figure ci-dessous.</p>':'')+
+ renderCleaningSections(tasks,optional,done,notDue)+
  (tasks.length&&!pending.length?'<p class="checklist-complete" role="status">Toutes les tâches prévues sont validées.</p>':'')+'</div>'+
+ renderUpcomingPlan(nextPlan)+
  (canRecordReheat()||open.length?'<div class="card"><h2>Contrôles de service</h2><div class="work-actions">'+(canRecordReheat()?'<button class="btn btn-outline" type="button" data-go="reheat">Démarrer une remise en température</button><button class="btn btn-outline" type="button" data-go="cold">Contrôler une chambre froide</button>':'')+'</div>'+
  (open.length?open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">Mesure finale à cœur · <span class="clock" data-due="'+esc(r.due_at)+'">'+esc(remaining(r.due_at))+'</span></div></div><button class="btn btn-primary btn-small" type="button" data-go="reheat">'+(canRecordReheat()?'Faire le contrôle':'Voir le contrôle')+'</button></div>').join(""):'')+'</div>':'');
 }
