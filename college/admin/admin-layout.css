@@ -90,3 +90,7 @@
 .college-admin-shell .salary-accounting-benefits small{display:block;margin-top:5px;white-space:normal;line-height:1.45}
 .college-admin-shell .salary-accounting-detail summary{font-size:15px;font-weight:750;cursor:pointer;list-style-position:inside}
 @media(max-width:650px){.college-admin-shell .salary-accounting-filters{width:100%}.college-admin-shell .salary-accounting-filters label{flex:1 1 170px}.college-admin-shell .salary-accounting-filters button{flex:1 1 145px}.college-admin-shell .salary-accounting-kpi{padding:16px}}
+
+.college-admin-shell .salary-accounting-detail .salary-accounting-event-group th{background:#e9f0f8;color:#243b52;border-top:2px solid #cad8e6;padding:11px 12px;text-align:left;font-size:13px;font-weight:800}
+.college-admin-shell .salary-accounting-detail .salary-accounting-event-group span{display:inline-block;margin-left:12px;font-size:12px;font-weight:600;color:#536c83}
+@media(max-width:650px){.college-admin-shell .salary-accounting-detail .salary-accounting-event-group span{display:block;margin:3px 0 0}}
