@@ -57,11 +57,11 @@ function canDeleteRoom(room:any){
  return now>=threshold.getTime();
 }
 
-async function syncGoveeDevice(c:any,sensor:any,key:string){
+async function syncGoveeDevice(c:any,sensor:any,key:string,slotAt?:string){
  const failed=async(message:string,statusCode=409,offline=false)=>{
   const update=await c.from("kitchen_connected_devices").update({
    status:offline?"offline":"error",last_checked_at:new Date().toISOString(),last_error:message.slice(0,180)
-  }).eq("id",sensor.id);
+  }).eq("id",sensor.id).eq("room_id",sensor.room_id);
   if(update.error)throw update.error;
   return {error:message,statusCode};
  };
@@ -85,8 +85,20 @@ async function syncGoveeDevice(c:any,sensor:any,key:string){
   const degrees=temperatureToCelsius(numeric,sensor.raw_unit);
   if(degrees < -60||degrees>60)
    return await failed("Température hors plage : vérifiez l'unité du capteur",422);
+  // Recheck the association and the active schedule after the network request.
+  const [currentSensor,currentRoom]=await Promise.all([
+   c.from("kitchen_connected_devices").select("room_id,raw_unit").eq("id",sensor.id).maybeSingle(),
+   c.from("kitchen_cold_rooms").select("min_c,max_c,archived_at,deleted_at,auto_collection_enabled,auto_collection_last_slot_at,auto_collection_updated_at").eq("id",sensor.room_id).maybeSingle()
+  ]);
+  if(currentSensor.error)throw currentSensor.error;if(currentRoom.error)throw currentRoom.error;
+  if(currentSensor.data?.room_id!==sensor.room_id||currentSensor.data?.raw_unit!==sensor.raw_unit||
+     !currentRoom.data||currentRoom.data.archived_at||currentRoom.data.deleted_at||
+     (slotAt&&(!currentRoom.data.auto_collection_enabled||
+      Date.parse(currentRoom.data.auto_collection_last_slot_at||"")!==Date.parse(slotAt)||
+      Date.parse(currentRoom.data.auto_collection_updated_at)>Date.parse(slotAt))))
+   return {error:"Affectation ou programmation modifiée pendant la collecte : aucun relevé ajouté",statusCode:409};
   const measuredAt=new Date().toISOString();
-  const isAlert=degrees>Number(room.data.max_c)||(room.data.min_c!==null&&degrees<Number(room.data.min_c));
+  const isAlert=degrees>Number(currentRoom.data.max_c)||(currentRoom.data.min_c!==null&&degrees<Number(currentRoom.data.min_c));
   const added=await c.from("kitchen_cold_readings").insert({
    room_id:sensor.room_id,temperature_c:degrees,is_alert:isAlert,source:"govee_cloud",
    connected_device_id:sensor.id,taken_by:null,measured_at:measuredAt
@@ -94,7 +106,7 @@ async function syncGoveeDevice(c:any,sensor:any,key:string){
   if(added.error)throw added.error;
   const updated=await c.from("kitchen_connected_devices").update({
    status:"online",last_checked_at:measuredAt,last_temperature_c:degrees,last_error:null
-  }).eq("id",sensor.id);
+  }).eq("id",sensor.id).eq("room_id",sensor.room_id);
   if(updated.error)throw updated.error;
   return {reading:added.data,alert:isAlert,sensor_id:sensor.id};
  }catch(err){
@@ -127,28 +139,28 @@ if(action==="govee-auto-sync"&&req.method==="POST"){
      typeof signature!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(signature))
    return forbidden();
   if(signature!==await mac(await secret(c),"kitchen-govee-cron:"+timestamp))return forbidden();
-  const q=await c.from("kitchen_connected_devices").select("*")
-   .eq("kind","cold_room").eq("provider","govee").order("last_checked_at",{ascending:true}).limit(80);
-  if(q.error)throw q.error;
-  const devices=q.data||[],now=Date.now();
-  const eligible=devices.filter((sensor:any)=>{
-   const age=sensor.last_checked_at?now-Date.parse(sensor.last_checked_at):Infinity;
-   return !Number.isFinite(age)||age<0||age>=8*60000;
-  }).slice(0,10);
-  if(!eligible.length)return answer({attempted:0,received:0,skipped:devices.length,failed:0});
+  const due=await c.rpc("kitchen_govee_due_rooms",{p_now:new Date().toISOString()});
+  if(due.error)throw due.error;
+  if(!due.data?.length)return answer({attempted:0,received:0,failed:0,skipped:0});
   const apiKey=await goveeKey(c);
+  const claimed=await c.rpc("kitchen_claim_govee_due");
+  if(claimed.error)throw claimed.error;
+  const eligible=claimed.data||[];
   let received=0,failed=0;
-  for(const sensor of eligible){
-   const result=await syncGoveeDevice(c,sensor,apiKey);
-   if("reading" in result)received++;
-   else failed++;
+  for(const entry of eligible){
+   const sensor=entry.sensor;
+   try{
+    const result=await syncGoveeDevice(c,sensor,apiKey,entry.slot_at);
+    if("reading" in result)received++;
+    else failed++;
+   }catch(err){console.error("Govee collection error for sensor",sensor.id,err);failed++}
   }
-  return answer({attempted:eligible.length,received,failed,skipped:devices.length-eligible.length});
+  return answer({attempted:eligible.length,received,failed,skipped:Math.max(0,due.data.length-eligible.length)});
  }
  const u=await user(c,req);if(!u)return answer({error:"Session expirée ou accès non autorisé"},401);
   if(u.scope==="viewer"&&req.method!=="GET")return answer({error:"Ce pouvoir autorise uniquement la consultation de la cuisine."},403);
  if(action==="list"&&req.method==="GET"){
- const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated]=await Promise.all([
+ const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,coldOverview]=await Promise.all([
  query(await c.from("kitchen_cold_rooms").select("*").order("room_type").order("room_number")),
  query(await c.from("kitchen_ovens").select("*").eq("active",true).order("oven_number")),
  query(await c.from("kitchen_dish_types").select("*").eq("active",true).order("label")),
@@ -161,10 +173,11 @@ if(action==="govee-auto-sync"&&req.method==="POST"){
  u.scope==="admin"?query(await c.from("kitchen_corrective_actions").select("*").order("created_at",{ascending:false}).limit(300)):Promise.resolve([]),
  query(await c.from("kitchen_connected_devices").select("id,kind,provider,label,model,room_id,device_identifier,raw_unit,status,last_checked_at,last_temperature_c,last_error,created_at").order("created_at",{ascending:false}).limit(80)),
  u.scope==="admin"?(async()=>{const q=await c.from("kitchen_govee_credentials").select("id").eq("id",1).maybeSingle();if(q.error)throw q.error;return {govee_key_configured:!!q.data}})():Promise.resolve(null),
- u.scope==="admin"?query(await c.from("kitchen_cold_readings").select("id,room_id,temperature_c,measured_at,invalidated_at,invalidated_by,invalidation_reason").not("invalidated_at","is",null).order("invalidated_at",{ascending:false}).limit(200)):Promise.resolve([])
+ u.scope==="admin"?query(await c.from("kitchen_cold_readings").select("id,room_id,temperature_c,measured_at,invalidated_at,invalidated_by,invalidation_reason").not("invalidated_at","is",null).order("invalidated_at",{ascending:false}).limit(200)):Promise.resolve([]),
+ query(await c.rpc("kitchen_cold_room_overview"))
 
  ]);
- return answer({me:u,rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,now:new Date().toISOString()});
+ return answer({me:u,rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
  }
  
 if(action==="cold-history"&&req.method==="GET"){
@@ -469,7 +482,28 @@ if(action==="set-staff-pin"||action==="create-staff"){
  const q=await c.from("kitchen_cold_rooms").insert({room_type:type,room_number:n,label,min_c:min,max_c:max}).select("*").single();
  if(q.error?.code==="23505")return answer({error:"Numéro de chambre déjà utilisé pour ce type"},409);if(q.error)throw q.error;return answer({room:q.data},201);
  }
- if(action==="update-room"){
+ if(action==="save-room-collection-schedule"){
+ const id=String(x.id||""),mode=String(x.mode||""),enabled=x.enabled;
+ const interval=x.interval_minutes,rawTimes=x.times;
+ if(!uuid(id)||typeof enabled!=="boolean"||!["interval","times"].includes(mode)||
+    !Number.isInteger(interval)||interval<5||interval>1440||
+    !Array.isArray(rawTimes)||rawTimes.length>24||
+    rawTimes.some((v:any)=>typeof v!=="string"||!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v)))
+  return answer({error:"Programmation invalide : fréquence de 5 à 1 440 min et heures au format HH:MM (24 maximum)"},400);
+ const times=[...new Set<string>(rawTimes)].sort();
+ if(mode==="times"&&!times.length)return answer({error:"Renseignez au moins une heure fixe"},400);
+ const current=await c.from("kitchen_cold_rooms").select("auto_collection_enabled,auto_collection_mode,auto_collection_interval_minutes,auto_collection_times").eq("id",id).is("archived_at",null).is("deleted_at",null).maybeSingle();
+ if(current.error)throw current.error;if(!current.data)return answer({error:"Chambre froide active introuvable"},404);
+ if(current.data.auto_collection_enabled===enabled&&current.data.auto_collection_mode===mode&&Number(current.data.auto_collection_interval_minutes)===interval&&JSON.stringify(current.data.auto_collection_times)===JSON.stringify(times))
+  return answer({updated:false,unchanged:true});
+ const updated=await c.from("kitchen_cold_rooms").update({
+  auto_collection_enabled:enabled,auto_collection_mode:mode,auto_collection_interval_minutes:interval,
+  auto_collection_times:times,auto_collection_updated_at:new Date().toISOString()
+ }).eq("id",id).is("archived_at",null).is("deleted_at",null).select("id,auto_collection_enabled,auto_collection_mode,auto_collection_interval_minutes,auto_collection_times").maybeSingle();
+ if(updated.error)throw updated.error;if(!updated.data)return answer({error:"Chambre devenue inactive"},409);
+ return answer({updated:true,schedule:updated.data});
+ }
+if(action==="update-room"){
  const id=String(x.id||""),label=String(x.label||"").trim();
  const min=x.min_c===null?null:temp(x.min_c,-50,40),max=temp(x.max_c,-50,40);
  if(!uuid(id)||label.length<2||label.length>80||max===null||(x.min_c!==null&&min===null)||(min!==null&&min>max))
