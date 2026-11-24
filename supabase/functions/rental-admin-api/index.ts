@@ -56,7 +56,7 @@ async function serverSecret(client:any) {
 }
 function marneAllowed(a:any) {
   const p=a?.permissions||{};
-  return a?.role==="admin" || a?.role==="marne_invest" || p.marne===true || p.marne_invest===true || p.marne_admin===true || p.marne_accounting===true || p.marne_tenants===true || p.marne_studios===true;
+  return a?.role==="admin" || p.marne===true || p.marne_invest===true || p.marne_admin===true || p.marne_accounting===true || p.marne_tenants===true || p.marne_studios===true;
 }
 function apiUuid(v:any) { return typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); }
 function apiDate(v:any) {
@@ -97,13 +97,15 @@ async function tenantHasLease(client:any,tenantId:string) {
 }
 function paymentAllowed(a:any) {
   const p=a?.permissions||{};
-  return a?.role==="admin" || a?.role==="marne_invest" || p.marne_admin===true
+  return a?.role==="admin" || p.marne_admin===true
     || p.marne_accounting===true || p.marne_invest===true;
 }
 function worksAllowed(a:any) {
  const p=a?.permissions||{};
- return a?.role==="admin" || a?.role==="marne_invest" || p.marne_admin===true || p.marne_studios===true;
+ return a?.role==="admin" || p.marne_admin===true || p.marne_studios===true;
 }
+function tenantEditAllowed(a:any) {const p=a?.permissions||{};return a?.role==="admin"||p.marne_admin===true||p.marne_invest===true||p.marne_tenants===true;}
+function propertyEditAllowed(a:any) {const p=a?.permissions||{};return a?.role==="admin"||p.marne_admin===true||p.marne_invest===true||p.marne_studios===true;}
 function documentsAllowed(a:any) {return paymentAllowed(a);}
 function mailAllowed(a:any) {return a?.role==="admin" || a?.permissions?.marne_admin===true;}
 class MailConfigurationError extends Error {
@@ -161,16 +163,16 @@ async function verifyToken(client:any,req:Request) {
   try {
     const auth=req.headers.get("authorization")||"";
     const token=auth.startsWith("Bearer ")?auth.slice(7):req.headers.get("x-admin-session")||"";
-    const [body,sig]=token.split(".");
-    if(!body||!sig)return null;
+    const parts=token.split(".");if(token.length>4096||parts.length!==2)return null;
+    const [body,sig]=parts;if(!body||!sig)return null;
     const expected=await hmac(await serverSecret(client),body);
     if(!safeEq(expected,fromB64u(sig)))return null;
     const p:any=JSON.parse(new TextDecoder().decode(fromB64u(body)));
-    if(!p?.u||Date.now()>Number(p.exp||0))return null;
-    const q=await client.from("admin_accounts").select("username,active,session_version,role,display_name,permissions,must_change_password").eq("username",p.u).maybeSingle();
+    if(typeof p?.u!=="string"||!p.u||p.u.length>80||(p.scope!==undefined&&p.scope!=="central-admin")||p.r!==undefined||!Number.isFinite(Number(p.exp))||Number(p.exp)<=Date.now()||!Number.isFinite(Number(p.v)))return null;
+    const q=await client.from("admin_accounts").select("username,active,central_active,session_version,role,display_name,permissions,must_change_password").eq("username",p.u).maybeSingle();
     if(q.error)throw q.error;
     const a=q.data;
-    if(!a?.active||Number(a.session_version)!==Number(p.v)||!marneAllowed(a))return null;
+    if(!a?.active||a.central_active===false||Number(a.session_version)!==Number(p.v)||!marneAllowed(a))return null;
     return {...a,permissions:a.permissions||{}};
   } catch { return null; }
 }
@@ -335,7 +337,7 @@ async function loadData(client: any, account:any) {
   for (const q of [s,t,p,l,e,pay,alloc,reminders,inbox,outbox,automations,works,documents,bankImports,bankLines,syncState,irlRules,irlProposals,irlIndices,irlCandidates,irlApplications,healthReports,syncCursor]) if (q.error) throw q.error;
   const mailConfigured=currentMailAccount?await freePasswordConfigured(client,currentMailAccount):false;
   const mailSyncState=syncState.data||syncCursor.data?{...(syncState.data||{}),catchup_pending:syncCursor.data?Number(syncCursor.data.target_uid)>Number(syncCursor.data.last_uid):null,last_progress_at:syncCursor.data?.last_progress_at||null}:null;
-  return { current_user:{username:account.username,role:account.role,display_name:account.display_name||account.username,permissions:account.permissions||{},read_only:account.role!=="admin"&&account.permissions?.readonly===true,payment_access:financeAccess,payment_void_access:paymentVoidAllowed(account),work_access:worksAccess,document_access:documentsAccess,bank_access:financeAccess,mail_access:mailAllowed(account),mail_configured:mailConfigured,mail_account:currentMailAccount}, mail_sync_state:mailSyncState, settings:s.data||[], tenants:t.data||[], properties:p.data||[], leases:l.data||[], installments:e.data||[], payments:pay.data||[], payment_allocations:alloc.data||[], reminder_drafts:reminders.data||[], mail_inbox:inbox.data||[], mail_outbox:outbox.data||[], automation_runs:automations.data||[], work_orders:works.data||[], documents:documents.data||[], bank_imports:bankImports.data||[], bank_lines:bankLines.data||[], irl_rules:irlRules.data||[], irl_proposals:irlProposals.data||[], irl_indices:irlIndices.data||[], irl_candidates:irlCandidates.data||[], irl_applications:irlApplications.data||[], health_reports:healthReports.data||[], tenant_headers:tenantHeaders, comments, commands, server_time:new Date().toISOString() };
+  return { current_user:{username:account.username,role:account.role,display_name:account.display_name||account.username,permissions:account.permissions||{},read_only:account.role!=="admin"&&account.permissions?.readonly===true,payment_access:financeAccess,payment_void_access:paymentVoidAllowed(account),work_access:worksAccess,document_access:documentsAccess,bank_access:financeAccess,mail_access:mailAllowed(account),mail_configured:mailConfigured,mail_account:currentMailAccount}, mail_sync_state:mailSyncState, settings:paymentVoidAllowed(account)?s.data||[]:[], tenants:t.data||[], properties:p.data||[], leases:financeAccess?l.data||[]:[], installments:financeAccess?e.data||[]:[], payments:pay.data||[], payment_allocations:alloc.data||[], reminder_drafts:reminders.data||[], mail_inbox:inbox.data||[], mail_outbox:outbox.data||[], automation_runs:automations.data||[], work_orders:works.data||[], documents:documents.data||[], bank_imports:bankImports.data||[], bank_lines:bankLines.data||[], irl_rules:irlRules.data||[], irl_proposals:irlProposals.data||[], irl_indices:irlIndices.data||[], irl_candidates:irlCandidates.data||[], irl_applications:irlApplications.data||[], health_reports:healthReports.data||[], tenant_headers:tenantHeaders, comments, commands, server_time:new Date().toISOString() };
 }
 
 Deno.serve(async (req) => {
@@ -350,9 +352,9 @@ Deno.serve(async (req) => {
       const {count}=await client.from("admin_login_attempts").select("id",{count:"exact",head:true}).eq("ip",addr).eq("success",false).gte("attempted_at",since);
       if((count||0)>=10)return json({error:"Trop de tentatives. Réessayez plus tard."},429);
       const body=await req.json(),requested=String(body?.username||"").trim().toLowerCase(),username=requested==="holding-admin"?"admin":requested,password=String(body?.password||"");
-      const q=await client.from("admin_accounts").select("username,password_salt,password_hash,password_iterations,active,session_version,role,display_name,permissions,must_change_password,failed_login_count,locked_until").eq("username",username).maybeSingle();
+      const q=await client.from("admin_accounts").select("username,password_salt,password_hash,password_iterations,active,central_active,session_version,role,display_name,permissions,must_change_password,failed_login_count,locked_until").eq("username",username).maybeSingle();
       if(q.error)throw q.error;
-      const a=q.data,locked=!!a?.locked_until&&new Date(a.locked_until).getTime()>Date.now(),ok=!!a?.active&&!locked&&marneAllowed(a)&&await verifyPassword(password,String(a.password_salt||""),String(a.password_hash||""),Number(a.password_iterations||0));
+      const a=q.data,locked=!!a?.locked_until&&new Date(a.locked_until).getTime()>Date.now(),ok=!!a?.active&&a.central_active!==false&&!locked&&marneAllowed(a)&&await verifyPassword(password,String(a.password_salt||""),String(a.password_hash||""),Number(a.password_iterations||0));
       await client.from("admin_login_attempts").insert({ip:addr,success:ok});
       if(!ok){if(a){const fails=Number(a.failed_login_count||0)+1;await client.from("admin_accounts").update({failed_login_count:fails>=5?0:fails,locked_until:fails>=5?new Date(Date.now()+15*60*1000).toISOString():a.locked_until,updated_at:new Date().toISOString()}).eq("username",username)}return json({error:"Identifiants incorrects, accès non autorisé ou compte temporairement verrouillé"},401)}
       await client.from("admin_accounts").update({last_login_at:new Date().toISOString(),failed_login_count:0,locked_until:null}).eq("username",username);
@@ -369,6 +371,7 @@ Deno.serve(async (req) => {
     if(action==="data"&&req.method==="GET")return json(await loadData(client,account));
 
     if (action === "save-tenant" && req.method === "POST") {
+      if(!tenantEditAllowed(account))return json({error:"Pouvoir insuffisant pour cette opération"},403);
       const body = await req.json().catch(()=>null);
       const id = String(body?.id || "");
       if((id&&!apiUuid(id))||!dataObject(body?.data)||enc.encode(JSON.stringify(body.data)).length>64000)
@@ -425,6 +428,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "new-property" && req.method === "POST") {
+      if(!propertyEditAllowed(account))return json({error:"Pouvoir insuffisant pour cette opération"},403);
       const body = await req.json();
       const name = String(body?.name || "").trim();
       const address = String(body?.address || "").trim();
@@ -444,6 +448,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create-property-sheet" && req.method === "POST") {
+      if(!propertyEditAllowed(account))return json({error:"Pouvoir insuffisant pour cette opération"},403);
       const body = await req.json();
       const rowNumber = Number(body?.row_number);
       if (!Number.isInteger(rowNumber)) return json({ error:"Ligne locataire invalide" },400);
@@ -469,6 +474,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "save-property" && req.method === "POST") {
+      if(!propertyEditAllowed(account))return json({error:"Pouvoir insuffisant pour cette opération"},403);
       const body = await req.json().catch(()=>null);
       const id = String(body?.id || "");
       if (!apiUuid(id)||(!("name" in body)&&!("data" in body))) return json({ error:"Dossier logement invalide" },400);

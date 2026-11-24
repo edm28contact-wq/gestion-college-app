@@ -7,14 +7,14 @@ function b64(s:string){const p=s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat(
 function enc64(b:Uint8Array){return btoa(String.fromCharCode(...b)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}
 async function session(db:any,req:Request){try{
  const token=req.headers.get("x-admin-session")||req.headers.get("authorization")?.replace(/^Bearer /,"")||"";
- const [body,sig]=token.split(".");if(!body||!sig)return null;
+ const parts=token.split(".");if(token.length>4096||parts.length!==2)return null;const [body,sig]=parts;if(!body||!sig)return null;
  const setting=await db.from("system_settings").select("admin_token").eq("id",1).single();if(setting.error||!setting.data)return null;
  const key=await crypto.subtle.importKey("raw",enc.encode(String(setting.data.admin_token)),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
  const signed=new Uint8Array(await crypto.subtle.sign("HMAC",key,enc.encode(body)));
  if(enc64(signed)!==sig)return null;
- const p=JSON.parse(new TextDecoder().decode(b64(body)));if(!p.u||Date.now()>Number(p.exp||0))return null;
- const q=await db.from("admin_accounts").select("username,active,role,permissions,must_change_password,session_version").eq("username",p.u).maybeSingle();
- const a=q.data;if(!a?.active||a.must_change_password===true||Number(a.session_version)!==Number(p.v))return null;
+ const p=JSON.parse(new TextDecoder().decode(b64(body)));if(typeof p?.u!=="string"||!p.u||p.u.length>80||(p.scope!==undefined&&p.scope!=="central-admin")||p.r!==undefined||!Number.isFinite(Number(p.exp))||Number(p.exp)<=Date.now()||!Number.isFinite(Number(p.v)))return null;
+ const q=await db.from("admin_accounts").select("username,active,central_active,role,permissions,must_change_password,session_version").eq("username",p.u).maybeSingle();
+ const a=q.data;if(q.error||!a?.active||a.central_active===false||a.must_change_password===true||Number(a.session_version)!==Number(p.v))return null;
  const perms=a.permissions||{},admin=a.role==="admin",visitor=!admin&&perms.readonly===true;
  const salaryRead=admin||(a.role==="admin_limited"&&perms.college_admin===true)||perms["college.salaires.read"]===true||perms["college.salaires.write"]===true;
  const salaryWrite=!visitor&&(admin||(a.role==="admin_limited"&&perms.college_admin===true)||perms["college.salaires.write"]===true);
