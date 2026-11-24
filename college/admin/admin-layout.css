@@ -43,3 +43,21 @@
 @media(max-width:1100px){.college-admin-banner{position:static}.college-admin-shell>.side{top:12px;max-height:calc(100vh - 24px)}}
 @media(max-width:850px){#app.college-admin-shell{grid-template-columns:minmax(0,1fr)}.college-admin-banner{padding:13px 15px;gap:12px}.college-admin-shell>.side{position:static;max-height:none;border-right:0;border-bottom:1px solid #dce3eb;padding:12px 14px}.college-admin-shell #nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:12px}.college-admin-shell>.main{padding:14px}.college-admin-shell .college-menu-toggle{display:inline-block}.college-admin-shell .side.college-menu-closed{display:none}.college-admin-heading{padding:15px}.college-admin-shell #content>.card{padding:13px}.college-admin-banner .college-banner-actions{width:100%}.college-admin-banner .btn{font-size:11px;padding:8px 10px}}
 @media(prefers-reduced-motion:reduce){.college-admin-shell *{scroll-behavior:auto!important}}
+
+/* Horaires hebdomadaires: cartes de jour avec plusieurs créneaux. */
+.college-admin-shell .salary-weekly-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(315px,100%),1fr));gap:12px;margin:12px 0}
+.college-admin-shell .salary-weekday{padding:13px;border:1px solid #dbe3eb;background:#f8fafc;border-radius:10px;min-width:0}
+.college-admin-shell .salary-day-off{background:#f1f4f7}
+.college-admin-shell .salary-day-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.college-admin-shell .salary-day-heading label{display:flex;align-items:center;gap:7px}
+.college-admin-shell .salary-day-heading input{width:auto;accent-color:#243447}
+.college-admin-shell .salary-day-slots{display:flex;flex-direction:column;align-items:stretch;gap:9px;margin-top:12px}
+.college-admin-shell .salary-day-slots[hidden]{display:none!important}
+.college-admin-shell .salary-slot-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;gap:8px;align-items:end}
+.college-admin-shell .salary-slot-row label{font-size:11px;font-weight:700;min-width:0}
+.college-admin-shell .salary-slot-row label span{display:block;margin-bottom:4px}
+.college-admin-shell .salary-slot-row input{padding:8px 6px;min-width:0;width:100%;font-variant-numeric:tabular-nums}
+.college-admin-shell .salary-slot-row .btn{padding:8px;font-size:11px}
+.college-admin-shell .salary-hours-summary{background:#edf3fa;border:1px solid #d8e4f1;border-radius:9px;padding:13px;margin:14px 0}
+.college-admin-shell .salary-hours-summary p{margin:0 0 7px}
+@media(max-width:420px){.college-admin-shell .salary-slot-row{grid-template-columns:repeat(2,minmax(0,1fr))}.college-admin-shell .salary-slot-row .btn{grid-column:1/-1}}
