@@ -39,7 +39,7 @@ async function request(action,method="GET",body,authorized=true){
  const json=await res.json().catch(()=>({error:"Réponse du serveur invalide"}));
  if(!res.ok)throw Error(json.error||"Erreur du serveur");return json;
 }
-async function staffList(){try{const v=await request("staff-list","GET",undefined,false);$("agent").innerHTML='<option value="">Sélectionner un agent</option>'+v.staff.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("");if(!v.staff.length)status("Aucun agent créé. Ouvrez Administration Collège → Gestion Cuisine.",true,"loginStatus")}catch(e){status(e.message,true,"loginStatus")}}
+async function staffList(){try{const v=await request("staff-list","GET",undefined,false);$("agent").innerHTML='<option value="">Sélectionner un agent</option>'+v.staff.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("");if(!v.staff.length)status("Aucun agent créé. Ouvrez Administration Cours Chambertin → Gestion Cuisine.",true,"loginStatus")}catch(e){status(e.message,true,"loginStatus")}}
 async function login(){if(busy)return;busy=true;$("connect").disabled=true;try{
  const v=await request("login","POST",{staff_id:$("agent").value,pin:$("pin").value},false);
  token=v.token;sessionStorage.setItem("kitchen_token",token);$("pin").value="";await load();

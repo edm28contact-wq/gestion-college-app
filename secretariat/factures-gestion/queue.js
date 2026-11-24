@@ -2,7 +2,7 @@
 (() => {
   const API = "https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/secretariat-invoice-queue";
   const $ = id => document.getElementById(id);
-  let invoices = [], currentTab = "todo", busy = false, previewUrl = null;
+  let invoices = [], currentTab = "todo", busy = false, previewUrl = null, historyEpoch=0;
   const VERYFI_READER = "../../lecteur-veryfi/?origine=secretariat&queue_id=";
   const session = () => localStorage.getItem("college_secretariat_token") || localStorage.getItem("edm_admin_token") || "";
   const notice = (value, error = false) => {
@@ -81,6 +81,7 @@
       const view = element("button", null, "Voir PDF");
       view.type = "button"; view.onclick = () => void openInvoice(invoice);
       actions.append(view);
+      if(Number(invoice.ocr_attempts)>0){const history=element("button",null,"Historique des lectures");history.type="button";history.onclick=()=>void showReview(invoice);actions.append(history);}
       if(invoice.state==="done"){
         const done=element("span","state done","Réception/traitement terminé");
         actions.append(done);
@@ -112,6 +113,35 @@
       $("preview").src = previewUrl;
       $("previewPanel").scrollIntoView({behavior:"smooth",block:"start"});
     } catch (error) { notice(error.message, true); }
+  }
+  async function showReview(invoice){
+    const epoch=++historyEpoch,token=session(),panel=$("ocrHistoryPanel"),list=$("ocrHistoryList");
+    $("ocrHistoryTitle").textContent="Historique OCR — "+invoice.file_name;
+    panel.hidden=false;list.replaceChildren(element("p","subtle","Chargement des lectures archivées…"));
+    try{
+      const data=await api("ocr-results","GET",undefined,{id:invoice.id});
+      if(epoch!==historyEpoch||token!==session())return;
+      if(data.stock_unchanged!==true||!Array.isArray(data.readings))throw Error("Historique non vérifié.");
+      list.replaceChildren();
+      if(!data.readings.length)list.append(element("p","subtle","Aucune lecture archivée."));
+      for(const read of data.readings){
+        const card=element("article","panel"),fields=read.structured_result||{};
+        const provider=({azure_invoice:"Azure (historique)",ocrspace:"OCR.space (historique)",veryfi:"Veryfi"})[read.provider]||String(read.provider||"OCR");
+        card.append(element("h3",null,provider+" · tentative "+String(read.attempt??"—")));
+        card.append(element("p","subtle",dateLabel(read.created_at)+" · "+String(read.status||"")+" · "+String(read.page_count??"—")+" page(s)"));
+        const summary=[["Fournisseur",fields.supplier],["Numéro",fields.invoice_number],["HT",fields.subtotal],["TVA",fields.tax],["TTC",fields.total]];
+        for(const [label,value] of summary)if(value!=null&&value!=="")card.append(element("p",null,label+" : "+String(value)));
+        if(Array.isArray(fields.items)&&fields.items.length){
+          const details=element("details"),lines=element("ul");
+          details.append(element("summary",null,fields.items.length+" ligne(s) extraites"));
+          for(const item of fields.items.slice(0,500))lines.append(element("li",null,[item.product_code,item.description,item.quantity,item.unit,item.amount].filter(x=>x!=null&&x!=="").join(" · ")));
+          details.append(lines);card.append(details);
+        }
+        if(read.ocr_text){const details=element("details");details.append(element("summary",null,"Texte OCR original"),element("pre","ocr-raw",String(read.ocr_text).slice(0,150000)));card.append(details);}
+        list.append(card);
+      }
+      panel.scrollIntoView({behavior:"smooth",block:"start"});
+    }catch(err){if(epoch===historyEpoch&&token===session())list.replaceChildren(element("p","notice error",err.message||"Historique indisponible."));}
   }
   async function upload() {
     if (busy) return;
@@ -147,6 +177,7 @@
   });
   $("todoTab").addEventListener("click", () => {currentTab = "todo"; render();});
   $("doneTab").addEventListener("click", () => {currentTab = "done"; render();});
+  $("closeOcrHistory").addEventListener("click",()=>{historyEpoch++;$("ocrHistoryPanel").hidden=true;$("ocrHistoryList").replaceChildren();});
   $("closePreview").addEventListener("click", () => {
     $("preview").removeAttribute("src"); $("previewPanel").hidden = true; previewUrl = null;
   });

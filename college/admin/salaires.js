@@ -1,4 +1,4 @@
-/* Administration Collège : journal mensuel des éléments du personnel */
+/* Administration Cours Chambertin : journal mensuel des éléments du personnel */
 let salaryMonth=null,salaryEvents=[],salaryError="",salaryLoading=false,salaryPerson="all",salaryMonthSummaries=[],salaryHistoryError="",salaryHistoryLoading=false,salaryHistoryLoaded=false,salaryRequestVersion=0,salaryStaff=[],salaryStaffLoaded=false,salaryStaffLoading=false,salaryStaffSaving=false,salaryStaffError="",salaryStaffMessage="",salaryProfileEmployeeId="",salaryProfileMonth="",salaryProfileEvents=[],salaryProfileLoading=false,salaryProfileError="",salaryProfileLoaded=false,salaryProfileRequestVersion=0;
 let salaryProfessionalRoles=[],salaryCanWrite=false,salaryProfileEditDraft=null,salaryProfileEditMessage="",salaryRoleMessage="";
 const salaryTypes={absence:"Absence",retard:"Retard",depart_anticipe:"Départ anticipé",incident:"Incident"};
@@ -436,7 +436,7 @@ function salaryIdentityPanel(staff){
  const draft=salaryProfileEditDraft?.id===staff.id?salaryProfileEditDraft:staff;
  const disabled=!salaryCanWrite||salaryStaffSaving?" disabled":"";
  return '<section class="card salary-identity" style="margin:12px 0"><h3>Identité et rôle professionnel</h3>'+
-  '<p class="muted">Le rôle décrit la fonction du salarié dans le collège. Il ne donne aucun pouvoir d’accès au site. Les anciens événements restent rattachés à la même fiche.</p>'+
+  '<p class="muted">Le rôle décrit la fonction du salarié dans le Cours Chambertin. Il ne donne aucun pouvoir d’accès au site. Les anciens événements restent rattachés à la même fiche.</p>'+
   '<form id="salaryStaffProfileEdit" class="salary-identity-fields"><div><label for="salaryEditName">Nom et prénom</label><input id="salaryEditName" name="name" maxlength="120" required value="'+esc(draft.name)+'"'+disabled+'></div>'+
   '<div><label for="salaryEditRole">Rôle professionnel</label><select id="salaryEditRole" name="professional_role_id"'+disabled+'>'+salaryRoleOptions(draft.professional_role_id)+'</select></div>'+
   '<div><button class="btn primary" type="submit"'+disabled+'>Enregistrer les modifications</button></div></form>'+

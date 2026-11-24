@@ -13,7 +13,7 @@
  const scroll=(label,selector)=>({label,scrollTo:selector});
  const common=[
   link("Mes espaces","portail/"),
-  link("Administration Collège","college/admin/"),
+  link("Administration Cours Chambertin","college/admin/"),
   link("Gestion Cuisine","college/admin/?page=cuisine"),
   link("Cuisine","cuisine/"),
   link("Secrétariat","secretariat/"),
@@ -41,7 +41,7 @@
    ]),
    section("Réglages",[tab("Paramètres","#tSettings"),tab("Mot de passe","#tPassword")]),
    section("Autres espaces",[
-    link("Admin Collège","college/admin/"),
+    link("Admin Cours Chambertin","college/admin/"),
     link("Comptabilité","comptabilite/"),
     link("Holding","admin/holding/")
    ])]},
@@ -50,7 +50,7 @@
    section("Autres espaces",common)]},
   cuisine:{label:"Cuisine",sections:[
    section("Cuisine",[link("Cuisine · Accueil","cuisine/")]),
-   section("Autres espaces",[link("Administration Collège","college/admin/")])]},
+   section("Autres espaces",[link("Administration Cours Chambertin","college/admin/")])]},
   planning:{label:"Planning du personnel",sections:[
    section("Planning",[scroll("Registre des événements","#rows"),tab("Nouvel événement","#new"),scroll("Filtrer le mois","#month")]),
    section("Autres espaces",common)]},
@@ -59,31 +59,31 @@
    section("Autres espaces",common)]},
   holding:{label:"Administration centrale",sections:[
    section("Holding",holding),
-   section("Collège",common)]},
+   section("Cours Chambertin",common)]},
   "holding-control":{label:"Supervision Holding",hideTabs:true,sections:[
    section("Supervision",[tab("Tableau de bord","#tdash"),tab("Alertes","#talerts"),tab("Journal","#tactivity"),tab("Corbeille","#ttrash"),tab("Sauvegarde","#tbackup"),tab("Mode test","#ttest")]),
-   section("Holding",holding),section("Collège",common)]},
+   section("Holding",holding),section("Cours Chambertin",common)]},
   "holding-users":{label:"Gestion utilisateurs",sections:[
-   section("Holding",holding),section("Collège",common)]},
+   section("Holding",holding),section("Cours Chambertin",common)]},
   "holding-societes":{label:"Gestion sociétés",sections:[
-   section("Holding",holding),section("Collège",common)]},
+   section("Holding",holding),section("Cours Chambertin",common)]},
   "admin-commandes":{label:"Commandes fournisseurs",sections:[
-   section("Administration",[link("Tableau de bord Collège","college/admin/"),link("Achats et commandes","college/admin/?page=commandes"),link("Secrétariat","secretariat/"),link("Lecteur Veryfi","lecteur-veryfi/?origine=secretariat")]),
+   section("Administration",[link("Tableau de bord Cours Chambertin","college/admin/"),link("Achats et commandes","college/admin/?page=commandes"),link("Secrétariat","secretariat/"),link("Lecteur Veryfi","lecteur-veryfi/?origine=secretariat")]),
    section("Autres espaces",common)]},
   "marne-accounting":{label:"Comptabilité 9 Marne",sections:[
    section("9 Marne",[link("Administration 9 Marne","admin/marne-invest/"),link("Gestion locataires","admin/marne-invest/?page=tenants"),link("Studios","admin/marne-invest/?page=properties"),link("Comptabilité 9 Marne","admin/marne-invest/comptabilite/")]),
    section("Holding",holding)]},
-  readiness:{label:"Contrôles Collège",sections:[
-   section("Administration",[link("Tableau de bord Collège","college/admin/"),link("Contrôles pré-lancement","college/readiness/"),link("Applications","college/admin/?page=apps"),link("Centre de supervision","admin/holding/controle/")]),
+  readiness:{label:"Contrôles Cours Chambertin",sections:[
+   section("Administration",[link("Tableau de bord Cours Chambertin","college/admin/"),link("Contrôles pré-lancement","college/readiness/"),link("Applications","college/admin/?page=apps"),link("Centre de supervision","admin/holding/controle/")]),
    section("Autres espaces",common)]},
   "admin-access":{label:"Accès et applications",sections:[
    section("Administration",[link("Accès et liens","admin/acces.html"),link("Gestion utilisateurs","admin/holding/utilisateurs/"),link("Gestion sociétés","admin/holding/societes/"),link("Gestion applications","college/admin/?page=apps")]),
    section("Autres espaces",common)]},
   "admin-accounting-setup":{label:"Configuration comptable",sections:[
-   section("Administration",[link("Administration Collège","college/admin/"),link("Compte Comptabilité","admin/comptabilite/"),link("Comptabilité Collège","comptabilite/")]),
+   section("Administration",[link("Administration Cours Chambertin","college/admin/"),link("Compte Comptabilité","admin/comptabilite/"),link("Comptabilité Cours Chambertin","comptabilite/")]),
    section("Autres espaces",common)]},
   "windows-agent":{label:"Agent Comptabilité",sections:[
-   section("Administration",[link("Comptabilité Collège","comptabilite/"),link("Agent Windows","admin/windows-agent/"),link("Gestion des accès","admin/holding/utilisateurs/")]),
+   section("Administration",[link("Comptabilité Cours Chambertin","comptabilite/"),link("Agent Windows","admin/windows-agent/"),link("Gestion des accès","admin/holding/utilisateurs/")]),
    section("Autres espaces",common)]}
  };
  function mount(){

@@ -24,7 +24,7 @@ test("Admin Collège : menu filtré par pouvoir et personnalisation, sans rubriq
  const ctx={db:{current_user:{}},esc,$:()=>nav,filterCollegeMenu(){},canPage:key=>["salaires","products","purchases"].includes(key),adminCollegeVisualSettings:{menu:{"tab:#products":{label:"Catalogue"},"tab:#purchases":{hidden:true}}}};
  vm.runInNewContext(html.slice(groupStart,groupEnd)+html.slice(initStart,initEnd)+";init();",ctx);
  assert.match(nav.innerHTML,/Catalogue/);
- assert.match(nav.innerHTML,/Salaires/);
+ assert.match(nav.innerHTML,/data-p="salaires"[^>]*>Liste salariés<\/button>/);
  assert.doesNotMatch(nav.innerHTML,/data-p="(purchases|cuisine|advanced|readerSettings|stats)"/);
  assert.match(nav.innerHTML,/Personnel et restauration/);
 });

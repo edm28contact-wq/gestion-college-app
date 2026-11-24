@@ -21,7 +21,7 @@ function row(extra={}){const value={id:0,reference:"R100",description:"Fromage",
  return value;}
 function harness(){
  const values={subtotal:"6",tax:"1.2",total:"7.2",vendor:"Fournisseur",invoiceNumber:"123",invoiceDate:"2026-11-09",bulkVatRate:"20"};
- const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,loading:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
+ const ctx={rows:[],removedRows:[],issueFilter:"all",saved:false,loading:false,manualMode:false,documentData:{id:1},file:{name:"test.pdf"},accounting:false,catalog:{products:[{id:"p-1",active:true}]},
   AUTO_APPROVE_SCORE:.90,document:{getElementById:id=>({value:values[id]??""})}};
  const helpers=[
   'const $=id=>document.getElementById(id);',
@@ -196,7 +196,7 @@ test("la TVA proposée reste non appliquée sans confirmation humaine",()=>{
  assert.ok(source.includes("banner.hidden=true"));
  assert.ok(source.includes("TVA non appliquée : confirmation annulée"));
  assert.ok(source.includes("PRÉREMPLI mais PAS APPLIQUÉ"));
- assert.ok(page.includes("veryfi.js?v=49"));
+ assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
 });
 test("clic réel sur Appliquer la TVA : recalcul des verts, oranges et rouges",()=>{
  const h=harness(),notifications=[];
@@ -219,14 +219,14 @@ test("annulation de la confirmation TVA : aucune ligne modifiée",()=>{
  assert.equal(h.api.productColor(h.ctx.rows[0]),"good");
  assert.ok(notifications.some(x=>x.message.includes("TVA non appliquée")));
 });
-test("Secrétariat : l'interface de factures conserve un acces explicite au lecteur V49",()=>{
+test("Secrétariat : l'interface de factures conserve un acces explicite au lecteur Veryfi",()=>{
  const page=file("lecteur-veryfi/index.html");
  const sec=file("secretariat/index.html");
  assert.ok(page.includes('id="readerVersion"'));
- assert.ok(source.includes('const READER_VERSION="V49"'));
+ assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
- assert.ok(page.includes("veryfi.js?v=49"));
- assert.ok(sec.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
+ assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
+ assert.match(sec,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
@@ -236,7 +236,7 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
  const controls={analyze:{disabled:false},clearFile:{disabled:false},results:{hidden:false},applyBulkVat:{disabled:false},repairHeader:{disabled:false}};
  const mockFile={name:"test.pdf",arrayBuffer:async()=>new Uint8Array([37,80,68,70]).buffer};
  const h={
-  file:mockFile,loading:false,serverReady:true,saved:false,revision:0,documentData:null,rows:[],removedRows:[],
+  file:mockFile,loading:false,serverReady:true,saved:false,revision:0,documentData:null,rows:[],removedRows:[],manualMode:false,veryfiSubscriptionBlocked:false,window:{},
   API:{veryfi:"mock"},authToken:"auth",
   document:{getElementById:id=>controls[id]||(controls[id]={disabled:false,textContent:"",checked:false})},
   confirm:()=>true,encode:()=>"base64",
@@ -254,12 +254,12 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
  assert.equal(controls.applyBulkVat.disabled,false,"L'action TVA doit rester cliquable après lecture.");
  assert.equal(controls.repairHeader.disabled,false,"La correction de l'en-tête doit rester cliquable.");
 });
-test("la page integree de factures conserve le lecteur Veryfi V49 accessible",()=>{
+test("la page integree de factures conserve le lecteur Veryfi accessible",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=49"));
- assert.ok(sec.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
+ assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
+ assert.match(sec,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
- assert.ok(source.includes('const READER_VERSION="V49"'));
+ assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
 });
 test("TVA du PDF natif : rapprochement exact sur 25 lignes et 4 colonnes",()=>{
  const ocr=file("lecteur-veryfi/ocr-secours.js");
@@ -396,16 +396,16 @@ test("ligne automatiquement exclue : TVA PDF conservée, sans réception en stoc
  assert.equal(h.api.calc().included.length,0);
 });
 test("exclusions automatiques : confirmation explicite et trace des références conservées",()=>{
+ const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
  assert.ok(source.includes("auto_excluded_details:rows.filter("));
  assert.ok(source.includes("autoExcludedHt"));
  assert.ok(source.includes("ne pourront pas être réceptionnés plus tard à partir du même PDF"));
  assert.ok(source.includes('color==="warn"||color==="bad"||color==="excluded"'));
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
- assert.ok(source.includes('if(accounting||!catalog||!Array.isArray(catalog.products)'));
- assert.ok(source.includes('const READER_VERSION="V49"'));
- const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
- assert.ok(page.includes("veryfi.js?v=49"));
- assert.ok(secretariat.includes("factures-gestion/?embed=secretariat&amp;v=20261117-1"));
+ assert.match(source,/if\(manualMode\|\|accounting\|\|!catalog\|\|!Array\.isArray\(catalog\.products\)/);
+ assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
+ assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
+ assert.match(secretariat,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
 });
 test("les intégrations de base restent présentes",()=>{
@@ -415,7 +415,7 @@ test("les intégrations de base restent présentes",()=>{
  assert.ok(planning.includes('<option value="incident">Incident</option>'));
  assert.ok(planning.includes("Planning des événements du personnel"));
  assert.ok(secretariat.includes("embeddedInvoices")&&secretariat.includes("embeddedPlanning"));
- assert.ok(reader.includes('id="issueFilter"')&&reader.includes('id="freeOcrVerify"'));
+ assert.ok(reader.includes('id="issueFilter"')&&reader.includes('id="manualEntry"'));
 });
 
 test("VA58 : OCR 85 % et preuve PDF native complète permettent le vert sans altérer le score",()=>{
@@ -468,7 +468,7 @@ test("V45 signale séparément les scores OCR absents et preuves PDF partielles"
  assert.equal(h.api.calc().sum,0);
 });
 test("V45 les corrections de champ invalident les anciennes preuves indépendantes",()=>{
- assert.ok(source.includes("row[key]=value;row.pdfEvidence=null;"));
+ assert.match(functionSource("changeRow"),/row\[key\]=value;[\s\S]*?row\.pdfEvidence=null;/);
  assert.ok(source.includes("row.changed=true;row.pdfEvidence=null;"));
  assert.ok(source.includes("Détail : OCR, métier et preuves du PDF"));
 });
@@ -560,4 +560,15 @@ test("TVA : ne jamais transformer un taux vide en taux zéro ni supprimer le TTC
  assert.ok(source.includes("vat_rate:amount(r.tax_rate)"));
  assert.ok(source.includes('original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc}'));
  assert.ok(source.includes('coût payé, TVA non récupérable'));
+});
+
+test("Saisie manuelle : aucun produit absent n’est automatiquement exclu",()=>{
+ const h=harness();h.ctx.manualMode=true;
+ const item=row({reference:"M",product_id:"",reason:"Produit ABSENT du catalogue actif — à ajouter ou rapprocher"});
+ h.ctx.rows=[item];h.api.synchronizeExcludedRows();assert.equal(item.excluded,false);
+});
+test("Veryfi : une session bloquée par l’abonnement n’envoie aucun nouveau document",async()=>{
+ const h={loading:false,file:{name:"x.pdf"},serverReady:true,veryfiSubscriptionBlocked:true,manualMode:false,request:()=>{throw Error("Envoi interdit")},notice:()=>{}};
+ vm.runInNewContext("async "+functionSource("analyze")+";this.run=analyze",h);
+ await h.run();assert.equal(h.loading,false);
 });

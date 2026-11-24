@@ -36,7 +36,7 @@ function render(){
  const archived=applications.length-active;
  const linked=(db.application_products||[]).filter(x=>x.active!==false).length;
  el("content").innerHTML=`
- <header class="apps-page-header"><div><div class="apps-overline">GESTION DES APPLICATIONS</div><h2>Applications du collège</h2><p class="muted">Applications regroupées par catégorie et par fonction, avec accès et configuration centralisés.</p></div><button class="btn primary" type="button" onclick="editSite('','')">+ Créer une application</button></header>
+ <header class="apps-page-header"><div><div class="apps-overline">GESTION DES APPLICATIONS</div><h2>Applications du Cours Chambertin</h2><p class="muted">Applications regroupées par catégorie et par fonction, avec accès et configuration centralisés.</p></div><button class="btn primary" type="button" onclick="editSite('','')">+ Créer une application</button></header>
  <div class="apps-stats"><div><small>Catégories</small><strong>${groups.length}</strong></div><div><small>Applications actives</small><strong>${active}</strong></div><div><small>Applications archivées</small><strong>${archived}</strong></div><div><small>Produits liés</small><strong>${linked}</strong></div></div>
  <section class="card apps-panel"><div class="apps-panel-title"><h3>1. Sélectionner une catégorie</h3><span class="muted">Une catégorie ouvre toutes les applications correspondantes.</span></div><div class="apps-categories">
  <button class="apps-category selected" data-app-cat="" aria-pressed="true" type="button" onclick="openAppCategory('')"><span>Toutes les catégories</span><strong>${active}</strong><small>applications actives</small></button>

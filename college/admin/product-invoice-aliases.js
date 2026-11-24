@@ -1,4 +1,4 @@
-/* Admin Collège: exact supplier invoice designations stored in existing secured alias catalog. */
+/* Admin Cours Chambertin: exact supplier invoice designations stored in existing secured alias catalog. */
 (function(){
 "use strict";
 const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/product-alias-keywords";

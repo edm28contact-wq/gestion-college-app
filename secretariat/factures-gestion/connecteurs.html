@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta http-equiv="Cache-Control" content="no-store">
-<title>Connecteurs OCR | Admin Collège</title>
+<title>Connecteurs OCR | Admin Cours Chambertin</title>
 <style>
 :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#223548;background:#f4f7fa}
 *{box-sizing:border-box}body{margin:0}.wrap{max-width:1120px;margin:auto;padding:20px}
@@ -22,7 +22,7 @@ a{color:#164d7d}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.wrap{padding:11px}}
 </style></head><body><main class="wrap">
 <div class="actions"><a class="btn" href="./">Retour aux factures</a><a class="btn" href="../../college/admin/?page=advanced">Outils avancés</a></div>
-<h1>Connecteurs OCR — Gestion Collège</h1>
+<h1>Connecteurs OCR — Gestion Cours Chambertin</h1>
 <p class="muted">Configuration réservée au super-administrateur. Les identifiants sont conservés côté serveur dans Supabase Vault.</p>
 <div class="card note"><strong>OCR.space : lecture manuelle disponible.</strong> Après enregistrement de la clé et autorisation d’envoi, allez dans Secrétariat → Factures → À faire, puis cliquez sur « Lire avec OCR.space ». Veryfi assure la reconnaissance structurée et le rapprochement des produits avec le catalogue.</div>
 <form id="adminLoginForm" class="card" hidden autocomplete="on">
@@ -33,13 +33,13 @@ a{color:#164d7d}
 <label class="field">Mot de passe administrateur<input id="adminPass" type="password" autocomplete="current-password" required></label>
 </div>
 <div class="actions"><button id="adminLoginButton" type="submit" class="primary">Se connecter pour configurer les OCR</button>
-<a class="btn" href="../../college/admin/">Ouvrir Admin Collège</a></div>
+<a class="btn" href="../../college/admin/">Ouvrir Admin Cours Chambertin</a></div>
 <p class="muted" id="adminLoginMessage" role="status" aria-live="polite"></p>
 </form>
 <p id="message" role="status" aria-live="polite">Chargement des connecteurs…</p>
 <div class="grid">
 <section class="card"><h2>Veryfi — lecteur principal</h2>
-<p class="muted">Veryfi est configuré sur le serveur du collège. Aucune clé Veryfi n'est saisie ici.</p>
+<p class="muted">Veryfi est configuré sur le serveur du Cours Chambertin. Aucune clé Veryfi n'est saisie ici.</p>
 <a class="btn" href="../../lecteur-veryfi/?origine=secretariat" target="_top">Ouvrir Veryfi</a>
 </section>
 <section class="card" data-provider="ocrspace">

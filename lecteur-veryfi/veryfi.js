@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V52";
+const READER_VERSION="V54";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
@@ -237,7 +237,7 @@ async function loadCatalog(){
   await loadAliases();populateDatalists();if(rows.length){refreshMatches();autoVerifyGreenRows();renderRows()}
  }catch(e){
   catalog=null;$("catalogState").textContent="Catalogue indisponible";
-  notice("Veryfi est accessible, mais le catalogue collège est indisponible : "+e.message,"error");
+  notice("Veryfi est accessible, mais le catalogue Cours Chambertin est indisponible : "+e.message,"error");
  }
 }
 async function loadAliases(){
@@ -457,6 +457,7 @@ async function analyze(){
    "Veryfi a identifié "+rows.length+" lignes. "+nativeTaxCount+" TVA ont été extraites et recoupées directement sur le PDF (référence, quantité, prix, total). Contrôlez les autres anomalies avant validation.":
    "Veryfi a identifié "+rows.length+" ligne(s). Les TVA non prouvées ligne par ligne restent à confirmer sur le PDF.","success");
  }catch(e){
+  if(source!==file||version!==revision)return;
   if(e.providerCode==="VERYFI_SUBSCRIPTION_INACTIVE"){veryfiSubscriptionBlocked=true;$("sessionDot").className="dot bad";$("sessionState").textContent="Abonnement Veryfi expiré · saisie manuelle disponible";}
   else if(e.code===401||e.code===403){serverReady=false;authToken="";$("loginLink").hidden=false;$("sessionDot").className="dot bad";$("sessionState").textContent="Session non autorisée";}
   $("readingState").textContent="Lecture interrompue";
