@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V51";
+const READER_VERSION="V52";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
@@ -1045,7 +1045,7 @@ function buildLine(row,index){
  const heading=document.createElement("div");heading.className="row-head";
  const score=typeof row.score==="number"&&Number.isFinite(row.score)?Math.floor(row.score*100+1e-8):null;
  const color=row.excluded?"excluded":productColor(row);
- const label=color==="excluded"?(row.autoExcluded?"Écartée automatiquement":"Écartée manuellement"):color==="bad"?"Hors catalogue":color==="good"?(row.manualVerified?"Validée manuellement":independentPdfVerified(row)?"Recoupement PDF confirmé":row.vatFromNativePdf?"Validée + TVA lue dans le PDF":row.vatConfirmedFromPdf?"Contrôlée + TVA confirmée":"Validée automatiquement"):"À contrôler";
+ const label=color==="excluded"?(row.autoExcluded?"Écartée automatiquement":"Écartée manuellement"):color==="bad"?"Rouge · Correction obligatoire":color==="good"?(row.manualVerified?"Vert · Validée manuellement":independentPdfVerified(row)?"Vert · PDF recoupé":row.vatFromNativePdf?"Vert · TVA lue sur PDF":row.vatConfirmedFromPdf?"Vert · TVA confirmée":"Vert · Validée automatiquement"):"Orange · À vérifier";
  heading.innerHTML='<div class="row-headline"><span class="row-number">LIGNE '+(index+1)+'</span><strong>'+esc(row.description||"Désignation manquante")+'</strong></div><span class="score '+color+'">'+label+'</span>';
  card.append(heading);
  const quality=lineEvidenceMetrics(row);
@@ -1426,11 +1426,19 @@ function updateTotals(){
   correctionNote.className="notice";
   correctionNote.textContent="En-tête OCR à contrôler : "+info.join(". ")+(suggestion?". Suggestion calculée à partir de la somme des lignes OCR : HT "+fmt(suggestion.ht)+" et TTC "+fmt(suggestion.ttc)+" — vérifiez obligatoirement ces montants sur le PDF original.":"")+(suggestion?"":" Vérifiez les montants sur le PDF original.")+" La réception reste calculée uniquement depuis les produits verts validés.";
  }
- const autoApproved=rows.filter(r=>r.autoVerified&&r.verified&&!r.excluded).length;
- const nativeApproved=rows.filter(r=>!r.excluded&&independentPdfVerified(r)&&productColor(r)==="good").length;
- $("metrics").innerHTML=accounting?
-   '<div class="metric"><span>Validées automatiquement</span><strong>'+autoApproved+' / '+rows.length+'</strong></div><div class="metric"><span>À vérifier</span><strong>'+new Set([...c.unverified,...c.missing,...c.unmatched]).size+'</strong></div><div class="metric"><span>Écart HT du PDF</span><strong>'+(c.ht==null?"—":fmt(round(c.sum-c.ht)))+'</strong></div>':
-   '<div class="metric"><span>Lignes vertes retenues</span><strong>'+c.included.length+'</strong></div><div class="metric"><span>Vertes avec preuve PDF</span><strong>'+nativeApproved+'</strong></div><div class="metric"><span>À traiter</span><strong>'+c.pending.length+'</strong></div><div class="metric"><span>HT retenu en réception</span><strong>'+fmt(c.sum)+'</strong></div>';
+ const statusCounts={good:0,warn:0,bad:0};
+ for(const row of rows){
+  if(row.excluded)continue;
+  const color=productColor(row);
+  if(Object.hasOwn(statusCounts,color))statusCounts[color]++;
+ }
+ const statusMetric=(kind,title,count)=>'<div class="metric '+kind+'"><span>'+title+'</span><strong>'+count+'</strong></div>';
+ $("metrics").innerHTML=
+   statusMetric("good","VERTS · Validés",accounting?statusCounts.good:c.included.length)+
+   statusMetric("warn","ORANGES · À vérifier",statusCounts.warn)+
+   statusMetric("bad","ROUGES · À corriger",statusCounts.bad)+
+   '<div class="metric"><span>'+(accounting?"Écart HT du PDF":"HT retenu en réception")+'</span><strong>'+
+    (accounting?(c.ht==null?"—":fmt(round(c.sum-c.ht))):fmt(c.sum))+'</strong></div>';
   const retained=$("retainedAmounts");retained.hidden=accounting;
   if(!accounting){
     retained.className="reconciliation good";
