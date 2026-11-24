@@ -147,35 +147,49 @@ function renderColdOverview(){
  const rooms=activeRooms();
  const tiles=rooms.map(room=>{
   const sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.provider==="govee"&&d.room_id===room.id);
-  const reading=sensor
+  const overview=(data.cold_overview||[]).find(o=>o.room_id===room.id);
+  const reading=overview?overview.last_reading:(sensor
    ?data.cold.find(r=>r.room_id===room.id&&r.source==="govee_cloud"&&r.connected_device_id===sensor.id)
-   :data.cold.find(r=>r.room_id===room.id&&r.source==="manual");
-  const stamp=reading?.measured_at,age=stamp?Date.now()-Date.parse(stamp):Infinity;
-  const recent=!!sensor&&sensor.status==="online"&&Number.isFinite(age)&&age>=-120000&&age<=20*60000;
+   :data.cold.find(r=>r.room_id===room.id&&r.source==="manual"));
+  const enabled=room.auto_collection_enabled!==false,mode=room.auto_collection_mode==="times"?"times":"interval";
+  const interval=Number(room.auto_collection_interval_minutes)||10;
+  const stamp=reading?.measured_at,measuredAt=stamp?Date.parse(stamp):NaN,now=Date.now(),age=now-measuredAt;
+  const expected=overview?.previous_slot_at?Date.parse(overview.previous_slot_at):NaN;
+  const next=overview?.next_slot_at?Date.parse(overview.next_slot_at):NaN;
+  const scheduleChanged=Date.parse(room.auto_collection_updated_at||"");
+  const pastDue=Number.isFinite(expected)&&now>expected+3*60000&&measuredAt<expected;
+  const recent=!!sensor&&enabled&&sensor.status==="online"&&Number.isFinite(age)&&age>=-120000&&
+   (mode==="times"?!!overview&&!pastDue&&(!Number.isFinite(scheduleChanged)||measuredAt>=scheduleChanged):!pastDue&&age<=(interval+3)*60000);
   const measured=reading?.temperature_c!=null&&Number.isFinite(Number(reading.temperature_c));
   const alert=!!reading?.is_alert;
   let label="Sans capteur",tagClass="tag-warn";
   if(sensor){
-   if(sensor.status==="offline"){label="Capteur hors ligne";tagClass="tag-alert"}
+   if(!enabled){label="Collecte suspendue";tagClass="tag-warn"}
+   else if(sensor.status==="offline"){label="Capteur hors ligne";tagClass="tag-alert"}
    else if(sensor.status==="error"){label="Connexion en erreur";tagClass="tag-alert"}
    else if(!measured){label="En attente de mesure";tagClass="tag-warn"}
    else if(!recent){label="Données anciennes";tagClass="tag-warn"}
    else if(alert){label="Hors seuil";tagClass="tag-alert"}
-   else {label="À jour";tagClass="tag-ok"}
+   else {label=mode==="times"?"À jour selon programmation":"À jour";tagClass="tag-ok"}
   }else if(measured){label="Dernier relevé manuel";tagClass="tag-warn"}
   const received=stamp?new Date(stamp).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"short"}):"Aucune mesure";
   const origin=sensor?"Capteur "+esc(sensor.model):"Saisie manuelle";
+  const schedule=!enabled?"Collecte automatique suspendue":mode==="times"
+   ?"Heures fixes : "+esc((room.auto_collection_times||[]).join(", "))
+   :"Toutes les "+interval+" min (24 h/24)";
+  const nextLabel=enabled&&sensor&&Number.isFinite(next)?" · Prochain : "+new Date(next).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"short"}):"";
   const problem=alert?(recent?"Température hors seuil : vérification nécessaire.":"Dernier relevé hors seuil : contrôler sur place."):"";
   return '<article class="cold-live-tile'+(recent&&alert?' cold-live-alert':'')+'">'+
    '<div class="cold-live-top"><h3>'+esc(room.label)+'</h3><span class="tag '+tagClass+'">'+label+'</span></div>'+
    '<div class="cold-live-value">'+(measured?number(reading.temperature_c)+' °C':'—')+'</div>'+
    '<div class="subline">'+origin+' · '+(sensor?'Reçue le ':'Relevée le ')+received+'</div>'+
+   '<div class="subline">'+schedule+nextLabel+'</div>'+
    (problem?'<p class="cold-live-warning">'+problem+'</p>':'')+
    (!sensor?'<p class="help">Associez un thermomètre dans Administration → Gestion Cuisine.</p>':'')+
    '</article>';
  }).join("");
  return '<section class="card cold-live-section">'+
-  '<div class="section-heading"><div><div class="eyebrow">Surveillance des chambres froides</div><h2>Dernières températures reçues</h2><p>Collecte serveur programmée toutes les 10 minutes. Les valeurs affichées ne sont pas des mesures instantanées.</p></div><button type="button" class="btn btn-outline btn-small" data-go="cold">Voir les relevés</button></div>'+
+  '<div class="section-heading"><div><div class="eyebrow">Surveillance des chambres froides</div><h2>Dernières températures reçues</h2><p>Collecte serveur selon la programmation de chaque chambre, même lorsque le site est fermé. Les valeurs affichées ne sont pas des mesures instantanées.</p></div><button type="button" class="btn btn-outline btn-small" data-go="cold">Voir les relevés</button></div>'+
   (dashboardRefreshError?'<p class="info info-warn">'+esc(dashboardRefreshError)+'</p>':'')+
   '<div class="cold-live-grid">'+(tiles||'<div class="empty">Aucune chambre froide active.</div>')+'</div></section>';
 }
