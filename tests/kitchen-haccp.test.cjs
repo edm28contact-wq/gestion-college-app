@@ -290,3 +290,23 @@ test("Administration Cuisine : planning daté, catégories, filtrage et photo pa
  assert.match(code,/\["cleaning","Tâches et photos"\]/);assert.match(code,/cleaningGet\("task-settings",\{date\}/);assert.match(code,/selectedId,fetchPhoto/);
  assert.match(read("cuisine/kitchen-photo.js"),/if\(selectedButton\)selectedButton.click\(\)/);
 });
+
+test("Retrait des quatre anciennes tâches : seul le nouveau planning est visible côté salarié",()=>{
+ const script=read("cuisine/cuisine.js"),start=script.indexOf("function visibleTasks("),end=script.indexOf("async function save(action,body)");
+ const today="2026-11-24",oldLabels=["Nettoyage de la ligne de self","Nettoyage de la plonge","Nettoyage des fours","Nettoyage du lave-vaisselle"],old=oldLabels.map((label,i)=>({id:"old"+i,label,starts_on:"2026-11-19",active:true,scheduled:true})),next=[{id:"old2",label:"Fours de remise en température",starts_on:"2026-11-25",recurrence:"weekly",weekdays:[5]},{id:"old3",label:"Lave-vaisselle",starts_on:"2026-11-25",recurrence:"daily"},{id:"new",label:"Bacs à légumes",starts_on:"2026-11-25",recurrence:"daily"}];
+ const context={data:{me:{scope:"staff",id:"a"},tasks:old,optional_tasks:[],checks:old.map(x=>({task_id:x.id,performed_on:today,photo_bytes:100})),reheats:[],task_plan:{date:today,tasks:old},task_plan_next:{date:"2026-11-25",tasks:next}},today:()=>today,canRecordReheat:()=>true,esc:v=>String(v??""),clock:()=>"12:00",staffName:()=>"Agent"};
+ const html=vm.runInNewContext(script.slice(start,end)+";renderTasks()",context);
+ for(const label of oldLabels)assert.ok(!html.includes(label));assert.match(html,/3 tâches du nouveau planning/);assert.match(html,/Fours de remise en température/);assert.match(html,/Lave-vaisselle/);assert.doesNotMatch(html,/data-task=/);assert.doesNotMatch(html,/0 \/ 0 validées/);
+});
+test("Retrait des anciennes tâches : archives photo accessibles, deux nouvelles définitions préservées",()=>{
+ const code=read("college/admin/cuisine-admin.js"),start=code.indexOf("function cleaningSections("),end=code.indexOf("let cleaningDate=",start);
+ const ctx={e:v=>String(v??""),when:v=>v};const {rows,markup}=vm.runInNewContext(code.slice(start,end)+";({rows:cleaningAdminRows,markup:cleaningAdminMarkup})",ctx);
+ const day="2026-11-24",old={id:"reuse",label:"Nettoyage du lave-vaisselle",starts_on:"2026-11-19",active:true,scheduled:true};
+ const report={tasks:[old],checks:[{id:"photo1",task_id:"reuse",photo_bytes:100,performed_by:"s"}]};
+ const params={day,today:day,filter:{agent:"",state:""},canManage:true,staffName:v=>v,scheduleLabel:()=>"Fréquence"};
+ const archived=markup(rows([old],report,day,day),params);
+ assert.match(archived,/Ancien planning archivé/);assert.match(archived,/data-admin-task-photo="photo1"/);assert.doesNotMatch(archived,/data-edit-admin-task="reuse"/);
+ const tomorrow="2026-11-25",newTask={...old,label:"Lave-vaisselle",starts_on:tomorrow},retired={id:"retired",label:"Nettoyage de la plonge",active:false,scheduled:false,starts_on:tomorrow,description:"Remplacée par les lignes détaillées du protocole 7."};
+ const future=markup(rows([newTask,retired],{tasks:[newTask],checks:[]},tomorrow,day),{...params,day:tomorrow});
+ assert.match(future,/Lave-vaisselle/);assert.match(future,/data-edit-admin-task="reuse"/);assert.doesNotMatch(future,/Nettoyage de la plonge|data-edit-admin-task="retired"/);
+});

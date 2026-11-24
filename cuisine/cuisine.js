@@ -190,8 +190,13 @@ async function refreshDashboardReadings(){
  }finally{dashboardRefreshInFlight=false}
 }
 function visibleTasks(tasks,me){
- return (tasks||[]).filter(t=>me.scope!=="staff"||me.existingAccount||!t.assigned_to||t.assigned_to===me.id);
+ return (tasks||[]).filter(t=>!isRetiredCleaningTask(t)&&(me.scope!=="staff"||me.existingAccount||!t.assigned_to||t.assigned_to===me.id));
 }
+function isRetiredCleaningTask(t){
+ return ["Nettoyage de la ligne de self","Nettoyage de la plonge","Nettoyage des fours","Nettoyage du lave-vaisselle"].includes(t.label)&&
+ (t.starts_on==="2026-11-19"||(t.active===false&&t.description==="Remplacée par les lignes détaillées du protocole 7."));
+}
+
 function renderDashboard(){
  const day=today(),rooms=activeRooms();
  const alarms=[...latestByRoom().values()].filter(r=>r.is_alert&&rooms.some(room=>room.id===r.room_id)).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
@@ -313,13 +318,14 @@ function renderTasks(){
  const tasks=visibleTasks(data.tasks,data.me),optional=visibleTasks(data.optional_tasks,data.me),pending=tasks.filter(t=>!done.has(t.id)),completed=tasks.length-pending.length,progress=tasks.length?Math.round(completed/tasks.length*100):0;
  const shown=new Set([...tasks,...optional].map(t=>t.id)),notDue=visibleTasks(data.task_plan?.date===today()?data.task_plan.tasks:[],data.me).filter(t=>!shown.has(t.id));
  const nextPlan=data.task_plan_next?{...data.task_plan_next,tasks:visibleTasks(data.task_plan_next.tasks,data.me)}:null;
+ const transitionOnly=!tasks.length&&!optional.length&&!notDue.length&&!!nextPlan?.tasks.length;
  const open=data.reheats.filter(r=>r.status==="en_cours");
- return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div><span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+completed+' / '+tasks.length+' validées</span></div>'+
- '<div class="card checklist-card"><div class="row between"><h2>Checklist de nettoyage</h2><strong class="checklist-percent">'+progress+' %</strong></div><div class="checklist-progress" role="progressbar" aria-label="Avancement du nettoyage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><span style="width:'+progress+'%"></span></div><p class="help">Cochez une tâche après nettoyage. Prenez une photo : la case sera cochée uniquement après son enregistrement.</p>'+
+ return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div>'+(transitionOnly?'<span class="tag">'+nextPlan.tasks.length+' tâches du nouveau planning</span>':'<span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+completed+' / '+tasks.length+' validées</span>')+'</div>'+
+ (transitionOnly?'':'<div class="card checklist-card"><div class="row between"><h2>Checklist de nettoyage</h2><strong class="checklist-percent">'+progress+' %</strong></div><div class="checklist-progress" role="progressbar" aria-label="Avancement du nettoyage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><span style="width:'+progress+'%"></span></div><p class="help">Cochez une tâche après nettoyage. Prenez une photo : la case sera cochée uniquement après son enregistrement.</p>'+
  (!tasks.length?'<div class="empty"><strong>Aucune tâche de nettoyage prévue aujourd’hui.</strong></div>':'')+
  (nextPlan?.tasks.length?'<p class="checklist-plan-note">Le planning du jour est encore en vigueur. Le prochain planning complet figure ci-dessous.</p>':'')+
  renderCleaningSections(tasks,optional,done,notDue)+
- (tasks.length&&!pending.length?'<p class="checklist-complete" role="status">Toutes les tâches prévues sont validées.</p>':'')+'</div>'+
+ (tasks.length&&!pending.length?'<p class="checklist-complete" role="status">Toutes les tâches prévues sont validées.</p>':'')+'</div>')+
  renderUpcomingPlan(nextPlan)+
  (canRecordReheat()||open.length?'<div class="card"><h2>Contrôles de service</h2><div class="work-actions">'+(canRecordReheat()?'<button class="btn btn-outline" type="button" data-go="reheat">Démarrer une remise en température</button><button class="btn btn-outline" type="button" data-go="cold">Contrôler une chambre froide</button>':'')+'</div>'+
  (open.length?open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">Mesure finale à cœur · <span class="clock" data-due="'+esc(r.due_at)+'">'+esc(remaining(r.due_at))+'</span></div></div><button class="btn btn-primary btn-small" type="button" data-go="reheat">'+(canRecordReheat()?'Faire le contrôle':'Voir le contrôle')+'</button></div>').join(""):'')+'</div>':'');
@@ -329,7 +335,7 @@ document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof 
 document.addEventListener("click",e=>{
  const b=e.target.closest?.("button[data-task][role=checkbox]");if(!b||b.disabled||b.getAttribute("aria-checked")!=="false"||!canCheckTasks()||busy)return;
  const task=[...(data.tasks||[]),...(data.optional_tasks||[])].find(t=>t.id===b.dataset.task);
- if(!task||task.assigned_to&&task.assigned_to!==data.me.id||data.checks.some(c=>c.task_id===task.id&&c.performed_on===today()))return;
+ if(!task||isRetiredCleaningTask(task)||task.assigned_to&&task.assigned_to!==data.me.id||data.checks.some(c=>c.task_id===task.id&&c.performed_on===today()))return;
  const currentToken=token,currentDay=today();let confirmed=null;
  window.KitchenPhoto.capture({
   label:task.label,

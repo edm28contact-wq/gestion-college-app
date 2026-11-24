@@ -113,6 +113,10 @@ function cleaningSections(tasks,optional,unscheduled=[]){
  return [...groups,other].filter(g=>g.tasks.length||g.optional.length||g.unscheduled.length);
 }
 
+function isRetiredCleaningTask(t){
+ return ["Nettoyage de la ligne de self","Nettoyage de la plonge","Nettoyage des fours","Nettoyage du lave-vaisselle"].includes(t.label)&&
+ (t.starts_on==="2026-11-19"||(t.active===false&&t.description==="Remplacée par les lignes détaillées du protocole 7."));
+}
  function cleaningAdminRows(settings,report,day,today){
   const checks=new Map((report.checks||[]).map(c=>[c.task_id,c]));
   const records=new Map((settings||[]).map(t=>[t.id,t]));
@@ -124,7 +128,7 @@ function cleaningSections(tasks,optional,unscheduled=[]){
    const scheduled=active&&task.scheduled===true;
    const optional=active&&task.recurrence==="on_demand"&&!scheduled;
    const state=check?(check.photo_bytes>0?"photo":"legacy"):scheduled?(day<today?"pending_past":day>today?"future":"pending"):optional?"optional":active?"not_due":"inactive";
-   return {...task,check,active,scheduled,optional,state};
+   return {...task,check,active,scheduled,optional,state,retired:isRetiredCleaningTask(task)};
   });
  }
  function cleaningAdminFilter(rows,filter){
@@ -132,15 +136,17 @@ function cleaningSections(tasks,optional,unscheduled=[]){
  }
  const cleaningStateLabels={photo:"Validée · Photo",legacy:"Validée · Sans photo ancienne",pending:"À réaliser",pending_past:"Non validée",future:"Prévue",optional:"Selon utilisation",not_due:"Non prévue ce jour",inactive:"Désactivée / hors période"};
  function cleaningAdminMarkup(rows,{day,today,filter,canManage,staffName,scheduleLabel}){
-  const due=rows.filter(r=>r.scheduled),validated=due.filter(r=>r.check).length,photos=rows.filter(r=>r.state==="photo").length,active=rows.filter(r=>r.active||r.check),percent=due.length?Math.round(validated/due.length*100):0;
-  const filtered=cleaningAdminFilter(rows,filter),visible=filtered.filter(r=>r.active||r.check),inactive=filtered.filter(r=>!r.active&&!r.check);
-  const line=r=>'<div class="ka-task-row"><div class="ka-task-main"><strong>'+e(r.label)+'</strong><small>'+e(scheduleLabel(r))+'</small><small>Responsable : '+e(r.assigned_to?staffName(r.assigned_to):"Commune")+'</small></div><div class="ka-task-status"><span class="ka-task-pill '+(r.check?"ka-done":r.state==="pending_past"?"ka-missed":"")+'">'+e(cleaningStateLabels[r.state])+'</span>'+(r.check?'<small>Par '+e(staffName(r.check.performed_by))+' · '+e(when(r.check.performed_at))+'</small>':'')+'</div><div class="ka-task-buttons">'+(canManage&&r.state==="photo"?'<button type="button" class="btn secondary" data-admin-task-photo="'+e(r.check.id)+'">Voir la photo</button>':'')+(canManage&&day>=today?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(r.id)+'">Modifier</button>':'')+'</div></div>';
+  const operational=rows.filter(r=>!r.retired),due=operational.filter(r=>r.scheduled),validated=due.filter(r=>r.check).length,photos=rows.filter(r=>r.state==="photo").length,active=operational.filter(r=>r.active||r.check),percent=due.length?Math.round(validated/due.length*100):0;
+  const filtered=cleaningAdminFilter(operational,filter),visible=filtered.filter(r=>r.active||r.check),inactive=filtered.filter(r=>!r.active&&!r.check);
+  const archived=cleaningAdminFilter(rows.filter(r=>r.retired&&(r.scheduled||r.check)),filter);
+  const line=r=>'<div class="ka-task-row"><div class="ka-task-main"><strong>'+e(r.label)+'</strong><small>'+e(scheduleLabel(r))+'</small><small>Responsable : '+e(r.assigned_to?staffName(r.assigned_to):"Commune")+'</small></div><div class="ka-task-status"><span class="ka-task-pill '+(r.check?"ka-done":r.state==="pending_past"?"ka-missed":"")+'">'+e(cleaningStateLabels[r.state])+'</span>'+(r.check?'<small>Par '+e(staffName(r.check.performed_by))+' · '+e(when(r.check.performed_at))+'</small>':'')+'</div><div class="ka-task-buttons">'+(canManage&&r.state==="photo"?'<button type="button" class="btn secondary" data-admin-task-photo="'+e(r.check.id)+'">Voir la photo</button>':'')+(canManage&&!r.retired&&day>=today?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(r.id)+'">Modifier</button>':'')+'</div></div>';
   const groups=cleaningSections(visible,[],[]);
   return '<div class="ka-task-summary"><div><small>Planning actif / historique</small><strong>'+active.length+'</strong></div><div><small>Validées / prévues</small><strong>'+validated+' / '+due.length+'</strong></div><div><small>Photos archivées</small><strong>'+photos+'</strong></div><div><small>Avancement obligatoire</small><strong>'+(due.length?percent+' %':'—')+'</strong></div></div>'+
    '<p class="muted">'+filtered.length+' tâche(s) correspondant aux filtres. Les tâches selon utilisation et non prévues ne comptent pas dans les obligations du jour.</p>'+
    groups.map(g=>{const due=g.tasks.filter(r=>r.scheduled),done=due.filter(r=>r.check).length;return '<section class="ka-task-group"><header><h3>'+e(g.title)+'</h3><span>'+done+' / '+due.length+' prévues validées</span></header>'+g.tasks.map(line).join("")+'</section>';}).join("")+
    (inactive.length?'<details class="ka-task-group"><summary>'+inactive.length+' tâche(s) désactivée(s) ou hors période</summary>'+inactive.map(line).join("")+'</details>':'')+
-   (!filtered.length?'<p class="muted">Aucune tâche ne correspond à cette sélection.</p>':'');
+   (archived.length?'<details class="ka-task-group"><summary>Ancien planning archivé · '+archived.length+' tâche(s)</summary><p class="muted" style="padding:0 14px">Historique conservé avec les photos, sans possibilité de modification.</p>'+archived.map(line).join("")+'</details>':'')+
+   (!filtered.length&&!archived.length?'<p class="muted">Aucune tâche ne correspond à cette sélection.</p>':'');
  }
  let cleaningDate="",cleaningFilter={agent:"",state:""},cleaningLoaded=null,cleaningEpoch=0;
  const cleaningSession=()=>localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
@@ -183,7 +189,7 @@ function cleaningSections(tasks,optional,unscheduled=[]){
  }
  function render(){
  if(!snapshot)return;
- const s=snapshot,latestCold=new Map();
+ const s={...snapshot,tasks:(snapshot.tasks||[]).filter(t=>!isRetiredCleaningTask(t))},latestCold=new Map();
  for(const r of s.cold)if(!latestCold.has(r.room_id))latestCold.set(r.room_id,r);
  const alerts=[...latestCold.values()].filter(r=>r.is_alert).length+s.reheats.filter(r=>r.status==="alerte").length;
  const followedByGood=r=>s.cold.some(next=>next.room_id===r.room_id&&!next.is_alert&&new Date(next.measured_at)>new Date(r.measured_at));
@@ -497,7 +503,7 @@ function cleaningSections(tasks,optional,unscheduled=[]){
  const date=fromCleaning?node("kitchenTasksReportDate")?.value:cleaningToday();
  if(!date||date<cleaningToday())return;
  if(fromCleaning&&id&&(!cleaningLoaded||cleaningLoaded.day!==date||cleaningLoaded.session!==cleaningSession()))return;
- const task=id?(fromCleaning&&cleaningLoaded?.day===date?cleaningLoaded.settings:(snapshot.task_settings||snapshot.tasks)).find(t=>t.id===id):null;if(id&&!task)return;
+ const task=id?(fromCleaning&&cleaningLoaded?.day===date?cleaningLoaded.settings:(snapshot.task_settings||snapshot.tasks)).find(t=>t.id===id):null;if(id&&(!task||isRetiredCleaningTask(task)))return;
  window.KitchenUI.open({task,staff:snapshot.staff,initialDate:date,completed:!!task&&snapshot.checks.some(c=>c.task_id===id&&c.performed_on===window.KitchenUI.today()),fetchTasks:fetchTaskSettings,save:(name,body)=>api(name,"POST",body),onSaved:async()=>{kitchenTab="cleaning";cleaningDate=date;await load();const msg=node("kitchenTaskFeedback");if(msg)msg.textContent="Tâche enregistrée."}});
  }
  document.addEventListener("click",evt=>{const btn=evt.target.closest?.("[data-edit-admin-task],[data-add-admin-task]");if(btn&&node("kitchen-tabs"))editAdminTask(btn.dataset.editAdminTask||null);if(evt.target.closest?.("[data-kitchen-cold-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="records"]')?.click();if(evt.target.closest?.("[data-kitchen-task-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="cleaning"]')?.click()});
