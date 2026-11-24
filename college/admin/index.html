@@ -131,21 +131,28 @@
 @media(max-width:700px){.salary-profile-kpis{grid-template-columns:1fr}}
 @media(max-width:700px){.salary-staff-form{display:flex;flex-direction:column;align-items:stretch}}
 </style>
+<link rel="stylesheet" href="./admin-layout.css?v=20261124-common-banner">
 </head>
 <body>
 <section id="login" class="login"><div class="box"><h1>Administration Collège</h1><p class="muted">Connexion avec un compte autorisé par la Holding.</p><label>Utilisateur</label><input id="user" value="holding-admin" autocomplete="username"><br><br><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><br><br><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div class="muted" style="text-align:center;margin-top:8px">Version 2026.10.24-apps4</div><div id="loginStatus" class="status"></div></div></section>
 <section id="passwordChange" class="login hide"><div class="box"><h1>Nouveau mot de passe requis</h1><p class="muted">Avant toute opération sensible, choisissez un mot de passe d’au moins 10 caractères. Une nouvelle connexion sera ensuite demandée.</p><label>Nouveau mot de passe</label><input id="newPass1" type="password" autocomplete="new-password"><br><br><label>Confirmer</label><input id="newPass2" type="password" autocomplete="new-password"><br><br><button class="btn primary" style="width:100%" onclick="changePassword()">Enregistrer le nouveau mot de passe</button><div id="passwordStatus" class="status"></div></div></section>
-<section id="app" class="shell hide"><aside class="side"><div class="brand">Société Collège</div><div id="nav" class="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></div><div class="actions"><a class="btn secondary" data-site-access="holding" href="../../admin/holding/" hidden>Holding</a><a class="btn secondary" data-site-access="secretariat" href="../../secretariat/" hidden>Secrétariat</a><a class="btn secondary" data-site-access="planning" href="../../secretariat/planning/" hidden>Planning du personnel / Paie</a><a class="btn secondary" data-site-access="accounting" href="../../comptabilite/" hidden>Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div id="content"></div></main></section>
+<section id="app" class="shell college-admin-shell hide"><header class="college-admin-banner"><div class="college-brand-wrap"><button id="collegeMenuToggle" type="button" class="btn college-menu-toggle" aria-controls="collegeAdminSidebar" aria-expanded="true">Menu</button><div><div class="brand">Société Collège</div><span class="college-brand-subtitle">Cours Chambertin · Administration</span></div></div><div class="college-banner-actions"><a class="btn secondary" data-site-access="holding" href="../../admin/holding/" hidden>Holding</a><a class="btn secondary" data-site-access="secretariat" href="../../secretariat/" hidden>Secrétariat</a><a class="btn secondary" data-site-access="planning" href="../../secretariat/planning/" hidden>Planning du personnel / Paie</a><a class="btn secondary" data-site-access="accounting" href="../../comptabilite/" hidden>Comptabilité</a><button class="btn secondary" onclick="refresh()">Actualiser</button><button class="btn secondary" onclick="logout()">Déconnexion</button></div></header><aside id="collegeAdminSidebar" class="side"><div class="college-nav-caption">Navigation</div><input id="collegeMenuSearch" type="search" placeholder="Rechercher une rubrique" aria-label="Rechercher dans le menu"><div id="nav" class="nav" aria-label="Rubriques Administration Collège"></div><p id="collegeMenuEmpty" class="muted" role="status" hidden>Aucune rubrique correspondante.</p></aside><main class="main"><header class="college-admin-heading"><p class="college-breadcrumb">Administration Collège</p><h1 id="title">Tableau de bord</h1><div id="server" class="muted"></div></header><div id="content"></div></main></section>
 <div id="modal"></div>
 <script src="./site-designer.js?v=2"></script>
 <script src="./apps-organizer.js?v=1"></script>
 <script src="./product-invoice-aliases.js?v=2"></script>
 <script>
-const UI_VERSION='2026.11.09-product-quality-dashboard-v3';
+const UI_VERSION='2026.11.24-admin-college-common-banner';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
 const requestedProduct=new URLSearchParams(location.search).get('product'),requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',commandes:'Commandes',events:'Mouvements',historicalStock:'Inventaires historiques',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',siteDesigner:'Configuration des sites',manual:'Manuel d’utilisation',salaires:'Salaires',cuisine:'Gestion Cuisine'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
-const pages=[['dashboard','Accueil'],['products','Produits'],['apps','Applications'],['categories','Catégories'],['purchases','Achats'],['commandes','Commandes'],['events','Mouvements'],['historicalStock','Inventaires historiques'],['salaires','Salaires'],['cuisine','Gestion Cuisine'],['advanced','Outils avancés']];
+const collegeMenuGroups=[
+ ['Pilotage',[['dashboard','Accueil'],['stats','Statistiques']]],
+ ['Stocks et approvisionnements',[['products','Produits'],['categories','Catégories'],['subcategories','Sous-catégories'],['purchases','Achats'],['commandes','Commandes'],['events','Mouvements'],['historicalStock','Inventaires historiques']]],
+ ['Personnel et restauration',[['salaires','Salaires'],['cuisine','Gestion Cuisine']]],
+ ['Configuration',[['apps','Applications'],['readerSettings','Lecteur PDF & IA'],['siteDesigner','Configuration des sites'],['manual','Manuel d’utilisation'],['advanced','Outils avancés']]]
+];
+const pages=collegeMenuGroups.flatMap(([,items])=>items);
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function frError(v){const s=String(v||'Erreur serveur');if(/failed to fetch|networkerror|network request failed/i.test(s))return 'Connexion au service impossible. Vérifiez le réseau puis réessayez.';return s}
 async function call(base,action,method='GET',body,params={}){const u=new URL(base);u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));const r=await fetch(u,{method,headers:{'content-type':'application/json','x-admin-session':token},body:body?JSON.stringify(body):undefined,cache:'no-store'}),j=await r.json().catch(()=>({error:'Réponse du service invalide.'}));if(r.status===401&&action!=='login'){logout(false);throw new Error('Session expirée. Reconnectez-vous.')}if(!r.ok)throw new Error(frError(j.error));return j}
@@ -181,17 +188,45 @@ async function recheckAccountRights(){
   db.current_user.permissions=info.permissions;
   db.current_user.read_only=info.read_only;
   updateSiteShortcuts();
-  if(!canPage(page))render();
+  if(!canPage(page))render();else{init();document.querySelectorAll('#nav button').forEach(b=>{const active=b.dataset.p===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page')})}
  }catch{}
 }
 window.addEventListener('focus',recheckAccountRights);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)recheckAccountRights()});
 
-function init(){$('nav').innerHTML=pages.filter(([k])=>canPage(k)).map(([k,n])=>`<button data-p="${k}" onclick="show('${k}')">${n}</button>`).join('')}
+function filterCollegeMenu(){
+ const q=norm($('collegeMenuSearch')?.value||'');let count=0;
+ for(const group of $('nav').querySelectorAll('.college-nav-group')){
+  let visible=0;
+  const heading=norm(group.querySelector('h2')?.textContent||'');
+  for(const button of group.querySelectorAll('button[data-p]')){
+   const match=!q||norm(button.textContent).includes(q)||heading.includes(q);
+   button.classList.toggle('college-menu-filtered',!match);
+   if(match&&!button.hidden)visible++;
+  }
+  group.hidden=visible===0;count+=visible;
+ }
+ $('collegeMenuEmpty').hidden=count!==0;
+}
+function init(){
+ const settings=typeof adminCollegeVisualSettings==='object'?adminCollegeVisualSettings:{};
+ $('nav').innerHTML=(!db?.current_user?[]:collegeMenuGroups).map(([group,items])=>{
+  const available=items.filter(([k])=>canPage(k)&&settings.menu?.['tab:#'+k]?.hidden!==true);
+  available.sort((a,b)=>(settings.menu?.['tab:#'+a[0]]?.order??9999)-(settings.menu?.['tab:#'+b[0]]?.order??9999));
+  if(!available.length)return '';
+  return '<section class="college-nav-group"><h2>'+esc(group)+'</h2>'+available.map(([k,n])=>'<button type="button" data-p="'+k+'" onclick="show(\''+k+'\')">'+esc(settings.menu?.['tab:#'+k]?.label||n)+'</button>').join('')+'</section>';
+ }).join('');
+ filterCollegeMenu();
+}
+$('collegeMenuSearch').addEventListener('input',filterCollegeMenu);
+$('collegeMenuToggle').addEventListener('click',()=>{
+ const closed=$('collegeAdminSidebar').classList.toggle('college-menu-closed');
+ $('collegeMenuToggle').setAttribute('aria-expanded',String(!closed));
+});
 async function enterApp(){init();$('login').classList.add('hide');$('passwordChange').classList.add('hide');$('app').classList.remove('hide');await refresh()}
-async function refresh(){const main=await call(ADMIN,'data');const isGlobal=main.current_user?.role==='admin'||main.current_user?.permissions?.college_admin===true;const sites=isGlobal?await call(SITE,'list'):{applications:main.applications||[],application_products:main.application_products||[]};db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];updateSiteShortcuts();rightsCheckAt=0;if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+esc(main.current_user?.display_name||main.current_user?.username||'');render();if(page==='salaires')salaryLoad();loadAdminCollegeSettings();if(page==='products'&&requestedProduct&&db.products.some(p=>p.id===requestedProduct)&&!window._productDeepLinkOpened){window._productDeepLinkOpened=true;editProduct(requestedProduct)}}
-function show(p){if(db&&!canPage(p)){showStatus('Cette fenêtre n’est pas autorisée pour votre compte.');return}page=p;render();if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(p==='salaires')salaryLoad();if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
-function render(){if(!db)return;if(!canPage(page)){page=pages.find(([k])=>canPage(k))?.[0]||'dashboard'}init();document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===page||(b.dataset.p==='advanced'&&['categories','subcategories','apps','stats','readerSettings','siteDesigner','manual'].includes(page))));$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,historicalStock:historicalStockPage,purchases,commandes,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage,siteDesigner:siteDesignerPage,salaires:salaryPage,cuisine:window.kitchenAdminPage}[page]||dashboard)()}
+async function refresh(){const main=await call(ADMIN,'data');const isGlobal=main.current_user?.role==='admin'||main.current_user?.permissions?.college_admin===true;const sites=isGlobal?await call(SITE,'list'):{applications:main.applications||[],application_products:main.application_products||[]};db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];updateSiteShortcuts();rightsCheckAt=0;if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+String(main.current_user?.display_name||main.current_user?.username||'');render();if(page==='salaires')salaryLoad();loadAdminCollegeSettings();if(page==='products'&&requestedProduct&&db.products.some(p=>p.id===requestedProduct)&&!window._productDeepLinkOpened){window._productDeepLinkOpened=true;editProduct(requestedProduct)}}
+function show(p){if(db&&!canPage(p)){showStatus('Cette fenêtre n’est pas autorisée pour votre compte.');return}page=p;render();try{const target=new URL(location.href);if(p==='dashboard')target.searchParams.delete('page');else target.searchParams.set('page',p);history.replaceState(null,'',target.href)}catch{}if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(p==='salaires')salaryLoad();if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
+function render(){if(!db)return;if(!canPage(page)){page=pages.find(([k])=>canPage(k))?.[0]||'dashboard'}init();document.querySelectorAll('#nav button').forEach(b=>{const active=b.dataset.p===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,historicalStock:historicalStockPage,purchases,commandes,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage,siteDesigner:siteDesignerPage,salaires:salaryPage,cuisine:window.kitchenAdminPage}[page]||dashboard)()}
 const bal=id=>Number(db.balances.find(x=>x.product_id===id)?.quantity||0),cat=id=>db.categories.find(x=>x.id===id),sub=id=>(db.subcategories||[]).find(x=>x.id===id),prod=id=>db.products.find(x=>x.id===id),appById=id=>db.applications.find(x=>x.id===id);
 const stockManaged=p=>!!p;
 const nfcTag=id=>(db.nfc_tags||[]).find(x=>x.product_id===id&&x.active!==false);
@@ -593,7 +628,7 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 if(token)enterApp().catch(()=>logout());
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261122-events-employee-summary-v4"></script>
+<script src="./salaires.js?v=20261124-professional-roles"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 <script src="../../cuisine/releve-export.js?v=20261120-2"></script>
 <script src="./cuisine-admin.js?v=20261124-room-schedule"></script>
