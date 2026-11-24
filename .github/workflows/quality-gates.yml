@@ -1,4 +1,4 @@
-name: Contrôles Gestion Collège
+name: Contrôles Gestion Cours Chambertin
 on:
   push:
     branches: [main]
