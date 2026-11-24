@@ -1515,7 +1515,7 @@ async function save(){
     $("saveResult").textContent="Commande CMD-"+String(data.order_no||"").padStart(6,"0")+" · "+(data.stock_products||0)+" produit(s) enregistré(s) · HT retenu "+fmt(c.sum)+(c.adjusted?" (réception partielle)":"")+"."+learningMessage;
     await syncQueueAfterReception();
   }
-  lockFields();$("newDocument").hidden=false;
+  lockFields();$("newDocument").hidden=false;$("manualEntry").disabled=true;
  }catch(e){notice("Enregistrement refusé : "+e.message,"error");$("saveResult").textContent=e.message}
  finally{loading=false;updateTotals()}
 }
@@ -1575,6 +1575,12 @@ function setup(){
  });
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshUsage()});
  setInterval(refreshUsage,300000);
+ window.addEventListener("beforeunload",e=>{
+  if(!manualMode||saved||!documentData)return;
+  const hasTypedData=rows.some(r=>["reference","description","quantity","unit_price","total"].some(k=>String(r[k]??"").trim()))||
+   ["vendor","invoiceNumber","subtotal","total"].some(k=>String($(k).value||"").trim());
+  if(hasTypedData){e.preventDefault();e.returnValue="";}
+ });
  window.addEventListener("pagehide",()=>{if(objectUrl)URL.revokeObjectURL(objectUrl)});
  resolveSession();
 }
