@@ -1,0 +1,51 @@
+"use strict";
+const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
+const html=fs.readFileSync("college/admin/index.html","utf8");
+const css=fs.readFileSync("college/admin/admin-layout.css","utf8");
+const source=fs.readFileSync("college/admin/salaires.js","utf8");
+const backend=fs.readFileSync("supabase/functions/personnel-planning/index.ts","utf8");
+const migration=fs.readFileSync("supabase/migrations/20261124082624_college_personnel_professional_roles_stable_event_identity.sql","utf8");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+test("Admin Collège : un seul cadre commun aux rubriques",()=>{
+ assert.equal((html.match(/class="college-admin-banner"/g)||[]).length,1);
+ assert.match(html,/admin-layout\.css\?v=/);
+ assert.match(html,/id="collegeMenuSearch"/);
+ assert.match(html,/aria-controls="collegeAdminSidebar"/);
+ assert.match(css,/\.college-admin-shell>\.side/);
+ assert.match(css,/@media\(max-width:850px\)/);
+ const scripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m=>m[1]).filter(v=>v.trim());
+ for(const script of scripts)new vm.Script(script);
+});
+test("Admin Collège : menu filtré par pouvoir et personnalisation, sans rubriques interdites",()=>{
+ const groupStart=html.indexOf("const collegeMenuGroups="),groupEnd=html.indexOf("const $=id=>",groupStart);
+ const initStart=html.indexOf("function init(){"),initEnd=html.indexOf("$('collegeMenuSearch').addEventListener",initStart);
+ assert.ok(groupStart>=0&&groupEnd>groupStart&&initStart>=0&&initEnd>initStart);
+ const nav={innerHTML:""};
+ const ctx={db:{current_user:{}},esc,$:()=>nav,filterCollegeMenu(){},canPage:key=>["salaires","products","purchases"].includes(key),adminCollegeVisualSettings:{menu:{"tab:#products":{label:"Catalogue"},"tab:#purchases":{hidden:true}}}};
+ vm.runInNewContext(html.slice(groupStart,groupEnd)+html.slice(initStart,initEnd)+";init();",ctx);
+ assert.match(nav.innerHTML,/Catalogue/);
+ assert.match(nav.innerHTML,/Salaires/);
+ assert.doesNotMatch(nav.innerHTML,/data-p="(purchases|cuisine|advanced|readerSettings|stats)"/);
+ assert.match(nav.innerHTML,/Personnel et restauration/);
+});
+test("Salaires : rôle affectable dans la fiche, sélection conservée et texte échappé",()=>{
+ const ctx={esc};
+ vm.runInNewContext(source+';salaryProfessionalRoles=[{id:"r1",label:"Cuisine <test>"}];salaryCanWrite=true;this.output=salaryIdentityPanel({id:"s1",name:"Salarié",professional_role_id:"r1"});salaryCanWrite=false;this.readOnly=salaryIdentityPanel({id:"s1",name:"Salarié",professional_role_id:"r1"});',ctx);
+ assert.match(ctx.output,/value="r1" selected/);
+ assert.match(ctx.output,/Cuisine &lt;test&gt;/);
+ assert.match(ctx.output,/Enregistrer les modifications/);
+ assert.match(ctx.readOnly,/name="professional_role_id" disabled/);
+ assert.match(ctx.readOnly,/Consultation uniquement/);
+});
+test("Salaires : rôles professionnels indépendants des droits et rattachement stable de l'historique",()=>{
+ assert.match(backend,/action==="staff-profile-update"&&req\.method==="POST"\)\{\s*if\(!user\.salaryWrite\)/);
+ assert.match(backend,/action==="staff-role-save"&&req\.method==="POST"\)\{\s*if\(!user\.salaryWrite\)/);
+ assert.match(backend,/personnel_id:personnelId/);
+ assert.match(backend,/personnel_name_snapshot:e\.personnel_name/);
+ assert.match(source,/e\.personnel_id\?e\.personnel_id===id:salaryStaffKey\(e\.personnel_name\)===employeeKey/);
+ assert.match(migration,/enable row level security/i);
+ assert.match(migration,/references public\.college_personnel_roles\(id\)/i);
+ assert.match(migration,/references public\.college_personnel\(id\)/i);
+ assert.match(migration,/security invoker/i);
+ assert.match(migration,/revoke execute.+from public,anon,authenticated/i);
+});
