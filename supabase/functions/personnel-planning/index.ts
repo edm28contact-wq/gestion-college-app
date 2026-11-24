@@ -29,6 +29,69 @@ const payroll=new Set(["a_examiner","a_transmettre","sans_impact"]);
 const validDate=(s:any)=>{if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const [year,month,day]=s.split("-").map(Number),d=new Date(Date.UTC(year,month-1,day));return year>=2000&&year<=2100&&d.getUTCFullYear()===year&&d.getUTCMonth()+1===month&&d.getUTCDate()===day;};
 const durationValue=(x:any)=>x===null||x===undefined||x===""?null:Number(x);
 const isUuid=(v:any)=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+
+const clockPattern=/^([01]\d|2[0-3]):[0-5]\d$/;
+const clockMinutes=(s:string)=>Number(s.slice(0,2))*60+Number(s.slice(3,5));
+function easterSunday(year:number){
+ const a=year%19,b=Math.floor(year/100),cc=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),
+ g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(cc/4),k=cc%4,
+ l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),n=h+l-7*m+114;
+ return Date.UTC(year,Math.floor(n/31)-1,n%31+1);
+}
+function publicHoliday(date:string){
+ const year=Number(date.slice(0,4));
+ if(new Set(["01-01","05-01","05-08","07-14","08-15","11-01","11-11","12-25"]).has(date.slice(5)))return true;
+ const easter=easterSunday(year),target=Date.parse(date+"T00:00:00Z");
+ return [1,39,50].some(offset=>target===easter+offset*86400000);
+}
+function scheduleSlotsForDay(slots:unknown,weekday:number){
+ if(!Array.isArray(slots))throw Error("Horaires hebdomadaires non renseignés");
+ const rows=slots.filter((slot:any)=>slot?.day===weekday).map((slot:any)=>{
+  const start=String(slot.start??""),end=String(slot.end??"");
+  if(!clockPattern.test(start)||!clockPattern.test(end)||start>=end)throw Error("Créneau de travail incomplet");
+  return {start,end,from:clockMinutes(start),to:clockMinutes(end)};
+ }).sort((a,b)=>a.from-b.from);
+ if(!rows.length)throw Error("Aucun horaire de travail renseigné pour cette journée");
+ if(rows.some((row,i)=>i>0&&row.from<rows[i-1].to))throw Error("Chevauchement des créneaux du salarié");
+ return rows;
+}
+async function dailySchedule(db:any,personnel:any,date:string){
+ const weekday=new Date(date+"T12:00:00Z").getUTCDay();
+ const archive=await db.from("college_personnel_schedule_history")
+  .select("source_start,source_end,vacation_periods,vacation_weekly_work_slots")
+  .eq("personnel_id",personnel.id).eq("schedule_scope","individual")
+  .lte("source_start",date).gte("source_end",date).order("source_start",{ascending:false}).limit(5);
+ if(archive.error)throw archive.error;
+ const vacation=(archive.data||[]).find((record:any)=>
+  Array.isArray(record.vacation_periods)&&record.vacation_periods.some((p:any)=>
+   typeof p?.start==="string"&&typeof p?.end==="string"&&date>=p.start&&date<=p.end));
+ if(personnel.exclude_public_holidays===true&&publicHoliday(date))
+  throw Error("Jour férié non travaillé selon la fiche du salarié");
+ if(vacation&&personnel.exclude_school_holidays===true)
+  throw Error("Vacances scolaires non travaillées selon la fiche du salarié");
+ const days=Array.isArray(personnel.working_weekdays)?personnel.working_weekdays:[];
+ if(!vacation&&!days.includes(weekday))throw Error("Ce jour est non travaillé dans le planning");
+ const source=vacation?.vacation_weekly_work_slots??personnel.weekly_work_slots;
+ const slots=scheduleSlotsForDay(source,weekday);
+ return {slots,source:vacation?"vacances scolaires":"période scolaire",scheduled_minutes:slots.reduce((n,s)=>n+s.to-s.from,0)};
+}
+async function computedAbsence(db:any,personnel:any,date:string,departure:string,returnAt:string|null,noReturn:boolean){
+ if(!clockPattern.test(departure)||returnAt!==null&&!clockPattern.test(returnAt))
+  throw Error("Heures invalides : format attendu HH:mm");
+ if(returnAt===null&&!noReturn||returnAt!==null&&noReturn)
+  throw Error("Indiquez l’heure de retour ou cochez « Pas de retour dans la journée »");
+ const schedule=await dailySchedule(db,personnel,date),from=clockMinutes(departure),
+  lastEnd=schedule.slots[schedule.slots.length-1].to,
+  until=returnAt===null?lastEnd:clockMinutes(returnAt);
+ if(until<=from)throw Error("L’heure de retour doit être postérieure au départ");
+ const minutes=schedule.slots.reduce((n,slot)=>
+  n+Math.max(0,Math.min(slot.to,until)-Math.max(slot.from,from)),0);
+ if(minutes<=0)throw Error("Aucune minute d’absence ne recoupe les horaires de travail");
+ return {duration_minutes:minutes,scheduled_minutes:schedule.scheduled_minutes,
+  schedule_source:schedule.source,day_end:schedule.slots[schedule.slots.length-1].end,
+  slots:schedule.slots.map(s=>({start:s.start,end:s.end}))};
+}
+
 const bucket="personnel-incident-pdfs";
 const maxPdf=6291456;
 async function findEvent(db:any,id:string){return await db.from("personnel_events").select("id,attachment_path,attachment_name,attachment_size_bytes,review_status,version").eq("id",id).maybeSingle()}
@@ -306,6 +369,24 @@ Deno.serve(async(req:Request)=>{
   return reply({ok:true,deleted_id:id,pdf_removed:pdfRemoved,
    warning:pdfRemoved?null:"Incident supprimé, mais le PDF n'a pas pu être effacé du stockage privé. Contacter l'administration."});
  }
+ if(action==="schedule-duration"&&req.method==="POST"){
+  const x=await req.json().catch(()=>null);
+  const date=x?.event_date,name=staffName(x?.personnel_name);
+  const type=x?.event_type;
+  if(!validDate(date)||name.length<2||!["absence","depart_anticipe"].includes(type))
+   return reply({error:"Date, salarié ou type de sortie invalide"},400);
+  const person=await db.from("college_personnel")
+   .select("id,name,archived,visible_in_planning,working_weekdays,weekly_work_slots,exclude_public_holidays,exclude_school_holidays")
+   .eq("name_key",staffKey(name)).maybeSingle();
+  if(person.error)throw person.error;
+  if(!person.data||person.data.archived||!person.data.visible_in_planning)
+   return reply({error:"Salarié non actif dans le planning"},409);
+  const departure=String(x.departure_time??""),ret=x.no_return===true?null:String(x.return_time??"");
+  try{
+   const calc=await computedAbsence(db,person.data,date,departure,ret,x.no_return===true);
+   return reply({ok:true,...calc});
+  }catch(error){return reply({error:error instanceof Error?error.message:"Horaires invalides"},422)}
+ }
  if(action==="save"&&req.method==="POST"){
   if(user.readonly)return reply({error:"Lecture seule"},403);
   const x=await req.json(),name=staffName(x.personnel_name),date=x.event_date,type=x.event_type;
@@ -316,7 +397,7 @@ Deno.serve(async(req:Request)=>{
   if(existingId&&!prior?.data)return reply({error:"Événement introuvable"},404);
   if(existingId&&prior?.data?.review_status!=="a_verifier")return reply({error:"Événement déjà traité : modification impossible"},409);
   const key=staffKey(name);
-  const personnel=await db.from("college_personnel").select("id,name,archived,visible_in_planning").eq("name_key",key).maybeSingle();
+  const personnel=await db.from("college_personnel").select("id,name,archived,visible_in_planning,working_weekdays,weekly_work_slots,exclude_public_holidays,exclude_school_holidays").eq("name_key",key).maybeSingle();
   if(personnel.error)throw personnel.error;
   const existingSameName=!!existingId&&(prior.data.personnel_id
    ?prior.data.personnel_id===personnel.data?.id
@@ -325,11 +406,25 @@ Deno.serve(async(req:Request)=>{
    return reply({error:"Ce salarié n’apparaît pas dans le planning. Sélectionnez un salarié actif."},409);
   const canonicalName=existingSameName?prior.data.personnel_name:personnel.data.name;
   const personnelId=existingSameName?(prior.data.personnel_id??personnel.data?.id??null):personnel.data.id;
-  const all=Boolean(x.all_day),duration=durationValue(x.duration_minutes),details=String(x.details||"").trim();
-  if(details.length>2000||(!all&&(!Number.isInteger(duration)||duration<1||duration>1440)))
-   return reply({error:"Durée invalide : indiquez entre 1 et 1440 minutes, ou cochez journée entière."},400);
+  const all=Boolean(x.all_day),manualDuration=durationValue(x.duration_minutes),details=String(x.details||"").trim();
+  if(details.length>2000)return reply({error:"Observation trop longue"},400);
+  const auto=x.time_based===true;
+  if(auto&&(!["absence","depart_anticipe"].includes(type)||all))
+   return reply({error:"Le calcul horaire concerne uniquement les absences et départs anticipés partiels"},400);
+  let duration:number|null=all?1440:manualDuration;
+  let startTime:string|null=null,endTime:string|null=null;
+  if(auto){
+   if(!personnel.data||personnel.data.archived||!personnel.data.visible_in_planning)
+    return reply({error:"Le calcul automatique exige un salarié actif avec horaires configurés"},409);
+   const departure=String(x.departure_time??""),ret=x.no_return===true?null:String(x.return_time??"");
+   try{
+    const computed=await computedAbsence(db,personnel.data,date,departure,ret,x.no_return===true);
+    duration=computed.duration_minutes;startTime=departure;endTime=ret;
+   }catch(error){return reply({error:error instanceof Error?error.message:"Horaires de travail incorrects"},422)}
+  }else if(!all&&(!Number.isInteger(duration)||duration<1||duration>1440))
+   return reply({error:"Durée invalide : renseignez un départ/retour ou saisissez une durée valide"},400);
   const justification=just.has(x.justification_status)?x.justification_status:"non_requis";
-  const input={event_date:date,personnel_id:personnelId,personnel_name:canonicalName,event_type:type,all_day:all,start_time:null,end_time:null,duration_minutes:all?1440:duration,details,justification_status:justification,updated_by:user.username,updated_at:new Date().toISOString()};
+  const input={event_date:date,personnel_id:personnelId,personnel_name:canonicalName,event_type:type,all_day:all,start_time:startTime,end_time:endTime,duration_minutes:duration,details,justification_status:justification,updated_by:user.username,updated_at:new Date().toISOString()};
   if(x.id){
    const q=await db.from("personnel_events").select("id,review_status,version").eq("id",x.id).maybeSingle();if(q.error)throw q.error;if(!q.data)return reply({error:"Événement introuvable"},404);
    if(q.data.review_status!=="a_verifier")return reply({error:"Événement déjà traité : modification impossible"},409);
