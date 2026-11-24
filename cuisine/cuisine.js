@@ -3,6 +3,7 @@ const API="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/kitchen-api";
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let token=sessionStorage.getItem("kitchen_token")||"",data=null,page="dashboard",busy=false,coldRoomSelected="",coldHistory=[],coldTotal=0,coldOffset=0,coldLoading=false;
+let dashboardRefreshAt=0,dashboardRefreshInFlight=false,dashboardRefreshError="";
 let alarmAudio=null,alarmEnabled=false,alarmSilenced=false,lastSirenAt=0;
 const alarmed=new Set();
 const initialTitle=document.title;
@@ -117,10 +118,10 @@ async function finishKitchenFirstPassword(){
  }catch(e){status(e.message||"Changement impossible",true,"loginStatus")}
 }
 function logout(){$("kitchenFirstPassword")?.classList.add("hide");$("accountLoginForm")?.classList.remove("hide");token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
-async function load(){try{data=await request("list");$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();if(page==="cold")refreshColdHistory(coldOffset);checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
+async function load(){try{data=await request("list");dashboardRefreshAt=Date.now();dashboardRefreshError="";$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();if(page==="cold")refreshColdHistory(coldOffset);checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
 function switchPage(next){
  if(!["dashboard","reheat","cold","tasks"].includes(next))return;
- page=next;render();
+ page=next;render();if(page==="dashboard"&&Date.now()-dashboardRefreshAt>=60000)refreshDashboardReadings();
  document.querySelector(".nav")?.scrollIntoView?.({block:"start",behavior:"smooth"});
 }
 function render(){
@@ -142,6 +143,58 @@ function roomName(id){return data.rooms.find(x=>x.id===id)?.label||"Chambre inco
 function ovenName(r){return r.oven_label_snapshot||(data.ovens||[]).find(x=>x.id===r.oven_id)?.label||("Four "+r.oven_number)}
 function dishName(r){return r.dish_type_label_snapshot||(data.dishes||[]).find(x=>x.id===r.dish_type_id)?.label||"Plat non précisé"}
 function deltaC(r){if(r.end_temperature_c==null)return"";const change=Number(r.end_temperature_c)-Number(r.start_temperature_c);return(change>=0?"+":"")+number(change)+" °C"}
+function renderColdOverview(){
+ const rooms=activeRooms();
+ const tiles=rooms.map(room=>{
+  const sensor=(data.connected||[]).find(d=>d.kind==="cold_room"&&d.provider==="govee"&&d.room_id===room.id);
+  const reading=sensor
+   ?data.cold.find(r=>r.room_id===room.id&&r.source==="govee_cloud"&&r.connected_device_id===sensor.id)
+   :data.cold.find(r=>r.room_id===room.id&&r.source==="manual");
+  const stamp=reading?.measured_at,age=stamp?Date.now()-Date.parse(stamp):Infinity;
+  const recent=!!sensor&&sensor.status==="online"&&Number.isFinite(age)&&age>=-120000&&age<=20*60000;
+  const measured=reading?.temperature_c!=null&&Number.isFinite(Number(reading.temperature_c));
+  const alert=!!reading?.is_alert;
+  let label="Sans capteur",tagClass="tag-warn";
+  if(sensor){
+   if(sensor.status==="offline"){label="Capteur hors ligne";tagClass="tag-alert"}
+   else if(sensor.status==="error"){label="Connexion en erreur";tagClass="tag-alert"}
+   else if(!measured){label="En attente de mesure";tagClass="tag-warn"}
+   else if(!recent){label="Données anciennes";tagClass="tag-warn"}
+   else if(alert){label="Hors seuil";tagClass="tag-alert"}
+   else {label="À jour";tagClass="tag-ok"}
+  }else if(measured){label="Dernier relevé manuel";tagClass="tag-warn"}
+  const received=stamp?new Date(stamp).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"short"}):"Aucune mesure";
+  const origin=sensor?"Capteur "+esc(sensor.model):"Saisie manuelle";
+  const problem=alert?(recent?"Température hors seuil : vérification nécessaire.":"Dernier relevé hors seuil : contrôler sur place."):"";
+  return '<article class="cold-live-tile'+(recent&&alert?' cold-live-alert':'')+'">'+
+   '<div class="cold-live-top"><h3>'+esc(room.label)+'</h3><span class="tag '+tagClass+'">'+label+'</span></div>'+
+   '<div class="cold-live-value">'+(measured?number(reading.temperature_c)+' °C':'—')+'</div>'+
+   '<div class="subline">'+origin+' · '+(sensor?'Reçue le ':'Relevée le ')+received+'</div>'+
+   (problem?'<p class="cold-live-warning">'+problem+'</p>':'')+
+   (!sensor?'<p class="help">Associez un thermomètre dans Administration → Gestion Cuisine.</p>':'')+
+   '</article>';
+ }).join("");
+ return '<section class="card cold-live-section">'+
+  '<div class="section-heading"><div><div class="eyebrow">Surveillance des chambres froides</div><h2>Dernières températures reçues</h2><p>Collecte serveur programmée toutes les 10 minutes. Les valeurs affichées ne sont pas des mesures instantanées.</p></div><button type="button" class="btn btn-outline btn-small" data-go="cold">Voir les relevés</button></div>'+
+  (dashboardRefreshError?'<p class="info info-warn">'+esc(dashboardRefreshError)+'</p>':'')+
+  '<div class="cold-live-grid">'+(tiles||'<div class="empty">Aucune chambre froide active.</div>')+'</div></section>';
+}
+async function refreshDashboardReadings(){
+ if(!data||!token||page!=="dashboard"||busy||dashboardRefreshInFlight||document.hidden)return;
+ const currentToken=token;dashboardRefreshInFlight=true;
+ try{
+  const fresh=await request("list");
+  if(token!==currentToken||!data||page!=="dashboard")return;
+  data=fresh;dashboardRefreshAt=Date.now();dashboardRefreshError="";
+  renderDashboard();updateCriticalAlert();
+ }catch(err){
+  if(token!==currentToken)return;
+  if(/Session expirée|accès non autorisé/i.test(String(err.message))){logout();return}
+  dashboardRefreshError="Actualisation temporairement indisponible. Vérifiez la date des mesures.";
+  if(page==="dashboard"&&data)renderDashboard();
+ }finally{dashboardRefreshInFlight=false}
+}
+
 function renderDashboard(){
  const day=today(),rooms=activeRooms(),coldToday=data.cold.filter(r=>dayOf(r.measured_at)===day),checked=new Set(coldToday.filter(r=>rooms.some(room=>room.id===r.room_id)).map(r=>r.room_id));
  const done=new Set(data.checks.filter(r=>r.performed_on===day).map(r=>r.task_id));
@@ -149,6 +202,7 @@ function renderDashboard(){
  const alarms=[...latestByRoom().values()].filter(r=>r.is_alert&&rooms.some(room=>room.id===r.room_id)).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
  $("content").innerHTML=
  '<div class="banner"><div class="eyebrow">Aujourd’hui en cuisine</div><h1>Que voulez-vous faire ?</h1><p>Choisissez une action. Vous n’avez besoin que de quelques saisies pour enregistrer chaque contrôle.</p></div>'+
+ renderColdOverview()+
  '<div class="grid-3" style="margin-bottom:20px">'+
  '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+rooms.length+'</div></div>'+
  '<div class="stat-box"><div class="muted">Remises en température en cours</div><div class="big-number">'+open.length+'</div></div>'+
@@ -327,4 +381,6 @@ document.addEventListener("click",e=>{
  }
 });
 setInterval(()=>{if(!data)return;if(page==="reheat")updateReheatControls();checkReheatAlarms();},1000);
+setInterval(refreshDashboardReadings,60000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-dashboardRefreshAt>=60000)refreshDashboardReadings()});
 if(token)load();else staffList();
