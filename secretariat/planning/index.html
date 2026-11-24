@@ -306,7 +306,7 @@ async function openForm(x=null,date=null){
  editing=x?.id||null;$('formTitle').textContent=x?'Modifier un événement':'Nouvel événement';
  $('entry').reset();$('date').value=x?.event_date||date||window.planningSelectedDay||currentDate();
  selectPlanningPersonnel(x?.personnel_name||'',!!x);
- $('kind').value=x?.event_type||'incident';
+ $('kind').value=x?.event_type||'absence';
  $('duration').value=x&&!x.all_day&&incidentMinutes(x)!=null?formatIncidentDuration(x):'';
  $('departureTime').value=x?.start_time?String(x.start_time).slice(0,5):'';
  $('returnTime').value=x?.end_time?String(x.end_time).slice(0,5):'';
