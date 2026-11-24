@@ -165,7 +165,7 @@ if(action==="govee-auto-sync"&&req.method==="POST"){
  query(await c.from("kitchen_ovens").select("*").eq("active",true).order("oven_number")),
  query(await c.from("kitchen_dish_types").select("*").eq("active",true).order("label")),
  (async()=>{const q=await c.from("kitchen_defaults").select("*").eq("id",1).single();if(q.error)throw q.error;return q.data})(),
- query(await c.from("kitchen_tasks").select("*").eq("active",true).order("label")),
+ query(await c.rpc("kitchen_task_calendar",{p_day:new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())})),
  query(await c.from("kitchen_staff").select("id,name,active,personnel_id").order("name")),
  query(await c.from("kitchen_reheats").select("*").order("started_at",{ascending:false}).limit(300)),
  query(await c.from("kitchen_cold_readings").select("*").is("invalidated_at",null).order("measured_at",{ascending:false}).limit(500)),
@@ -177,7 +177,7 @@ if(action==="govee-auto-sync"&&req.method==="POST"){
  query(await c.rpc("kitchen_cold_room_overview"))
 
  ]);
- return answer({me:u,rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
+ return answer({me:u,rooms,ovens,dishes,defaults,tasks:tasks.filter((t:any)=>t.scheduled),task_settings:u.scope==="admin"?tasks:undefined,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
  }
  
 if(action==="cold-history"&&req.method==="GET"){
@@ -194,16 +194,23 @@ if(action==="cold-history"&&req.method==="GET"){
  return answer({readings:result.data||[],total:result.count??0,offset,limit,has_more:offset+(result.data?.length||0)<(result.count??0)});
 }
  
-if(action==="task-report"&&req.method==="GET"){
+if(action==="task-settings"&&req.method==="GET"){
+ if(u.scope!=="admin")return forbidden();
+ const day=url.searchParams.get("date")||"";
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+"T12:00:00Z"))||new Date(day+"T12:00:00Z").toISOString().slice(0,10)!==day)return answer({error:"Date invalide"},400);
+ return answer({tasks:await query(await c.rpc("kitchen_task_calendar",{p_day:day}))});
+ }
+ if(action==="task-report"&&req.method==="GET"){
  const day=url.searchParams.get("date")||"";
  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+"T12:00:00Z")))
   return answer({error:"Date du rapport invalide"},400);
  const [tasksResult,checksResult]=await Promise.all([
-  c.from("kitchen_tasks").select("id,label,assigned_to,active,created_at").order("label"),
+  c.rpc("kitchen_task_calendar",{p_day:day}),
   c.from("kitchen_task_checks").select("id,task_id,performed_on,performed_at,performed_by").eq("performed_on",day)
  ]);
  if(tasksResult.error)throw tasksResult.error;if(checksResult.error)throw checksResult.error;
- return answer({date:day,tasks:tasksResult.data||[],checks:checksResult.data||[]});
+ const checks=checksResult.data||[],checked=new Set(checks.map((v:any)=>v.task_id));
+ return answer({date:day,tasks:(tasksResult.data||[]).filter((t:any)=>t.scheduled||checked.has(t.id)).map((t:any)=>({...t,active:t.scheduled})),checks});
 }
  if(action==="govee-test"&&req.method==="GET"){
  if(u.scope!=="admin")return forbidden();
@@ -316,11 +323,9 @@ if(action==="task-report"&&req.method==="GET"){
  if(action==="task-check"){
  if(u.scope!=="staff"||u.existingAccount)return forbidden();
  if(!uuid(x.task_id))return answer({error:"Tâche invalide"},400);
- const q=await c.from("kitchen_tasks").select("id,assigned_to").eq("id",x.task_id).eq("active",true).maybeSingle();if(!q.data)return answer({error:"Tâche absente"},404);
- if(u.scope!=="admin"&&q.data.assigned_to&&q.data.assigned_to!==u.id)return forbidden();
- const date=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
- const v=await c.from("kitchen_task_checks").insert({task_id:x.task_id,performed_on:date,performed_by:u.id}).select("*").single();
- if(v.error?.code==="23505")return answer({error:"Tâche déjà validée aujourd’hui"},409);if(v.error)throw v.error;return answer({check:v.data},201);
+ const q=await c.rpc("kitchen_task_validate",{p_task_id:x.task_id,p_agent:u.id});
+ if(q.error)throw q.error;
+ return answer(q.data,q.data.error?Number(q.data.status)||400:201);
  }
  if(!allowed(u,true))return forbidden();
  if(action==="archive-room"){
@@ -557,14 +562,27 @@ if(action==="update-room"){
  }).eq("id",1).select("*").single();
  if(q.error)throw q.error;return answer({defaults:q.data});
  }
- if(action==="add-task"){
- const label=String(x.label||"").trim(),assigned=x.assigned_to||null;
- if(label.length<3||label.length>100||(assigned&&!uuid(assigned)))return answer({error:"Tâche ou agent invalide"},400);
- if(assigned){const q=await c.from("kitchen_staff").select("id").eq("id",assigned).eq("active",true).maybeSingle();if(!q.data)return answer({error:"Agent introuvable"},400)}
- const q=await c.from("kitchen_tasks").insert({label,assigned_to:assigned}).select("*").single();if(q.error?.code==="23505")return answer({error:"Tâche déjà existante"},409);if(q.error)throw q.error;return answer({task:q.data},201);
+ if(action==="add-task"||action==="update-task"){
+ const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ const day=String(x.effective_on||today),label=String(x.label||"").trim(),assigned=x.assigned_to||null;
+ const starts=String(x.starts_on||day),ends=x.ends_on?String(x.ends_on):null,weekdays=x.weekdays??[1,2,3,4,5,6,7];
+ const validDay=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+"T12:00:00Z"))&&new Date(v+"T12:00:00Z").toISOString().slice(0,10)===v;
+ const recurrence=x.recurrence??"daily",priority=x.priority??"normal",scheduled=x.scheduled_time||null;
+ const description=String(x.description||"").trim(),instructions=String(x.instructions||"").trim(),active=x.active??true;
+ const id=action==="update-task"?x.id:null,scope=x.scope??"future";
+ if((action==="update-task"&&!uuid(id))||label.length<3||label.length>100||(assigned&&!uuid(assigned))||
+ !validDay(day)||day<today||!validDay(starts)||(ends&&(!validDay(ends)||ends<starts))||
+ !Array.isArray(weekdays)||!weekdays.length||weekdays.some((d:any)=>!Number.isInteger(d)||d<1||d>7)||
+ !["daily","weekly","once"].includes(recurrence)||!["low","normal","high","urgent"].includes(priority)||
+ !["future","single"].includes(scope)||typeof active!=="boolean"||description.length>1000||instructions.length>2000||
+ (scheduled&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(scheduled)))return answer({error:"Paramètres de tâche invalides"},400);
+ const q=await c.rpc("kitchen_task_save",{p_task_id:id,p_day:day,p_single_day:scope==="single",
+ p_config:{label,assigned_to:assigned,active,starts_on:starts,ends_on:ends,weekdays,recurrence,priority,scheduled_time:scheduled,description,instructions},p_actor:u.id});
+ if(q.error)throw q.error;
+ return answer(q.data,q.data.error?Number(q.data.status)||400:action==="add-task"?201:200);
  }
- 
-if(action==="invalidate-cold-reading"){
+
+ if(action==="invalidate-cold-reading"){
  const id=String(x.id||""),reason=String(x.reason||"").trim();
  if(!uuid(id)||reason.length<8||reason.length>500)return answer({error:"Relevé et motif de correction de 8 à 500 caractères requis"},400);
  const current=await c.from("kitchen_cold_readings").select("id,invalidated_at,room_id,temperature_c,measured_at").eq("id",id).maybeSingle();
