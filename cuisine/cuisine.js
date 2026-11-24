@@ -223,7 +223,7 @@ function renderDashboard(){
  '<div class="grid-3" style="margin-bottom:20px">'+
  '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+rooms.length+'</div></div>'+
  '<div class="stat-box"><div class="muted">Remises en température en cours</div><div class="big-number">'+open.length+'</div></div>'+
- '<div class="stat-box"><div class="muted">Nettoyages validés</div><div class="big-number">'+done.size+' / '+data.tasks.length+'</div></div></div>'+
+ '<div class="stat-box"><div class="muted">Nettoyages validés</div><div class="big-number">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+'</div></div></div>'+
  '<div class="grid" style="margin-bottom:18px">'+
  '<div class="action-card"><div><span class="eyebrow">Cuisson</span><h2>Remise en température</h2><p>Départ de la chambre froide, lancement du four et mesure finale à cœur.</p></div><button class="btn btn-primary" type="button" data-go="reheat">Ouvrir les fours · '+open.length+' en cours</button></div>'+
  '<div class="action-card"><div><span class="eyebrow">Contrôle quotidien</span><h2>Chambres froides</h2><p>Saisissez la température réellement lue dans chaque chambre froide.</p></div><button class="btn btn-accent" type="button" data-go="cold">Faire un relevé · '+(rooms.length-checked.size)+' restant(s)</button></div>'+
@@ -302,15 +302,16 @@ function canCheckTasks(){return data?.me.scope==="staff"&&!data.me.existingAccou
 function renderTaskItems(tasks){
  const done=new Map(data.checks.filter(c=>c.performed_on===today()).map(c=>[c.task_id,c]));
  return '<div class="task-list">'+(tasks.map(t=>{
- const c=done.get(t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id;
- const state=c?'<span class="tag tag-ok">Réalisée</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':'Marquer comme réalisée')+'</button>':'<span class="tag tag-warn">À réaliser</span>';
+ const c=done.get(t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id,optional=(data.optional_tasks||[]).some(x=>x.id===t.id);
+ const state=c?'<span class="tag tag-ok">Réalisée</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false&&!optional?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':optional?'Valider si utilisée':'Marquer comme réalisée')+'</button>':optional?'<span class="tag">Selon utilisation</span>':'<span class="tag tag-warn">À réaliser</span>';
  return '<div class="task-item '+(c?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+' · '+esc(window.KitchenUI.scheduleLabel(t))+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small>'+(t.description?'<p class="kt-task-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="kt-task-notes"><b>Consignes :</b> '+esc(t.instructions)+'</p>':'')+'</div><div class="kt-task-actions">'+state+(canManageTasks()?'<button class="btn btn-outline btn-small" type="button" data-edit-kitchen-task="'+esc(t.id)+'">Modifier</button>':'')+'</div></div>';
  }).join("")||'<p class="muted">Aucune tâche à afficher.</p>')+'</div>';
 }
 function renderTasks(){
  const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
  const tasks=canManageTasks()?(data.task_settings||data.tasks):data.tasks;
- $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage et tâches</h1><p>Validez uniquement les tâches réellement réalisées aujourd’hui.</p></div><div class="kt-task-actions"><span class="tag">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+' validées</span>'+(canManageTasks()?'<button type="button" class="btn btn-primary" data-add-kitchen-task>Ajouter une tâche</button>':'')+'</div></div><div class="card">'+renderTaskItems(tasks)+'</div><p class="guided-note">Les validations sont horodatées.</p>';
+ const optional=canManageTasks()?[]:(data.optional_tasks||[]);
+ $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage et tâches</h1><p>Validez uniquement les tâches réellement réalisées aujourd’hui.</p></div><div class="kt-task-actions"><span class="tag">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+' validées</span>'+(canManageTasks()?'<button type="button" class="btn btn-primary" data-add-kitchen-task>Ajouter une tâche</button>':'')+'</div></div><div class="card">'+renderTaskItems(tasks)+'</div>'+(optional.length?'<div class="card"><h2>Tâches selon utilisation</h2><p class="muted">À valider uniquement après utilisation et nettoyage effectifs. Ces tâches ne sont pas comptées comme obligatoires chaque jour.</p>'+renderTaskItems(optional)+'</div>':'')+'<p class="guided-note">Les validations sont horodatées.</p>';
 }
 async function fetchTaskSettings(day){
  const response=await fetch(API+"?"+new URLSearchParams({action:"task-settings",date:day}),{headers:{"x-admin-session":token},cache:"no-store"});

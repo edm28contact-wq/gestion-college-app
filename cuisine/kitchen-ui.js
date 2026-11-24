@@ -5,7 +5,7 @@
  const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const nextDay=d=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+1);return x.toISOString().slice(0,10)};
  const priorities={low:"Basse",normal:"Normale",high:"Haute",urgent:"Urgente"};
- const frequencies={daily:"Tous les jours",weekly:"Jours sélectionnés",once:"Une seule fois"};
+ const frequencies={daily:"Tous les jours",weekly:"Chaque semaine",monthly:"Une fois par mois",on_demand:"Selon utilisation",once:"Une seule fois"};
  const days=["Lun.","Mar.","Mer.","Jeu.","Ven.","Sam.","Dim."];
  function coldOverview(data,{buttonAttributes='data-go="cold"',dashboardRefreshError=""}={}){
  const rooms=(data.rooms||[]).filter(r=>!r.archived_at&&!r.deleted_at);
@@ -59,7 +59,7 @@
 }
  function scheduleLabel(t){
   const freq=frequencies[t.recurrence]||frequencies.daily;
-  return (t.scheduled_time?String(t.scheduled_time).slice(0,5)+" · ":"")+freq+(t.recurrence==="weekly"?" : "+(t.weekdays||[]).map(d=>days[d-1]).filter(Boolean).join(", "):"")+" · Priorité "+(priorities[t.priority]||priorities.normal).toLowerCase();
+  return (t.scheduled_time?String(t.scheduled_time).slice(0,5)+" · ":"")+freq+(["weekly","monthly"].includes(t.recurrence)?" : "+(t.recurrence==="monthly"?"1er ":"")+(t.weekdays||[]).map(d=>days[d-1]).filter(Boolean).join(", "):"")+" · Priorité "+(priorities[t.priority]||priorities.normal).toLowerCase();
  }
  function fields(t,staff,day){
   const sel=(a,b)=>a===b?" selected":"";
@@ -71,7 +71,7 @@
    '<label>Priorité<select name="priority">'+options(priorities,t.priority||"normal")+'</select></label>'+
    '<label>Fréquence<select name="recurrence">'+options(frequencies,t.recurrence||"daily")+'</select></label>'+
    '<label>État<select name="active"><option value="true"'+sel(t.active!==false,true)+'>Active</option><option value="false"'+sel(t.active===false,true)+'>Désactivée</option></select></label>'+
-   '<fieldset class="kt-wide kt-weekdays"><legend>Jours d’exécution (fréquence hebdomadaire)</legend>'+days.map((name,i)=>'<label><input type="checkbox" name="weekday" value="'+(i+1)+'" '+((t.weekdays||[1,2,3,4,5,6,7]).includes(i+1)?'checked':'')+'>'+name+'</label>').join("")+'</fieldset>'+
+   '<fieldset class="kt-wide kt-weekdays"><legend>Jours d’exécution (hebdomadaire ou premier jour sélectionné du mois)</legend>'+days.map((name,i)=>'<label><input type="checkbox" name="weekday" value="'+(i+1)+'" '+((t.weekdays||[1,2,3,4,5,6,7]).includes(i+1)?'checked':'')+'>'+name+'</label>').join("")+'</fieldset>'+
    '<label>Date de début<input name="starts_on" type="date" required value="'+esc(t.starts_on||day)+'"></label>'+
    '<label>Date de fin (facultative)<input name="ends_on" type="date" value="'+esc(t.ends_on||"")+'"></label>'+
    '<label class="kt-wide">Consignes<textarea name="instructions" maxlength="2000" rows="3">'+esc(t.instructions||"")+'</textarea></label></div>';
@@ -89,7 +89,7 @@
   document.body.append(dialog);
   const form=dialog.querySelector("form"),dest=form.querySelector("[data-kt-fields]"),feedback=form.querySelector(".kt-feedback"),submit=form.querySelector("[type=submit]"),field=n=>form.elements.namedItem(n);
   let saving=false,loading=false,valid=true;
-  function hint(){const single=field("scope")?.value==="single";form.querySelector("[data-kt-scope]").textContent=single?"Exception pour cette date uniquement. Les dates de début, de fin et la fréquence ne s’appliquent pas à cette exception.":task?"La programmation à partir de cette date sera remplacée, y compris les exceptions futures.":"";for(const input of dest.querySelectorAll("[name=weekday],[name=starts_on],[name=ends_on],[name=recurrence]")){input.disabled=single||input.name==="weekday"&&field("recurrence").value!=="weekly";}}
+  function hint(){const single=field("scope")?.value==="single";form.querySelector("[data-kt-scope]").textContent=single?"Exception pour cette date uniquement. Les dates de début, de fin et la fréquence ne s’appliquent pas à cette exception.":task?"La programmation à partir de cette date sera remplacée, y compris les exceptions futures.":"";for(const input of dest.querySelectorAll("[name=weekday],[name=starts_on],[name=ends_on],[name=recurrence]")){input.disabled=single||input.name==="weekday"&&!["weekly","monthly"].includes(field("recurrence").value);}}
   function show(t,d){dest.innerHTML=fields(t||{},staff,d);field("recurrence").addEventListener("change",hint);hint();}
   function disabled(state){submit.disabled=state||!valid;field("effective_on").disabled=state;if(field("scope"))field("scope").disabled=state;dest.inert=state;}
   async function reloadDate(){
@@ -110,8 +110,9 @@
    try{
     const scope=task?field("scope").value:"future",weekdays=Array.from(dest.querySelectorAll("[name=weekday]:checked"),x=>Number(x.value));
     if(scope!=="single"&&field("recurrence").value==="weekly"&&!weekdays.length)throw Error("Sélectionnez au moins un jour.");
+    if(scope!=="single"&&field("recurrence").value==="monthly"&&weekdays.length!==1)throw Error("Choisissez un seul jour : son premier passage dans chaque mois sera programmé.");
     const body={id:task?.id,label:field("label").value.trim(),assigned_to:field("assigned_to").value||null,description:field("description").value,instructions:field("instructions").value,scheduled_time:field("scheduled_time").value||null,priority:field("priority").value,recurrence:field("recurrence").value,active:field("active").value==="true",weekdays:weekdays.length?weekdays:[1,2,3,4,5,6,7],starts_on:field("starts_on").value,ends_on:field("ends_on").value||null,effective_on:field("effective_on").value,scope};
-    if(scope==="single"){body.starts_on=body.effective_on;body.ends_on=null;}
+    if(scope==="single"){body.starts_on=body.effective_on;body.ends_on=null;if(body.recurrence==="monthly"&&body.weekdays.length!==1)body.weekdays=[5];}
     if(body.ends_on&&body.ends_on<body.starts_on)throw Error("La fin doit être postérieure ou égale au début.");
     if(task&&scope==="future"&&!window.confirm("Remplacer la programmation à partir du "+body.effective_on+", y compris les exceptions futures ?"))return;
     saving=true;disabled(true);feedback.textContent="Enregistrement…";

@@ -277,12 +277,13 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  const r=await c.from("kitchen_pms_followups").select("*").eq("record_id",id).order("event_seq",{ascending:true});if(r.error)throw r.error;return answer({followups:r.data});
  }
  if(action==="list"&&req.method==="GET"){
+ const taskDay=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,coldOverview]=await Promise.all([
  query(await c.from("kitchen_cold_rooms").select("*").order("room_type").order("room_number")),
  query(await c.from("kitchen_ovens").select("*").eq("active",true).order("oven_number")),
  query(await c.from("kitchen_dish_types").select("*").eq("active",true).order("label")),
  (async()=>{const q=await c.from("kitchen_defaults").select("*").eq("id",1).single();if(q.error)throw q.error;return q.data})(),
- query(await c.rpc("kitchen_task_calendar",{p_day:new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())})),
+ query(await c.rpc("kitchen_task_calendar",{p_day:taskDay})),
  query(await c.from("kitchen_staff").select("id,name,active,personnel_id").order("name")),
  query(await c.from("kitchen_reheats").select("*").order("started_at",{ascending:false}).limit(300)),
  query(await c.from("kitchen_cold_readings").select("*").is("invalidated_at",null).order("measured_at",{ascending:false}).limit(500)),
@@ -294,7 +295,7 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  query(await c.rpc("kitchen_cold_room_overview"))
 
  ]);
- return answer({me:u,rooms,ovens,dishes,defaults,tasks:tasks.filter((t:any)=>t.scheduled),task_settings:u.scope==="admin"?tasks:undefined,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
+ return answer({me:u,rooms,ovens,dishes,defaults,tasks:tasks.filter((t:any)=>t.scheduled),optional_tasks:tasks.filter((t:any)=>!t.scheduled&&t.active&&t.recurrence==="on_demand"&&t.starts_on<=taskDay&&(!t.ends_on||t.ends_on>=taskDay)),task_settings:u.scope==="admin"?tasks:undefined,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
  }
  
 if(action==="cold-history"&&req.method==="GET"){
@@ -327,7 +328,7 @@ if(action==="task-settings"&&req.method==="GET"){
  ]);
  if(tasksResult.error)throw tasksResult.error;if(checksResult.error)throw checksResult.error;
  const checks=checksResult.data||[],checked=new Set(checks.map((v:any)=>v.task_id));
- return answer({date:day,tasks:(tasksResult.data||[]).filter((t:any)=>t.scheduled||checked.has(t.id)).map((t:any)=>({...t,active:t.scheduled})),checks});
+ return answer({date:day,tasks:(tasksResult.data||[]).filter((t:any)=>t.scheduled||checked.has(t.id)).map((t:any)=>({...t,active:t.scheduled||checked.has(t.id)})),checks});
 }
  if(action==="govee-test"&&req.method==="GET"){
  if(u.scope!=="admin")return forbidden();
@@ -756,7 +757,7 @@ if(action==="update-room"){
  if((action==="update-task"&&!uuid(id))||label.length<3||label.length>100||(assigned&&!uuid(assigned))||
  !validDay(day)||day<today||!validDay(starts)||(ends&&(!validDay(ends)||ends<starts))||
  !Array.isArray(weekdays)||!weekdays.length||weekdays.some((d:any)=>!Number.isInteger(d)||d<1||d>7)||
- !["daily","weekly","once"].includes(recurrence)||!["low","normal","high","urgent"].includes(priority)||
+ !["daily","weekly","once","monthly","on_demand"].includes(recurrence)||(recurrence==="monthly"&&new Set(weekdays).size!==1)||!["low","normal","high","urgent"].includes(priority)||
  !["future","single"].includes(scope)||typeof active!=="boolean"||description.length>1000||instructions.length>2000||
  (scheduled&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(scheduled)))return answer({error:"Paramètres de tâche invalides"},400);
  const q=await c.rpc("kitchen_task_save",{p_task_id:id,p_day:day,p_single_day:scope==="single",
