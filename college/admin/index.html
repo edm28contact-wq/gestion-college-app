@@ -564,7 +564,7 @@ function commandes(){
 function planningPersonnelPage(){
  $('content').innerHTML='<section class="card"><h2>Planning du personnel</h2>'+
  '<p class="muted">Même planning que le Secrétariat : événements, absences, retards, départs anticipés et justificatifs. Les modifications sont immédiatement partagées avec Compta salaire.</p>'+
- '</section><iframe class="college-personnel-planning-frame" title="Planning du personnel du Secrétariat" loading="eager" src="../../secretariat/planning/?embed=college&amp;v=20261124-depart-retour-calcul"></iframe>';
+ '</section><iframe class="college-personnel-planning-frame" title="Planning du personnel du Secrétariat" loading="eager" src="../../secretariat/planning/?embed=college&amp;v=20261124-absence-calcul-v2"></iframe>';
 }
 function comptaFournisseursPage(){
  const orders=Array.isArray(db.orders)?db.orders:[],purchases=Array.isArray(db.purchases)?db.purchases:[],
@@ -687,7 +687,7 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 window.addEventListener('load',()=>{if(token)enterApp().catch(()=>logout())});
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261124-evenements-par-salarie"></script>
+<script src="./salaires.js?v=20261124-planning-depart-retour"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 <script src="../../cuisine/releve-export.js?v=20261120-2"></script>
 <script src="../../cuisine/kitchen-ui.js?v=20261124-task-editor"></script>
