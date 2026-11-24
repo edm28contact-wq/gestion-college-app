@@ -169,8 +169,11 @@ function salaryArchivedSlots(slots){
 function salaryArchiveItemHtml(h){
  const school=salaryWorkSlotSummary([1,2,3,4,5],h.school_weekly_work_slots);
  const vacation=salaryWorkSlotSummary([1,2,3,4,5],h.vacation_weekly_work_slots);
- return '<details class="card" style="margin:10px 0"><summary><b>'+esc(h.employee_name)+'</b> · '+esc(h.source_start)+' au '+esc(h.source_end)+' · '+(h.personnel_id?'Fiche reliée':'Ancien salarié non rapproché')+'</summary>'+
- '<p class="muted">Source : '+esc(h.source_document)+'. Archive 2022-2023 uniquement : ne modifie ni le planning actuel ni les calculs de paie.</p>'+
+ const isTeam=h.schedule_scope==='team';
+ const scopeLabel=isTeam?'Horaires collectifs de cantine · non affectés':h.personnel_id?'Fiche reliée':'Ancien salarié non rapproché';
+ const sourceLabel='Source : '+h.source_document+(h.source_sheet_name?' · onglet '+h.source_sheet_name:'');
+ return '<details class="card" style="margin:10px 0"><summary><b>'+esc(h.employee_name)+'</b> · '+esc(h.source_start)+' au '+esc(h.source_end)+' · '+esc(scopeLabel)+'</summary>'+
+ '<p class="muted">'+esc(sourceLabel)+'. Archive 2022-2023 uniquement : ne modifie ni le planning actuel ni les calculs de paie.</p>'+
  '<div class="salary-profile-secondary"><div><h3>Période scolaire · '+(school.weeklyMinutes===null?'À vérifier':salaryFormatLate(school.weeklyMinutes)+' / semaine')+'</h3>'+salaryArchivedSlots(h.school_weekly_work_slots)+'</div>'+
  '<div><h3>Vacances scolaires · '+(vacation.weeklyMinutes===null?'À vérifier':salaryFormatLate(vacation.weeklyMinutes)+' / semaine')+'</h3>'+salaryArchivedSlots(h.vacation_weekly_work_slots)+'</div></div></details>';
 }
