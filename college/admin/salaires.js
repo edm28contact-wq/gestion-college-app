@@ -147,6 +147,42 @@ function salaryFormatLate(minutes){
 }
 const salaryWeekdayNames=["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
 let salaryPayrollDraft=null,salaryPayrollMessage="";
+let salaryScheduleHistory=[],salaryScheduleHistoryLoaded=false,salaryScheduleHistoryLoading=false,salaryScheduleHistoryError="";
+async function salaryLoadScheduleHistory(){
+ if(salaryScheduleHistoryLoading||salaryScheduleHistoryLoaded||!salaryStaffLoaded)return;
+ salaryScheduleHistoryLoading=true;salaryScheduleHistoryError="";
+ try{
+  const result=await call(ROOT+"/personnel-planning","staff-schedule-history");
+  if(!Array.isArray(result.history))throw Error("Historique horaire invalide");
+  salaryScheduleHistory=result.history;salaryScheduleHistoryLoaded=true;
+ }catch(e){salaryScheduleHistoryError=frError(e.message)}
+ finally{salaryScheduleHistoryLoading=false;if(page==="salaires")salaryPage()}
+}
+function salaryArchivedSlots(slots){
+ const weekdays=["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
+ const rows=[1,2,3,4,5,6,0].map(day=>{
+  const times=(Array.isArray(slots)?slots:[]).filter(s=>s.day===day).map(s=>s.start+"–"+s.end);
+  return times.length?'<tr><th>'+weekdays[day]+'</th><td>'+esc(times.join(" / "))+'</td></tr>':"";
+ }).filter(Boolean);
+ return '<table class="data-table"><tbody>'+rows.join("")+'</tbody></table>';
+}
+function salaryArchiveItemHtml(h){
+ const school=salaryWorkSlotSummary([1,2,3,4,5],h.school_weekly_work_slots);
+ const vacation=salaryWorkSlotSummary([1,2,3,4,5],h.vacation_weekly_work_slots);
+ return '<details class="card" style="margin:10px 0"><summary><b>'+esc(h.employee_name)+'</b> · '+esc(h.source_start)+' au '+esc(h.source_end)+' · '+(h.personnel_id?'Fiche reliée':'Ancien salarié non rapproché')+'</summary>'+
+ '<p class="muted">Source : '+esc(h.source_document)+'. Archive 2022-2023 uniquement : ne modifie ni le planning actuel ni les calculs de paie.</p>'+
+ '<div class="salary-profile-secondary"><div><h3>Période scolaire · '+(school.weeklyMinutes===null?'À vérifier':salaryFormatLate(school.weeklyMinutes)+' / semaine')+'</h3>'+salaryArchivedSlots(h.school_weekly_work_slots)+'</div>'+
+ '<div><h3>Vacances scolaires · '+(vacation.weeklyMinutes===null?'À vérifier':salaryFormatLate(vacation.weeklyMinutes)+' / semaine')+'</h3>'+salaryArchivedSlots(h.vacation_weekly_work_slots)+'</div></div></details>';
+}
+function salaryArchivePanel(personnelId=null){
+ const rows=salaryScheduleHistory.filter(x=>!personnelId||x.personnel_id===personnelId);
+ if(salaryScheduleHistoryLoading)return '<p class="muted">Chargement des horaires historiques…</p>';
+ if(salaryScheduleHistoryError)return '<p class="err">Archives indisponibles : '+esc(salaryScheduleHistoryError)+'</p><button class="btn secondary" type="button" id="salaryArchiveRetry">Réessayer</button>';
+ if(!salaryScheduleHistoryLoaded)return '<p class="muted">Chargement des archives…</p>';
+ if(!rows.length)return personnelId?'':'<p>Aucune archive horaire.</p>';
+ return rows.map(salaryArchiveItemHtml).join("");
+}
+
 function salaryWorkingDays(month,days){
  const [year,m]=month.split("-").map(Number);
  let count=0;
@@ -436,7 +472,7 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+('<h3>Horaires historiques (sans effet sur les horaires actuels)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
 }
 async function salaryOpenStaffProfile(id,focusSchedule=false){
  if(salaryView==="events")salaryView="staff";
@@ -526,6 +562,7 @@ async function salaryLoadStaff(){
   salaryStaff=Array.isArray(r.staff)?r.staff:[];
   salaryProfessionalRoles=Array.isArray(r.roles)?r.roles:[];salaryCanWrite=r.salary_write===true;
   salaryStaffLoaded=true;
+  if(page==="salaires"&&(salaryView==="settings"||salaryProfileEmployeeId))void salaryLoadScheduleHistory();
  }catch(e){salaryStaffError=frError(e.message)}
  finally{salaryStaffLoading=false;if(page==="salaires")salaryPage()}
 }
@@ -557,6 +594,7 @@ async function salaryUpdateStaff(id,archived,visible){
 }
 function salaryWireStaff(){
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
+ $("salaryArchiveRetry")?.addEventListener("click",()=>{salaryScheduleHistoryError="";salaryScheduleHistoryLoaded=false;void salaryLoadScheduleHistory()});
  $('salaryStaffProfileEdit')?.addEventListener('submit',salarySaveIdentity);
  $('salaryEditName')?.addEventListener('input',salaryCaptureIdentity);
  $('salaryEditRole')?.addEventListener('change',salaryCaptureIdentity);
@@ -613,7 +651,7 @@ function salarySettingsPanel(){
  const days=Array.isArray(p.working_weekdays)?p.working_weekdays:[1,2,3,4,5],benefits=Array.isArray(p.benefits_in_kind)?p.benefits_in_kind:[];
  return '<tr><td>'+esc(p.name)+'</td><td>'+esc(days.map(d=>salaryWeekdayNames[d]).join(", ")||"Aucun")+'</td><td>'+salaryCalendarResultHtml(p,month)+'</td><td>'+salaryHoursResultHtml(p,month)+'</td><td>'+esc(benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"}))+' ('+benefits.length+')</td><td><button type="button" class="btn secondary compact" data-salary-staff-profile="'+esc(p.id)+'">Configurer</button></td></tr>';
  }).join("")+'</tbody></table></div>')+
- '<p class="muted">Jours théoriques selon jours habituels, jours fériés et vacances scolaires de la zone C, suivant les options de chaque salarié. Les congés individuels ne sont pas déduits. Aucun calcul de paie automatique.</p><p><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></p></section>';
+ '<div class="card"><h3>Archives horaires 2022-2023 importées</h3><p class="muted">Les horaires scolaires et vacances sont consultables séparément. Les salariés absents de la liste actuelle ne sont pas créés automatiquement.</p>'+salaryArchivePanel()+'</div>'+ '<p class="muted">Jours théoriques selon jours habituels, jours fériés et vacances scolaires de la zone C, suivant les options de chaque salarié. Les congés individuels ne sont pas déduits. Aucun calcul de paie automatique.</p><p><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></p></section>';
 }
 function salaryEventEmployeeSummary(name,events,month){
  const employeeId=events.find(e=>e.personnel_id)?.personnel_id;
@@ -660,6 +698,7 @@ function salaryPage(){
  document.querySelectorAll('[data-salary-month]').forEach(button=>button.addEventListener('click',()=>salarySelectMonth(button.dataset.salaryMonth)));
  const month=$('salaryMonth');if(month)month.addEventListener('change',e=>salarySelectMonth(e.target.value));
  const person=$('salaryPerson');if(person)person.addEventListener('change',e=>{salaryPerson=e.target.value;salaryPage()});
+ if((salaryView==="settings"||salaryProfileEmployeeId)&&salaryStaffLoaded&&!salaryScheduleHistoryLoading&&!salaryScheduleHistoryLoaded&&!salaryScheduleHistoryError)void salaryLoadScheduleHistory();
  if(salaryView==="settings"||salaryView==="events"||salaryProfileEmployeeId){
   void salaryCalendarEnsure(salaryMonth);
   if(salaryProfileEmployeeId)void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth());
