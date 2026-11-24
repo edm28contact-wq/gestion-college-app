@@ -386,7 +386,7 @@ function setFile(newFile){
   file=newFile||null;revision++;
   for(const row of rows){
    row.verified=false;row.autoVerified=false;row.manualVerified=false;
-   row.confirmedOnPdf=false;row.pdfEvidence=null;
+   row.confirmedOnPdf=false;row.pdfEvidence=null;row.stock_confirmed=false;
   }
   $("confirmReview").checked=false;
   $("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
