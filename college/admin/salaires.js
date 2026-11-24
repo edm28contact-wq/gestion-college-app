@@ -277,9 +277,9 @@ function salaryPayrollPanel(staff,month){
  const excludeSchool=activeDraft?.excludeSchool??staff.exclude_school_holidays??false;
  const slots=activeDraft?.slots??(Array.isArray(staff.weekly_work_slots)?staff.weekly_work_slots:[]);
  const readOnly=!salaryCanWrite||salaryStaffSaving,lock=readOnly?" disabled":"";
- return '<section class="card" style="margin:12px 0"><h3>Horaires de travail, planning et avantages en nature</h3>'+
+ return '<section class="card" id="salaryWeeklySchedule" style="margin:12px 0;scroll-margin-top:18px"><h3>Horaires de travail, planning et avantages en nature</h3>'+
   '<p class="muted">Calcul mensuel selon les jours habituels du salarié et les calendriers officiels de France métropolitaine et des vacances scolaires de la zone C (académie de Versailles). Les congés individuels et les fermetures particulières restent à saisir séparément.</p>'+
-  '<h4>Horaires habituels de la semaine</h4><p class="muted">Cochez les jours travaillés et saisissez un ou plusieurs créneaux. Pour une pause non travaillée, séparez les créneaux (ex. 08:00–12:00 puis 13:00–17:00). Les horaires traversant minuit ne sont pas pris en charge.</p>'+
+  '<h4>Horaires habituels de la semaine</h4><p class="muted">Cochez les jours travaillés et saisissez un ou plusieurs créneaux. Pour une pause non travaillée, séparez les créneaux (ex. 08:00–12:00 puis 13:00–17:00). Les horaires traversant minuit ne sont pas pris en charge.</p>'+'<div class="salary-schedule-tools"><label for="salaryScheduleCopyFrom">Recopier les horaires du</label><select id="salaryScheduleCopyFrom"'+lock+'>'+days.map(day=>'<option value="'+day+'">'+esc(salaryWeekdayNames[day])+'</option>').join("")+'</select><button type="button" class="btn secondary compact" id="salaryScheduleCopy"'+(readOnly||days.length<2?' disabled':'')+'>Appliquer aux autres jours travaillés</button></div>'+
   salaryWeeklyScheduleHtml(days,slots,readOnly)+
   '<div class="salary-hours-summary"><p class="muted">Heures théoriques selon le planning actuel, pas des heures pointées ni un historique contractuel.</p><div id="salaryPayrollHoursCount">'+salaryHoursResultHtml(staff,month,{days,slots,excludePublic,excludeSchool})+'</div></div>'+
   '<p><label><input type="checkbox" id="salaryExcludePublic" style="width:auto" '+(excludePublic?'checked':'')+lock+'> Déduire les jours fériés non travaillés</label></p>'+
@@ -291,6 +291,29 @@ function salaryPayrollPanel(staff,month){
   '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
   '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer les horaires, le planning et les avantages</button>'+
   (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
+}
+function salaryCopyDaySchedule(){
+ if(!salaryCanWrite||salaryStaffSaving)return;
+ const source=Number($("salaryScheduleCopyFrom")?.value);
+ salaryPayrollReadDraft();
+ const draft=salaryPayrollDraft;
+ if(!draft||!draft.days.includes(source))return;
+ const sourceSlots=draft.slots.filter(slot=>slot.day===source);
+ const validated=salaryWorkSlotSummary([source],sourceSlots);
+ if(validated.error||validated.missingDays.length){
+  salaryPayrollMessage=validated.error||"Complétez les créneaux du jour choisi avant de les recopier.";
+  salaryPage();return;
+ }
+ const destinations=draft.days.filter(day=>day!==source);
+ if(!destinations.length)return;
+ if(draft.slots.some(slot=>destinations.includes(slot.day)&&(slot.start||slot.end))&&
+    !confirm("Remplacer les horaires existants des "+destinations.length+" autres jours travaillés par ceux du "+salaryWeekdayNames[source].toLowerCase()+" ?"))return;
+ draft.slots=[
+  ...draft.slots.filter(slot=>!destinations.includes(slot.day)),
+  ...destinations.flatMap(day=>validated.slots.map(slot=>({day,start:slot.start,end:slot.end})))
+ ];
+ salaryPayrollMessage="Créneaux de "+salaryWeekdayNames[source].toLowerCase()+" recopiés sur "+destinations.length+" jour(s). Cliquez sur Enregistrer pour sauvegarder.";
+ salaryPage();
 }
 function salaryPayrollReadDraft(){
  const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
@@ -415,7 +438,7 @@ function salaryStaffProfilePanel(){
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
   '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+content+'</section>';
 }
-async function salaryOpenStaffProfile(id){
+async function salaryOpenStaffProfile(id,focusSchedule=false){
  if(salaryView==="events")salaryView="staff";
  const staff=salaryStaff.find(p=>p.id===id);
  if(!staff)return;
@@ -426,7 +449,7 @@ async function salaryOpenStaffProfile(id){
  const version=++salaryProfileRequestVersion;
  if(page==="salaires"){
   salaryPage();
-  $('salaryProfile')?.scrollIntoView({behavior:"smooth",block:"start"});
+  (focusSchedule?$('salaryWeeklySchedule'):$('salaryProfile'))?.scrollIntoView({behavior:"smooth",block:"start"});
  }
  try{
   const history=await call(ROOT+"/personnel-planning","admin-months");
@@ -473,9 +496,13 @@ function salaryStaffPanel(){
  const active=salaryStaff.filter(p=>!p.archived),archived=salaryStaff.filter(p=>p.archived);
  const row=p=>{
   const visible=!p.archived&&p.visible_in_planning;
+  const days=Array.isArray(p.working_weekdays)?p.working_weekdays:[1,2,3,4,5];
+  const schedule=salaryWorkSlotSummary(days,Array.isArray(p.weekly_work_slots)?p.weekly_work_slots:[]);
+  const hoursText=schedule.error?'Horaires invalides':schedule.missingDays.length?'À compléter':salaryFormatLate(schedule.weeklyMinutes)+' / semaine';
   return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+esc(salaryRoleLabel(p.professional_role_id))+'</td><td>'+(p.archived?'Archivé':visible?'Visible dans le planning':'Masqué du planning')+'</td>'+
    '<td><input type="checkbox" data-salary-staff-id="'+esc(p.id)+'" '+(visible?'checked':'')+' '+(p.archived||salaryStaffSaving||!salaryCanWrite?'disabled':'')+' aria-label="Afficher '+esc(p.name)+' dans le planning"></td>'+
-   '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Modifier / Voir la fiche</button></td>'+
+   '<td class="salary-schedule-summary">'+esc(hoursText)+'</td>'+
+   '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Ouvrir la fiche</button> <button type="button" class="btn secondary compact" data-salary-schedule-profile="'+esc(p.id)+'">Horaires</button></td>'+
    '<td><button type="button" class="btn secondary compact" data-salary-archive="'+esc(p.id)+'" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>'+(p.archived?'Réactiver':'Retirer de la liste')+'</button></td></tr>';
  };
  return '<section class="card salary-personnel"><h2>Salariés affichés dans le planning</h2>'+
@@ -486,9 +513,9 @@ function salaryStaffPanel(){
   '<div class="salary-staff-role"><label for="salaryStaffRole">Rôle professionnel</label><select id="salaryStaffRole" '+(!salaryCanWrite?'disabled':'')+'>'+salaryRoleOptions(null)+'</select></div>'+
   '<label><input id="salaryStaffVisible" type="checkbox" checked> Afficher dans le planning</label>'+
   '<button type="submit" class="btn primary" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Ajouter le salarié</button></form>'+
-  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
+  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires hebdomadaires</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
   active.map(row).join('')+archived.map(row).join('')+
-  (!salaryStaff.length?'<tr><td colspan="6">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
+  (!salaryStaff.length?'<tr><td colspan="7">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
 }
 async function salaryLoadStaff(){
  if(!token||salaryStaffLoading)return;
@@ -536,6 +563,7 @@ function salaryWireStaff(){
  $('salaryRoleAdd')?.addEventListener('submit',salarySaveRole);
  document.querySelectorAll('[data-salary-role-edit]').forEach(f=>f.addEventListener('submit',salarySaveRole));
  document.querySelectorAll('[data-salary-staff-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryStaffProfile)));
+ document.querySelectorAll('[data-salary-schedule-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryScheduleProfile,true)));
  document.querySelectorAll("[data-payroll-day]").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();salaryPage()}));
  document.querySelectorAll("#salaryExcludePublic,#salaryExcludeSchool").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
  document.querySelectorAll("[data-work-start],[data-work-end]").forEach(x=>x.addEventListener("input",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
@@ -552,6 +580,7 @@ function salaryWireStaff(){
   salaryPayrollDraft.slots=salaryPayrollDraft.slots.filter(slot=>slot.day!==day||seen++!==index);salaryPage();
  }));
  $("salaryCalendarRetry")?.addEventListener("click",()=>void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth(),true));
+ $("salaryScheduleCopy")?.addEventListener("click",salaryCopyDaySchedule);
  document.querySelectorAll("[data-benefit-label],[data-benefit-amount]").forEach(x=>x.addEventListener("input",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
  $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push({label:"",amount:0});salaryPage()});
  document.querySelectorAll("[data-benefit-remove]").forEach(x=>x.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.splice(Number(x.dataset.benefitRemove),1);salaryPage()}));
