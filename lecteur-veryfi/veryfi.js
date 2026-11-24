@@ -1227,7 +1227,7 @@ function calc(){
  const grossMismatch=ht!=null&&vat!=null&&ttc!=null&&Math.abs(round(ht+vat)-ttc)>.02;
  // A complete secretary reception must reconcile with the PDF before stock can change.
  // Partial receptions retain a separate explicit warning and confirmation.
- const headerBlocked=!accounting&&(ht===null||ht<0||grossMismatch||(!adjusted&&discrepancy));
+ const headerBlocked=!accounting&&(ht===null||ht<0||grossMismatch||discardedInvalid||(!adjusted&&discrepancy));
  const selectedVat=groupedVatAmount(included);
  const selectedTtc=selectedVat===null?null:round(sum+selectedVat);
  const ok=!!documentData&&!!file&&!saved&&included.length>0&&(accounting||pending.length===0)&&(accounting||sum>0)&&!missing.length&&!unmatched.length&&!unverified.length&&!headerBlocked&&(accounting?(!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null):true)&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
