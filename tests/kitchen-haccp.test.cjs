@@ -58,7 +58,7 @@ test("Cuisine : navigation agent guidée et rubriques administration séparées"
  assert.match(admin,/kitchen-section-intro/);
  assert.match(admin,/b\.dataset\.kitchenTab/);
  assert.match(html,/cuisine\.js\?v=\d{8}-[a-z0-9.-]+/);
- assert.match(adminHtml,/cuisine-admin\.js\?v=20261123-govee-f-v2/);
+ assert.match(adminHtml,/cuisine-admin\.js\?v=\d{8}-[a-z0-9.-]+/);
 });
 
 test("Cuisine : raccordement Govee identifiable et provenance des relevés préservée",()=>{
@@ -83,7 +83,7 @@ test("Cuisine : l’archivage et la suppression conservent les contrôles histor
  assert.match(admin,/delete-room/);
  assert.match(kitchen,/function activeRooms\(\)/);
  assert.match(kitchen,/!r\.archived_at&&!r\.deleted_at/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261123-govee-f-v2/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=\d{8}-[a-z0-9.-]+/);
 });
 
 test("Cuisine : alerte prioritaire persistante et son répétitif sans faux contrôle",()=>{
@@ -183,7 +183,7 @@ test("Cuisine : une seule clé Govee et diagnostic immédiat après saisie",()=>
  assert.match(admin,/await api\("govee-test"\)/);
  assert.match(admin,/id="kitchenGoveeTestResult"/);
  assert.match(admin,/\["govee","Connexion Govee"\]/);
- assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=20261123-govee-f-v2/);
+ assert.match(read("college/admin/index.html"),/cuisine-admin\.js\?v=\d{8}-[a-z0-9.-]+/);
 });
 
 test("Cuisine : valeurs Fahrenheit H5179 affichées en Celsius et H5192 isolé",()=>{
