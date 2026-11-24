@@ -1225,10 +1225,13 @@ function calc(){
  const unverified=included.filter(r=>!r.verified);
  const discrepancy=ht==null||(!accounting&&discardedInvalid)||Math.abs((accounting?sum:reconciledSum)-ht)>.02;
  const grossMismatch=ht!=null&&vat!=null&&ttc!=null&&Math.abs(round(ht+vat)-ttc)>.02;
+ // A complete secretary reception must reconcile with the PDF before stock can change.
+ // Partial receptions retain a separate explicit warning and confirmation.
+ const headerBlocked=!accounting&&(ht===null||ht<0||grossMismatch||(!adjusted&&discrepancy));
  const selectedVat=groupedVatAmount(included);
  const selectedTtc=selectedVat===null?null:round(sum+selectedVat);
- const ok=!!documentData&&!!file&&!saved&&included.length>0&&(accounting||pending.length===0)&&(accounting||sum>0)&&!missing.length&&!unmatched.length&&!unverified.length&&(accounting?(!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null):true)&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
- return {ok,included,pending,sum,ht,vat,ttc,discrepancy,grossMismatch,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,autoExcludedCount:excluded.filter(r=>r.autoExcluded).length,autoExcludedHt:round(excluded.filter(r=>r.autoExcluded).reduce((n,r)=>n+(amount(r.total)||0),0)),removedCount:removedRows.length};
+ const ok=!!documentData&&!!file&&!saved&&included.length>0&&(accounting||pending.length===0)&&(accounting||sum>0)&&!missing.length&&!unmatched.length&&!unverified.length&&!headerBlocked&&(accounting?(!discrepancy&&!grossMismatch&&ht!=null&&vat!=null&&ttc!=null):true)&&!!$("vendor").value.trim()&&!!$("invoiceNumber").value.trim()&&/^\d{4}-\d{2}-\d{2}$/.test($("invoiceDate").value);
+ return {ok,included,pending,sum,ht,vat,ttc,discrepancy,grossMismatch,headerBlocked,missing,unmatched,unverified,adjusted,discarded,discardedInvalid,reconciledSum,selectedVat,selectedTtc,excludedCount:excluded.length,autoExcludedCount:excluded.filter(r=>r.autoExcluded).length,autoExcludedHt:round(excluded.filter(r=>r.autoExcluded).reduce((n,r)=>n+(amount(r.total)||0),0)),removedCount:removedRows.length};
 }
 function groupedVatAmount(included){
  if(!Array.isArray(included)||!included.length)return null;
@@ -1370,6 +1373,10 @@ function updateTotals(){
  // Une ligne retirée ne peut pas invalider le montant de la réception.
   if(accounting&&c.discrepancy)errors.push("Le total des lignes diffère du HT du PDF");
  if(accounting&&c.grossMismatch)errors.push("HT + TVA différent du TTC");
+ if(!accounting&&c.ht===null)errors.push("Montant HT du PDF manquant : saisie et contrôle obligatoires");
+ if(!accounting&&!c.adjusted&&c.discrepancy&&c.ht!==null)errors.push("Total HT du PDF différent des lignes : corriger avant validation");
+ if(!accounting&&c.grossMismatch)errors.push("HT + TVA du PDF différent du TTC : corriger avant validation");
+ if(!accounting&&c.adjusted&&c.discrepancy)errors.push("Réception partielle : HT du PDF et toutes les lignes d’origine à rapprocher avant confirmation");
  if(c.missing.length)errors.push(c.missing.length+" ligne(s) incompletes ou incohérentes");
  if(c.unmatched.length)errors.push(c.unmatched.length+" ligne(s) sans produit actif ou quantité de stock confirmée");
  if(c.unverified.length)errors.push(c.unverified.length+" ligne(s) non vérifiées");
@@ -1396,6 +1403,11 @@ async function save(){
  if(trainingMode)return notice("Mode entraînement : aucune réception et aucune facture enregistrée. Ouvrez le lecteur normal seulement pour une vraie réception.","error");
  const c=calc();
  if(!c.ok||!$("confirmReview").checked)return notice("La facture n’est pas prête : contrôles incomplets.","error");
+ if(!accounting&&c.adjusted&&c.discrepancy&&!confirm(
+  "ATTENTION : le HT du PDF ("+fmt(c.ht)+") ne correspond pas à toutes les lignes OCR ("+
+  (c.discardedInvalid?"total indéterminé":fmt(c.reconciledSum))+"). "+
+  "Confirmez après contrôle de la facture originale que cet écart est justifié et que seule la réception des lignes vertes doit être effectuée."
+ ))return;
  if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":c.autoExcludedCount?"ATTENTION : "+c.autoExcludedCount+" produit(s) écarté(s) automatiquement ("+fmt(c.autoExcludedHt)+" HT). Ces produits ne seront PAS ajoutés au stock et ne pourront pas être réceptionnés plus tard à partir du même PDF (anti-doublon). Réintégrez d’abord les lignes à réceptionner. Confirmer la réception partielle ?":c.pending.length?"Il reste "+c.pending.length+" ligne(s) rouge(s)/orange(s). Elles ne seront PAS ajoutées au stock. Après validation, elles ne pourront pas être ajoutées depuis le même PDF (protection anti-doublon). Si vous souhaitez les ajouter plus tard, annulez et passez-les au vert d’abord. Confirmer la réception partielle ?":c.adjusted?"Valider cette réception partielle ? Seuls les produits verts seront ajoutés au stock. Les montants et le PDF d’origine restent conservés.":"Valider cette facture ? Les produits verts seront ajoutés au stock et transmis à Commandes et Achats."))return;
  const currentFile=file;loading=true;$("save").disabled=true;notice("Enregistrement sécurisé en cours…");
  try{
