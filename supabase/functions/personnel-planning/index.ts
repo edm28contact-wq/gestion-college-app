@@ -78,7 +78,7 @@ Deno.serve(async(req:Request)=>{
  const staffName=(x:any)=>String(x??"").normalize("NFKC").replace(/\s+/g," ").trim();
  const staffKey=(x:any)=>staffName(x).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"");
  if(action==="staff-list"&&req.method==="GET"){
-  const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
+  const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,weekly_work_slots,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
   if(q.error)throw q.error;
   if((q.data||[]).length===500)return reply({error:"Liste du personnel trop importante pour être affichée entièrement"},409);
   const roles=user.admin?await db.from("college_personnel_roles").select("id,label,updated_at").order("label"):null;
@@ -164,12 +164,26 @@ Deno.serve(async(req:Request)=>{
   const clean=benefits.map((b:any)=>({label:b.label.trim(),amount:b.amount}));
   const school=x?.exclude_school_holidays,holidays=x?.exclude_public_holidays;
   if(school!==undefined&&typeof school!=="boolean"||holidays!==undefined&&typeof holidays!=="boolean")return reply({error:"Paramètres de calendrier invalides"},400);
-  const payload:any={working_weekdays:[...days].sort((a:number,b:number)=>a-b),benefits_in_kind:clean,updated_at:new Date().toISOString(),updated_by:user.username};
+  const current=await db.from("college_personnel").select("id,weekly_work_slots,updated_at").eq("id",x.id).maybeSingle();
+  if(current.error)throw current.error;
+  if(!current.data)return reply({error:"Salarié introuvable"},404);
+  if(x.updated_at!==undefined&&(typeof x.updated_at!=="string"||x.updated_at!==current.data.updated_at))
+   return reply({error:"La fiche a été modifiée. Fermez puis rouvrez la fiche avant de recommencer."},409);
+  // Older clients may edit working days without sending the time slots.
+  const slots=x.weekly_work_slots===undefined?(current.data.weekly_work_slots||[]).filter((slot:any)=>days.includes(slot.day)):x.weekly_work_slots;
+  const time=/^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+  if(!Array.isArray(slots)||slots.length>56||!slots.every((slot:any)=>slot&&typeof slot==="object"&&Number.isInteger(slot.day)&&days.includes(slot.day)&&typeof slot.start==="string"&&typeof slot.end==="string"&&time.test(slot.start)&&time.test(slot.end)&&slot.start<slot.end))
+   return reply({error:"Créneaux horaires invalides : début et fin le même jour, sur un jour travaillé."},400);
+  const cleanSlots=slots.map((slot:any)=>({day:slot.day,start:slot.start,end:slot.end})).sort((a:any,b:any)=>a.day-b.day||a.start.localeCompare(b.start));
+  const valid=await db.rpc("college_valid_weekly_work_slots",{p_slots:cleanSlots,p_days:days});
+  if(valid.error)throw valid.error;
+  if(valid.data!==true)return reply({error:"Les créneaux ne doivent pas se chevaucher (8 créneaux maximum par jour)."},400);
+  const payload:any={working_weekdays:[...days].sort((a:number,b:number)=>a-b),weekly_work_slots:cleanSlots,benefits_in_kind:clean,updated_at:new Date().toISOString(),updated_by:user.username};
   if(school!==undefined)payload.exclude_school_holidays=school;
   if(holidays!==undefined)payload.exclude_public_holidays=holidays;
-  const q=await db.from("college_personnel").update(payload).eq("id",x.id).select("id,name,working_weekdays,benefits_in_kind").maybeSingle();
+  const q=await db.from("college_personnel").update(payload).eq("id",x.id).eq("updated_at",current.data.updated_at).select("id,name,working_weekdays,weekly_work_slots,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,updated_at").maybeSingle();
   if(q.error)throw q.error;
-  if(!q.data)return reply({error:"Salarié introuvable"},404);
+  if(!q.data)return reply({error:"Modification concurrente : actualisez la fiche."},409);
   return reply({ok:true,staff:q.data});
  }
  if((action==="list"||action==="admin-list")&&req.method==="GET"){
