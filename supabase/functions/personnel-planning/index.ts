@@ -77,6 +77,15 @@ Deno.serve(async(req:Request)=>{
 
  const staffName=(x:any)=>String(x??"").normalize("NFKC").replace(/\s+/g," ").trim();
  const staffKey=(x:any)=>staffName(x).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"");
+ if(action==="staff-schedule-history"&&req.method==="GET"){
+  if(!user.admin)return reply({error:"Consultation des archives horaires non autorisée"},403);
+  const q=await db.from("college_personnel_schedule_history")
+   .select("id,personnel_id,employee_name,source_start,source_end,school_weekly_work_slots,vacation_weekly_work_slots,source_document")
+   .order("employee_name",{ascending:true}).limit(200);
+  if(q.error)throw q.error;
+  if((q.data||[]).length===200)return reply({error:"Liste des archives incomplète"},409);
+  return reply({ok:true,history:q.data||[]});
+ }
  if(action==="staff-list"&&req.method==="GET"){
   const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,weekly_work_slots,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
   if(q.error)throw q.error;
