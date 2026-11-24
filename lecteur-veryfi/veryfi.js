@@ -10,7 +10,7 @@ const READER_VERSION="V51";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
-let queueImportStarted=false,queueImported=false;
+let queueImportStarted=false,queueImported=false,manualStartRequested=false;
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all",manualMode=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -217,6 +217,7 @@ async function resolveSession(){
     if(!serverReady)notice("Veryfi non configuré ; le mode de saisie manuelle reste disponible après chargement du catalogue.");
     await loadCatalog();
     if(queueId&&!queueImportStarted&&!file)void importQueuedInvoice();
+    else if(queuedManualEntry&&!queueId&&!manualStartRequested){manualStartRequested=true;await startManualEntry();}
     return;
    }catch(e){last=e;if(e.code!==401&&e.code!==403)throw e}
   }
