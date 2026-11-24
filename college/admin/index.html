@@ -143,14 +143,15 @@
 <script src="./apps-organizer.js?v=1"></script>
 <script src="./product-invoice-aliases.js?v=2"></script>
 <script>
-const UI_VERSION='2026.11.24-admin-college-common-banner';
+const UI_VERSION='2026.11.24-college-compta-menu';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
-const requestedProduct=new URLSearchParams(location.search).get('product'),requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',commandes:'Commandes',events:'Mouvements',historicalStock:'Inventaires historiques',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',siteDesigner:'Configuration des sites',manual:'Manuel d’utilisation',salaires:'Salaires',cuisine:'Gestion Cuisine'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
+const requestedProduct=new URLSearchParams(location.search).get('product'),requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',commandes:'Commandes',events:'Mouvements',historicalStock:'Inventaires historiques',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',siteDesigner:'Configuration des sites',manual:'Manuel d’utilisation',salaires:'Liste salariés',comptaSalaires:'Compta salaire',comptaFournisseurs:'Compta fournisseur',cuisine:'Gestion Cuisine'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
 const collegeMenuGroups=[
  ['Pilotage',[['dashboard','Accueil'],['stats','Statistiques']]],
  ['Stocks et approvisionnements',[['products','Produits'],['categories','Catégories'],['subcategories','Sous-catégories'],['purchases','Achats'],['commandes','Commandes'],['events','Mouvements'],['historicalStock','Inventaires historiques']]],
- ['Personnel et restauration',[['salaires','Salaires'],['cuisine','Gestion Cuisine']]],
+ ['Personnel et restauration',[['salaires','Liste salariés'],['cuisine','Gestion Cuisine']]],
+ ['Compta',[['comptaSalaires','Compta salaire'],['comptaFournisseurs','Compta fournisseur']]],
  ['Configuration',[['apps','Applications'],['readerSettings','Lecteur PDF & IA'],['siteDesigner','Configuration des sites'],['manual','Manuel d’utilisation'],['advanced','Outils avancés']]]
 ];
 const pages=collegeMenuGroups.flatMap(([,items])=>items);
@@ -162,7 +163,7 @@ async function sensitiveApi(action,method='GET',body){const u=new URL(ADMIN);u.s
 async function login(){try{$('loginStatus').className='status';$('loginStatus').textContent='Connexion…';const j=await call(ADMIN,'login','POST',{username:$('user').value.trim().toLowerCase(),password:$('pass').value});if(!(j.role==='holding_admin'||j.role==='admin'||j.is_super_admin===true||j.permissions?.college_admin===true||['dashboard.read','products.read','products.write','stock.read','stock.write','apps.read','apps.write','purchases.read','purchases.write','college.salaires.read','college.salaires.write','cuisine.manage'].some(k=>j.permissions?.[k]===true)))throw new Error('Accès Administration Collège non autorisé.');token=j.token;localStorage.setItem('college_admin_token',token);$('pass').value='';$('login').classList.add('hide');if(j.must_change_password){$('passwordChange').classList.remove('hide');return}await enterApp()}catch(e){$('loginStatus').className='status err';$('loginStatus').textContent=frError(e.message)}}
 async function changePassword(){const a=$('newPass1').value,b=$('newPass2').value;if(a.length<10){$('passwordStatus').className='status err';$('passwordStatus').textContent='Le mot de passe doit contenir au moins 10 caractères.';return}if(a!==b){$('passwordStatus').className='status err';$('passwordStatus').textContent='Les deux mots de passe ne correspondent pas.';return}try{$('passwordStatus').textContent='Enregistrement…';await call(ADMIN,'change-password','POST',{password:a});localStorage.removeItem('college_admin_token');token='';$('passwordStatus').className='status ok';$('passwordStatus').textContent='Mot de passe modifié. Reconnexion requise.';setTimeout(()=>location.reload(),800)}catch(e){$('passwordStatus').className='status err';$('passwordStatus').textContent=frError(e.message)}}
 function logout(reload=true){['college_admin_token','edm_admin_token','holding_admin_token'].forEach(k=>localStorage.removeItem(k));token='';db=null;sensitiveToken='';sensitiveExpires=0;readerSettings=null;if(reload)location.reload();else{$('app').classList.add('hide');$('passwordChange').classList.add('hide');$('login').classList.remove('hide')}}
-const accessByPage={dashboard:["dashboard.read","products.read","stock.read","analytics.read"],products:["products.read","products.write","stock.read","stock.write"],apps:["apps.read","apps.write"],categories:["products.read","products.write"],subcategories:["products.read","products.write"],purchases:["purchases.read","purchases.write"],commandes:["secretariat.orders.write","purchases.read","purchases.write"],events:["stock.read","stock.write"],historicalStock:["stock.read"],salaires:["college.salaires.read","college.salaires.write"],cuisine:["cuisine.manage"],stats:["analytics.read"],advanced:[],manual:["dashboard.read","products.read","stock.read","analytics.read"],readerSettings:[],siteDesigner:[]};
+const accessByPage={dashboard:["dashboard.read","products.read","stock.read","analytics.read"],products:["products.read","products.write","stock.read","stock.write"],apps:["apps.read","apps.write"],categories:["products.read","products.write"],subcategories:["products.read","products.write"],purchases:["purchases.read","purchases.write"],commandes:["secretariat.orders.write","purchases.read","purchases.write"],events:["stock.read","stock.write"],historicalStock:["stock.read"],salaires:["college.salaires.read","college.salaires.write"],comptaSalaires:["college.salaires.read","college.salaires.write"],comptaFournisseurs:["purchases.read","purchases.write"],cuisine:["cuisine.manage"],stats:["analytics.read"],advanced:[],manual:["dashboard.read","products.read","stock.read","analytics.read"],readerSettings:[],siteDesigner:[]};
 function canPage(p){const u=db?.current_user;if(!u)return true;if(u.role==="admin"||u.permissions?.college_admin===true)return true;return(accessByPage[p]||[]).some(k=>u.permissions?.[k]===true)}
 function updateSiteShortcuts(){
  const user=db?.current_user,p=user?.permissions||{},full=user?.role==='admin';
@@ -225,9 +226,9 @@ $('collegeMenuToggle').addEventListener('click',()=>{
  $('collegeMenuToggle').setAttribute('aria-expanded',String(!closed));
 });
 async function enterApp(){init();$('login').classList.add('hide');$('passwordChange').classList.add('hide');$('app').classList.remove('hide');await refresh()}
-async function refresh(){const main=await call(ADMIN,'data');const isGlobal=main.current_user?.role==='admin'||main.current_user?.permissions?.college_admin===true;const sites=isGlobal?await call(SITE,'list'):{applications:main.applications||[],application_products:main.application_products||[]};db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];updateSiteShortcuts();rightsCheckAt=0;if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+String(main.current_user?.display_name||main.current_user?.username||'');render();if(page==='salaires')salaryLoad();loadAdminCollegeSettings();if(page==='products'&&requestedProduct&&db.products.some(p=>p.id===requestedProduct)&&!window._productDeepLinkOpened){window._productDeepLinkOpened=true;editProduct(requestedProduct)}}
-function show(p){if(db&&!canPage(p)){showStatus('Cette fenêtre n’est pas autorisée pour votre compte.');return}page=p;render();try{const target=new URL(location.href);if(p==='dashboard')target.searchParams.delete('page');else target.searchParams.set('page',p);history.replaceState(null,'',target.href)}catch{}if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(p==='salaires')salaryLoad();if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
-function render(){if(!db)return;if(!canPage(page)){page=pages.find(([k])=>canPage(k))?.[0]||'dashboard'}init();document.querySelectorAll('#nav button').forEach(b=>{const active=b.dataset.p===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,historicalStock:historicalStockPage,purchases,commandes,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage,siteDesigner:siteDesignerPage,salaires:salaryPage,cuisine:window.kitchenAdminPage}[page]||dashboard)()}
+async function refresh(){const main=await call(ADMIN,'data');const isGlobal=main.current_user?.role==='admin'||main.current_user?.permissions?.college_admin===true;const sites=isGlobal?await call(SITE,'list'):{applications:main.applications||[],application_products:main.application_products||[]};db=main;db.applications=sites.applications||[];db.application_products=sites.application_products||[];updateSiteShortcuts();rightsCheckAt=0;if(main.current_user?.must_change_password){$('app').classList.add('hide');$('passwordChange').classList.remove('hide');return}$('server').textContent='Version '+UI_VERSION+' · Actualisé : '+new Date(db.server_time).toLocaleString('fr-FR')+' · '+String(main.current_user?.display_name||main.current_user?.username||'');render();if(['salaires','comptaSalaires'].includes(page))salaryLoad();loadAdminCollegeSettings();if(page==='products'&&requestedProduct&&db.products.some(p=>p.id===requestedProduct)&&!window._productDeepLinkOpened){window._productDeepLinkOpened=true;editProduct(requestedProduct)}}
+function show(p){if(db&&!canPage(p)){showStatus('Cette fenêtre n’est pas autorisée pour votre compte.');return}if(p==='salaires')salaryView='staff';else if(p==='comptaSalaires')salaryView='events';page=p;render();try{const target=new URL(location.href);if(p==='dashboard')target.searchParams.delete('page');else target.searchParams.set('page',p);history.replaceState(null,'',target.href)}catch{}if(p==='stats')loadStats().catch(e=>showStatus(e.message));if(['salaires','comptaSalaires'].includes(p))salaryLoad();if(p==='readerSettings'&&sensitiveValid())loadReaderSettings().catch(e=>showStatus(e.message))}
+function render(){if(!db)return;if(!canPage(page)){page=pages.find(([k])=>canPage(k))?.[0]||'dashboard'}init();document.querySelectorAll('#nav button').forEach(b=>{const active=b.dataset.p===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});$('title').textContent=pageNames[page]||'';({dashboard,categories,subcategories,products,apps,events,historicalStock:historicalStockPage,purchases,commandes,advanced:advancedPage,manual:manualPage,stats:statsPage,readerSettings:readerSettingsPage,siteDesigner:siteDesignerPage,salaires:salaryPage,comptaSalaires:salaryPage,comptaFournisseurs:comptaFournisseursPage,cuisine:window.kitchenAdminPage}[page]||dashboard)()}
 const bal=id=>Number(db.balances.find(x=>x.product_id===id)?.quantity||0),cat=id=>db.categories.find(x=>x.id===id),sub=id=>(db.subcategories||[]).find(x=>x.id===id),prod=id=>db.products.find(x=>x.id===id),appById=id=>db.applications.find(x=>x.id===id);
 const stockManaged=p=>!!p;
 const nfcTag=id=>(db.nfc_tags||[]).find(x=>x.product_id===id&&x.active!==false);
@@ -559,6 +560,58 @@ function commandes(){
  const lines=items.filter(i=>i.order_id===o.id);
  return `<tr><td>CMD-${String(o.order_no).padStart(6,'0')}</td><td>${esc(o.order_date)}</td><td>${esc(o.supplier||'')}</td><td>${esc(o.status==='recue'?'Reçue':o.status==='commandee'?'Commandée':o.status)}</td><td>${lines.map(i=>esc(prod(i.product_id)?.name||'Produit')+' ('+Number(i.quantity).toLocaleString('fr-FR')+')').join(' · ')}</td><td>${o.source_invoice_id?'Facture validée Secrétariat':'Commande manuelle'}</td></tr>`}).join('')||'<tr><td colspan="6">Aucune commande.</td></tr>'}</tbody></table></div>`;
 }
+
+function comptaFournisseursPage(){
+ const orders=Array.isArray(db.orders)?db.orders:[],purchases=Array.isArray(db.purchases)?db.purchases:[],
+  sourced=orders.filter(o=>!!o.source_invoice_id),uniqueInvoices=new Set(sourced.map(o=>String(o.source_invoice_id))).size,
+  validPurchases=purchases.filter(p=>!p.cancelled),user=db.current_user||{},perms=user.permissions||{},
+  canOpenAccounting=user.role==='admin'||['accounting','accounting.read','accounting.write'].some(key=>perms[key]===true);
+ const suppliers=new Map();
+ const supplierRow=name=>{
+  const label=String(name||'').trim()||'Non renseigné',key=norm(label)||'non renseigne';
+  if(!suppliers.has(key))suppliers.set(key,{name:label,orders:0,invoices:new Set(),purchases:0});
+  return suppliers.get(key);
+ };
+ for(const order of orders){
+  const s=supplierRow(order.supplier);s.orders++;
+  if(order.source_invoice_id)s.invoices.add(String(order.source_invoice_id));
+ }
+ for(const purchase of validPurchases)supplierRow(purchase.supplier).purchases++;
+ const supplierRows=[...suppliers.values()].sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+ const dateText=v=>String(v||'').slice(0,10);
+ const formatOrder=o=>o.order_no==null?'—':'CMD-'+String(o.order_no).padStart(6,'0');
+ const recent=sourced.slice().sort((a,b)=>dateText(b.order_date).localeCompare(dateText(a.order_date))).slice(0,50);
+ const accountingLink=canOpenAccounting?
+  '<a class="btn primary" href="../../comptabilite/" target="_blank" rel="noopener noreferrer">Ouvrir les factures fournisseurs</a>':
+  '<span class="muted">Accès à la validation comptable réservé aux comptes autorisés dans Comptabilité.</span>';
+ $('content').innerHTML=
+  '<section class="card"><h2>Compta fournisseur</h2><p class="muted">Vue de rapprochement des achats et commandes du Collège. Les factures comptables, leurs justificatifs et leur validation restent gérés dans l’application Comptabilité.</p>'+
+  '<div class="actions">'+accountingLink+'<button class="btn secondary" onclick="show(\'purchases\')">Consulter les achats</button><button class="btn secondary" onclick="show(\'commandes\')">Consulter les commandes</button></div></section>'+
+  '<div class="grid"><div class="card"><div class="muted">Factures issues du Secrétariat, reliées à des commandes</div><div class="kpi">'+uniqueInvoices+'</div></div>'+
+  '<div class="card"><div class="muted">Commandes suivies</div><div class="kpi">'+orders.length+'</div></div>'+
+  '<div class="card"><div class="muted">Achats non annulés</div><div class="kpi">'+validPurchases.length+'</div></div>'+
+  '<div class="card"><div class="muted">Fournisseurs identifiés</div><div class="kpi">'+supplierRows.filter(x=>x.name!=='Non renseigné').length+'</div></div></div>'+
+  '<section class="card" style="margin-top:12px"><h3>Suivi par fournisseur</h3>'+
+  '<label for="supplierAccountingSearch">Rechercher un fournisseur</label><input id="supplierAccountingSearch" type="search" placeholder="Nom du fournisseur" autocomplete="off" style="max-width:340px">'+
+  '<div class="table"><table><thead><tr><th>Fournisseur</th><th>Factures liées à des commandes</th><th>Commandes</th><th>Achats non annulés</th></tr></thead><tbody id="supplierAccountingRows">'+
+  supplierRows.map(s=>'<tr data-supplier-name="'+esc(norm(s.name))+'"><td>'+esc(s.name)+'</td><td>'+s.invoices.size+'</td><td>'+s.orders+'</td><td>'+s.purchases+'</td></tr>').join('')+
+  (!supplierRows.length?'<tr><td colspan="4">Aucune donnée fournisseur disponible.</td></tr>':'')+'</tbody></table></div><p id="supplierAccountingEmpty" class="muted" hidden>Aucun fournisseur correspondant.</p></section>'+
+  '<section class="card"><h3>Commandes liées à une facture du Secrétariat</h3>'+
+  '<p class="muted">Une facture transmise peut déjà avoir créé une commande et des mouvements de stock. Ces chiffres ne doivent pas être additionnés pour calculer des dépenses comptables.</p>'+
+  '<div class="table"><table><thead><tr><th>Commande</th><th>Date</th><th>Fournisseur</th><th>État</th></tr></thead><tbody>'+
+  recent.map(o=>'<tr><td>'+esc(formatOrder(o))+'</td><td>'+esc(dateText(o.order_date))+'</td><td>'+esc(o.supplier||'Non renseigné')+'</td><td>'+esc(o.status==='recue'?'Reçue':o.status==='commandee'?'Commandée':o.status||'À vérifier')+'</td></tr>').join('')+
+  (!recent.length?'<tr><td colspan="4">Aucune commande issue d’une facture enregistrée.</td></tr>':'')+
+  '</tbody></table></div>'+ (sourced.length>50?'<p class="muted">Les 50 commandes les plus récentes sont affichées. Retrouvez la liste complète dans Commandes.</p>':'')+
+  '</section><div class="card muted">Ces données servent au contrôle des approvisionnements : elles ne prouvent ni le paiement ni l’enregistrement définitif en comptabilité.</div>';
+ const search=$('supplierAccountingSearch');
+ search?.addEventListener('input',()=>{
+  const query=norm(search.value);let visible=0;
+  document.querySelectorAll('#supplierAccountingRows tr[data-supplier-name]').forEach(row=>{
+   const match=!query||row.dataset.supplierName.includes(query);row.hidden=!match;if(match)visible++;
+  });
+  const message=$('supplierAccountingEmpty');if(message)message.hidden=visible>0||supplierRows.length===0;
+ });
+}
 function purchases(){
   const rows=(db.purchases||[]).filter(p=>stockManaged(prod(p.product_id))),suppliers=[...new Set(rows.map(p=>String(p.supplier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
   $('content').innerHTML=`<div class="toolbar"><button class="btn secondary" onclick="exportWorkbook('purchases')">Exporter Excel</button></div>
@@ -626,10 +679,10 @@ window.exportWorkbook=kind=>{try{let rows=[],name='export-college';if(kind==='pr
 function modalError(e){const x=$('mstatus');if(x){x.className='status err';x.textContent=frError(e.message)}else alert(frError(e.message))}
 window.closeModal=()=>{$('modal').innerHTML=''};
 function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
-if(token)enterApp().catch(()=>logout());
+window.addEventListener('load',()=>{if(token)enterApp().catch(()=>logout())});
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261124-schedules-2026-27"></script>
+<script src="./salaires.js?v=20261124-college-compta-menu"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 <script src="../../cuisine/releve-export.js?v=20261120-2"></script>
 <script src="../../cuisine/kitchen-ui.js?v=20261124-task-editor"></script>
