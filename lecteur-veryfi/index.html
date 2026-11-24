@@ -70,21 +70,23 @@ html.secretariat-embedded{background:transparent}
     <div class="filebar"><span id="fileName">Aucun document sélectionné</span><button type="button" id="clearFile" class="btn secondary small" disabled>Retirer</button></div>
     <div class="buttons">
       <button type="button" id="analyze" class="btn primary" disabled>Lire avec Veryfi</button>
+      <button type="button" id="manualEntry" class="btn secondary">Saisir manuellement (sans Veryfi)</button>
       <button type="button" id="freeOcr" class="btn secondary" disabled>OCR gratuit de secours</button>
       <button type="button" id="newDocument" class="btn secondary" hidden>Nouvelle facture</button>
     </div>
-    <p class="hint">L’envoi à Veryfi nécessite votre confirmation. Aucun stock ni compte comptable n’est modifié par la lecture.</p>
+    <p class="hint">Vous pouvez saisir une facture sans OCR et sans consommer de lecture Veryfi. Joignez le PDF original avant validation ; aucune entrée en stock ne se fait pendant la saisie.</p>
     <div class="viewerbar"><strong>Facture originale</strong><a id="openPdf" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans un autre onglet</a></div>
     <div id="viewerEmpty" class="viewer-empty">L’aperçu du PDF s’affichera ici.</div>
     <iframe id="viewer" title="Facture PDF originale" hidden></iframe>
   </section>
   <section class="panel results-panel" aria-labelledby="resultTitle">
     <div class="panel-title">
-      <div><div class="step">02 / LECTURE VERYFI · <span id="readerVersion">Version non chargée</span></div><h2 id="resultTitle">Vérification des données</h2></div>
+      <div><div class="step">02 / VÉRIFICATION OU SAISIE · <span id="readerVersion">Version non chargée</span></div><h2 id="resultTitle">Vérification des données</h2></div>
       <span id="readingState" class="cap">En attente du document</span>
     </div>
-    <div id="resultsEmpty" class="results-empty"><div class="results-icon">01 → 02</div><strong>Une lecture unique, sans transcription intermédiaire</strong><p>Le PDF reste visible pendant le contrôle des informations détectées par Veryfi.</p></div>
+    <div id="resultsEmpty" class="results-empty"><div class="results-icon">01 → 02</div><strong>Lecture Veryfi ou saisie manuelle</strong><p>Déposez un PDF puis choisissez Veryfi, ou commencez directement une saisie manuelle. Le PDF justificatif est requis pour finaliser.</p></div>
     <div id="results" hidden>
+      <p id="manualEntryNote" class="hint" role="status" aria-live="polite" hidden></p>
       <div id="metrics" class="metrics"></div>
       <h3>Informations de la facture</h3>
       <div class="fields">
