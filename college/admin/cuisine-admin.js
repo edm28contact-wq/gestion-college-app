@@ -51,6 +51,45 @@
   catch(err){notify(err.message,true)}finally{busy=false}
  }
  const attr=(o,k)=>e(o[k]);
+ function renderCollectionSchedules(s){
+  const rooms=s.rooms.filter(r=>!r.archived_at&&!r.deleted_at);
+  return '<div class="card"><h2>Programmation des relevés</h2>'+
+   '<p class="muted">Chaque chambre a sa propre programmation. Les relevés automatiques se font sur le serveur, même lorsque le site est fermé. En mode intervalle, ils sont effectués jour et nuit. Les heures fixes suivent l’heure de Paris. La saisie manuelle reste disponible.</p>'+
+   '<p id="kitchenScheduleStatus" class="status" role="status" aria-live="polite"></p>'+
+   (rooms.length?rooms.map(r=>{
+    const sensor=(s.connected||[]).find(d=>d.room_id===r.id&&d.kind==="cold_room"&&d.provider==="govee");
+    const overview=(s.cold_overview||[]).find(d=>d.room_id===r.id);
+    const enabled=r.auto_collection_enabled!==false,mode=r.auto_collection_mode==="times"?"times":"interval";
+    const interval=r.auto_collection_interval_minutes??10,times=(r.auto_collection_times||[]).join(", ");
+    const status=!enabled?"Programmation suspendue":!sensor?"En attente d’un capteur":"Programmation active";
+    const last=overview?.last_reading;
+    const next=enabled&&sensor&&overview?.next_slot_at?when(overview.next_slot_at):"—";
+    return '<section class="card" style="border:1px solid #dce4ea;margin:12px 0"><div class="actions" style="justify-content:space-between"><h3 style="margin:0">'+e(r.label)+'</h3><span class="pill '+(enabled&&sensor?"ok":"warning")+'">'+status+'</span></div>'+
+     '<p class="muted">'+(sensor?'Capteur : '+e(sensor.model)+' · '+(last?'Dernier relevé : '+t(last.temperature_c)+' °C · '+when(last.measured_at):"Aucun relevé automatique reçu"):"Aucun capteur associé. Vous pouvez préparer les réglages avant de le connecter.")+'</p>'+
+     '<p><strong>Prochain créneau :</strong> '+e(next)+(enabled&&sensor?' <span class="muted">(heure de Paris)</span>':'')+'</p>'+
+     '<form data-room-schedule="'+attr(r,"id")+'" class="grid">'+
+     '<div><label>Collecte automatique</label><select name="enabled"><option value="yes" '+(enabled?"selected":"")+'>Activée</option><option value="no" '+(!enabled?"selected":"")+'>Suspendue</option></select></div>'+
+     '<div><label>Mode de programmation</label><select name="mode"><option value="interval" '+(mode==="interval"?"selected":"")+'>Intervalle régulier (24 h/24)</option><option value="times" '+(mode==="times"?"selected":"")+'>Heures fixes chaque jour</option></select></div>'+
+     '<div><label>Intervalle entre deux relevés (minutes)</label><input name="interval_minutes" type="number" min="5" max="1440" step="1" required value="'+e(interval)+'"><p class="muted">De 5 à 1 440 minutes, selon le mode choisi.</p></div>'+
+     '<div><label>Heures fixes (HH:MM)</label><input name="times" type="text" maxlength="190" value="'+e(times)+'" placeholder="08:00, 12:00, 18:00"><p class="muted">Séparez les heures par une virgule. Maximum 24 horaires par jour.</p></div>'+
+     '<div><button class="btn primary" type="submit">Enregistrer la programmation</button></div></form></section>';
+   }).join(""):'<p>Aucune chambre froide active.</p>')+'</div>';
+ }
+ async function saveCollectionSchedule(form,values){
+  if(busy)return;
+  const status=node("kitchenScheduleStatus"),button=form.querySelector('button[type="submit"]');
+  const notifySchedule=(message,bad=false)=>{const el=node("kitchenScheduleStatus")||status;if(el){el.textContent=message;el.style.color=bad?"#a32929":"#176b3a";}};
+  const interval=Number(values.interval_minutes),times=String(values.times||"").split(/[,;\s]+/).map(v=>v.trim()).filter(Boolean);
+  if(!Number.isInteger(interval)||interval<5||interval>1440||times.length>24||times.some(v=>!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v))||(values.mode==="times"&&!times.length)){
+   notifySchedule("Vérifiez la fréquence (5 à 1 440 min) et les horaires HH:MM, séparés par des virgules.",true);return;
+  }
+  const roomName=snapshot?.rooms.find(r=>r.id===form.dataset.roomSchedule)?.label||"Chambre froide";
+  busy=true;if(button)button.disabled=true;notifySchedule("Enregistrement de la programmation…");
+  try{
+   await api("save-room-collection-schedule","POST",{id:form.dataset.roomSchedule,enabled:values.enabled==="yes",mode:values.mode,interval_minutes:interval,times});
+   await load();notifySchedule("Programmation enregistrée — "+roomName+".");
+  }catch(err){notifySchedule(err.message,true)}finally{busy=false;if(button)button.disabled=false}
+ }
  function render(){
  if(!snapshot)return;
  const s=snapshot,latestCold=new Map();
@@ -95,6 +134,7 @@
  '<form id="kitchenProbeRegister" class="grid"><div><label>Désignation de la sonde</label><input name="label" required minlength="2" maxlength="80" placeholder="Ex. Sonde cuisine 1"></div><div><label>Modèle Testo</label><select name="model"><option value="testo 104-IR">testo 104-IR (manuel)</option><option value="testo 104-IR BT">testo 104-IR BT (application Testo Smart)</option></select></div><div><button class="btn secondary" type="submit">Référencer la sonde pour plus tard</button></div></form>'+
  ((s.connected||[]).filter(d=>d.kind==="food_probe").map(d=>'<div class="data-row"><strong>'+e(d.label)+'</strong><span class="muted">'+e(d.model)+' · Connexion au site non disponible</span></div>').join(""))+
  '</div>'+
+ renderCollectionSchedules(s)+
  '<div class="card"><h2>Derniers relevés des chambres</h2><p class="muted">Choisissez une chambre. Le tableau affiche 50 lignes par page, mais les exports récupèrent l’intégralité de l’historique filtré.</p>'+
  '<div class="grid"><div><label for="adminColdRoomSelector">Chambre froide à consulter</label><select id="adminColdRoomSelector"><option value="">Toutes les chambres</option>'+s.rooms.map(r=>'<option value="'+attr(r,"id")+'" '+(selectedColdRoom===r.id?"selected":"")+'>'+e(r.label)+'</option>').join("")+'</select></div><div><label>Exporter les résultats</label><div class="actions"><button type="button" class="btn secondary" data-admin-cold-export="csv">Exporter CSV</button><button type="button" class="btn secondary" data-admin-cold-export="pdf">Exporter PDF</button></div></div></div>'+
  (coldHistoryError?'<p class="status err">'+e(coldHistoryError)+'</p>':'')+
@@ -108,20 +148,21 @@
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
  
  const content=node("content"),all=Array.from(content.children),tabs=[
-  ["overview","Vue d’ensemble"],["govee","Connexion Govee"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["staff","Équipe et nettoyage"]
+  ["overview","Vue d’ensemble"],["govee","Connexion Govee"],["schedule","Programmation des relevés"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["staff","Équipe et nettoyage"]
  ];
  if(!node("kitchen-organized-styles")){
    const css=document.createElement("style");css.id="kitchen-organized-styles";
    css.textContent="#kitchen-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:13px 0 18px}#kitchen-tabs button{border:1px solid #d3dce3;border-radius:9px;padding:11px 15px;font-weight:750;background:#f1f4f6;color:#334657;cursor:pointer}#kitchen-tabs button.active{background:#243447;color:white;border-color:#243447}#content .kitchen-panel[hidden]{display:none!important}#content .kitchen-panel .grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}#content .kitchen-panel form{margin:10px 0 14px}#content .kitchen-panel form label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}#content .kitchen-panel .card{padding:18px}#content .kitchen-panel h2{margin:0 0 9px}#content .kitchen-panel h3{margin:17px 0 9px}#content .kitchen-panel .data-row{padding:11px 0;border-bottom:1px solid #e7edf0}#content .kitchen-panel .data-row:last-child{border:0}#content .kitchen-panel .btn{margin-top:4px}#content .kitchen-section-intro{padding:18px 20px;border:1px solid #dbe4ea;border-radius:12px;background:#f5f8fa;margin-bottom:14px}#content .kitchen-section-intro h2{margin:0 0 5px}#content .kitchen-section-intro p{margin:0;color:#5d6d79;font-size:13px}#content .kitchen-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}#content .kitchen-overview-grid>div{padding:17px;background:#fff;border:1px solid #dce4e9;border-radius:12px}#content .kitchen-overview-grid strong{display:block;font-size:27px;margin:5px 0;color:#243447}#content .kitchen-overview-grid small{color:#607182}#content #kitchen-tabs{position:relative}";
    document.head.append(css);
  }
- const groups={overview:[],govee:[],records:[],equipment:[],staff:[]};
+ const groups={overview:[],govee:[],schedule:[],records:[],equipment:[],staff:[]};
  for(const el of all){
    if(el.id==="kitchen-tabs")continue;
    const heading=el.querySelector?.("h2")?.textContent||"";
    if(heading.startsWith("Gestion Cuisine"))groups.overview.push(el);
    else if(heading.startsWith("Agents de cuisine")||heading.startsWith("Tâches de nettoyage"))groups.staff.push(el);
    else if(heading.startsWith("Thermomètres connectés"))groups.govee.push(el);
+   else if(heading.startsWith("Programmation des relevés"))groups.schedule.push(el);
    else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut"))groups.equipment.push(el);
    else if(heading.startsWith("Derniers relevés")||heading.startsWith("Remises en température")||heading.startsWith("Journal des relevés invalidés")||heading.startsWith("Actions correctives"))groups.records.push(el);
    else groups.overview.push(el);
@@ -131,7 +172,7 @@
    const b=document.createElement("button");b.type="button";b.dataset.kitchenTab=key;b.textContent=label;b.setAttribute("role","tab");b.addEventListener("click",()=>{kitchenTab=key;selectTab()});header.append(b);
  }
  content.prepend(header);
- const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],staff:["Équipe de cuisine","Gérez les codes personnels MEDJEBER / MOREL et les tâches quotidiennes."]};
+ const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],schedule:["Programmation des relevés automatiques","Personnalisez la fréquence ou les heures de collecte de chaque chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],staff:["Équipe de cuisine","Gérez les codes personnels MEDJEBER / MOREL et les tâches quotidiennes."]};
  const panels={};
  for(const [key] of tabs){
    const wrapper=document.createElement("section");wrapper.className="kitchen-panel";wrapper.dataset.panel=key;wrapper.setAttribute("role","tabpanel");
@@ -179,8 +220,9 @@
   if(pageBtn)refreshColdHistory(Math.max(0,coldHistoryOffset+(pageBtn.dataset.adminColdPage==="next"?50:-50)));
  });
  document.addEventListener("submit",evt=>{
- const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate],[data-govee-room]"))return;evt.preventDefault();
+ const form=evt.target;if(!(form instanceof HTMLFormElement)||!["kitchenAddRoom","kitchenAddTask","kitchenAddOven","kitchenAddDish","kitchenSaveDefaults","kitchenGoveeKey","kitchenProbeRegister"].includes(form.id)&&!form.matches("[data-kitchen-pin],[data-room-edit],[data-oven-edit],[data-dish-edit],[data-govee-associate],[data-govee-room],[data-room-schedule]"))return;evt.preventDefault();
  const f=new FormData(form),values=Object.fromEntries(f.entries());
+ if(form.matches("[data-room-schedule]")){saveCollectionSchedule(form,values);return;}
  if(form.matches("[data-govee-associate]")){action("govee-add-sensor",{device:form.dataset.goveeAssociate,sku:form.dataset.sku,room_id:values.room_id,raw_unit:values.raw_unit});return;}
  if(form.matches("[data-govee-room]")){action("govee-reassign-sensor",{id:form.dataset.goveeRoom,room_id:values.room_id});return;}
  if(form.matches("[data-kitchen-pin]"))action("set-staff-pin",{staff_id:form.dataset.kitchenPin,pin:values.pin});
