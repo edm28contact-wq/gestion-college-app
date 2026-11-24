@@ -57,6 +57,53 @@ function canDeleteRoom(room:any){
  return now>=threshold.getTime();
 }
 
+async function syncGoveeDevice(c:any,sensor:any,key:string){
+ const failed=async(message:string,statusCode=409,offline=false)=>{
+  const update=await c.from("kitchen_connected_devices").update({
+   status:offline?"offline":"error",last_checked_at:new Date().toISOString(),last_error:message.slice(0,180)
+  }).eq("id",sensor.id);
+  if(update.error)throw update.error;
+  return {error:message,statusCode};
+ };
+ try{
+  if(sensor.raw_unit!=="F"&&sensor.raw_unit!=="C")
+   return await failed("Unité de température du capteur non configurée",422);
+  const room=await c.from("kitchen_cold_rooms").select("min_c,max_c,archived_at,deleted_at")
+   .eq("id",sensor.room_id).maybeSingle();
+  if(room.error)throw room.error;
+  if(!room.data||room.data.archived_at||room.data.deleted_at)
+   return await failed("Chambre inactive : relevé automatique suspendu",409);
+  const state=await goveeCall(key,"/device/state",{
+   requestId:crypto.randomUUID(),payload:{sku:sensor.model,device:sensor.device_identifier}
+  });
+  const caps=state.payload?.capabilities||[];
+  const online=caps.find((cap:any)=>cap.instance==="online")?.state?.value;
+  const raw=caps.find((cap:any)=>cap.type==="devices.capabilities.property"&&cap.instance==="sensorTemperature")?.state?.value;
+  const numeric=typeof raw==="number"?raw:typeof raw==="string"&&raw.trim()?Number(raw):null;
+  if(online!==true||numeric===null||!Number.isFinite(numeric))
+   return await failed("Capteur hors ligne ou température indisponible",409,online===false);
+  const degrees=temperatureToCelsius(numeric,sensor.raw_unit);
+  if(degrees < -60||degrees>60)
+   return await failed("Température hors plage : vérifiez l'unité du capteur",422);
+  const measuredAt=new Date().toISOString();
+  const isAlert=degrees>Number(room.data.max_c)||(room.data.min_c!==null&&degrees<Number(room.data.min_c));
+  const added=await c.from("kitchen_cold_readings").insert({
+   room_id:sensor.room_id,temperature_c:degrees,is_alert:isAlert,source:"govee_cloud",
+   connected_device_id:sensor.id,taken_by:null,measured_at:measuredAt
+  }).select("id,temperature_c,is_alert,measured_at").single();
+  if(added.error)throw added.error;
+  const updated=await c.from("kitchen_connected_devices").update({
+   status:"online",last_checked_at:measuredAt,last_temperature_c:degrees,last_error:null
+  }).eq("id",sensor.id);
+  if(updated.error)throw updated.error;
+  return {reading:added.data,alert:isAlert,sensor_id:sensor.id};
+ }catch(err){
+  console.error("Govee sync failed for sensor",sensor.id,err);
+  const message=err instanceof Error?err.message:"Lecture du capteur impossible";
+  return await failed(message.slice(0,180),503);
+ }
+}
+
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  if(!["GET","POST"].includes(req.method))return answer({error:"Méthode non autorisée"},405);
@@ -72,6 +119,31 @@ Deno.serve(async(req:Request)=>{
  await c.from("kitchen_login_attempts").insert({staff_id:a?.id??null,ip,success:ok});
  if(!ok)return answer({error:"Identifiant ou code PIN incorrect"},401);
  return answer({token:await token(c,"kitchen-staff",a.id,a.session_version),staff:{id:a.id,name:a.name}});
+ }
+if(action==="govee-auto-sync"&&req.method==="POST"){
+  const payload=await req.json().catch(()=>null);
+  const timestamp=payload?.timestamp,signature=payload?.signature;
+  if(!Number.isSafeInteger(timestamp)||Math.abs(Date.now()-timestamp*1000)>120000||
+     typeof signature!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(signature))
+   return forbidden();
+  if(signature!==await mac(await secret(c),"kitchen-govee-cron:"+timestamp))return forbidden();
+  const q=await c.from("kitchen_connected_devices").select("*")
+   .eq("kind","cold_room").eq("provider","govee").order("last_checked_at",{ascending:true}).limit(80);
+  if(q.error)throw q.error;
+  const devices=q.data||[],now=Date.now();
+  const eligible=devices.filter((sensor:any)=>{
+   const age=sensor.last_checked_at?now-Date.parse(sensor.last_checked_at):Infinity;
+   return !Number.isFinite(age)||age<0||age>=8*60000;
+  }).slice(0,10);
+  if(!eligible.length)return answer({attempted:0,received:0,skipped:devices.length,failed:0});
+  const apiKey=await goveeKey(c);
+  let received=0,failed=0;
+  for(const sensor of eligible){
+   const result=await syncGoveeDevice(c,sensor,apiKey);
+   if("reading" in result)received++;
+   else failed++;
+  }
+  return answer({attempted:eligible.length,received,failed,skipped:devices.length-eligible.length});
  }
  const u=await user(c,req);if(!u)return answer({error:"Session expirée ou accès non autorisé"},401);
   if(u.scope==="viewer"&&req.method!=="GET")return answer({error:"Ce pouvoir autorise uniquement la consultation de la cuisine."},403);
@@ -338,34 +410,12 @@ if(action==="govee-sync"){
  const id=String(x.id||"");if(!uuid(id))return answer({error:"Capteur invalide"},400);
  const q=await c.from("kitchen_connected_devices").select("*").eq("id",id).eq("provider","govee").eq("kind","cold_room").maybeSingle();
  if(q.error)throw q.error;if(!q.data)return answer({error:"Capteur introuvable"},404);
- if(q.data.last_checked_at && Date.now()-new Date(q.data.last_checked_at).getTime()<60*1000)
+ if(q.data.last_checked_at&&Date.now()-Date.parse(q.data.last_checked_at)<60000)
   return answer({error:"Actualisation limitée à une fois par minute et par capteur"},429);
- const now=new Date().toISOString();
- const state=await goveeCall(await goveeKey(c),"/device/state",{
-  requestId:crypto.randomUUID(),payload:{sku:q.data.model,device:q.data.device_identifier}
- });
- const caps=state.payload?.capabilities||[];
- const online=caps.find((v:any)=>v.instance==="online")?.state?.value;
- const raw=caps.find((v:any)=>v.type==="devices.capabilities.property"&&v.instance==="sensorTemperature")?.state?.value;
- const value=typeof raw==="number"?raw:(typeof raw==="string"&&raw.trim()?Number(raw):null);
- if(online!==true||value===null||!Number.isFinite(value)){
-  await c.from("kitchen_connected_devices").update({status:online===false?"offline":"error",last_checked_at:now,last_error:online===false?"Capteur hors ligne":"Température indisponible dans l'API"}).eq("id",id);
-  return answer({error:"Capteur hors ligne ou mesure indisponible : aucun relevé ajouté"},409);
- }
- if(q.data.raw_unit!=="F"&&q.data.raw_unit!=="C")
-  return answer({error:"Unité du capteur non configurée : aucun relevé ajouté"},422);
- const tc=temperatureToCelsius(value,q.data.raw_unit);
- if(tc< -60||tc>60)return answer({error:"Température reçue hors plage, unité du capteur à vérifier"},422);
- const room=await c.from("kitchen_cold_rooms").select("min_c,max_c,archived_at,deleted_at").eq("id",q.data.room_id).single();if(room.error)throw room.error;if(room.data.archived_at||room.data.deleted_at)return answer({error:"Chambre archivée : relevé automatique désactivé"},409);
- const alert=tc>Number(room.data.max_c)||(room.data.min_c!==null&&tc<Number(room.data.min_c));
- const insert=await c.from("kitchen_cold_readings").insert({
-  room_id:q.data.room_id,temperature_c:tc,is_alert:alert,source:"govee_cloud",connected_device_id:id,taken_by:null,measured_at:now
- }).select("id,temperature_c,is_alert,measured_at").single();
- if(insert.error)throw insert.error;
- const updated=await c.from("kitchen_connected_devices").update({status:"online",last_checked_at:now,last_temperature_c:tc,last_error:null}).eq("id",id);
- if(updated.error)throw updated.error;
- return answer({reading:insert.data,alert,sensor_id:id});
- }
+ const result=await syncGoveeDevice(c,q.data,await goveeKey(c));
+ if("error" in result)return answer({error:result.error},result.statusCode);
+ return answer(result);
+}
 if(action==="probe-register"){
  const model=String(x.model||"").trim(),label=String(x.label||"").trim();
  if(!["testo 104-IR","testo 104-IR BT"].includes(model)||label.length<2||label.length>80)
