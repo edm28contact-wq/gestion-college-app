@@ -118,7 +118,7 @@ async function finishKitchenFirstPassword(){
   status("Mot de passe enregistré. Reconnectez-vous à la Cuisine.",false,"loginStatus");
  }catch(e){status(e.message||"Changement impossible",true,"loginStatus")}
 }
-function logout(){$("kitchenFirstPassword")?.classList.add("hide");$("accountLoginForm")?.classList.remove("hide");token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
+function logout(){window.KitchenPhoto?.closeCapture();$("kitchenFirstPassword")?.classList.add("hide");$("accountLoginForm")?.classList.remove("hide");token="";data=null;alarmEnabled=false;alarmSilenced=false;document.title=initialTitle;sessionStorage.removeItem("kitchen_token");$("app").classList.add("hide");$("login").classList.remove("hide");$("kitchenCriticalAlert").hidden=true;staffList()}
 async function load(){try{data=await request("list");dashboardRefreshAt=Date.now();dashboardRefreshError="";$("login").classList.add("hide");$("app").classList.remove("hide");$("identity").textContent=data.me.name;$("todayLabel").textContent=new Intl.DateTimeFormat("fr-FR",{timeZone:"Europe/Paris",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());render();if(page==="cold")refreshColdHistory(coldOffset);checkReheatAlarms();}catch(e){if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus")}}
 function switchPage(next){
  if(!["dashboard","reheat","cold","tasks","pms"].includes(next))return;
@@ -303,7 +303,7 @@ function renderTaskItems(tasks){
  const done=new Map(data.checks.filter(c=>c.performed_on===today()).map(c=>[c.task_id,c]));
  return '<div class="task-list">'+(tasks.map(t=>{
  const c=done.get(t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id,optional=(data.optional_tasks||[]).some(x=>x.id===t.id);
- const state=c?'<span class="tag tag-ok">Réalisée</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false&&!optional?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':optional?'Valider si utilisée':'Marquer comme réalisée')+'</button>':optional?'<span class="tag">Selon utilisation</span>':'<span class="tag tag-warn">À réaliser</span>';
+ const state=c?'<span class="tag tag-ok">Réalisée · '+(c.photo_bytes>0?'Photo enregistrée':'Ancienne validation')+'</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false&&!optional?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':optional?'Valider si utilisée · Photo':'Prendre une photo pour valider')+'</button>':optional?'<span class="tag">Selon utilisation</span>':'<span class="tag tag-warn">À réaliser</span>';
  return '<div class="task-item '+(c?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+' · '+esc(window.KitchenUI.scheduleLabel(t))+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small>'+(t.description?'<p class="kt-task-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="kt-task-notes"><b>Consignes :</b> '+esc(t.instructions)+'</p>':'')+'</div><div class="kt-task-actions">'+state+(canManageTasks()?'<button class="btn btn-outline btn-small" type="button" data-edit-kitchen-task="'+esc(t.id)+'">Modifier</button>':'')+'</div></div>';
  }).join("")||'<p class="muted">Aucune tâche à afficher.</p>')+'</div>';
 }
@@ -311,7 +311,7 @@ function renderTasks(){
  const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
  const tasks=canManageTasks()?(data.task_settings||data.tasks):data.tasks;
  const optional=canManageTasks()?[]:(data.optional_tasks||[]);
- $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage et tâches</h1><p>Validez uniquement les tâches réellement réalisées aujourd’hui.</p></div><div class="kt-task-actions"><span class="tag">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+' validées</span>'+(canManageTasks()?'<button type="button" class="btn btn-primary" data-add-kitchen-task>Ajouter une tâche</button>':'')+'</div></div><div class="card">'+renderTaskItems(tasks)+'</div>'+(optional.length?'<div class="card"><h2>Tâches selon utilisation</h2><p class="muted">À valider uniquement après utilisation et nettoyage effectifs. Ces tâches ne sont pas comptées comme obligatoires chaque jour.</p>'+renderTaskItems(optional)+'</div>':'')+'<p class="guided-note">Les validations sont horodatées.</p>';
+ $("content").innerHTML='<div class="section-heading"><div><div class="eyebrow">Suivi quotidien</div><h1>Nettoyage et tâches</h1><p>Après chaque nettoyage, prenez une photo de la zone nettoyée pour valider la tâche.</p></div><div class="kt-task-actions"><span class="tag">'+data.tasks.filter(t=>done.has(t.id)).length+' / '+data.tasks.length+' validées</span>'+(canManageTasks()?'<button type="button" class="btn btn-primary" data-add-kitchen-task>Ajouter une tâche</button>':'')+'</div></div><div class="card">'+renderTaskItems(tasks)+'</div>'+(optional.length?'<div class="card"><h2>Tâches selon utilisation</h2><p class="muted">À valider uniquement après utilisation et nettoyage effectifs. Ces tâches ne sont pas comptées comme obligatoires chaque jour.</p>'+renderTaskItems(optional)+'</div>':'')+'<p class="guided-note">Les validations sont horodatées.</p>';
 }
 async function fetchTaskSettings(day){
  const response=await fetch(API+"?"+new URLSearchParams({action:"task-settings",date:day}),{headers:{"x-admin-session":token},cache:"no-store"});
@@ -326,7 +326,21 @@ function editKitchenTask(id){
 document.addEventListener("click",e=>{const btn=e.target.closest?.("[data-edit-kitchen-task],[data-add-kitchen-task]");if(btn)editKitchenTask(btn.dataset.editKitchenTask||null)});
 async function save(action,body){if(busy)return;busy=true;try{const result=await request(action,"POST",body);await load();if(result.alert)status("Contrôle enregistré avec anomalie : prévenir le responsable et effectuer une action corrective.",true);else status("Enregistré avec date, heure et nom de l’agent.");}catch(e){status(e.message,true);}finally{busy=false}}
 document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else if(form.dataset.finish){if(!canRecordReheat()){status("Une connexion agent est nécessaire.",true);return;}if(Number(t)<Math.max(63,Number(data.reheats.find(r=>r.id===form.dataset.finish)?.target_end_c||63))&&!confirm("Température sous la cible. Ne servez pas ce plat. Confirmer la fin du cycle avec anomalie ?"))return;save("finish-reheat",{id:form.dataset.finish,temperature_c:t})}});
-document.addEventListener("click",e=>{const b=e.target.closest?.("button[data-task]");if(b&&canCheckTasks())save("task-check",{task_id:b.dataset.task})});
+document.addEventListener("click",e=>{
+ const b=e.target.closest?.("button[data-task]");if(!b||!canCheckTasks()||busy)return;
+ const task=[...(data.tasks||[]),...(data.optional_tasks||[])].find(t=>t.id===b.dataset.task);
+ if(!task||task.assigned_to&&task.assigned_to!==data.me.id)return;
+ const currentToken=token,currentDay=today();
+ window.KitchenPhoto.capture({
+  label:task.label,
+  onSubmit:async photo=>{
+   if(token!==currentToken||!canCheckTasks()||currentDay!==today())throw Error("La session ou la date a changé. Actualisez.");
+   const result=await request("task-check","POST",{task_id:task.id,day:currentDay,photo_jpeg:photo});
+   if(!result.check)throw Error("Validation non confirmée. Actualisez les tâches.");
+  },
+  onSaved:async()=>{if(token!==currentToken)return;await load();status("Tâche validée avec sa photo, la date, l’heure et le nom de l’agent.");}
+ });
+});
 $("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("connectAccount")?.addEventListener("click",connectAccount);$("accountLoginForm")?.addEventListener("submit",e=>{e.preventDefault();loginCentralAccount()});$("kitchenFirstPassword")?.addEventListener("submit",e=>{e.preventDefault();finishKitchenFirstPassword()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);
 document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>switchPage(b.dataset.page)));
 document.addEventListener("click",e=>{const b=e.target.closest?.("[data-go]");if(b)switchPage(b.dataset.go)});

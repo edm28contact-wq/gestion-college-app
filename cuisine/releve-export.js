@@ -128,7 +128,7 @@
    doc.setFontSize(9);
    const title=doc.splitTextToSize(normalizePDF(task.label),80);
    const responsible=doc.splitTextToSize(normalizePDF(person),57);
-   const h=Math.max(12,6+Math.max(title.length,responsible.length)*4.8+(check?5:0));
+   const h=Math.max(12,6+Math.max(title.length,responsible.length)*4.8+(check?10:0));
    if(y+h>275)header();
    if(i%2===0){doc.setFillColor(246,248,250);doc.rect(margin,y-5,wide,h,"F")}
    doc.setFont("helvetica","normal");doc.setTextColor(34,54,70);
@@ -136,12 +136,12 @@
    doc.setTextColor(check?20:155,check?100:98,check?55:45);
    doc.text(st,margin+86,y);
    doc.setTextColor(34,54,70);doc.text(responsible,margin+115,y);
-   if(check){doc.setFontSize(8);doc.setTextColor(90,105,118);doc.text(normalizePDF(dateTime),margin+115,y+Math.max(...responsible.map((_,i)=>i+1))*4.8)}
+   if(check){doc.setFontSize(8);doc.setTextColor(90,105,118);doc.text(normalizePDF(dateTime),margin+115,y+Math.max(...responsible.map((_,i)=>i+1))*4.8);doc.text(check.photo_bytes>0?"Photo archivee":"Ancienne : sans photo",margin+115,y+Math.max(...responsible.map((_,i)=>i+1))*4.8+4.2)}
    y+=h;
   }
   if(!existing.length){doc.setTextColor(90,105,118);doc.text("Aucune tache configuree.",margin,y+8)}
   if(y>263)header();y+=8;doc.setFontSize(8);doc.setTextColor(90,105,118);
-  const note=doc.splitTextToSize("Une tache non validee dans l'application n'est pas necessairement une tache non effectuee. Rapport etabli a partir des validations horodatees.",wide);
+  const note=doc.splitTextToSize("Une tache non validee dans l'application n'est pas necessairement une tache non effectuee. Rapport etabli a partir des validations horodatees. Les preuves photographiques sont consultables dans l’administration Cuisine.",wide);
   doc.text(note,margin,y);
   const n=doc.getNumberOfPages();
   for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(110,120,130);doc.text("Rapport de suivi - "+date,margin,289);doc.text("Page "+i+" / "+n,180,289)}

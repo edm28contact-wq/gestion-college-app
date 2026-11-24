@@ -135,6 +135,7 @@
 <link rel="stylesheet" href="../../cuisine/kitchen-ui.css?v=20261124-task-editor">
 <link rel="stylesheet" href="../../cuisine/meater-ui.css?v=20261124-meater12">
 <link rel="stylesheet" href="../../cuisine/pms-ui.css?v=20261124-pms1">
+<link rel="stylesheet" href="../../cuisine/kitchen-photo.css?v=20261124-photo1">
 </head>
 <body>
 <section id="login" class="login"><div class="box"><h1>Administration Collège</h1><p class="muted">Connexion avec un compte autorisé par la Holding.</p><label>Utilisateur</label><input id="user" value="holding-admin" autocomplete="username"><br><br><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><br><br><button class="btn primary" style="width:100%" onclick="login()">Se connecter</button><div class="muted" style="text-align:center;margin-top:8px">Version 2026.10.24-apps4</div><div id="loginStatus" class="status"></div></div></section>
@@ -691,11 +692,12 @@ window.addEventListener('load',()=>{if(token)enterApp().catch(()=>logout())});
 <script src="./qr-tools.js?v=20261024-apps4"></script>
 <script src="./salaires.js?v=20261124-planning-depart-retour"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
-<script src="../../cuisine/releve-export.js?v=20261120-2"></script>
+<script src="../../cuisine/releve-export.js?v=20261124-photo1"></script>
 <script src="../../cuisine/kitchen-ui.js?v=20261124-cleaning7"></script>
 <script src="../../cuisine/meater-ui.js?v=20261124-meater12"></script>
 <script src="../../cuisine/pms-ui.js?v=20261124-pms1"></script>
-<script src="./cuisine-admin.js?v=20261124-cleaning7"></script>
+<script src="../../cuisine/kitchen-photo.js?v=20261124-photo1"></script>
+<script src="./cuisine-admin.js?v=20261124-photo1"></script>
 
 </body>
 </html>

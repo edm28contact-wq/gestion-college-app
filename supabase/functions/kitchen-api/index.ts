@@ -1,4 +1,5 @@
 import {createClient} from "npm:@supabase/supabase-js@2.112.4";
+import jpeg from "npm:jpeg-js@0.4.4";
 const cors={"Access-Control-Allow-Origin":"https://edm28contact-wq.github.io","Access-Control-Allow-Headers":"content-type, x-admin-session, authorization, apikey","Access-Control-Allow-Methods":"GET,POST,OPTIONS"};
 const enc=new TextEncoder();
 const answer=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
@@ -24,6 +25,22 @@ function uuid(v:any){return typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8]
 const forbidden=()=>answer({error:"Accès non autorisé"},403);
 const allowed=(u:any,admin=false)=>!!u&&(!admin||u.scope==="admin");
 const query=async (p:any)=>{if(p.error)throw p.error;return p.data??[]};
+
+const TASK_PHOTO_BUCKET="kitchen-cleaning-photos";
+const TASK_PHOTO_MAX=350000;
+const taskPhotoDigest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
+function taskPhotoBytes(value:unknown):Uint8Array|null{
+ if(typeof value!=="string"||value.length<136||value.length>400000||value.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(value))return null;
+ try{
+  const input=Uint8Array.from(atob(value),x=>x.charCodeAt(0));
+  if(input.length<100||input.length>300000||input[0]!==255||input[1]!==216||input[input.length-2]!==255||input[input.length-1]!==217)return null;
+  const decoded=jpeg.decode(input,{useTArray:true,tolerantDecoding:false,maxResolutionInMP:1.1,maxMemoryUsageInMB:32});
+  if(decoded.width<240||decoded.height<240||decoded.width>1024||decoded.height>1024)return null;
+  const clean=jpeg.encode({data:decoded.data,width:decoded.width,height:decoded.height},75).data;
+  return clean.length>=100&&clean.length<=TASK_PHOTO_MAX?Uint8Array.from(clean):null;
+ }catch{return null;}
+}
+const taskCheckColumns="id,task_id,performed_on,performed_at,performed_by,photo_bytes";
 const MEATER_BASE="https://public-api.cloud.meater.com/v1";
 class MeaterError extends Error {}
 async function meaterCall(route:"/login"|"/devices",credential:any){
@@ -287,7 +304,7 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  query(await c.from("kitchen_staff").select("id,name,active,personnel_id").order("name")),
  query(await c.from("kitchen_reheats").select("*").order("started_at",{ascending:false}).limit(300)),
  query(await c.from("kitchen_cold_readings").select("*").is("invalidated_at",null).order("measured_at",{ascending:false}).limit(500)),
- query(await c.from("kitchen_task_checks").select("*").order("performed_at",{ascending:false}).limit(300)),
+ query(await c.from("kitchen_task_checks").select(taskCheckColumns).order("performed_at",{ascending:false}).limit(300)),
  u.scope==="admin"?query(await c.from("kitchen_corrective_actions").select("*").order("created_at",{ascending:false}).limit(300)):Promise.resolve([]),
  query(await c.from("kitchen_connected_devices").select("id,kind,provider,label,model,room_id,device_identifier,raw_unit,status,last_checked_at,last_temperature_c,last_error,created_at").order("created_at",{ascending:false}).limit(80)),
  u.scope==="admin"?(async()=>{const q=await c.from("kitchen_govee_credentials").select("id").eq("id",1).maybeSingle();if(q.error)throw q.error;return {govee_key_configured:!!q.data}})():Promise.resolve(null),
@@ -318,13 +335,25 @@ if(action==="task-settings"&&req.method==="GET"){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+"T12:00:00Z"))||new Date(day+"T12:00:00Z").toISOString().slice(0,10)!==day)return answer({error:"Date invalide"},400);
  return answer({tasks:await query(await c.rpc("kitchen_task_calendar",{p_day:day}))});
  }
+
+ if(action==="task-photo"&&req.method==="GET"){
+  if(u.scope!=="admin")return forbidden();
+  const id=url.searchParams.get("id");if(!uuid(id))return answer({error:"Validation invalide"},400);
+  const q=await c.from("kitchen_task_checks").select("photo_path,photo_sha256,photo_bytes").eq("id",id).maybeSingle();
+  if(q.error)throw q.error;if(!q.data?.photo_path)return answer({error:"Aucune photo enregistrée pour cette validation"},404);
+  const photo=await c.storage.from(TASK_PHOTO_BUCKET).download(q.data.photo_path);
+  if(photo.error||!photo.data)return answer({error:"Preuve photographique indisponible. Prévenez le responsable."},503);
+  const bytes=new Uint8Array(await photo.data.arrayBuffer());
+  if(bytes.length!==q.data.photo_bytes||await taskPhotoDigest(bytes)!==q.data.photo_sha256)return answer({error:"Intégrité de la photo non vérifiée"},409);
+  return new Response(bytes,{headers:{...cors,"Content-Type":"image/jpeg","Cache-Control":"no-store, private","X-Content-Type-Options":"nosniff","Content-Disposition":"inline; filename=nettoyage.jpg"}});
+ }
  if(action==="task-report"&&req.method==="GET"){
  const day=url.searchParams.get("date")||"";
  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+"T12:00:00Z")))
   return answer({error:"Date du rapport invalide"},400);
  const [tasksResult,checksResult]=await Promise.all([
   c.rpc("kitchen_task_calendar",{p_day:day}),
-  c.from("kitchen_task_checks").select("id,task_id,performed_on,performed_at,performed_by").eq("performed_on",day)
+  c.from("kitchen_task_checks").select(taskCheckColumns).eq("performed_on",day)
  ]);
  if(tasksResult.error)throw tasksResult.error;if(checksResult.error)throw checksResult.error;
  const checks=checksResult.data||[],checked=new Set(checks.map((v:any)=>v.task_id));
@@ -385,6 +414,37 @@ if(action==="task-settings"&&req.method==="GET"){
  }))});
  }
  if(req.method!=="POST")return answer({error:"Action inconnue"},404);
+ if(action==="task-check"){
+  if(u.scope!=="staff"||u.existingAccount)return forbidden();
+  if(Number(req.headers.get("content-length")||0)>410000)return answer({error:"Photo trop volumineuse"},413);
+  const raw=await req.text();if(raw.length>410000)return answer({error:"Photo trop volumineuse"},413);
+  let x:any;try{x=JSON.parse(raw);}catch{return answer({error:"Saisie invalide"},400);}
+  if(!x||!uuid(x.task_id)||!pmsDate(x.day))return answer({error:"Tâche ou date invalide. Actualisez le site."},400);
+  const day=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  if(day!==x.day)return answer({error:"La date a changé. Actualisez les tâches."},409);
+  if(typeof x.photo_jpeg!=="string")return answer({error:"Photo obligatoire. Prenez une photo de la tâche réalisée."},400);
+  const cal=await c.rpc("kitchen_task_calendar",{p_day:day});if(cal.error)throw cal.error;
+  const task=(cal.data||[]).find((t:any)=>t.id===x.task_id);
+  if(!task)return answer({error:"Tâche introuvable"},404);
+  if(!task.scheduled&&!(task.active&&task.recurrence==="on_demand"&&task.starts_on<=day&&(!task.ends_on||task.ends_on>=day)))return answer({error:"Tâche non programmée aujourd’hui"},409);
+  if(task.assigned_to&&task.assigned_to!==u.id)return forbidden();
+  const prior=await c.from("kitchen_task_checks").select("id").eq("task_id",x.task_id).eq("performed_on",day).maybeSingle();
+  if(prior.error)throw prior.error;if(prior.data)return answer({error:"Tâche déjà validée aujourd’hui. Actualisez."},409);
+  const bytes=taskPhotoBytes(x.photo_jpeg);
+  if(!bytes)return answer({error:"Photo JPEG invalide ou trop volumineuse. Reprenez la photo."},400);
+  const digest=await taskPhotoDigest(bytes);
+  const path=x.task_id+"/"+u.id+"/"+crypto.randomUUID()+".jpg";
+  const storage=c.storage.from(TASK_PHOTO_BUCKET);
+  const uploaded=await storage.upload(path,bytes,{contentType:"image/jpeg",upsert:false,cacheControl:"0"});
+  if(uploaded.error)return answer({error:"Enregistrement de la photo impossible. La tâche n’a pas été validée."},503);
+  const q=await c.rpc("kitchen_task_validate_photo",{p_task_id:x.task_id,p_agent:u.id,p_day:day,p_path:path,p_sha256:digest,p_bytes:bytes.length});
+  // A definitive business rejection means that this unique upload cannot be referenced by a check.
+  // On an uncertain transport error preserve the object: never delete potential evidence.
+  if(q.error){console.error("task-photo: résultat de validation incertain",q.error.code);return answer({error:"Résultat incertain. Actualisez les tâches avant de réessayer."},503);}
+  if(q.data?.error){const deleted=await storage.remove([path]);if(deleted.error)console.error("task-photo: nettoyage du fichier non associé impossible");return answer(q.data,Number(q.data.status)||400);}
+  if(!q.data?.check)return answer({error:"Résultat incertain. Actualisez les tâches avant de réessayer."},503);
+  return answer(q.data,201);
+ }
  const x=await req.json().catch(()=>null);if(!x||typeof x!=="object")return answer({error:"Saisie JSON invalide"},400);
  if(action==="pms-record"){
  if(u.scope!=="admin"&&(u.scope!=="staff"||u.existingAccount))return forbidden();
@@ -461,13 +521,6 @@ if(action==="task-settings"&&req.method==="GET"){
   }).eq("id",x.id).eq("status","en_cours").select("*").maybeSingle();
  if(changed.error)throw changed.error;if(!changed.data)return answer({error:"Relevé modifié simultanément, actualisez"},409);
  return answer({reheat:changed.data,delta_c:Math.round((t-start)*100)/100,alert:!good,after_reminder:afterReminder,elapsed_minutes:Math.round(elapsedMs/600)/100,conservative_duration_ok:withinConservativeDuration});
- }
- if(action==="task-check"){
- if(u.scope!=="staff"||u.existingAccount)return forbidden();
- if(!uuid(x.task_id))return answer({error:"Tâche invalide"},400);
- const q=await c.rpc("kitchen_task_validate",{p_task_id:x.task_id,p_agent:u.id});
- if(q.error)throw q.error;
- return answer(q.data,q.data.error?Number(q.data.status)||400:201);
  }
  if(!allowed(u,true))return forbidden();
  if(action==="archive-room"){

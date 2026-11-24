@@ -142,7 +142,7 @@
  rows(coldHistory,[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Résultat",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?(followedByGood(x)?"Ancien écart · recontrôlé":"Hors seuil"):"Dans la plage")+'</span>'],["",x=>'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>']])+
  '<div class="actions"><button class="btn secondary" type="button" data-admin-cold-page="previous" '+(coldHistoryOffset===0?'disabled':'')+'>Précédent</button><button class="btn secondary" type="button" data-admin-cold-page="next" '+(coldHistoryOffset+50>=coldHistoryTotal?'disabled':'')+'>Suivant</button></div></div>'+
  '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Évaluation",x=>x.status==="alerte"?"Température hors cible":x.status==="en_cours"?"En cours":"Température cible atteinte"],["Contrôle horaire",x=>x.ended_at?(new Date(x.ended_at)>new Date(x.due_at)?"Relevé après le rappel":"Relevé avant le rappel"):"Contrôle en cours"],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
- '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Exportez le suivi quotidien en PDF : validations, agents, heures et tâches non validées.</p><div class="grid"><div><label for="kitchenTasksReportDate">Date du rapport</label><input id="kitchenTasksReportDate" type="date" value="'+day+'"></div><div><label>Rapport</label><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button></div></div>'+rows(s.task_settings||s.tasks,[["Tâche",x=>e(x.label)+'<div class="muted">'+e(window.KitchenUI.scheduleLabel(x))+'</div>'],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?"Réalisée":x.active===false?"Désactivée":(s.optional_tasks||[]).some(t=>t.id===x.id)?"Selon utilisation":x.scheduled===false?"Non prévue":"Non validée"],["Action",x=>s.me.scope==="admin"?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':""]])+
+ '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Consultez les photos des validations par date et exportez le suivi quotidien en PDF.</p><div class="grid"><div><label for="kitchenTasksReportDate">Date du rapport</label><input id="kitchenTasksReportDate" type="date" value="'+day+'"></div><div><label>Rapport</label><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button></div><div><label>Preuves photographiques</label>'+(s.me.scope==="admin"?'<button class="btn secondary" type="button" id="kitchenTasksPhotos">Consulter les photos</button>':'<span class="muted">Réservées à la gestion Cuisine.</span>')+'</div></div>'+rows(s.task_settings||s.tasks,[["Tâche",x=>e(x.label)+'<div class="muted">'+e(window.KitchenUI.scheduleLabel(x))+'</div>'],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?(s.checks.some(c=>c.task_id===x.id&&c.performed_on===day&&c.photo_bytes>0)?"Réalisée · Photo":"Réalisée · Sans photo ancienne"):x.active===false?"Désactivée":(s.optional_tasks||[]).some(t=>t.id===x.id)?"Selon utilisation":x.scheduled===false?"Non prévue":"Non validée"],["Action",x=>s.me.scope==="admin"?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':""]])+
  (s.me.scope==="admin"?'<div class="actions"><button type="button" class="btn primary" data-add-admin-task>Ajouter une tâche</button></div>':'')+'<p id="kitchenTaskFeedback" class="status" role="status"></p></div>'+
  '<div class="card"><h2>Journal des relevés invalidés</h2><p class="muted">Historique d’audit uniquement : ces valeurs ne comptent plus dans les résultats HACCP ni dans les exports standards.</p>'+rows((s.invalidated||[]),[["Mesure d’origine",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Valeur initiale",x=>t(x.temperature_c)+" °C"],["Correction",x=>when(x.invalidated_at)],["Motif",x=>e(x.invalidation_reason)],["Par",x=>e(x.invalidated_by)]])+'</div>'+
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
@@ -319,6 +319,25 @@
  });
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-kitchen-active]");if(b)action("set-staff-active",{staff_id:b.dataset.kitchenActive,active:b.dataset.next==="true"});});
  
+ async function openTasksPhotos(){
+  if(snapshot?.me.scope!=="admin")return;
+  const date=node("kitchenTasksReportDate")?.value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")){notify("Choisissez une date de rapport.",true);return;}
+  const button=node("kitchenTasksPhotos");if(button)button.disabled=true;
+  const session=()=>localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
+  const initial=session();
+  try{
+   const get=async(action,params)=>{
+    if(session()!==initial)throw Error("Session modifiée. Reconnectez-vous.");
+    const response=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":initial},cache:"no-store"});
+    if(!response.ok){const j=await response.json().catch(()=>({}));throw Error(j.error||"Preuve indisponible");}return response;
+   };
+   const report=await (await get("task-report",{date})).json();
+   window.KitchenPhoto.showHistory({report,staff:snapshot.staff,fetchPhoto:async id=>(await get("task-photo",{id})).blob()});
+  }catch(err){notify(err.message,true);}
+  finally{if(button)button.disabled=false;}
+ }
+ document.addEventListener("click",ev=>{if(ev.target.closest?.("#kitchenTasksPhotos"))openTasksPhotos();});
  async function exportTasksPDF(){
   const date=node("kitchenTasksReportDate")?.value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")){notify("Choisissez une date de rapport.",true);return}
