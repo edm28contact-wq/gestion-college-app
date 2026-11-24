@@ -124,6 +124,11 @@ function incidentMinutes(x){
  }
  return null;
 }
+function incidentTimeSummary(x){
+ const start=String(x.start_time||'').slice(0,5),end=String(x.end_time||'').slice(0,5);
+ return ['absence','depart_anticipe'].includes(x.event_type)&&start?
+  'Départ '+start+' · '+(end?'Retour '+end:'Pas de retour dans la journée'):'';
+}
 function formatIncidentDuration(x){
  if(x.all_day)return 'Journée entière';
  const v=incidentMinutes(x);if(v==null)return 'Non renseignée';
@@ -207,8 +212,8 @@ function render(){
  $('rows').innerHTML=filtered.length?filtered.map(x=>{
    const canEdit=!readonly&&x.review_status==='a_verifier';
    const row=canEdit?' data-edit="'+esc(x.id)+'" tabindex="0" title="Cliquer pour modifier" style="cursor:pointer"':'';const canDelete=!readonly&&(admin||x.review_status==='a_verifier');
-   const hours=formatIncidentDuration(x);
-   return '<tr'+row+'><td>'+esc(x.event_date)+'</td><td><b>'+esc(x.personnel_name)+'</b></td><td>'+esc(labels[x.event_type]||x.event_type)+'</td><td>'+esc(hours)+'</td><td>'+esc({non_requis:'Non requis',a_fournir:'À fournir',recu:'Reçu'}[x.justification_status]||'')+'</td><td>'+(x.attachment_path?'<button type="button" class="btn alt compact" data-pdf="'+esc(x.id)+'">PDF</button>':'—')+'</td><td>'+esc(x.details)+'</td><td>'+(canDelete?'<button type="button" class="btn alt incident-delete compact" data-delete="'+esc(x.id)+'">Supprimer</button>':'—')+'</td></tr>';
+   const hours=formatIncidentDuration(x),times=incidentTimeSummary(x);
+   return '<tr'+row+'><td>'+esc(x.event_date)+'</td><td><b>'+esc(x.personnel_name)+'</b></td><td>'+esc(labels[x.event_type]||x.event_type)+'</td><td>'+esc(hours)+(times?'<small class="muted" style="display:block;margin-top:4px">'+esc(times)+'</small>':'')+'</td><td>'+esc({non_requis:'Non requis',a_fournir:'À fournir',recu:'Reçu'}[x.justification_status]||'')+'</td><td>'+(x.attachment_path?'<button type="button" class="btn alt compact" data-pdf="'+esc(x.id)+'">PDF</button>':'—')+'</td><td>'+esc(x.details)+'</td><td>'+(canDelete?'<button type="button" class="btn alt incident-delete compact" data-delete="'+esc(x.id)+'">Supprimer</button>':'—')+'</td></tr>';
  }).join(''):'<tr><td colspan="8">Aucun événement pour cette période.</td></tr>';
 }
 function staffKey(value){
