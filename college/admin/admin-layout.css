@@ -1,0 +1,45 @@
+
+/* Shared Administration College shell: all internal pages use the same frame. */
+#app.college-admin-shell{grid-template-columns:248px minmax(0,1fr);grid-template-rows:auto 1fr;align-items:start;background:#f3f6f9;min-height:100vh}
+#app.college-admin-shell.hide{display:none!important}
+.college-admin-banner{grid-column:1/-1;background:#1f2b38;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 22px;position:sticky;top:0;z-index:12;box-shadow:0 2px 10px #17202a24;flex-wrap:wrap}
+.college-admin-banner .college-brand-wrap{display:flex;align-items:center;gap:13px;min-width:0}
+.college-admin-banner .brand{margin:0;font-size:19px;line-height:1.3;overflow-wrap:anywhere}
+.college-admin-banner .college-brand-subtitle{display:block;font-size:11px;color:#c0cedb;letter-spacing:.045em;margin-top:3px}
+.college-admin-banner .college-banner-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.college-admin-banner .btn{background:#34495c;color:#f4f7fa;border:1px solid #526779;font-size:12px;padding:9px 12px;white-space:nowrap}
+.college-admin-banner .btn:hover,.college-admin-banner .btn:focus-visible{background:#496478;outline:2px solid #a5c8e2}
+.college-admin-banner .btn[hidden]{display:none!important}
+.college-admin-shell>.side{position:sticky;top:76px;align-self:start;max-height:calc(100vh - 86px);overflow:auto;background:#fff;border-right:1px solid #dbe3eb;color:#26384b;padding:16px 12px;min-width:0}
+.college-admin-shell .college-nav-caption{font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;color:#687f93;margin:3px 10px 13px}
+.college-admin-shell #collegeMenuSearch{background:#f6f8fb;font-size:12px;padding:9px 10px;margin-bottom:13px}
+.college-admin-shell #nav{display:flex;flex-direction:column;gap:14px;overflow:visible}
+.college-admin-shell #nav .college-nav-group{display:flex;flex-direction:column;gap:3px;min-width:0}
+.college-admin-shell #nav .college-nav-group[hidden],.college-admin-shell #nav button[hidden],.college-admin-shell #nav button.college-menu-filtered{display:none!important}
+.college-admin-shell #nav .college-nav-group h2{margin:0 9px 4px;font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#627489;font-weight:800}
+.college-admin-shell #nav button{width:100%;color:#293c50;background:transparent;white-space:normal;padding:9px 10px;line-height:1.4;font-size:13px;font-weight:650;text-align:left}
+.college-admin-shell #nav button:hover,.college-admin-shell #nav button:focus-visible{background:#eaf0f6;outline:2px solid #b8ccdf}
+.college-admin-shell #nav button.active{background:#e7eff8;color:#173d61;box-shadow:inset 3px 0 #376992;font-weight:800}
+.college-admin-shell>.main{padding:24px;min-width:0;width:100%}
+.college-admin-heading{background:#fff;border:1px solid #dce3eb;border-radius:12px;padding:18px 20px;margin-bottom:18px}
+.college-admin-heading .college-breadcrumb{font-size:11px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;color:#5c7287;margin:0 0 7px}
+.college-admin-heading h1{font-size:clamp(23px,2.5vw,31px);line-height:1.2;letter-spacing:-.025em;margin:0 0 6px}
+.college-admin-heading #server{line-height:1.5;overflow-wrap:anywhere}
+.college-admin-shell #content{min-width:0}
+.college-admin-shell #content>.card{padding:18px;margin-bottom:15px}
+.college-admin-shell #content .grid{grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr))}
+.college-admin-shell #content .card{min-width:0}
+.college-admin-shell #content .table{max-width:100%;overflow-x:auto}
+.college-admin-shell #content .table th{background:#f3f6f9;color:#33475c;font-size:12px;font-weight:750}
+.college-admin-shell #content .table tr:last-child td{border-bottom:0}
+.college-admin-shell #content .btn:focus-visible,.college-admin-shell input:focus-visible,.college-admin-shell select:focus-visible{outline:2px solid #5786ab;outline-offset:2px}
+.college-admin-shell .salary-identity-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px;align-items:end;margin:14px 0}
+.college-admin-shell .salary-identity-fields label,.college-admin-shell .salary-staff-role label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
+.college-admin-shell .salary-staff-form{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.college-admin-shell .salary-staff-form>input{flex:1 1 160px;max-width:300px}
+.college-admin-shell .salary-staff-role{flex:1 1 200px;max-width:270px}
+.college-admin-shell .salary-staff-form>label[for]{flex:0 0 100%;margin-bottom:-8px}
+.college-admin-shell .college-menu-toggle{display:none}
+@media(max-width:1100px){.college-admin-banner{position:static}.college-admin-shell>.side{top:12px;max-height:calc(100vh - 24px)}}
+@media(max-width:850px){#app.college-admin-shell{grid-template-columns:minmax(0,1fr)}.college-admin-banner{padding:13px 15px;gap:12px}.college-admin-shell>.side{position:static;max-height:none;border-right:0;border-bottom:1px solid #dce3eb;padding:12px 14px}.college-admin-shell #nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:12px}.college-admin-shell>.main{padding:14px}.college-admin-shell .college-menu-toggle{display:inline-block}.college-admin-shell .side.college-menu-closed{display:none}.college-admin-heading{padding:15px}.college-admin-shell #content>.card{padding:13px}.college-admin-banner .college-banner-actions{width:100%}.college-admin-banner .btn{font-size:11px;padding:8px 10px}}
+@media(prefers-reduced-motion:reduce){.college-admin-shell *{scroll-behavior:auto!important}}
