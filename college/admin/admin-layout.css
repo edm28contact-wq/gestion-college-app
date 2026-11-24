@@ -68,3 +68,24 @@
 .college-admin-shell .salary-schedule-tools select{width:auto;min-width:155px}
 .college-admin-shell .salary-schedule-summary{font-weight:650;white-space:nowrap}
 @media(max-width:570px){.college-admin-shell .salary-schedule-tools{align-items:stretch;flex-direction:column}.college-admin-shell .salary-schedule-tools select,.college-admin-shell .salary-schedule-tools button{width:100%}}
+
+/* Comptabilite salariale : indicateurs principaux et tableau mensuel. */
+.college-admin-shell .salary-accounting-toolbar{display:flex;gap:16px;justify-content:space-between;align-items:end;flex-wrap:wrap}
+.college-admin-shell .salary-accounting-toolbar h2{margin-top:0;margin-bottom:6px}
+.college-admin-shell .salary-accounting-toolbar p{margin:0}
+.college-admin-shell .salary-accounting-filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.college-admin-shell .salary-accounting-filters label{display:grid;gap:6px;font-size:12px;font-weight:700;min-width:155px}
+.college-admin-shell .salary-accounting-filters input,.college-admin-shell .salary-accounting-filters select{width:100%;min-height:39px}
+.college-admin-shell .salary-accounting-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(218px,100%),1fr));gap:12px;margin-bottom:16px}
+.college-admin-shell .salary-accounting-kpi{min-width:0;padding:20px 18px;border:1px solid #dce4ed;border-radius:12px;background:#fff;display:flex;flex-direction:column;gap:9px;box-shadow:0 2px 10px #17202a0b}
+.college-admin-shell .salary-accounting-kpi-label{color:#405368;font-size:12px;font-weight:800;line-height:1.4}
+.college-admin-shell .salary-accounting-kpi-value{display:block;font-weight:800;font-size:clamp(30px,2.7vw,42px);line-height:1.1;letter-spacing:-.03em;color:#14283b;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.college-admin-shell .salary-accounting-kpi-detail{display:block;color:#667789;font-size:12px;line-height:1.55}
+.college-admin-shell .salary-accounting-table{min-width:1100px}
+.college-admin-shell .salary-accounting-table th,.college-admin-shell .salary-accounting-table td{vertical-align:top}
+.college-admin-shell .salary-accounting-table th[scope=row]{font-size:13px;white-space:nowrap}
+.college-admin-shell .salary-accounting-num{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.college-admin-shell .salary-accounting-benefits{min-width:170px}
+.college-admin-shell .salary-accounting-benefits small{display:block;margin-top:5px;white-space:normal;line-height:1.45}
+.college-admin-shell .salary-accounting-detail summary{font-size:15px;font-weight:750;cursor:pointer;list-style-position:inside}
+@media(max-width:650px){.college-admin-shell .salary-accounting-filters{width:100%}.college-admin-shell .salary-accounting-filters label{flex:1 1 170px}.college-admin-shell .salary-accounting-filters button{flex:1 1 145px}.college-admin-shell .salary-accounting-kpi{padding:16px}}
