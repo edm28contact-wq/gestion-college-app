@@ -742,7 +742,7 @@ function refreshMatches(){
 function automaticExclusionReason(row){
  // Un produit réellement absent ou désactivé est exclu uniquement du stock.
  // Les ambiguïtés ne sont jamais considérées comme des absences certaines.
- if(accounting||!catalog||!Array.isArray(catalog.products)||!catalog.products.length||
+ if(manualMode||accounting||!catalog||!Array.isArray(catalog.products)||!catalog.products.length||
     row.product_manual||row.manualMatchRequired)return "";
  if(catalog.products.some(p=>p.id===row.product_id&&p.active!==false))return "";
  const cause=String(row.reason||"");
@@ -846,7 +846,7 @@ function reviewReason(row){
  if(!String(row.unit||"").trim())problems.push("Unité facturée manquante.");
  if(row.manualMatchRequired)problems.push("Correspondance fournisseur à confirmer sur le PDF.");
  if(row.autoQuantityReconciled&&!row.manualVerified)problems.push("Quantité modifiée à partir du conditionnement et du total HT : contrôler le PDF original.");
- if(!independentPdfVerified(row)){
+ if(!manualMode&&!independentPdfVerified(row)){
   if(row.confidenceMissing?.length)problems.push("Score OCR manquant pour : "+row.confidenceMissing.join(", ")+". Vérification du PDF requise.");
   if(!(typeof row.score==="number"&&Number.isFinite(row.score)&&row.score>=AUTO_APPROVE_SCORE)){
    const weak=lineEvidenceMetrics(row).weakest;
@@ -907,6 +907,7 @@ function applyQuickFix(row,kind){
 function confirmRowManually(row){
  const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
  if(!product||row.excluded)return {ok:false,message:"Choisissez un produit actif et non écarté avant de confirmer la ligne."};
+ if(manualMode&&!file)return {ok:false,message:"Joignez le PDF original avant de confirmer une ligne saisie manuellement."};
  if(row.unit_label_conflict)return {ok:false,message:row.unit_label_note+" Corrigez la quantité ou l’unité d’après le PDF avant validation."};
  if(!accounting&&amount(row.stock_quantity)>0&&!validStockQuantity(row))return {ok:false,message:"Quantité de stock invalide : 3 décimales maximum. Corrigez selon le PDF."};
  if(!accounting&&(!validStockQuantity(row)||(row.stock_needs_review&&!row.stock_confirmed))&&!row.stock_manual&&!confirmStockProposal(row))
@@ -1050,7 +1051,7 @@ function buildLine(row,index){
  const indicators=document.createElement("div");indicators.className="line-indicators";
  const weakLabel=quality.weakest.length?" · champ faible : "+quality.weakest.join(", "):"";
  for(const label of [
-  "Confiance OCR : "+(score===null?"non renseignée":score+" %")+weakLabel,
+  manualMode?"Saisie manuelle · contrôle PDF requis":"Confiance OCR : "+(score===null?"non renseignée":score+" %")+weakLabel,
   "Contrôles métier : "+quality.passed+"/"+quality.total,
   "Recoupement PDF : "+(currentPdfEvidence(row)?quality.pdfCount+"/6 champs":row.pdfEvidence?"preuve obsolète":"non disponible")
  ]){
@@ -1058,14 +1059,14 @@ function buildLine(row,index){
  }
  card.append(indicators);
  const details=document.createElement("details");details.className="line-evidence-details";
- const summary=document.createElement("summary");summary.textContent="Détail : OCR, métier et preuves du PDF";details.append(summary);
+ const summary=document.createElement("summary");summary.textContent=manualMode?"Détail : contrôle métier et justificatif PDF":"Détail : OCR, métier et preuves du PDF";details.append(summary);
  const section=(label,items)=>{
   const title=document.createElement("strong");title.textContent=label;details.append(title);
   const list=document.createElement("ul");
   for(const text of items){const li=document.createElement("li");li.textContent=text;list.append(li)}
   details.append(list);
  };
- section("Champs OCR (scores Veryfi)",quality.ocrFields.length?
+ section(manualMode?"Saisie manuelle (pas de confiance OCR)":"Champs OCR (scores Veryfi)",manualMode?["La correspondance avec le PDF doit être vérifiée par la secrétaire."]:quality.ocrFields.length?
   quality.ocrFields.map(f=>f.label+" : "+(f.score===null?"non fourni":Math.floor(f.score*100+1e-8)+" %")):
   ["Scores détaillés non fournis pour cette ligne"]);
  section("Contrôles métier",quality.checks.map(([name,ok])=>(ok?"OK — ":"À vérifier — ")+name));
@@ -1173,7 +1174,12 @@ function buildLine(row,index){
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
- row[key]=value;row.pdfEvidence=null;if(["quantity","unit","description","unit_price","total"].includes(key))row.autoQuantityReconciled=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
+ row[key]=value;
+ if(manualMode&&["quantity","unit_price"].includes(key)&&String(row.total??"").trim()===""){
+  const q=amount(row.quantity),price=amount(row.unit_price);
+  if(q!==null&&q>0&&price!==null&&price>=0)row.total=String(round(q*price));
+ }
+ row.pdfEvidence=null;if(["quantity","unit","description","unit_price","total"].includes(key))row.autoQuantityReconciled=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   if(key==="description"&&row.unit_label_source)row.unit="";
   if(key==="description"){const e=explicitInvoiceUnit(row);row.unit=e.unit;row.unit_label_note=e.note;row.unit_label_conflict=e.conflict;row.unit_label_source=e.fromLabel;row.unit_label_pair=e.pair||null}
@@ -1259,7 +1265,8 @@ function renderRows(){
 }
 function addLine(){
  if(!documentData||saved)return;
- rows.push({...makeRow({},rows.length),userAdded:true});$("confirmReview").checked=false;renderRows();
+ const nextId=rows.reduce((n,row)=>Math.max(n,Number.isInteger(row.id)?row.id:-1),-1)+1;
+ rows.push({...makeRow({},nextId),userAdded:true});$("confirmReview").checked=false;renderRows();
 }
 function eligible(row){
  if(row.excluded)return false;
@@ -1478,7 +1485,7 @@ async function save(){
    fd.append("file",currentFile);fd.append("supplier",$("vendor").value.trim());
    fd.append("invoice_number",$("invoiceNumber").value.trim());fd.append("invoice_date",$("invoiceDate").value);
    fd.append("amount_ht",String(c.ht));fd.append("amount_vat",String(c.vat));fd.append("amount_ttc",String(c.ttc));
-   fd.append("vat_rate","");fd.append("raw_text",JSON.stringify({provider:"veryfi",document_id:documentData.id,lines:c.included.map(r=>({reference:r.reference,description:r.description,quantity:amount(r.quantity),unit:r.unit,unit_price:amount(r.unit_price),total:amount(r.total),account:r.account}))}));
+   fd.append("vat_rate","");fd.append("raw_text",JSON.stringify({provider:manualMode?"manual":"veryfi",document_id:manualMode?null:documentData.id,lines:c.included.map(r=>({reference:r.reference,description:r.description,quantity:amount(r.quantity),unit:r.unit,unit_price:amount(r.unit_price),total:amount(r.total),account:r.account}))}));
    const response=await fetch(API.accounting+"?action=upload",{method:"POST",headers:{authorization:"Bearer "+authToken},body:fd,cache:"no-store",signal:AbortSignal.timeout(80000)});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(data.error||"Import comptable refusé : HTTP "+response.status);
@@ -1496,8 +1503,8 @@ async function save(){
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)||Math.abs(x.stock_quantity-Math.round(x.stock_quantity*1000)/1000)>1e-9))throw Error("Une ou plusieurs quantités de stock sont invalides ou dépassent 3 décimales.");
    const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:currentFile.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
     supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
-    raw_text:JSON.stringify({provider:"veryfi",document_id:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,auto_excluded_lines:c.autoExcludedCount,auto_excluded_details:rows.filter(r=>r.excluded&&r.autoExcluded).map(r=>({source_index:r.id,reference:r.reference,description:r.description,total_ht:amount(r.total),reason:r.autoExclusionReason})),pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
-     provider_document_id:documentData.id,learning_page_count:documentData.page_count,learning:c.included.map(learningPayload)},timeout:80000});
+    raw_text:JSON.stringify({provider:manualMode?"manual":"veryfi",document_id:manualMode?null:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:manualMode?null:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,auto_excluded_lines:c.autoExcludedCount,auto_excluded_details:rows.filter(r=>r.excluded&&r.autoExcluded).map(r=>({source_index:r.id,reference:r.reference,description:r.description,total_ht:amount(r.total),reason:r.autoExclusionReason})),pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
+     provider_document_id:manualMode?null:documentData.id,learning_page_count:manualMode?null:documentData.page_count,learning:manualMode?null:c.included.map(learningPayload)},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
    saved=true;notice(c.adjusted?"Réception partielle enregistrée. Seuls les produits verts ont été ajoutés au stock ; PDF original archivé.":"Facture validée. Commandes, achats et stocks synchronisés.","success");
    const learned=data.learning||{status:"not_requested"};
@@ -1529,6 +1536,7 @@ function setup(){
  input.addEventListener("change",()=>setFile(input.files?.[0]));
  $("clearFile").addEventListener("click",()=>{input.value="";setFile(null)});
  $("analyze").addEventListener("click",analyze);
+ $("manualEntry").addEventListener("click",()=>void startManualEntry());
  $("refreshSession").addEventListener("click",resolveSession);
  $("reloadCatalog").addEventListener("click",async()=>{
   const button=$("reloadCatalog");button.disabled=true;
