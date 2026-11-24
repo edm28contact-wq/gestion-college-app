@@ -137,6 +137,9 @@ p{line-height:1.5}
 
 @media(max-width:760px){.shell{padding:20px 13px 70px}.card{padding:18px}.grid,.grid-3,.field-grid{grid-template-columns:1fr}.nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.nav button{font-size:13px;padding:10px 7px}.action-card{min-height:155px}.session{align-items:flex-start}.timer-details span{display:block}}
 @media(prefers-reduced-motion:reduce){.timer-track>div{transition:none}}
+/* Checklist de nettoyage : cases stables, état confirmé par le serveur. */
+.checklist-card{padding:18px}.checklist-card h2{margin:0}.checklist{list-style:none;padding:0;margin:14px 0 0;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}.checklist-row+.checklist-row{border-top:1px solid var(--line)}.checklist-row.done{background:#f2faf5}.checklist-toggle{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(105px,auto);align-items:center;text-align:left;gap:12px;width:100%;min-height:63px;padding:11px 14px;background:transparent;color:var(--navy);border:0;font:inherit;cursor:pointer}.checklist-toggle:not(:disabled):hover{background:#edf4f6}.checklist-toggle:focus-visible{outline-offset:-3px}.checklist-toggle:disabled{opacity:1;cursor:default}.checklist-box{display:grid;place-items:center;width:25px;height:25px;border:2px solid #8b9dab;border-radius:5px;background:white;font-size:19px;font-weight:800;line-height:1}.checklist-toggle[aria-checked=true] .checklist-box{background:#166b46;border-color:#166b46;color:white}.checklist-title{min-width:0;overflow-wrap:anywhere}.checklist-title strong{display:block;font-size:15px;line-height:1.35}.checklist-title small{display:block;font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4}.checklist-proof{display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:12px;font-weight:700;color:#526779;text-align:right;line-height:1.3}.checklist-toggle:not(:disabled) .checklist-proof{color:#203447}.checklist-proof.has-proof{color:#166b46}.task-camera{width:18px;height:18px;flex:none}.checklist-notes{margin:0 14px 10px 56px;font-size:12px;color:#526577;white-space:pre-wrap;overflow-wrap:anywhere}.checklist-progress{height:8px;background:#e6edf0;border-radius:99px;overflow:hidden;margin:13px 0}.checklist-progress>span{display:block;height:100%;background:#166b46;border-radius:99px}.checklist-percent{font-variant-numeric:tabular-nums;color:#166b46}.checklist-complete{font-size:13px;color:#166b46;font-weight:750;margin-bottom:0}.checklist-empty{padding:14px}.checklist-card .help{margin:8px 0}
+@media(max-width:540px){.checklist-card{padding:13px}.checklist-toggle{grid-template-columns:28px minmax(0,1fr) 94px;gap:8px;padding:11px 9px;min-height:65px}.checklist-proof{font-size:11px;gap:4px;flex-direction:column;align-items:flex-end}.checklist-notes{margin-left:45px}.checklist-title strong{font-size:14px}}
 </style>
 <link rel="stylesheet" href="./kitchen-ui.css?v=20261124-task-editor">
 <link rel="stylesheet" href="./meater-ui.css?v=20261124-meater12">
@@ -194,6 +197,6 @@ p{line-height:1.5}
 <script src="./kitchen-ui.js?v=20261124-cleaning7" defer></script>
 <script src="./meater-ui.js?v=20261124-workspace1" defer></script>
 <script src="./kitchen-photo.js?v=20261124-photo1" defer></script>
-<script src="./cuisine.js?v=20261124-workspace1" defer></script>
+<script src="./cuisine.js?v=20261124-checklist1" defer></script>
 </body>
 </html>

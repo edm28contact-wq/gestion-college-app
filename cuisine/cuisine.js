@@ -250,38 +250,53 @@ function renderReheat(){
 function canCheckTasks(){return data?.me.scope==="staff"&&!data.me.existingAccount}
 function renderTaskItems(tasks){
  const done=new Map(data.checks.filter(c=>c.performed_on===today()).map(c=>[c.task_id,c]));
- return '<div class="task-list">'+(tasks.map(t=>{
+ const camera='<svg class="task-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h4l2-3h4l2 3h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="14" r="4"/></svg>';
+ return '<ul class="task-list checklist">'+(tasks.map(t=>{
  const c=done.get(t.id),locked=t.assigned_to&&t.assigned_to!==data.me.id,optional=(data.optional_tasks||[]).some(x=>x.id===t.id);
- const state=c?'<span class="tag tag-ok">Réalisée · '+(c.photo_bytes>0?'Photo enregistrée':'Ancienne validation')+'</span>':t.active===false?'<span class="tag tag-warn">Désactivée</span>':t.scheduled===false&&!optional?'<span class="tag">Non prévue aujourd’hui</span>':canCheckTasks()?'<button class="btn btn-primary btn-small" type="button" data-task="'+esc(t.id)+'" '+(locked?'disabled':'')+'>'+(locked?'Attribuée à un autre agent':optional?'Valider si utilisée · Photo':'Prendre une photo pour valider')+'</button>':optional?'<span class="tag">Selon utilisation</span>':'<span class="tag tag-warn">À réaliser</span>';
- return '<div class="task-item '+(c?'done':'')+'"><div><strong>'+esc(t.label)+'</strong><small>'+(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+(t.scheduled_time?' · '+esc(String(t.scheduled_time).slice(0,5)):'')+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'')+'</small>'+(t.description?'<p class="kt-task-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="kt-task-notes">'+esc(t.instructions)+'</p>':'')+'</div><div class="kt-task-actions">'+state+'</div></div>';
- }).join("")||'<p class="muted">Aucune tâche à afficher.</p>')+'</div>';
+ const available=!c&&!locked&&t.active!==false&&(t.scheduled!==false||optional)&&canCheckTasks();
+ const label=c?(c.photo_bytes>0?"Photo enregistrée":"Ancienne validation · sans photo"):locked?"Attribuée à un autre agent":t.active===false?"Désactivée":t.scheduled===false&&!optional?"Non prévue aujourd’hui":!canCheckTasks()?"À réaliser · lecture seule":optional?"Valider si utilisée · Photo":"Prendre une photo";
+ const detail=(t.assigned_to?'Responsable : '+esc(staffName(t.assigned_to)):'Tâche commune')+(t.scheduled_time?' · '+esc(String(t.scheduled_time).slice(0,5)):'')+(c?' · Confirmée à '+clock(c.performed_at)+' par '+esc(staffName(c.performed_by)):'');
+ return '<li class="checklist-row'+(c?' done':'')+'"><button type="button" class="checklist-toggle" role="checkbox" aria-checked="'+(c?'true':'false')+'" aria-label="'+esc(t.label+' — '+label)+'"'+(available?' data-task="'+esc(t.id)+'"':' disabled')+'>'+
+ '<span class="checklist-box" aria-hidden="true">'+(c?'&#10003;':'')+'</span><span class="checklist-title"><strong>'+esc(t.label)+'</strong><small>'+detail+'</small></span>'+
+ '<span class="checklist-proof'+(c&&c.photo_bytes>0?' has-proof':'')+'">'+camera+'<span>'+esc(label)+'</span></span></button>'+
+ (t.description&&t.description!=="Protocole 7 – nettoyage du self"?'<p class="checklist-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="checklist-notes">'+esc(t.instructions)+'</p>':'')+'</li>';
+ }).join("")||'<li class="muted checklist-empty">Aucune tâche à afficher.</li>')+'</ul>';
 }
 function renderTasks(){
  const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
- const tasks=visibleTasks(data.tasks,data.me),optional=visibleTasks(data.optional_tasks,data.me),pending=tasks.filter(t=>!done.has(t.id)),pendingOptional=optional.filter(t=>!done.has(t.id)),completed=[...tasks,...optional].filter(t=>done.has(t.id));
+ const tasks=visibleTasks(data.tasks,data.me),optional=visibleTasks(data.optional_tasks,data.me),pending=tasks.filter(t=>!done.has(t.id)),completed=tasks.length-pending.length,progress=tasks.length?Math.round(completed/tasks.length*100):0;
  const open=data.reheats.filter(r=>r.status==="en_cours");
- return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div><span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+(tasks.length-pending.length)+' / '+tasks.length+' validées</span></div>'+
+ return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div><span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+completed+' / '+tasks.length+' validées</span></div>'+
+ '<div class="card checklist-card"><div class="row between"><h2>Checklist de nettoyage</h2><strong class="checklist-percent">'+progress+' %</strong></div><div class="checklist-progress" role="progressbar" aria-label="Avancement du nettoyage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><span style="width:'+progress+'%"></span></div><p class="help">Cochez une tâche après nettoyage. Prenez une photo : la case sera cochée uniquement après son enregistrement.</p>'+
+ (tasks.length?renderTaskItems(tasks):'<div class="empty"><strong>Aucune tâche de nettoyage prévue aujourd’hui.</strong></div>')+
+ (tasks.length&&!pending.length?'<p class="checklist-complete" role="status">Toutes les tâches prévues sont validées.</p>':'')+'</div>'+
+ (optional.length?'<div class="card checklist-card"><h2>Tâches selon utilisation</h2><p class="help">À cocher uniquement si le matériel a été utilisé et nettoyé. Hors obligations quotidiennes.</p>'+renderTaskItems(optional)+'</div>':'')+
  (canRecordReheat()||open.length?'<div class="card"><h2>Contrôles de service</h2><div class="work-actions">'+(canRecordReheat()?'<button class="btn btn-outline" type="button" data-go="reheat">Démarrer une remise en température</button><button class="btn btn-outline" type="button" data-go="cold">Contrôler une chambre froide</button>':'')+'</div>'+
- (open.length?open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">Mesure finale à cœur · <span class="clock" data-due="'+esc(r.due_at)+'">'+esc(remaining(r.due_at))+'</span></div></div><button class="btn btn-primary btn-small" type="button" data-go="reheat">'+(canRecordReheat()?'Faire le contrôle':'Voir le contrôle')+'</button></div>').join(""):'')+'</div>':'')+
- '<div class="card"><h2>Nettoyage à réaliser</h2><p class="help">Photo obligatoire après chaque nettoyage.</p>'+(pending.length?renderTaskItems(pending):'<div class="empty"><strong>'+(tasks.length?'Toutes les tâches prévues sont validées.':'Aucune tâche de nettoyage prévue aujourd’hui.')+'</strong></div>')+'</div>'+
- (pendingOptional.length?'<div class="card"><h2>Tâches selon utilisation</h2><p class="help">À valider seulement si le matériel a été utilisé et nettoyé. Non comptées dans les obligations quotidiennes.</p>'+renderTaskItems(pendingOptional)+'</div>':'')+
- (completed.length?'<details class="card work-done"><summary>'+completed.length+' tâche(s) réalisée(s) aujourd’hui</summary>'+renderTaskItems(completed)+'</details>':'');
+ (open.length?open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">Mesure finale à cœur · <span class="clock" data-due="'+esc(r.due_at)+'">'+esc(remaining(r.due_at))+'</span></div></div><button class="btn btn-primary btn-small" type="button" data-go="reheat">'+(canRecordReheat()?'Faire le contrôle':'Voir le contrôle')+'</button></div>').join(""):'')+'</div>':'');
 }
 async function save(action,body){if(busy)return;busy=true;try{const result=await request(action,"POST",body);await load();if(result.alert)status("Contrôle enregistré avec anomalie : prévenir le responsable et effectuer une action corrective.",true);else status("Enregistré avec date, heure et nom de l’agent.");}catch(e){status(e.message,true);}finally{busy=false}}
 document.addEventListener("submit",e=>{const form=e.target;if(!(form instanceof HTMLFormElement))return;if(!form.matches("[data-cold],#startReheat,[data-finish]"))return;e.preventDefault();const t=form.elements.namedItem("temperature_c")?.value;if(form.dataset.cold)save("cold-reading",{room_id:form.dataset.cold,temperature_c:t});else if(form.id==="startReheat"){unlockAlarm();save("start-reheat",{cold_room_id:form.elements.namedItem("cold_room_id").value,oven_id:form.elements.namedItem("oven_id").value,dish_type_id:form.elements.namedItem("dish_type_id").value,temperature_c:t});}else if(form.dataset.finish){if(!canRecordReheat()){status("Une connexion agent est nécessaire.",true);return;}if(Number(t)<Math.max(63,Number(data.reheats.find(r=>r.id===form.dataset.finish)?.target_end_c||63))&&!confirm("Température sous la cible. Ne servez pas ce plat. Confirmer la fin du cycle avec anomalie ?"))return;save("finish-reheat",{id:form.dataset.finish,temperature_c:t})}});
 document.addEventListener("click",e=>{
- const b=e.target.closest?.("button[data-task]");if(!b||!canCheckTasks()||busy)return;
+ const b=e.target.closest?.("button[data-task][role=checkbox]");if(!b||b.disabled||b.getAttribute("aria-checked")!=="false"||!canCheckTasks()||busy)return;
  const task=[...(data.tasks||[]),...(data.optional_tasks||[])].find(t=>t.id===b.dataset.task);
- if(!task||task.assigned_to&&task.assigned_to!==data.me.id)return;
- const currentToken=token,currentDay=today();
+ if(!task||task.assigned_to&&task.assigned_to!==data.me.id||data.checks.some(c=>c.task_id===task.id&&c.performed_on===today()))return;
+ const currentToken=token,currentDay=today();let confirmed=null;
  window.KitchenPhoto.capture({
   label:task.label,
   onSubmit:async photo=>{
    if(token!==currentToken||!canCheckTasks()||currentDay!==today())throw Error("La session ou la date a changé. Actualisez.");
    const result=await request("task-check","POST",{task_id:task.id,day:currentDay,photo_jpeg:photo});
-   if(!result.check)throw Error("Validation non confirmée. Actualisez les tâches.");
+   if(!result.check||result.check.task_id!==task.id||result.check.performed_on!==currentDay||!(result.check.photo_bytes>0))throw Error("Validation non confirmée. Actualisez les tâches.");
+   confirmed=result.check;
   },
-  onSaved:async()=>{if(token!==currentToken)return;if(await load())status("Tâche validée avec sa photo, la date, l’heure et le nom de l’agent.");}
+  onSaved:async()=>{
+   if(token!==currentToken||!data||!confirmed)return;
+   if(currentDay===today()){
+    data.checks=[...data.checks.filter(c=>c.task_id!==task.id||c.performed_on!==currentDay),confirmed];
+    if(page==="dashboard"&&$("dailyTasks"))$("dailyTasks").innerHTML=renderTasks();
+   }
+   if(await load())status("Tâche cochée. Photo, date, heure et nom de l’agent enregistrés.");
+  }
  });
 });
 $("loginForm").addEventListener("submit",e=>{e.preventDefault();login()});$("connectAccount")?.addEventListener("click",connectAccount);$("accountLoginForm")?.addEventListener("submit",e=>{e.preventDefault();loginCentralAccount()});$("kitchenFirstPassword")?.addEventListener("submit",e=>{e.preventDefault();finishKitchenFirstPassword()});$("logout").addEventListener("click",logout);$("refresh").addEventListener("click",load);

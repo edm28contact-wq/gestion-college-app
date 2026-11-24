@@ -213,7 +213,12 @@ test("Espace Cuisine : tâches personnelles, communes, facultatives et validées
  assert.match(html,/2 à réaliser · 1 \/ 3 validées/);
  assert.match(html,/Bacs à légumes/);assert.match(html,/Vestiaires/);assert.doesNotMatch(html,/Tâche autre agent/);
  assert.match(html,/Tâches selon utilisation/);assert.match(html,/Valider si utilisée · Photo/);
- assert.match(html,/1 tâche\(s\) réalisée\(s\) aujourd’hui/);assert.match(html,/Photo enregistrée/);
+ assert.match(html,/Checklist de nettoyage/);assert.match(html,/Photo enregistrée/);
+ assert.equal((html.match(/aria-checked="true"/g)||[]).length,1);
+ assert.equal((html.match(/aria-checked="false"/g)||[]).length,3);
+ assert.match(html,/aria-valuenow="33"/);
+ assert.match(html,/aria-checked="true"[^>]* disabled/);
+ assert.match(html,/aria-checked="false"[^>]*data-task="common"/);
  assert.doesNotMatch(html,/data-edit-kitchen-task|data-add-kitchen-task/);
 });
 test("Espace Cuisine : deux accès, sondes réelles et administration séparée",()=>{

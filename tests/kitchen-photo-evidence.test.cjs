@@ -30,3 +30,15 @@ test("Nettoyage : consultation administrative authentifiee et preuve non publiqu
  assert.match(read("cuisine/releve-export.js"),/Photo archivee/);
  assert.match(read("cuisine/index.html"),/kitchen-photo\.js\?v=/);assert.match(read("college/admin/index.html"),/kitchen-photo\.js\?v=/);
 });
+
+test("Checklist : une case n'est cochée que par une validation serveur avec preuve",()=>{
+ assert.match(ui,/role="checkbox" aria-checked="/);
+ assert.match(ui,/const c=done\.get\(t\.id\)/);
+ assert.match(ui,/b\.getAttribute\("aria-checked"\)!=="false"/);
+ assert.match(ui,/result\.check\.task_id!==task\.id/);
+ assert.match(ui,/result\.check\.performed_on!==currentDay/);
+ assert.match(ui,/!\(result\.check\.photo_bytes>0\)/);
+ assert.match(ui,/confirmed=result\.check/);
+ assert.match(ui,/data\.checks=\[\.\.\.data\.checks\.filter[\s\S]*?,confirmed\]/);
+ assert.doesNotMatch(ui,/setAttribute\(["']aria-checked["'],\s*["']true["']\)/);
+});
