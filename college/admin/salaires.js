@@ -740,6 +740,11 @@ function salaryAccountingSelectedEvents(month=salaryMonth){
  const staff=salaryStaff.find(s=>s.id===salaryAccountingEmployeeId);
  return staff?events.filter(event=>salaryAccountingMatchesStaff(event,staff)):[];
 }
+function salaryAccountingEventTimes(event){
+ const departure=String(event.start_time||"").slice(0,5),returnTime=String(event.end_time||"").slice(0,5);
+ if(!departure||!["absence","depart_anticipe"].includes(event.event_type))return "";
+ return "Départ "+departure+" · "+(returnTime?"Retour "+returnTime:"Pas de retour dans la journée");
+}
 function salaryAccountingGroupedEvents(events){
  const groups=new Map();
  for(const event of events){
@@ -930,7 +935,7 @@ function salaryAccountingPage(){
    '<span>'+group.items.length+' événement(s)'+(pendingGroup?' · '+pendingGroup+' à vérifier':'')+'</span></th></tr>';
   const items=group.items.map(e=>
    '<tr><td>'+esc(e.event_date||"")+'</td><td>'+esc(e.personnel_name||"")+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td>'+
-   '<td>'+esc(salaryDuration(e))+'</td><td>'+esc(["absence","retard","depart_anticipe"].includes(e.event_type)?e.review_status==="sans_suite"?"Exclu du calcul":e.review_status==="valide"?"Comptabilisé":"Provisoire":e.event_type==="incident"?"Incident · non déduit":"Hors calcul")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td>'+
+   '<td>'+esc(salaryDuration(e))+(salaryAccountingEventTimes(e)?'<small class="muted" style="display:block;margin-top:4px">'+esc(salaryAccountingEventTimes(e))+'</small>':'')+'</td><td>'+esc(["absence","retard","depart_anticipe"].includes(e.event_type)?e.review_status==="sans_suite"?"Exclu du calcul":e.review_status==="valide"?"Comptabilisé":"Provisoire":e.event_type==="incident"?"Incident · non déduit":"Hors calcul")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td>'+
    '<td>'+(e.attachment_path?'<button type="button" class="btn secondary compact" data-accounting-pdf="'+esc(e.id)+'">Voir PDF</button>':'—')+'</td></tr>').join("");
   return '<tbody>'+heading+items+'</tbody>';
  }).join("");
