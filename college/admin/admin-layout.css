@@ -94,3 +94,7 @@
 .college-admin-shell .salary-accounting-detail .salary-accounting-event-group th{background:#e9f0f8;color:#243b52;border-top:2px solid #cad8e6;padding:11px 12px;text-align:left;font-size:13px;font-weight:800}
 .college-admin-shell .salary-accounting-detail .salary-accounting-event-group span{display:inline-block;margin-left:12px;font-size:12px;font-weight:600;color:#536c83}
 @media(max-width:650px){.college-admin-shell .salary-accounting-detail .salary-accounting-event-group span{display:block;margin:3px 0 0}}
+
+/* Le planning est la meme application que dans le Secretariat, affichee dans Admin College. */
+.college-admin-shell .college-personnel-planning-frame{display:block;width:100%;height:1180px;min-height:720px;border:1px solid #d6e2ec;border-radius:12px;background:#fff}
+@media(max-width:850px){.college-admin-shell .college-personnel-planning-frame{height:1380px}}
