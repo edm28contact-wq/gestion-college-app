@@ -276,3 +276,17 @@ test("Checklist : planning complet non dû et aperçu du prochain jour sans vali
  const api=read("supabase/functions/kitchen-api/index.ts");
  assert.match(api,/p_day:nextTaskDay/);assert.match(api,/task_plan_next:JSON.stringify\(taskPlan\)!==JSON.stringify\(nextTaskPlan\)/);
 });
+
+test("Administration Cuisine : planning daté, catégories, filtrage et photo par validation",()=>{
+ const code=read("college/admin/cuisine-admin.js"),start=code.indexOf("function cleaningSections("),end=code.indexOf("let cleaningDate=",start);
+ const ctx={e:v=>String(v??""),when:v=>v,};const {rows,markup,filter}=vm.runInNewContext(code.slice(start,end)+";({rows:cleaningAdminRows,markup:cleaningAdminMarkup,filter:cleaningAdminFilter})",ctx);
+ const day="2026-11-25",tasks=[{id:"a",label:"Bacs à légumes",active:true,scheduled:true,assigned_to:"s"},{id:"b",label:"Vestiaires",active:true,scheduled:true},{id:"c",label:"Armoires",active:true,scheduled:false,recurrence:"weekly"},{id:"d",label:"Friteuse / huile",active:true,scheduled:false,recurrence:"on_demand"},{id:"e",label:"Nettoyage de la plonge",active:false,scheduled:false}];
+ const report={tasks:tasks.slice(0,2),checks:[{id:"proof",task_id:"a",performed_by:"s",performed_at:"12:00",photo_bytes:120}]};
+ const model=rows(tasks,report,day,day),params={day,today:day,filter:{agent:"",state:""},canManage:true,staffName:v=>v,scheduleLabel:()=>"Fréquence"};
+ const html=markup(model,params);assert.match(html,/Préparation et hygiène/);assert.match(html,/Sanitaires et vestiaires/);assert.match(html,/1 \/ 2/);assert.match(html,/data-admin-task-photo="proof"/);assert.match(html,/Non prévue ce jour/);assert.match(html,/Selon utilisation/);assert.match(html,/1 tâche\(s\) désactivée/);
+ assert.equal(filter(model,{agent:"s",state:"photo"}).length,1);
+ assert.doesNotMatch(markup(model,{...params,canManage:false}),/data-admin-task-photo|data-edit-admin-task/);
+ assert.doesNotMatch(markup(model,{...params,today:"2026-11-26"}),/data-edit-admin-task/);
+ assert.match(code,/\["cleaning","Tâches et photos"\]/);assert.match(code,/cleaningGet\("task-settings",\{date\}/);assert.match(code,/selectedId,fetchPhoto/);
+ assert.match(read("cuisine/kitchen-photo.js"),/if\(selectedButton\)selectedButton.click\(\)/);
+});

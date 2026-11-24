@@ -80,10 +80,10 @@
   openCamera();
  }
  function closeCapture(){if(activeCapture){activeCapture.close();}}
- function showHistory({report,staff,fetchPhoto}){
+ function showHistory({report,staff,fetchPhoto,selectedId=null}){
   if(activeHistory)activeHistory.close();
   const d=makeDialog("kitchenPhotoHistory","Preuves de nettoyage — "+report.date);activeHistory=d;
-  let url=null,epoch=0;
+  let url=null,epoch=0,selectedButton=null;
   const note=document.createElement("p");note.textContent="Photos des validations enregistrées. Les anciennes validations restent consultables sans photo.";d.append(note);
   const list=document.createElement("div");list.className="kp-history";d.append(list);
   const preview=document.createElement("section");preview.className="kp-preview";const title=document.createElement("h3"),img=document.createElement("img"),feedback=document.createElement("p");img.alt="Preuve photographique du nettoyage";img.hidden=true;feedback.setAttribute("role","status");preview.append(title,img,feedback);d.append(preview);
@@ -95,7 +95,7 @@
    const label=document.createElement("div"),strong=document.createElement("strong"),caption=document.createElement("small");
    text(strong,names.get(c.task_id)||"Tâche");text(caption,(users.get(c.performed_by)||"Agent")+" · "+new Date(c.performed_at).toLocaleString("fr-FR",{timeZone:"Europe/Paris"}));label.append(strong,caption);row.append(label);
    if(c.photo_bytes>0){
-    const b=document.createElement("button");b.type="button";b.className="kp-secondary";text(b,"Voir la photo");row.append(b);
+    const b=document.createElement("button");b.type="button";b.className="kp-secondary";text(b,"Voir la photo");row.append(b);if(c.id===selectedId)selectedButton=b;
     b.addEventListener("click",async()=>{
      const current=++epoch;reset();text(title,names.get(c.task_id)||"Tâche");text(feedback,"Chargement sécurisé…");
      try{const blob=await fetchPhoto(c.id);if(current!==epoch||!d.open)return;if(blob.type!=="image/jpeg")throw Error("Format de preuve invalide.");url=URL.createObjectURL(blob);img.src=url;img.hidden=false;text(feedback,"Photo enregistrée avec cette validation.");preview.scrollIntoView({block:"nearest"});}
@@ -106,7 +106,7 @@
   }
   if(!(report.checks||[]).length){const empty=document.createElement("p");text(empty,"Aucune validation à cette date.");list.append(empty);}
   const close=document.createElement("button");close.type="button";close.className="kp-secondary";text(close,"Fermer");close.addEventListener("click",()=>d.close());d.append(close);
-  d.addEventListener("close",()=>{epoch++;reset();if(activeHistory===d)activeHistory=null;d.remove();});d.showModal();
+  d.addEventListener("close",()=>{epoch++;reset();if(activeHistory===d)activeHistory=null;d.remove();});d.showModal();if(selectedButton)selectedButton.click();
  }
  window.KitchenPhoto={capture,closeCapture,showHistory};
 })();

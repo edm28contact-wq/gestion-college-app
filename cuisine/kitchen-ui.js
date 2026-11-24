@@ -76,9 +76,9 @@
    '<label>Date de fin (facultative)<input name="ends_on" type="date" value="'+esc(t.ends_on||"")+'"></label>'+
    '<label class="kt-wide">Consignes<textarea name="instructions" maxlength="2000" rows="3">'+esc(t.instructions||"")+'</textarea></label></div>';
  }
- function open({task=null,staff=[],completed=false,fetchTasks,save,onSaved}){
+ function open({task=null,staff=[],completed=false,initialDate=null,fetchTasks,save,onSaved}){
   if(document.getElementById("kitchenTaskEditor"))return;
-  const day=today(),initialDay=task&&completed?nextDay(day):day;
+  const day=today(),minimum=task&&completed?nextDay(day):day,initialDay=typeof initialDate==="string"&&initialDate>=minimum?initialDate:minimum;
   const dialog=document.createElement("dialog");dialog.id="kitchenTaskEditor";dialog.className="kt-dialog";
   dialog.innerHTML='<form class="kt-form"><div class="kt-heading"><div><h2>'+(task?"Modifier la tâche":"Ajouter une tâche")+'</h2><p>Les validations déjà enregistrées sont conservées.</p></div><button type="button" data-kt-cancel aria-label="Fermer">×</button></div>'+
    '<div class="kt-fields"><label>Date d’application<input required type="date" name="effective_on" min="'+day+'" value="'+initialDay+'"></label>'+

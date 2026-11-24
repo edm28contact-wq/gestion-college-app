@@ -90,6 +90,97 @@
    await load();notifySchedule("Programmation enregistrée — "+roomName+".");
   }catch(err){notifySchedule(err.message,true)}finally{busy=false;if(button)button.disabled=false}
  }
+function cleaningSections(tasks,optional,unscheduled=[]){
+ const categories=[
+  ["preparation","Préparation et hygiène",["Plans de travail","Bacs à légumes","Lave-mains"]],
+  ["plonge","Plonge et vaisselle",["Lave-vaisselle","Bacs à vaisselle","Supports à couverts","Chauffe-assiettes","Nettoyage de la plonge","Nettoyage du lave-vaisselle"]],
+  ["cuisson","Cuisson et remise en température",["Fours de remise en température","Bain-marie","Micro-ondes","Hottes et grilles","Friteuse / huile","Friteuse","Nettoyage des fours"]],
+  ["froid","Froid et rangement",["Meubles réfrigérés","Armoires","Congélateur"]],
+  ["service","Distribution et salle de restaurant",["Chariots de service","Tables","Caisse","Salle de restaurant","Table des condiments","Chaises","Cafetières","Point d’eau du self","Nettoyage de la ligne de self"]],
+  ["locaux","Sols, locaux et déchets",["Poubelles","Sol","Sols de cuisine et siphons","Carrelages"]],
+  ["sanitaires","Sanitaires et vestiaires",["Sanitaires","Vestiaires"]]
+ ];
+ const normalize=v=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[’‘]/g,"'").trim().replace(/\s+/g," ").toLowerCase();
+ const byLabel=new Map(),groups=categories.map(([key,title,labels])=>{
+  const group={key,title,tasks:[],optional:[],unscheduled:[]};
+  for(const label of labels)byLabel.set(normalize(label),group);
+  return group;
+ });
+ const other={key:"other",title:"Autres tâches",tasks:[],optional:[],unscheduled:[]};
+ for(const task of tasks)(byLabel.get(normalize(task.label))||other).tasks.push(task);
+ for(const task of optional)(byLabel.get(normalize(task.label))||other).optional.push(task);
+ for(const task of unscheduled)(byLabel.get(normalize(task.label))||other).unscheduled.push(task);
+ return [...groups,other].filter(g=>g.tasks.length||g.optional.length||g.unscheduled.length);
+}
+
+ function cleaningAdminRows(settings,report,day,today){
+  const checks=new Map((report.checks||[]).map(c=>[c.task_id,c]));
+  const records=new Map((settings||[]).map(t=>[t.id,t]));
+  for(const t of report.tasks||[])if(!records.has(t.id))records.set(t.id,t);
+  for(const c of report.checks||[])if(!records.has(c.task_id))records.set(c.task_id,{id:c.task_id,label:"Tâche historique",active:false,scheduled:false});
+  return [...records.values()].map(task=>{
+   const check=checks.get(task.id)||null;
+   const active=task.active!==false&&(!task.starts_on||task.starts_on<=day)&&(!task.ends_on||task.ends_on>=day);
+   const scheduled=active&&task.scheduled===true;
+   const optional=active&&task.recurrence==="on_demand"&&!scheduled;
+   const state=check?(check.photo_bytes>0?"photo":"legacy"):scheduled?(day<today?"pending_past":day>today?"future":"pending"):optional?"optional":active?"not_due":"inactive";
+   return {...task,check,active,scheduled,optional,state};
+  });
+ }
+ function cleaningAdminFilter(rows,filter){
+  return rows.filter(r=>(!filter.agent||r.assigned_to===filter.agent||r.check?.performed_by===filter.agent)&&(!filter.state||(filter.state==="done"?["photo","legacy"].includes(r.state):filter.state==="todo"?["pending","pending_past","future"].includes(r.state):r.state===filter.state)));
+ }
+ const cleaningStateLabels={photo:"Validée · Photo",legacy:"Validée · Sans photo ancienne",pending:"À réaliser",pending_past:"Non validée",future:"Prévue",optional:"Selon utilisation",not_due:"Non prévue ce jour",inactive:"Désactivée / hors période"};
+ function cleaningAdminMarkup(rows,{day,today,filter,canManage,staffName,scheduleLabel}){
+  const due=rows.filter(r=>r.scheduled),validated=due.filter(r=>r.check).length,photos=rows.filter(r=>r.state==="photo").length,active=rows.filter(r=>r.active||r.check),percent=due.length?Math.round(validated/due.length*100):0;
+  const filtered=cleaningAdminFilter(rows,filter),visible=filtered.filter(r=>r.active||r.check),inactive=filtered.filter(r=>!r.active&&!r.check);
+  const line=r=>'<div class="ka-task-row"><div class="ka-task-main"><strong>'+e(r.label)+'</strong><small>'+e(scheduleLabel(r))+'</small><small>Responsable : '+e(r.assigned_to?staffName(r.assigned_to):"Commune")+'</small></div><div class="ka-task-status"><span class="ka-task-pill '+(r.check?"ka-done":r.state==="pending_past"?"ka-missed":"")+'">'+e(cleaningStateLabels[r.state])+'</span>'+(r.check?'<small>Par '+e(staffName(r.check.performed_by))+' · '+e(when(r.check.performed_at))+'</small>':'')+'</div><div class="ka-task-buttons">'+(canManage&&r.state==="photo"?'<button type="button" class="btn secondary" data-admin-task-photo="'+e(r.check.id)+'">Voir la photo</button>':'')+(canManage&&day>=today?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(r.id)+'">Modifier</button>':'')+'</div></div>';
+  const groups=cleaningSections(visible,[],[]);
+  return '<div class="ka-task-summary"><div><small>Planning actif / historique</small><strong>'+active.length+'</strong></div><div><small>Validées / prévues</small><strong>'+validated+' / '+due.length+'</strong></div><div><small>Photos archivées</small><strong>'+photos+'</strong></div><div><small>Avancement obligatoire</small><strong>'+(due.length?percent+' %':'—')+'</strong></div></div>'+
+   '<p class="muted">'+filtered.length+' tâche(s) correspondant aux filtres. Les tâches selon utilisation et non prévues ne comptent pas dans les obligations du jour.</p>'+
+   groups.map(g=>{const due=g.tasks.filter(r=>r.scheduled),done=due.filter(r=>r.check).length;return '<section class="ka-task-group"><header><h3>'+e(g.title)+'</h3><span>'+done+' / '+due.length+' prévues validées</span></header>'+g.tasks.map(line).join("")+'</section>';}).join("")+
+   (inactive.length?'<details class="ka-task-group"><summary>'+inactive.length+' tâche(s) désactivée(s) ou hors période</summary>'+inactive.map(line).join("")+'</details>':'')+
+   (!filtered.length?'<p class="muted">Aucune tâche ne correspond à cette sélection.</p>':'');
+ }
+ let cleaningDate="",cleaningFilter={agent:"",state:""},cleaningLoaded=null,cleaningEpoch=0;
+ const cleaningSession=()=>localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
+ const cleaningToday=()=>window.KitchenUI.today();
+ function cleaningNextDay(day){return new Date(Date.parse(day+"T12:00:00Z")+86400000).toISOString().slice(0,10);}
+ async function cleaningGet(action,params,initial=cleaningSession()){
+  if(!initial||cleaningSession()!==initial)throw Error("Session modifiée. Reconnectez-vous.");
+  const response=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":initial},cache:"no-store"});
+  if(!response.ok){const j=await response.json().catch(()=>({}));throw Error(j.error||"Service indisponible");}
+  if(cleaningSession()!==initial)throw Error("Session modifiée. Reconnectez-vous.");
+  return response;
+ }
+ function cleaningFeedback(message,bad=false){const el=node("kitchenTaskFeedback");if(el){el.textContent=message;el.style.color=bad?"#a32929":"#176b3a";}else notify(message,bad);}
+ function renderCleaningAdmin(){
+  const target=node("kitchenTaskList"),date=node("kitchenTasksReportDate")?.value;
+  if(!target||!cleaningLoaded||cleaningLoaded.day!==date||cleaningLoaded.session!==cleaningSession())return;
+  target.innerHTML=cleaningAdminMarkup(cleaningLoaded.rows,{day:date,today:cleaningToday(),filter:cleaningFilter,canManage:snapshot.me.scope==="admin",staffName:staff,scheduleLabel:window.KitchenUI.scheduleLabel});
+ }
+ async function refreshCleaningAdmin(){
+  const target=node("kitchenTaskList"),date=node("kitchenTasksReportDate")?.value;
+  if(!target)return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")||!Number.isFinite(Date.parse(date+"T12:00:00Z"))){target.textContent="Choisissez une date valide.";return;}
+  const epoch=++cleaningEpoch,session=cleaningSession(),owner=snapshot,manage=owner.me.scope==="admin";cleaningDate=date;cleaningLoaded=null;target.textContent="Chargement du planning et des preuves…";
+  try{
+   const [report,settings]=await Promise.all([cleaningGet("task-report",{date},session).then(r=>r.json()),manage?cleaningGet("task-settings",{date},session).then(r=>r.json()).then(r=>r.tasks):Promise.resolve([])]);
+   if(epoch!==cleaningEpoch||target!==node("kitchenTaskList")||snapshot!==owner||session!==cleaningSession())return;
+   if(!Array.isArray(report.tasks)||!Array.isArray(report.checks)||!Array.isArray(settings)||report.date!==date)throw Error("Réponse de planning invalide.");
+   cleaningLoaded={day:date,session,settings,report,rows:cleaningAdminRows(settings,report,date,cleaningToday())};renderCleaningAdmin();
+  }catch(err){if(epoch===cleaningEpoch&&target===node("kitchenTaskList"))target.textContent="Impossible de charger le planning : "+err.message;}
+ }
+ function cleaningPanel(s,day){
+  const nextPlan=s.task_plan_next,hasExpandedPlan=(nextPlan?.tasks.length||0)>(s.task_plan?.tasks.length||0);
+  const date=cleaningDate||(hasExpandedPlan?nextPlan.date:day),manage=s.me.scope==="admin";
+  const option=(value,label,selected)=>'<option value="'+e(value)+'"'+(value===selected?' selected':'')+'>'+e(label)+'</option>';
+  return '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Planning par rubrique, suivi des validations et preuves photographiques.</p>'+
+   '<div class="ka-task-toolbar"><label>Date du suivi<input id="kitchenTasksReportDate" type="date" value="'+e(date)+'"></label><label>Salarié (responsable ou ayant validé)<select id="kitchenTaskAgent">'+option("","Tous les salariés",cleaningFilter.agent)+s.staff.map(a=>option(a.id,a.name,cleaningFilter.agent)).join("")+'</select></label><label>État<select id="kitchenTaskState">'+[["","Tous les états"],["todo","À réaliser / prévues"],["done","Validées"],["photo","Avec photo"],["legacy","Anciennes sans photo"],["optional","Selon utilisation"],["not_due","Non prévues"],["inactive","Désactivées"]].map(([k,v])=>option(k,v,cleaningFilter.state)).join("")+'</select></label></div>'+
+   '<div class="actions"><button type="button" class="btn secondary" data-cleaning-date="today">Aujourd’hui</button><button type="button" class="btn secondary" data-cleaning-date="tomorrow">Demain</button><button type="button" class="btn secondary" id="kitchenTasksRefresh">Actualiser</button><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button>'+(manage?'<button class="btn secondary" type="button" id="kitchenTasksPhotos">Consulter les photos</button><button class="btn primary" type="button" data-add-admin-task>Ajouter une tâche</button>':'')+'</div>'+
+   (s.task_plan_next?.tasks.length?'<div class="ka-task-note">Nouveau planning de '+s.task_plan_next.tasks.length+' tâches à partir du '+e(s.task_plan_next.date.split("-").reverse().join("/"))+'. <button type="button" class="btn secondary" data-cleaning-date="tomorrow">Voir le nouveau planning</button></div>':'')+
+   '<p id="kitchenTaskFeedback" class="status" role="status"></p><div id="kitchenTaskList" aria-live="polite">Chargement du planning…</div></div>';
+ }
  function render(){
  if(!snapshot)return;
  const s=snapshot,latestCold=new Map();
@@ -100,7 +191,7 @@
  const done=new Set(s.checks.filter(x=>x.performed_on===day).map(x=>x.task_id));
  const roomname=id=>s.rooms.find(x=>x.id===id)?.label||"Chambre";
  const rows=(list,columns)=>'<div class="table"><table><thead><tr>'+columns.map(c=>'<th>'+c[0]+'</th>').join("")+'</tr></thead><tbody>'+list.map(x=>'<tr>'+columns.map(c=>'<td>'+c[1](x)+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>';
- node("content").innerHTML='<div class="grid"><div class="card"><div class="muted">Chambres froides</div><div class="kpi">'+s.rooms.length+'</div></div><div class="card"><div class="muted">Cycles en cours</div><div class="kpi">'+s.reheats.filter(x=>x.status==="en_cours").length+'</div></div><div class="card"><div class="muted">Anomalies actuellement signalées</div><div class="kpi">'+alerts+'</div></div><div class="card"><div class="muted">Tâches du jour</div><div class="kpi">'+done.size+'/'+s.tasks.length+'</div></div></div>'+
+ node("content").innerHTML='<div class="grid"><div class="card"><div class="muted">Chambres froides</div><div class="kpi">'+s.rooms.length+'</div></div><div class="card"><div class="muted">Cycles en cours</div><div class="kpi">'+s.reheats.filter(x=>x.status==="en_cours").length+'</div></div><div class="card"><div class="muted">Anomalies actuellement signalées</div><div class="kpi">'+alerts+'</div></div><div class="card"><div class="muted">Tâches du jour</div><div class="kpi">'+s.tasks.filter(x=>done.has(x.id)).length+'/'+s.tasks.length+'</div></div></div>'+
  '<div class="card"><h2>Gestion Cuisine</h2><p class="muted">Suivi HACCP : relevés manuels, remises en température, tâches et actions correctives. Les mesures enregistrées ne sont pas modifiables.</p><div class="actions"><a class="btn primary" href="../../cuisine/" target="_blank" rel="noopener">Ouvrir l’espace Cuisine</a><button class="btn secondary" id="kitchenReload">Actualiser les relevés</button><button class="btn secondary" id="kitchenCsv">Exporter CSV</button></div><p id="kitchenAdminMessage" class="status"></p></div>'+
  '<div class="card"><h2>Agents de cuisine</h2><p class="muted">Comptes rattachés aux salariés existants. Définissez un PIN individuel de 6 à 8 chiffres pour activer l’accès.</p>'+s.staff.map(x=>'<div class="data-row"><div><strong>'+e(x.name)+'</strong><div class="muted">Salarié : '+(x.personnel_id?"rattaché":"non rattaché")+' · '+(x.active?"Actif":"Inactif")+'</div></div><form data-kitchen-pin="'+attr(x,"id")+'"><label>Définir / renouveler le PIN</label><input name="pin" required type="password" inputmode="numeric" pattern="[0-9]{6,8}" minlength="6" maxlength="8" autocomplete="new-password"><button class="btn primary" type="submit">Enregistrer le PIN</button></form><button class="btn secondary" type="button" data-kitchen-active="'+attr(x,"id")+'" data-next="'+(!x.active)+'">'+(x.active?"Désactiver":"Activer")+'</button></div>').join("")+'</div>'+
  '<div class="card"><h2>Chambres froides — noms et seuils</h2><p class="muted">Le renommage ne change pas les mesures déjà enregistrées.</p>'+
@@ -142,25 +233,25 @@
  rows(coldHistory,[["Date / heure",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Température",x=>t(x.temperature_c)+" °C"],["Source",x=>x.source==="govee_cloud"?"Capteur Govee":e(staff(x.taken_by))],["Résultat",x=>'<span class="pill '+(x.is_alert?"warning":"ok")+'">'+(x.is_alert?(followedByGood(x)?"Ancien écart · recontrôlé":"Hors seuil"):"Dans la plage")+'</span>'],["",x=>'<button class="btn secondary" data-corrective="chambre_froide" data-id="'+attr(x,"id")+'">Action corrective</button>']])+
  '<div class="actions"><button class="btn secondary" type="button" data-admin-cold-page="previous" '+(coldHistoryOffset===0?'disabled':'')+'>Précédent</button><button class="btn secondary" type="button" data-admin-cold-page="next" '+(coldHistoryOffset+50>=coldHistoryTotal?'disabled':'')+'>Suivant</button></div></div>'+
  '<div class="card"><h2>Remises en température · parcours chambre → four</h2>'+rows(s.reheats.slice(0,40),[["Départ",x=>when(x.started_at)],["Parcours",x=>e(x.cold_room_label_snapshot||s.rooms.find(r=>r.id===x.cold_room_id)?.label||"Chambre non renseignée")+" → "+e(x.oven_label_snapshot||s.ovens?.find(r=>r.id===x.oven_id)?.label||("Four "+x.oven_number))],["Type de plat",x=>e(x.dish_type_label_snapshot||s.dishes?.find(d=>d.id===x.dish_type_id)?.label||"Non renseigné")],["Évolution",x=>t(x.start_temperature_c)+" → "+(x.end_temperature_c==null?"—":t(x.end_temperature_c))+" °C"+(x.end_temperature_c==null?"":" (+"+t(Number(x.end_temperature_c)-Number(x.start_temperature_c))+" °C)")],["Rappel",x=>when(x.due_at)],["Évaluation",x=>x.status==="alerte"?"Température hors cible":x.status==="en_cours"?"En cours":"Température cible atteinte"],["Contrôle horaire",x=>x.ended_at?(new Date(x.ended_at)>new Date(x.due_at)?"Relevé après le rappel":"Relevé avant le rappel"):"Contrôle en cours"],["",x=>x.status==="alerte"?'<button class="btn secondary" data-corrective="remise_en_temperature" data-id="'+attr(x,"id")+'">Action corrective</button>':""]])+'</div>'+
- '<div class="card"><h2>Tâches de nettoyage</h2><p class="muted">Consultez les photos des validations par date et exportez le suivi quotidien en PDF.</p><div class="grid"><div><label for="kitchenTasksReportDate">Date du rapport</label><input id="kitchenTasksReportDate" type="date" value="'+day+'"></div><div><label>Rapport</label><button class="btn primary" type="button" id="kitchenTasksPdf">Exporter le PDF du nettoyage</button></div><div><label>Preuves photographiques</label>'+(s.me.scope==="admin"?'<button class="btn secondary" type="button" id="kitchenTasksPhotos">Consulter les photos</button>':'<span class="muted">Réservées à la gestion Cuisine.</span>')+'</div></div>'+rows(s.task_settings||s.tasks,[["Tâche",x=>e(x.label)+'<div class="muted">'+e(window.KitchenUI.scheduleLabel(x))+'</div>'],["Responsable",x=>x.assigned_to?e(staff(x.assigned_to)):"Commune"],["Aujourd’hui",x=>done.has(x.id)?(s.checks.some(c=>c.task_id===x.id&&c.performed_on===day&&c.photo_bytes>0)?"Réalisée · Photo":"Réalisée · Sans photo ancienne"):x.active===false?"Désactivée":(s.optional_tasks||[]).some(t=>t.id===x.id)?"Selon utilisation":x.scheduled===false?"Non prévue":"Non validée"],["Action",x=>s.me.scope==="admin"?'<button type="button" class="btn secondary" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':""]])+
- (s.me.scope==="admin"?'<div class="actions"><button type="button" class="btn primary" data-add-admin-task>Ajouter une tâche</button></div>':'')+'<p id="kitchenTaskFeedback" class="status" role="status"></p></div>'+
+ cleaningPanel(s,day)+
  '<div class="card"><h2>Journal des relevés invalidés</h2><p class="muted">Historique d’audit uniquement : ces valeurs ne comptent plus dans les résultats HACCP ni dans les exports standards.</p>'+rows((s.invalidated||[]),[["Mesure d’origine",x=>when(x.measured_at)],["Chambre",x=>e(roomname(x.room_id))],["Valeur initiale",x=>t(x.temperature_c)+" °C"],["Correction",x=>when(x.invalidated_at)],["Motif",x=>e(x.invalidation_reason)],["Par",x=>e(x.invalidated_by)]])+'</div>'+
  '<div class="card"><h2>Actions correctives enregistrées</h2>'+rows(s.notes.slice(0,30),[["Date",x=>when(x.created_at)],["Type",x=>e(x.entity_type)],["Observation",x=>e(x.note)],["Auteur",x=>e(x.created_by)]])+'</div>';
  
  const content=node("content"),all=Array.from(content.children),tabs=[
-  ["overview","Vue d’ensemble"],["govee","Connexion Govee"],["meater","Connexion MEATER"],["pms","Plan sanitaire · HACCP"],["schedule","Programmation des relevés"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["staff","Équipe et nettoyage"]
+  ["overview","Vue d’ensemble"],["govee","Connexion Govee"],["meater","Connexion MEATER"],["pms","Plan sanitaire · HACCP"],["schedule","Programmation des relevés"],["records","Relevés et alertes"],["equipment","Équipements et valeurs"],["cleaning","Tâches et photos"],["staff","Équipe de cuisine"]
  ];
  if(!node("kitchen-organized-styles")){
    const css=document.createElement("style");css.id="kitchen-organized-styles";
    css.textContent="#kitchen-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:13px 0 18px}#kitchen-tabs button{border:1px solid #d3dce3;border-radius:9px;padding:11px 15px;font-weight:750;background:#f1f4f6;color:#334657;cursor:pointer}#kitchen-tabs button.active{background:#243447;color:white;border-color:#243447}#content .kitchen-panel[hidden]{display:none!important}#content .kitchen-panel .grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}#content .kitchen-panel form{margin:10px 0 14px}#content .kitchen-panel form label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}#content .kitchen-panel .card{padding:18px}#content .kitchen-panel h2{margin:0 0 9px}#content .kitchen-panel h3{margin:17px 0 9px}#content .kitchen-panel .data-row{padding:11px 0;border-bottom:1px solid #e7edf0}#content .kitchen-panel .data-row:last-child{border:0}#content .kitchen-panel .btn{margin-top:4px}#content .kitchen-section-intro{padding:18px 20px;border:1px solid #dbe4ea;border-radius:12px;background:#f5f8fa;margin-bottom:14px}#content .kitchen-section-intro h2{margin:0 0 5px}#content .kitchen-section-intro p{margin:0;color:#5d6d79;font-size:13px}#content .kitchen-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}#content .kitchen-overview-grid>div{padding:17px;background:#fff;border:1px solid #dce4e9;border-radius:12px}#content .kitchen-overview-grid strong{display:block;font-size:27px;margin:5px 0;color:#243447}#content .kitchen-overview-grid small{color:#607182}#content #kitchen-tabs{position:relative}";
    document.head.append(css);
  }
- const groups={overview:[],govee:[],meater:[],pms:[],schedule:[],records:[],equipment:[],staff:[]};
+ const groups={overview:[],govee:[],meater:[],pms:[],schedule:[],records:[],equipment:[],cleaning:[],staff:[]};
  for(const el of all){
    if(el.id==="kitchen-tabs")continue;
    const heading=el.querySelector?.("h2")?.textContent||"";
    if(heading.startsWith("Gestion Cuisine"))groups.overview.push(el);
-   else if(heading.startsWith("Agents de cuisine")||heading.startsWith("Tâches de nettoyage"))groups.staff.push(el);
+   else if(heading.startsWith("Agents de cuisine"))groups.staff.push(el);
+   else if(heading.startsWith("Tâches de nettoyage"))groups.cleaning.push(el);
    else if(heading.startsWith("Thermomètres connectés"))groups.govee.push(el);
    else if(heading.startsWith("Programmation des relevés"))groups.schedule.push(el);
    else if(heading.startsWith("Chambres froides")||heading.startsWith("Fours")||heading.startsWith("Types de plats")||heading.startsWith("Valeurs par défaut"))groups.equipment.push(el);
@@ -172,7 +263,7 @@
    const b=document.createElement("button");b.type="button";b.dataset.kitchenTab=key;b.textContent=label;b.setAttribute("role","tab");b.addEventListener("click",()=>{kitchenTab=key;selectTab()});header.append(b);
  }
  content.prepend(header);
- const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],meater:["MEATER Pro XL · 3 stations","Paramétrage des douze sondes, connexion Cloud et qualification HACCP."],pms:["Plan de maîtrise sanitaire","Procédures, responsabilités, contrôles et registre des écarts."],schedule:["Programmation des relevés automatiques","Personnalisez la fréquence ou les heures de collecte de chaque chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],staff:["Équipe de cuisine","Gérez les codes personnels MEDJEBER / MOREL et les tâches quotidiennes."]};
+ const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],meater:["MEATER Pro XL · 3 stations","Paramétrage des douze sondes, connexion Cloud et qualification HACCP."],pms:["Plan de maîtrise sanitaire","Procédures, responsabilités, contrôles et registre des écarts."],schedule:["Programmation des relevés automatiques","Personnalisez la fréquence ou les heures de collecte de chaque chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],cleaning:["Nettoyage et preuves photographiques","Consultez et modifiez les tâches programmées, vérifiez les validations et ouvrez les photos par date."],staff:["Équipe de cuisine","Gérez les accès personnels des agents Cuisine."]};
  const panels={};
  for(const [key] of tabs){
    const wrapper=document.createElement("section");wrapper.className="kitchen-panel";wrapper.dataset.panel=key;wrapper.setAttribute("role","tabpanel");
@@ -187,7 +278,7 @@
      const summary=document.createElement("div");summary.className="kitchen-overview-grid";summary.innerHTML=
        '<div><small>Chambres relevées aujourd’hui</small><strong>'+new Set(todayCold.map(x=>x.room_id)).size+' / '+s.rooms.length+'</strong></div>'+
        '<div><small>Réchauffages en cours</small><strong>'+active.length+'</strong></div>'+
-       '<div><small>Nettoyage terminé aujourd’hui</small><strong>'+done.size+' / '+s.tasks.length+'</strong></div>'+
+       '<div><small>Nettoyage terminé aujourd’hui</small><strong>'+s.tasks.filter(x=>done.has(x.id)).length+' / '+s.tasks.length+'</strong></div>'+
        '<div><small>Alertes (historique chargé)</small><strong>'+alerts+'</strong></div>';
      const monitor=document.createElement("div");monitor.id="adminKitchenColdOverview";monitor.className="kt-admin-cold";monitor.innerHTML=window.KitchenUI.coldOverview(s,{buttonAttributes:'data-kitchen-cold-go'});wrapper.prepend(monitor);
  const daily=document.createElement("div");daily.className="card";daily.innerHTML='<h2>Tâches du jour</h2><div class="kt-day-list">'+(s.tasks.map(x=>'<div class="kt-day-row"><div><strong>'+e(x.label)+'</strong><div class="muted">'+(x.assigned_to?e(staff(x.assigned_to)):"Commune")+' · '+e(window.KitchenUI.scheduleLabel(x))+'</div></div><div class="kt-task-actions"><span>'+(done.has(x.id)?"Réalisée":"À réaliser")+'</span>'+(s.me.scope==="admin"?'<button class="btn secondary" type="button" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':'')+'</div></div>').join("")||'<p class="muted">Aucune tâche prévue aujourd’hui.</p>')+'</div><button type="button" class="btn secondary" data-kitchen-task-go>Gérer les tâches</button>';wrapper.append(daily,summary);
@@ -199,6 +290,7 @@
  function selectTab(){
    for(const [key]of tabs)panels[key].hidden=key!==kitchenTab;
    header.querySelectorAll("button").forEach(b=>{const active=b.dataset.kitchenTab===kitchenTab;b.classList.toggle("active",active);b.setAttribute("aria-selected",String(active))});
+   if(kitchenTab==="cleaning")refreshCleaningAdmin();
    if(kitchenTab==="meater")window.KitchenMeater.mountAdmin(node("meaterAdminPanel"),api,snapshot.me.scope==="admin");
    if(kitchenTab==="pms")window.KitchenPMS.mount(node("pmsAdminPanel"),{api,get:async(action,params={})=>{const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";const r=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":token},cache:"no-store"});const j=await r.json();if(!r.ok)throw Error(j.error||"Service indisponible");return j;},role:snapshot.me.scope,canWrite:snapshot.me.scope==="admin"});
  }
@@ -319,28 +411,35 @@
  });
  document.addEventListener("click",evt=>{const b=evt.target.closest?.("button[data-kitchen-active]");if(b)action("set-staff-active",{staff_id:b.dataset.kitchenActive,active:b.dataset.next==="true"});});
  
- async function openTasksPhotos(){
+ async function openTasksPhotos(selectedId=null){
   if(snapshot?.me.scope!=="admin")return;
-  const date=node("kitchenTasksReportDate")?.value;
+  const date=node("kitchenTasksReportDate")?.value,initial=cleaningSession(),owner=snapshot;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")){notify("Choisissez une date de rapport.",true);return;}
   const button=node("kitchenTasksPhotos");if(button)button.disabled=true;
-  const session=()=>localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
-  const initial=session();
   try{
-   const get=async(action,params)=>{
-    if(session()!==initial)throw Error("Session modifiée. Reconnectez-vous.");
-    const response=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":initial},cache:"no-store"});
-    if(!response.ok){const j=await response.json().catch(()=>({}));throw Error(j.error||"Preuve indisponible");}return response;
-   };
-   const report=await (await get("task-report",{date})).json();
-   window.KitchenPhoto.showHistory({report,staff:snapshot.staff,fetchPhoto:async id=>(await get("task-photo",{id})).blob()});
-  }catch(err){notify(err.message,true);}
+   const report=await (await cleaningGet("task-report",{date},initial)).json();
+   if(snapshot!==owner||initial!==cleaningSession()||node("kitchenTasksReportDate")?.value!==date||kitchenTab!=="cleaning")return;
+   if(selectedId&&!report.checks.some(c=>c.id===selectedId&&c.photo_bytes>0))throw Error("Cette preuve n’est plus disponible pour la date sélectionnée.");
+   window.KitchenPhoto.showHistory({report,staff:owner.staff,selectedId,fetchPhoto:async id=>(await cleaningGet("task-photo",{id},initial)).blob()});
+  }catch(err){cleaningFeedback(err.message,true);}
   finally{if(button)button.disabled=false;}
  }
- document.addEventListener("click",ev=>{if(ev.target.closest?.("#kitchenTasksPhotos"))openTasksPhotos();});
+ document.addEventListener("click",ev=>{
+  const b=ev.target.closest?.("[data-admin-task-photo],#kitchenTasksPhotos,#kitchenTasksRefresh,[data-cleaning-date]");if(!b||!node("kitchenTaskList")||kitchenTab!=="cleaning")return;
+  if(b.dataset.adminTaskPhoto){openTasksPhotos(b.dataset.adminTaskPhoto);return;}
+  if(b.id==="kitchenTasksPhotos"){openTasksPhotos();return;}
+  if(b.dataset.cleaningDate){const day=cleaningToday();node("kitchenTasksReportDate").value=b.dataset.cleaningDate==="tomorrow"?cleaningNextDay(day):day;}
+  refreshCleaningAdmin();
+ });
+ document.addEventListener("change",ev=>{
+  if(!node("kitchenTaskList")||kitchenTab!=="cleaning")return;
+  if(ev.target.id==="kitchenTasksReportDate"){refreshCleaningAdmin();return;}
+  if(ev.target.id==="kitchenTaskAgent"){cleaningFilter.agent=ev.target.value;renderCleaningAdmin();}
+  if(ev.target.id==="kitchenTaskState"){cleaningFilter.state=ev.target.value;renderCleaningAdmin();}
+ });
  async function exportTasksPDF(){
   const date=node("kitchenTasksReportDate")?.value;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")){notify("Choisissez une date de rapport.",true);return}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||"")){cleaningFeedback("Choisissez une date de rapport.",true);return}
   const button=node("kitchenTasksPdf");if(button)button.disabled=true;
   try{
    const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
@@ -348,8 +447,8 @@
    const report=await response.json().catch(()=>({error:"Réponse du serveur invalide"}));
    if(!response.ok)throw Error(report.error||"Impossible de récupérer le suivi du nettoyage");
    const result=await window.CuisineReports.tasksPdf({...report,staff:snapshot.staff});
-   notify("PDF du nettoyage généré : "+result.completed+" tâche(s) validée(s) sur "+result.total+".");
-  }catch(err){notify("Export PDF impossible : "+err.message,true)}
+   cleaningFeedback("PDF du nettoyage généré : "+result.completed+" tâche(s) validée(s) sur "+result.total+".");
+  }catch(err){cleaningFeedback("Export PDF impossible : "+err.message,true)}
   finally{if(button)button.disabled=false}
  }
  function openCorrectiveDialog(type,id){
@@ -394,10 +493,14 @@
  }
  function editAdminTask(id){
  if(busy||snapshot?.me.scope!=="admin")return;
- const task=id?(snapshot.task_settings||snapshot.tasks).find(t=>t.id===id):null;if(id&&!task)return;
- window.KitchenUI.open({task,staff:snapshot.staff,completed:!!task&&snapshot.checks.some(c=>c.task_id===id&&c.performed_on===window.KitchenUI.today()),fetchTasks:fetchTaskSettings,save:(name,body)=>api(name,"POST",body),onSaved:async()=>{kitchenTab="staff";await load();const msg=node("kitchenTaskFeedback");if(msg)msg.textContent="Tâche enregistrée."}});
+ const fromCleaning=kitchenTab==="cleaning";
+ const date=fromCleaning?node("kitchenTasksReportDate")?.value:cleaningToday();
+ if(!date||date<cleaningToday())return;
+ if(fromCleaning&&id&&(!cleaningLoaded||cleaningLoaded.day!==date||cleaningLoaded.session!==cleaningSession()))return;
+ const task=id?(fromCleaning&&cleaningLoaded?.day===date?cleaningLoaded.settings:(snapshot.task_settings||snapshot.tasks)).find(t=>t.id===id):null;if(id&&!task)return;
+ window.KitchenUI.open({task,staff:snapshot.staff,initialDate:date,completed:!!task&&snapshot.checks.some(c=>c.task_id===id&&c.performed_on===window.KitchenUI.today()),fetchTasks:fetchTaskSettings,save:(name,body)=>api(name,"POST",body),onSaved:async()=>{kitchenTab="cleaning";cleaningDate=date;await load();const msg=node("kitchenTaskFeedback");if(msg)msg.textContent="Tâche enregistrée."}});
  }
- document.addEventListener("click",evt=>{const btn=evt.target.closest?.("[data-edit-admin-task],[data-add-admin-task]");if(btn&&node("kitchen-tabs"))editAdminTask(btn.dataset.editAdminTask||null);if(evt.target.closest?.("[data-kitchen-cold-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="records"]')?.click();if(evt.target.closest?.("[data-kitchen-task-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="staff"]')?.click()});
+ document.addEventListener("click",evt=>{const btn=evt.target.closest?.("[data-edit-admin-task],[data-add-admin-task]");if(btn&&node("kitchen-tabs"))editAdminTask(btn.dataset.editAdminTask||null);if(evt.target.closest?.("[data-kitchen-cold-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="records"]')?.click();if(evt.target.closest?.("[data-kitchen-task-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="cleaning"]')?.click()});
  let adminColdRefreshing=false;
  async function refreshAdminColdOverview(){
  const target=node("adminKitchenColdOverview");if(!target||target.closest("[hidden]")||document.hidden||busy||adminColdRefreshing||node("kitchenTaskEditor"))return;
