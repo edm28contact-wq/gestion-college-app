@@ -1,5 +1,6 @@
 /* Administration Collège : journal mensuel des éléments du personnel */
 let salaryMonth=null,salaryEvents=[],salaryError="",salaryLoading=false,salaryPerson="all",salaryMonthSummaries=[],salaryHistoryError="",salaryHistoryLoading=false,salaryHistoryLoaded=false,salaryRequestVersion=0,salaryStaff=[],salaryStaffLoaded=false,salaryStaffLoading=false,salaryStaffSaving=false,salaryStaffError="",salaryStaffMessage="",salaryProfileEmployeeId="",salaryProfileMonth="",salaryProfileEvents=[],salaryProfileLoading=false,salaryProfileError="",salaryProfileLoaded=false,salaryProfileRequestVersion=0;
+let salaryProfessionalRoles=[],salaryCanWrite=false,salaryProfileEditDraft=null,salaryProfileEditMessage="",salaryRoleMessage="";
 const salaryTypes={absence:"Absence",retard:"Retard",depart_anticipe:"Départ anticipé",incident:"Incident"};
 const salaryStatuses={a_verifier:"À vérifier",valide:"Validé",sans_suite:"Sans suite"};
 const salaryJust={non_requis:"Non requis",a_fournir:"À fournir",recu:"Reçu"};
@@ -216,7 +217,7 @@ function salaryPayrollPanel(staff,month){
   '<h4>Avantages en nature</h4><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>'<div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input data-benefit-label="'+i+'" aria-label="Désignation de l’avantage '+(i+1)+'" maxlength="100" value="'+esc(b.label)+'" placeholder="Repas, logement, véhicule…" style="flex:2;min-width:150px"><input data-benefit-amount="'+i+'" aria-label="Montant mensuel en euros" type="number" min="0" max="100000" step="0.01" value="'+esc(b.amount)+'" style="flex:1;min-width:100px"><button type="button" class="btn secondary" data-benefit-remove="'+i+'">Supprimer</button></div>').join("")+'</div>'+
   '<button type="button" class="btn secondary" id="salaryBenefitAdd">+ Ajouter un avantage</button>'+
   '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
-  '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving?'disabled':'')+'>Enregistrer le planning et les avantages</button>'+
+  '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer le planning et les avantages</button>'+
   (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
 }
 function salaryPayrollReadDraft(){
@@ -244,6 +245,64 @@ async function salaryPayrollSave(){
  finally{salaryStaffSaving=false;if(page==="salaires")salaryPage()}
 }
 
+function salaryRoleLabel(id){return salaryProfessionalRoles.find(r=>r.id===id)?.label||"Non attribué"}
+function salaryRoleOptions(id){
+ return '<option value="">Non attribué</option>'+salaryProfessionalRoles.map(r=>'<option value="'+esc(r.id)+'" '+(r.id===id?"selected":"")+'>'+esc(r.label)+'</option>').join("");
+}
+function salaryIdentityPanel(staff){
+ const draft=salaryProfileEditDraft?.id===staff.id?salaryProfileEditDraft:staff;
+ const disabled=!salaryCanWrite||salaryStaffSaving?" disabled":"";
+ return '<section class="card salary-identity" style="margin:12px 0"><h3>Identité et rôle professionnel</h3>'+
+  '<p class="muted">Le rôle décrit la fonction du salarié dans le collège. Il ne donne aucun pouvoir d’accès au site. Les anciens événements restent rattachés à la même fiche.</p>'+
+  '<form id="salaryStaffProfileEdit" class="salary-identity-fields"><div><label for="salaryEditName">Nom et prénom</label><input id="salaryEditName" name="name" maxlength="120" required value="'+esc(draft.name)+'"'+disabled+'></div>'+
+  '<div><label for="salaryEditRole">Rôle professionnel</label><select id="salaryEditRole" name="professional_role_id"'+disabled+'>'+salaryRoleOptions(draft.professional_role_id)+'</select></div>'+
+  '<div><button class="btn primary" type="submit"'+disabled+'>Enregistrer les modifications</button></div></form>'+
+  (!salaryCanWrite?'<p class="muted">Consultation uniquement : modification réservée aux droits Salaires.</p>':'')+
+  (salaryProfileEditMessage?'<p role="status">'+esc(salaryProfileEditMessage)+'</p>':'')+'</section>';
+}
+function salaryCaptureIdentity(){
+ const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId),form=$("salaryStaffProfileEdit");
+ if(!staff||!form)return;
+ salaryProfileEditDraft={id:staff.id,name:$("salaryEditName").value,professional_role_id:$("salaryEditRole").value||null,updated_at:salaryProfileEditDraft?.id===staff.id?salaryProfileEditDraft.updated_at:staff.updated_at};
+}
+async function salarySaveIdentity(event){
+ event.preventDefault();
+ if(!salaryCanWrite||salaryStaffSaving)return;
+ salaryCaptureIdentity();const draft=salaryProfileEditDraft;
+ if(!draft||draft.name.trim().length<2||draft.name.trim().length>120)return;
+ salaryStaffSaving=true;salaryProfileEditMessage="";salaryPage();
+ try{
+  const r=await call(ROOT+"/personnel-planning","staff-profile-update","POST",draft);
+  if(!r.staff?.id)throw Error("Modification non confirmée.");
+  salaryStaff=salaryStaff.map(p=>p.id===r.staff.id?r.staff:p);
+  salaryProfileEditDraft=null;salaryProfileEditMessage="Fiche salarié enregistrée.";
+  salaryStaffLoaded=false;await salaryLoadStaff();
+  if(salaryProfileEmployeeId===draft.id){
+   salaryProfileEvents=salaryProfileEvents.map(e=>e.personnel_id===draft.id?{...e,personnel_name:r.staff.name}:e);
+  }
+  salaryEvents=salaryEvents.map(e=>e.personnel_id===draft.id?{...e,personnel_name:r.staff.name}:e);
+  salaryPerson="all";
+ }catch(e){salaryProfileEditMessage=frError(e.message)}
+ finally{salaryStaffSaving=false;if(page==="salaires")salaryPage()}
+}
+function salaryRolesPanel(){
+ const disabled=!salaryCanWrite||salaryStaffSaving?" disabled":"";
+ return '<section class="card"><h2>Rôles professionnels</h2><p class="muted">Créez ou renommez les fonctions du personnel. Les rôles peuvent ensuite être affectés depuis chaque fiche salarié. Les pouvoirs informatiques sont indépendants.</p>'+
+  (salaryRoleMessage?'<p role="status">'+esc(salaryRoleMessage)+'</p>':'')+
+  '<form id="salaryRoleAdd" class="salary-identity-fields"><div><label for="salaryRoleName">Nouveau rôle</label><input id="salaryRoleName" name="label" maxlength="100" required placeholder="Ex. Responsable de cuisine"'+disabled+'></div><div><button class="btn primary" type="submit"'+disabled+'>Ajouter le rôle</button></div></form>'+
+  '<div class="table"><table><thead><tr><th>Fonction</th><th>Salariés affectés</th><th>Action</th></tr></thead><tbody>'+salaryProfessionalRoles.map(r=>'<tr><td><input form="salary-role-'+esc(r.id)+'" name="label" aria-label="Intitulé du rôle '+esc(r.label)+'" required maxlength="100" value="'+esc(r.label)+'"'+disabled+'></td><td>'+salaryStaff.filter(p=>p.professional_role_id===r.id&&!p.archived).length+'</td><td><form id="salary-role-'+esc(r.id)+'" data-salary-role-edit="'+esc(r.id)+'"><button class="btn secondary compact" type="submit"'+disabled+'>Renommer</button></form></td></tr>').join("")+'</tbody></table></div></section>';
+}
+async function salarySaveRole(event){
+ event.preventDefault();if(!salaryCanWrite||salaryStaffSaving)return;
+ const form=event.currentTarget,label=String(new FormData(form).get("label")||"").trim(),id=form.dataset.salaryRoleEdit;
+ if(label.length<2||label.length>100)return;
+ salaryStaffSaving=true;salaryRoleMessage="";
+ try{
+  await call(ROOT+"/personnel-planning","staff-role-save","POST",{...(id?{id}:{}),label});
+  salaryRoleMessage="Rôle professionnel enregistré.";salaryStaffLoaded=false;await salaryLoadStaff();
+ }catch(e){salaryRoleMessage=frError(e.message)}
+ finally{salaryStaffSaving=false;if(page==="salaires")salaryPage()}
+}
 function salaryStaffProfilePanel(){
  if(!salaryProfileEmployeeId)return "";
  const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
@@ -275,7 +334,7 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryPayrollPanel(staff,month)+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+content+'</section>';
 }
 async function salaryOpenStaffProfile(id){
  if(salaryView==="events")salaryView="staff";
@@ -283,6 +342,7 @@ async function salaryOpenStaffProfile(id){
  if(!staff)return;
  if(salaryProfileEmployeeId!==id)salaryProfileMonth=salaryCurrentMonth();
  salaryPayrollDraft=null;salaryPayrollMessage="";
+ salaryProfileEditDraft=null;salaryProfileEditMessage="";
  salaryProfileEmployeeId=id;salaryProfileEvents=[];salaryProfileLoaded=false;salaryProfileError="";salaryProfileLoading=true;
  const version=++salaryProfileRequestVersion;
  if(page==="salaires"){
@@ -302,7 +362,7 @@ async function salaryOpenStaffProfile(id){
    if(version!==salaryProfileRequestVersion)return;
    for(const result of batch){
     if(!Array.isArray(result.events))throw Error("Un mois de l’historique est incomplet.");
-    found.push(...result.events.filter(e=>salaryStaffKey(e.personnel_name)===employeeKey));
+    found.push(...result.events.filter(e=>e.personnel_id?e.personnel_id===id:salaryStaffKey(e.personnel_name)===employeeKey));
    }
   }
   if(version!==salaryProfileRequestVersion)return;
@@ -322,6 +382,7 @@ async function salaryOpenStaffProfile(id){
 function salaryCloseStaffProfile(){
  salaryProfileRequestVersion++;
  salaryPayrollDraft=null;salaryPayrollMessage="";
+ salaryProfileEditDraft=null;salaryProfileEditMessage="";
  salaryProfileEmployeeId="";salaryProfileEvents=[];salaryProfileError="";salaryProfileLoading=false;
  salaryProfileLoaded=false;
  if(page==="salaires")salaryPage();
@@ -333,21 +394,22 @@ function salaryStaffPanel(){
  const active=salaryStaff.filter(p=>!p.archived),archived=salaryStaff.filter(p=>p.archived);
  const row=p=>{
   const visible=!p.archived&&p.visible_in_planning;
-  return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+(p.archived?'Archivé':visible?'Visible dans le planning':'Masqué du planning')+'</td>'+
-   '<td><input type="checkbox" data-salary-staff-id="'+esc(p.id)+'" '+(visible?'checked':'')+' '+(p.archived||salaryStaffSaving?'disabled':'')+' aria-label="Afficher '+esc(p.name)+' dans le planning"></td>'+
-   '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Voir la fiche</button></td>'+
-   '<td><button type="button" class="btn secondary compact" data-salary-archive="'+esc(p.id)+'" '+(salaryStaffSaving?'disabled':'')+'>'+(p.archived?'Réactiver':'Retirer de la liste')+'</button></td></tr>';
+  return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+esc(salaryRoleLabel(p.professional_role_id))+'</td><td>'+(p.archived?'Archivé':visible?'Visible dans le planning':'Masqué du planning')+'</td>'+
+   '<td><input type="checkbox" data-salary-staff-id="'+esc(p.id)+'" '+(visible?'checked':'')+' '+(p.archived||salaryStaffSaving||!salaryCanWrite?'disabled':'')+' aria-label="Afficher '+esc(p.name)+' dans le planning"></td>'+
+   '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Modifier / Voir la fiche</button></td>'+
+   '<td><button type="button" class="btn secondary compact" data-salary-archive="'+esc(p.id)+'" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>'+(p.archived?'Réactiver':'Retirer de la liste')+'</button></td></tr>';
  };
  return '<section class="card salary-personnel"><h2>Salariés affichés dans le planning</h2>'+
   '<p class="muted">Gérez ici les personnes proposées dans « Planning → Nouvel incident ». Masquer ou archiver un salarié conserve ses incidents antérieurs et les récapitulatifs de paie.</p>'+
   (salaryStaffMessage?'<p class="ok" role="status">'+esc(salaryStaffMessage)+'</p>':'')+state+
   '<form id="salaryStaffAdd" class="salary-staff-form"><label for="salaryStaffName">Nom du nouveau salarié</label>'+
-  '<input id="salaryStaffName" type="text" maxlength="120" required placeholder="Nom et prénom" autocomplete="off" '+(salaryStaffSaving?'disabled':'')+'>'+
+  '<input id="salaryStaffName" type="text" maxlength="120" required placeholder="Nom et prénom" autocomplete="off" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>'+
+  '<div class="salary-staff-role"><label for="salaryStaffRole">Rôle professionnel</label><select id="salaryStaffRole" '+(!salaryCanWrite?'disabled':'')+'>'+salaryRoleOptions(null)+'</select></div>'+
   '<label><input id="salaryStaffVisible" type="checkbox" checked> Afficher dans le planning</label>'+
-  '<button type="submit" class="btn primary" '+(salaryStaffSaving?'disabled':'')+'>Ajouter le salarié</button></form>'+
-  '<div class="table"><table><thead><tr><th>Salarié</th><th>État</th><th>Afficher</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
+  '<button type="submit" class="btn primary" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Ajouter le salarié</button></form>'+
+  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
   active.map(row).join('')+archived.map(row).join('')+
-  (!salaryStaff.length?'<tr><td colspan="5">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
+  (!salaryStaff.length?'<tr><td colspan="6">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
 }
 async function salaryLoadStaff(){
  if(!token||salaryStaffLoading)return;
@@ -356,6 +418,7 @@ async function salaryLoadStaff(){
  try{
   const r=await call(ROOT+'/personnel-planning','staff-list');
   salaryStaff=Array.isArray(r.staff)?r.staff:[];
+  salaryProfessionalRoles=Array.isArray(r.roles)?r.roles:[];salaryCanWrite=r.salary_write===true;
   salaryStaffLoaded=true;
  }catch(e){salaryStaffError=frError(e.message)}
  finally{salaryStaffLoading=false;if(page==="salaires")salaryPage()}
@@ -367,7 +430,7 @@ async function salaryAddStaff(event){
  if(!name||name.length<2||name.length>120){salaryStaffError="Indiquez un nom de 2 à 120 caractères.";salaryPage();return}
  salaryStaffSaving=true;salaryStaffError="";salaryStaffMessage="";
  try{
-  await call(ROOT+'/personnel-planning','staff-add','POST',{name,visible_in_planning:visible});
+  await call(ROOT+'/personnel-planning','staff-add','POST',{name,visible_in_planning:visible,professional_role_id:$('salaryStaffRole')?.value||null});
   salaryStaffMessage="Salarié ajouté.";
   salaryStaffLoaded=false;
  }catch(e){salaryStaffError=frError(e.message)}
@@ -388,6 +451,11 @@ async function salaryUpdateStaff(id,archived,visible){
 }
 function salaryWireStaff(){
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
+ $('salaryStaffProfileEdit')?.addEventListener('submit',salarySaveIdentity);
+ $('salaryEditName')?.addEventListener('input',salaryCaptureIdentity);
+ $('salaryEditRole')?.addEventListener('change',salaryCaptureIdentity);
+ $('salaryRoleAdd')?.addEventListener('submit',salarySaveRole);
+ document.querySelectorAll('[data-salary-role-edit]').forEach(f=>f.addEventListener('submit',salarySaveRole));
  document.querySelectorAll('[data-salary-staff-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryStaffProfile)));
  document.querySelectorAll("[data-payroll-day],#salaryExcludePublic,#salaryExcludeSchool").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);const count=$("salaryPayrollWorkingCount");if(count&&staff)count.innerHTML=salaryCalendarResultHtml(staff,salaryProfileMonth||salaryCurrentMonth(),salaryPayrollDraft)}));
  $("salaryCalendarRetry")?.addEventListener("click",()=>void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth(),true));
@@ -426,7 +494,8 @@ function salarySettingsPanel(){
  '<p class="muted">Jours théoriques selon jours habituels, jours fériés et vacances scolaires de la zone C, suivant les options de chaque salarié. Les congés individuels ne sont pas déduits. Aucun calcul de paie automatique.</p><p><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></p></section>';
 }
 function salaryEventEmployeeSummary(name,events,month){
- const staff=salaryStaff.find(p=>salaryStaffKey(p.name)===salaryStaffKey(name));
+ const employeeId=events.find(e=>e.personnel_id)?.personnel_id;
+ const staff=employeeId?salaryStaff.find(p=>p.id===employeeId):salaryStaff.find(p=>salaryStaffKey(p.name)===salaryStaffKey(name));
  const totals=salaryProfileTotals(events,month);
  const metrics='<span><b>'+salaryFormatLate(totals.totalMonthMinutes)+'</b> d’écarts horaires'+
   (totals.totalMonthMissing?' · '+totals.totalMonthMissing+' durée(s) non renseignée(s)':'')+'</span>'+
@@ -444,7 +513,7 @@ function salaryEventEmployeeSummary(name,events,month){
     (calculation.excludedSchool?'<span>'+calculation.schoolDays+' jour(s) de vacances déduit(s)</span>':'<span>Vacances scolaires non déduites</span>');
  }
  return '<div class="muted" style="display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap;margin:6px 0 12px">'+
- workdays+metrics+'</div>';
+ (staff?'<span>Rôle : <b>'+esc(salaryRoleLabel(staff.professional_role_id))+'</b></span>':'')+workdays+metrics+'</div>';
 }
 function salaryPage(){
  if(!salaryMonth)salaryMonth=salaryCurrentMonth();
@@ -453,7 +522,7 @@ function salaryPage(){
  const option=(val,label)=>'<option value="'+esc(val)+'"'+(salaryPerson===val?' selected':'')+'>'+esc(label)+'</option>';
  const nav='<nav class="card" aria-label="Rubriques Salaires" style="display:flex;gap:8px;flex-wrap:wrap">'+[['staff','Liste des salariés'],['events','Événements'],['settings','Paramètres']].map(([key,label])=>'<button type="button" class="btn '+(salaryView===key?'primary':'secondary')+'" data-salary-view="'+key+'" aria-pressed="'+(salaryView===key)+'">'+label+'</button>').join('')+'</nav>';
  if(salaryView==="staff")$('content').innerHTML=nav+salaryStaffPanel()+salaryStaffProfilePanel();
- else if(salaryView==="settings")$('content').innerHTML=nav+salarySettingsPanel()+salaryStaffProfilePanel();
+ else if(salaryView==="settings")$('content').innerHTML=nav+salaryRolesPanel()+salarySettingsPanel()+salaryStaffProfilePanel();
  else{
  $('content').innerHTML=nav+salaryOverview()+'<div class="card" id="salaryMonthDetails"><h2>Salaires – Éléments variables du mois : '+esc(salaryMonthLabel(salaryMonth))+'</h2><p class="muted">Absences, retards, départs anticipés et incidents déclarés par le secrétariat, regroupés par salarié. Ces données ne constituent pas un bulletin de salaire.</p><div class="actions" style="align-items:center;flex-wrap:wrap"><label for="salaryMonth">Mois</label><input id="salaryMonth" type="month" value="'+esc(salaryMonth)+'" style="max-width:180px"><label for="salaryPerson">Salarié</label><select id="salaryPerson" style="max-width:260px">'+option("all","Tous les salariés")+groups.map(([key,g])=>option(key,g.name)).join("")+'</select><button class="btn secondary" onclick="salaryLoad()">Actualiser</button><button class="btn primary" onclick="salaryExportCsv()" '+(!total?'disabled':'')+'>Exporter CSV</button><button class="btn secondary" onclick="salaryPrint()" '+(!total?'disabled':'')+'>Imprimer / PDF</button><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE (Urssaf)</a></div><p class="muted">Vérifiez les données avant toute déclaration sur le TESE. Aucun transfert automatique et aucune retenue sur salaire ne sont effectués.</p></div>'+
  (salaryLoading?'<div class="card">Chargement des événements…</div>':'')+
