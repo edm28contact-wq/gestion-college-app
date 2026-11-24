@@ -216,7 +216,7 @@ function init(){
   const available=items.filter(([k])=>canPage(k)&&settings.menu?.['tab:#'+k]?.hidden!==true);
   available.sort((a,b)=>(settings.menu?.['tab:#'+a[0]]?.order??9999)-(settings.menu?.['tab:#'+b[0]]?.order??9999));
   if(!available.length)return '';
-  return '<section class="college-nav-group"><h2>'+esc(group)+'</h2>'+available.map(([k,n])=>'<button type="button" data-p="'+k+'" onclick="show(\''+k+'\')">'+esc(settings.menu?.['tab:#'+k]?.label||n)+'</button>').join('')+'</section>';
+  return '<section class="college-nav-group"><h2>'+esc(group)+'</h2>'+available.map(([k,n])=>{const configured=settings.menu?.['tab:#'+k]?.label,caption=k==='salaires'&&(!configured||configured==='Salaires')?'Liste salariés':configured||n;return '<button type="button" data-p="'+k+'" onclick="show(\''+k+'\')">'+esc(caption)+'</button>'}).join('')+'</section>';
  }).join('');
  filterCollegeMenu();
 }
