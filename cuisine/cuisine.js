@@ -262,15 +262,46 @@ function renderTaskItems(tasks){
  (t.description&&t.description!=="Protocole 7 – nettoyage du self"?'<p class="checklist-notes">'+esc(t.description)+'</p>':'')+(t.instructions?'<p class="checklist-notes">'+esc(t.instructions)+'</p>':'')+'</li>';
  }).join("")||'<li class="muted checklist-empty">Aucune tâche à afficher.</li>')+'</ul>';
 }
+function cleaningSections(tasks,optional){
+ const categories=[
+  ["preparation","Préparation et hygiène",["Plans de travail","Bacs à légumes","Lave-mains"]],
+  ["plonge","Plonge et vaisselle",["Lave-vaisselle","Bacs à vaisselle","Supports à couverts","Chauffe-assiettes"]],
+  ["cuisson","Cuisson et remise en température",["Fours de remise en température","Bain-marie","Micro-ondes","Hottes et grilles","Friteuse / huile","Friteuse"]],
+  ["froid","Froid et rangement",["Meubles réfrigérés","Armoires","Congélateur"]],
+  ["service","Distribution et salle de restaurant",["Chariots de service","Tables","Caisse","Salle de restaurant","Table des condiments","Chaises","Cafetières","Point d’eau du self"]],
+  ["locaux","Sols, locaux et déchets",["Poubelles","Sol","Sols de cuisine et siphons","Carrelages"]],
+  ["sanitaires","Sanitaires et vestiaires",["Sanitaires","Vestiaires"]]
+ ];
+ const normalize=v=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[’‘]/g,"'").trim().replace(/\s+/g," ").toLowerCase();
+ const byLabel=new Map(),groups=categories.map(([key,title,labels])=>{
+  const group={key,title,tasks:[],optional:[]};
+  for(const label of labels)byLabel.set(normalize(label),group);
+  return group;
+ });
+ const other={key:"other",title:"Autres tâches",tasks:[],optional:[]};
+ for(const task of tasks)(byLabel.get(normalize(task.label))||other).tasks.push(task);
+ for(const task of optional)(byLabel.get(normalize(task.label))||other).optional.push(task);
+ return [...groups,other].filter(g=>g.tasks.length||g.optional.length);
+}
+function renderCleaningSections(tasks,optional,done){
+ return cleaningSections(tasks,optional).map(g=>{
+  const complete=g.tasks.filter(t=>done.has(t.id)).length,total=g.tasks.length;
+  const count=total?'<span class="checklist-section-count '+(complete===total?'is-complete':'')+'">'+complete+' / '+total+' validées</span>':'<span class="checklist-section-count">Selon utilisation</span>';
+  const optionalCount=g.optional.filter(t=>done.has(t.id)).length;
+  return '<section class="checklist-section" aria-labelledby="cleaning-'+g.key+'"><header class="checklist-section-heading"><h3 id="cleaning-'+g.key+'">'+esc(g.title)+'</h3>'+count+'</header>'+
+  (total?renderTaskItems(g.tasks):'')+
+  (g.optional.length?'<div class="checklist-optional"><div class="checklist-optional-heading"><strong>Tâches selon utilisation</strong><span>'+optionalCount+' / '+g.optional.length+' réalisées</span></div><p class="help">À cocher uniquement si le matériel a été utilisé et nettoyé. Hors obligations quotidiennes.</p>'+renderTaskItems(g.optional)+'</div>':'')+'</section>';
+ }).join("");
+}
 function renderTasks(){
  const done=new Set(data.checks.filter(c=>c.performed_on===today()).map(c=>c.task_id));
  const tasks=visibleTasks(data.tasks,data.me),optional=visibleTasks(data.optional_tasks,data.me),pending=tasks.filter(t=>!done.has(t.id)),completed=tasks.length-pending.length,progress=tasks.length?Math.round(completed/tasks.length*100):0;
  const open=data.reheats.filter(r=>r.status==="en_cours");
  return '<div class="section-heading work-heading"><div><div class="eyebrow">Votre journée</div><h1>Tâches à faire</h1><p>Vos tâches et les tâches communes prévues aujourd’hui.</p></div><span class="tag '+(pending.length?'tag-warn':'tag-ok')+'">'+pending.length+' à réaliser · '+completed+' / '+tasks.length+' validées</span></div>'+
  '<div class="card checklist-card"><div class="row between"><h2>Checklist de nettoyage</h2><strong class="checklist-percent">'+progress+' %</strong></div><div class="checklist-progress" role="progressbar" aria-label="Avancement du nettoyage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+progress+'"><span style="width:'+progress+'%"></span></div><p class="help">Cochez une tâche après nettoyage. Prenez une photo : la case sera cochée uniquement après son enregistrement.</p>'+
- (tasks.length?renderTaskItems(tasks):'<div class="empty"><strong>Aucune tâche de nettoyage prévue aujourd’hui.</strong></div>')+
+ (!tasks.length?'<div class="empty"><strong>Aucune tâche de nettoyage prévue aujourd’hui.</strong></div>':'')+
+ renderCleaningSections(tasks,optional,done)+
  (tasks.length&&!pending.length?'<p class="checklist-complete" role="status">Toutes les tâches prévues sont validées.</p>':'')+'</div>'+
- (optional.length?'<div class="card checklist-card"><h2>Tâches selon utilisation</h2><p class="help">À cocher uniquement si le matériel a été utilisé et nettoyé. Hors obligations quotidiennes.</p>'+renderTaskItems(optional)+'</div>':'')+
  (canRecordReheat()||open.length?'<div class="card"><h2>Contrôles de service</h2><div class="work-actions">'+(canRecordReheat()?'<button class="btn btn-outline" type="button" data-go="reheat">Démarrer une remise en température</button><button class="btn btn-outline" type="button" data-go="cold">Contrôler une chambre froide</button>':'')+'</div>'+
  (open.length?open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">Mesure finale à cœur · <span class="clock" data-due="'+esc(r.due_at)+'">'+esc(remaining(r.due_at))+'</span></div></div><button class="btn btn-primary btn-small" type="button" data-go="reheat">'+(canRecordReheat()?'Faire le contrôle':'Voir le contrôle')+'</button></div>').join(""):'')+'</div>':'');
 }

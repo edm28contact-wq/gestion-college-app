@@ -232,3 +232,33 @@ test("Espace Cuisine : deux accès, sondes réelles et administration séparée"
  assert.match(meater,/function mountKitchen\(root,api,getData,\{showTiles=true\}/);
  assert.match(script,/showTiles:false/);
 });
+
+test("Checklist : les 29 tâches du protocole 7 sont réparties dans sept rubriques sans doublon",()=>{
+ const migration=read("supabase/migrations/20261124184136_kitchen_cleaning_protocol7_monthly_and_on_demand.sql");
+ const seed=migration.slice(migration.indexOf("for r in select * from (values"),migration.indexOf(") as source(label,recurrence)"));
+ const tasks=[...seed.matchAll(/\('([^']+)','(daily|weekly|monthly|on_demand)'\)/g)].map((m,i)=>({id:String(i+1),label:m[1],recurrence:m[2]}));
+ assert.equal(tasks.length,29);
+ const script=read("cuisine/cuisine.js"),start=script.indexOf("function cleaningSections("),end=script.indexOf("function renderCleaningSections(",start);
+ const group=vm.runInNewContext(script.slice(start,end)+";cleaningSections");
+ const sections=group(tasks.filter(t=>t.recurrence!=="on_demand"),tasks.filter(t=>t.recurrence==="on_demand"));
+ assert.equal(sections.length,7);
+ assert.deepEqual(Array.from(sections,g=>g.tasks.length+g.optional.length),[3,4,5,3,8,4,2]);
+ const result=Array.from(sections).flatMap(g=>[...g.tasks,...g.optional]);
+ assert.equal(result.length,29);assert.equal(new Set(result.map(t=>t.id)).size,29);
+ assert.equal(sections.find(g=>g.key==="cuisson").optional[0].label,"Friteuse / huile");
+ assert.deepEqual(Array.from(sections.find(g=>g.key==="sanitaires").tasks,t=>t.label),["Sanitaires","Vestiaires"]);
+ const extra=group([{id:"x",label:"Nouvelle tâche"},{id:"y",label:"  POINT D'EAU DU SELF  "}],[]);
+ assert.equal(extra.find(g=>g.key==="other").tasks[0].id,"x");assert.equal(extra.find(g=>g.key==="service").tasks[0].id,"y");
+});
+test("Checklist : compteurs par rubrique et tâches selon utilisation sans fausser les obligations",()=>{
+ const script=read("cuisine/cuisine.js"),start=script.indexOf("function visibleTasks("),end=script.indexOf("async function save(action,body)");
+ const today="2026-11-24",tasks=[{id:"1",label:"Bain-marie",active:true,scheduled:true},{id:"2",label:"Fours de remise en température",active:true,scheduled:true},{id:"3",label:"Vestiaires",active:true,scheduled:true}],optional=[{id:"4",label:"Friteuse / huile",active:true,scheduled:false}];
+ const context={data:{me:{scope:"staff",id:"a"},tasks,optional_tasks:optional,checks:[{task_id:"1",performed_on:today,photo_bytes:100},{task_id:"4",performed_on:today,photo_bytes:100}],reheats:[]},today:()=>today,canRecordReheat:()=>true,esc:v=>String(v??""),clock:()=>"12:00",staffName:()=>"Agent"};
+ const html=vm.runInNewContext(script.slice(start,end)+";renderTasks()",context);
+ assert.match(html,/2 à réaliser · 1 \/ 3 validées/);
+ assert.match(html,/Cuisson et remise en température<\/h3><span[^>]+>1 \/ 2 validées/);
+ assert.match(html,/Tâches selon utilisation<\/strong><span>1 \/ 1 réalisées/);
+ assert.match(html,/Sanitaires et vestiaires<\/h3><span[^>]+>0 \/ 1 validées/);
+ assert.doesNotMatch(html,/id="cleaning-froid"/);
+ assert.equal((html.match(/aria-checked="true"/g)||[]).length,2);
+});
