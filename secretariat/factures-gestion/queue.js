@@ -80,6 +80,9 @@
         const veryfi=element("button","primary","Traiter avec Veryfi");
         veryfi.type="button";veryfi.onclick=()=>GenVeryfi(invoice);
         actions.prepend(veryfi);
+        const manual=element("button",null,"Saisir manuellement");
+        manual.type="button";manual.onclick=()=>GenVeryfi(invoice,true);
+        actions.append(manual);
         const sync=element("button",null,"Vérifier la réception Veryfi");
         sync.type="button";sync.onclick=()=>void syncReceipt(invoice);
         actions.append(sync);
@@ -100,8 +103,10 @@
       item.append(detail, actions); list.append(item);
     }
   }
-  function GenVeryfi(invoice){
-    window.top.location.assign(new URL(VERYFI_READER+encodeURIComponent(invoice.id),window.location.href).href);
+  function GenVeryfi(invoice,manual=false){
+    const url=new URL(VERYFI_READER+encodeURIComponent(invoice.id),window.location.href);
+    if(manual)url.searchParams.set("mode","manuel");
+    window.top.location.assign(url.href);
   }
   async function syncReceipt(invoice){
     if(busy)return;
