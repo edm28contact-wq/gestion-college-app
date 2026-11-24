@@ -12,7 +12,7 @@ const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
 let queueImportStarted=false,queueImported=false,manualStartRequested=false;
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
-let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,usageRefreshPending=false,issueFilter="all",manualMode=false;
+let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,veryfiSubscriptionBlocked=false,usageRefreshPending=false,issueFilter="all",manualMode=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
 const amount=x=>{if(x==null||String(x).trim()==="")return null;const t=String(x).replace(/[\u00a0\u202f\s€]/g,"").replace(",",".");return /^-?\d+(?:\.\d+)?$/.test(t)&&Number.isFinite(Number(t))?Number(t):null};
@@ -195,7 +195,7 @@ async function request(url,{method="GET",payload,token,timeout=20000}={}){
  const headers=writes?{"content-type":"application/json",authorization:"Bearer "+(token||authToken)}:{"x-admin-session":token||authToken};
  const r=await fetch(url,{method,headers,body:writes?JSON.stringify(payload):undefined,cache:"no-store",signal:AbortSignal.timeout(timeout)});
  const data=await r.json().catch(()=>({error:"Réponse serveur invalide"}));
- if(!r.ok)throw Object.assign(new Error(data.error||"Erreur HTTP "+r.status),{code:r.status});
+ if(!r.ok)throw Object.assign(new Error(data.error||"Erreur HTTP "+r.status),{code:r.status,providerCode:data.code||null});
  return data;
 }
 async function resolveSession(){
@@ -211,9 +211,9 @@ async function resolveSession(){
     authToken=token;document.dispatchEvent(new CustomEvent("veryfi:session",{detail:{token}}));serverReady=!!config.configured;
     showUsage(config.usage);
     $("sessionDot").className="dot "+(serverReady?"ok":"bad");
-    $("sessionState").textContent=serverReady?"Veryfi prêt · "+timestamp():"Saisie manuelle disponible · Veryfi non configuré";
+    $("sessionState").textContent=veryfiSubscriptionBlocked?"Abonnement Veryfi expiré · saisie manuelle disponible":serverReady?"Veryfi configuré (abonnement non vérifié) · "+timestamp():"Saisie manuelle disponible · Veryfi non configuré";
     $("loginLink").hidden=true;
-    $("analyze").disabled=!file||loading||!serverReady;
+    $("analyze").disabled=!file||loading||!serverReady||veryfiSubscriptionBlocked;
     if(!serverReady)notice("Veryfi non configuré ; le mode de saisie manuelle reste disponible après chargement du catalogue.");
     await loadCatalog();
     if(queueId&&!queueImportStarted&&!file)void importQueuedInvoice();
@@ -390,7 +390,7 @@ function setFile(newFile){
   }
   $("confirmReview").checked=false;
   $("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
-  $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady;
+  $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady||veryfiSubscriptionBlocked;
   if(file){
    objectUrl=URL.createObjectURL(file);$("viewer").src=objectUrl;
    $("viewer").hidden=false;$("viewerEmpty").hidden=true;
@@ -406,7 +406,7 @@ function setFile(newFile){
  document.dispatchEvent(new CustomEvent("veryfi:source-file",{detail:{file}}));
  $("results").hidden=true;$("resultsEmpty").hidden=false;$("readingState").textContent="En attente du document";
  $("saveResult").textContent="";$("confirmReview").checked=false;$("fileName").textContent=file?file.name+" · "+(file.size/1048576).toFixed(2)+" Mo":"Aucun document sélectionné";
- $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady;
+ $("clearFile").disabled=!file;$("analyze").disabled=!file||!serverReady||veryfiSubscriptionBlocked;
  if(!file){$("viewerEmpty").hidden=false;notice("Déposez une facture PDF pour commencer.");return}
  objectUrl=URL.createObjectURL(file);$("viewer").src=objectUrl;$("viewer").hidden=false;$("viewerEmpty").hidden=true;
  $("openPdf").href=objectUrl;$("openPdf").hidden=false;
@@ -424,6 +424,7 @@ function encode(bytes){
 async function analyze(){
  if(loading||!file)return;
  if(!serverReady)return notice("Une session Veryfi valide est requise.","error");
+ if(veryfiSubscriptionBlocked)return notice("Abonnement Veryfi expiré : saisie manuelle disponible.","error");
  if(manualMode&&!confirm("Abandonner la saisie manuelle et la remplacer par une lecture Veryfi ? Les champs non enregistrés seront perdus."))return;
  if(!confirm("Envoyer « "+file.name+" » à Veryfi pour lecture ? Il s’agit d’un service externe pouvant être facturé. Aucune donnée comptable ni aucun stock ne sera modifié par cette lecture."))return;
  const version=++revision,source=file;loading=true;$("analyze").disabled=true;$("clearFile").disabled=true;
@@ -432,7 +433,7 @@ async function analyze(){
   const result=await request(API.veryfi,{method:"POST",payload:{file_name:file.name,file_data:encode(new Uint8Array(await file.arrayBuffer()))},timeout:75000});
   if(source!==file||version!==revision)return;
   if(!result.ok||!result.result||!Array.isArray(result.result.line_items))throw Error("Résultat Veryfi inexploitable.");
-  showUsage(result.usage);
+  veryfiSubscriptionBlocked=false;showUsage(result.usage);
   if(result.usage_warning)notice(result.usage_warning,"error");
   manualMode=false;$("manualEntryNote").hidden=true;$("resultTitle").textContent="Vérification des données";
   documentData=result.result;saved=false;removedRows=[];rows=documentData.line_items.map((x,i)=>makeRow(x,i));
@@ -456,12 +457,13 @@ async function analyze(){
    "Veryfi a identifié "+rows.length+" lignes. "+nativeTaxCount+" TVA ont été extraites et recoupées directement sur le PDF (référence, quantité, prix, total). Contrôlez les autres anomalies avant validation.":
    "Veryfi a identifié "+rows.length+" ligne(s). Les TVA non prouvées ligne par ligne restent à confirmer sur le PDF.","success");
  }catch(e){
-  if(e.code===401||e.code===403){serverReady=false;authToken="";$("loginLink").hidden=false;$("sessionDot").className="dot bad";$("sessionState").textContent="Session non autorisée";}
+  if(e.providerCode==="VERYFI_SUBSCRIPTION_INACTIVE"){veryfiSubscriptionBlocked=true;$("sessionDot").className="dot bad";$("sessionState").textContent="Abonnement Veryfi expiré · saisie manuelle disponible";}
+  else if(e.code===401||e.code===403){serverReady=false;authToken="";$("loginLink").hidden=false;$("sessionDot").className="dot bad";$("sessionState").textContent="Session non autorisée";}
   $("readingState").textContent="Lecture interrompue";
   notice("Échec de la lecture : "+e.message,"error");
  }finally{
   loading=false;
-  $("analyze").disabled=!serverReady||!file;
+  $("analyze").disabled=!serverReady||!file||veryfiSubscriptionBlocked;
   $("clearFile").disabled=!file;
   if(source===file&&version===revision&&documentData&&!$("results").hidden)updateTotals();
  }
@@ -1546,7 +1548,7 @@ function setup(){
  $("clearFile").addEventListener("click",()=>{input.value="";setFile(null)});
  $("analyze").addEventListener("click",analyze);
  $("manualEntry").addEventListener("click",()=>void startManualEntry());
- $("refreshSession").addEventListener("click",resolveSession);
+ $("refreshSession").addEventListener("click",()=>{veryfiSubscriptionBlocked=false;resolveSession()});
  $("reloadCatalog").addEventListener("click",async()=>{
   const button=$("reloadCatalog");button.disabled=true;
   try{
