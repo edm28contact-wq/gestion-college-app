@@ -728,17 +728,35 @@ function salaryAccountingMatchesStaff(event,staff){
  if(event.personnel_id)return event.personnel_id===staff.id;
  return salaryStaffKey(event.personnel_name)===salaryStaffKey(staff.name);
 }
-function salaryAccountingEventsFor(staff){
- return salaryEvents.filter(event=>salaryAccountingMatchesStaff(event,staff));
+function salaryAccountingMonthEvents(month=salaryMonth){
+ return salaryEvents.filter(event=>String(event.event_date||"").slice(0,7)===month);
 }
-function salaryAccountingSelectedEvents(){
- if(salaryAccountingEmployeeId==="all")return salaryEvents;
+function salaryAccountingEventsFor(staff,month=salaryMonth){
+ return salaryAccountingMonthEvents(month).filter(event=>salaryAccountingMatchesStaff(event,staff));
+}
+function salaryAccountingSelectedEvents(month=salaryMonth){
+ const events=salaryAccountingMonthEvents(month);
+ if(salaryAccountingEmployeeId==="all")return events;
  const staff=salaryStaff.find(s=>s.id===salaryAccountingEmployeeId);
- return staff?salaryAccountingEventsFor(staff):[];
+ return staff?events.filter(event=>salaryAccountingMatchesStaff(event,staff)):[];
+}
+function salaryAccountingGroupedEvents(events){
+ const groups=new Map();
+ for(const event of events){
+  const staff=salaryStaff.find(p=>salaryAccountingMatchesStaff(event,p));
+  const name=String(staff?.name||event.personnel_name||"Salarié non renseigné").trim()||"Salarié non renseigné";
+  const key=staff?"id:"+staff.id:"name:"+salaryStaffKey(name);
+  if(!groups.has(key))groups.set(key,{key,name,items:[]});
+  groups.get(key).items.push(event);
+ }
+ return [...groups.values()]
+  .sort((a,b)=>a.name.localeCompare(b.name,"fr",{sensitivity:"base"})||a.key.localeCompare(b.key))
+  .map(group=>({...group,items:group.items.slice().sort((a,b)=>
+    String(b.event_date||"").localeCompare(String(a.event_date||""))||
+    String(a.id||"").localeCompare(String(b.id||"")))}));
 }
 function salaryAccountingSelectedGroups(){
- const selected=new Set(salaryAccountingSelectedEvents());
- return salaryGroups().map(([key,group])=>[key,{...group,items:group.items.filter(e=>selected.has(e))}]).filter(([,group])=>group.items.length);
+ return salaryAccountingGroupedEvents(salaryAccountingSelectedEvents()).map(group=>[group.key,group]);
 }
 function salaryAccountingBenefits(staff){
  const entries=Array.isArray(staff.benefits_in_kind)?staff.benefits_in_kind:null;
@@ -753,8 +771,8 @@ function salaryAccountingBenefits(staff){
  return {total:invalid?null:totalCents/100,entries:valid,invalid};
 }
 function salaryAccountingMetrics(staff,month){
- const calendar=salaryCalendarBreakdown(staff,month),currentEvents=salaryAccountingEventsFor(staff)
-  .filter(e=>String(e.event_date||"").slice(0,7)===month&&e.review_status!=="sans_suite");
+ const calendar=salaryCalendarBreakdown(staff,month),currentEvents=salaryAccountingEventsFor(staff,month)
+  .filter(e=>e.review_status!=="sans_suite");
  const entries=currentEvents.filter(e=>["absence","retard","depart_anticipe"].includes(e.event_type));
  const incidentEvents=currentEvents.filter(e=>e.event_type==="incident");
  const byType=Object.fromEntries(["absence","retard","depart_anticipe"].map(type=>[type,{minutes:0,missing:0,count:0}]));
@@ -817,12 +835,18 @@ function salaryAccountingPage(){
  const month=salaryMonth||salaryCurrentMonth();
  const staffAvailable=salaryStaffLoaded&&!salaryStaffLoading&&!salaryStaffError;
  const eventsAvailable=!salaryLoading&&!salaryError;
- const staffList=staffAvailable?salaryStaff.filter(staff=>!staff.archived||salaryAccountingEventsFor(staff).length>0)
+ const staffList=staffAvailable?salaryStaff.filter(staff=>!staff.archived||salaryAccountingEventsFor(staff,month).length>0)
   .sort((a,b)=>a.name.localeCompare(b.name,"fr")):[];
  if(salaryAccountingEmployeeId!=="all"&&staffAvailable&&!staffList.some(x=>x.id===salaryAccountingEmployeeId))salaryAccountingEmployeeId="all";
  const people=salaryAccountingEmployeeId==="all"?staffList:staffList.filter(s=>s.id===salaryAccountingEmployeeId);
  const ready=staffAvailable&&eventsAvailable;
  const rows=ready?people.map(staff=>salaryAccountingMetrics(staff,month)):[];
+ const selectedEvents=ready?salaryAccountingSelectedEvents(month):[];
+ const eventGroups=salaryAccountingGroupedEvents(selectedEvents);
+ const pendingEvents=selectedEvents.filter(e=>e.review_status==="a_verifier").length;
+ const incidentEvents=selectedEvents.filter(e=>e.event_type==="incident");
+ const missingIncidentMinutes=incidentEvents.filter(e=>salaryRecordedMinutes(e)===null).length;
+ const knownIncidentMinutes=incidentEvents.reduce((total,e)=>total+(salaryRecordedMinutes(e)||0),0);
  const aggregate=key=>{
   const known=rows.filter(r=>r[key]!==null);
   return {value:known.reduce((sum,r)=>sum+r[key],0),complete:known.length===rows.length,known:known.length,total:rows.length};
@@ -844,7 +868,7 @@ function salaryAccountingPage(){
  const incompleteCalendar=rows.filter(r=>r.plannedDays===null).length;
  const incompleteEquivalents=rows.filter(r=>r.estimatedWorkedDays===null).length;
  const incompleteBenefits=rows.filter(r=>r.benefits.total===null).length;
- const unmatched=ready&&salaryAccountingEmployeeId==="all"?salaryEvents.filter(e=>!salaryStaff.some(staff=>salaryAccountingMatchesStaff(e,staff))).length:0;
+ const unmatched=ready&&salaryAccountingEmployeeId==="all"?selectedEvents.filter(e=>!salaryStaff.some(staff=>salaryAccountingMatchesStaff(e,staff))).length:0;
  const word=salaryAccountingEmployeeId==="all"?"jours-salariés":"jours";
  const noValue="—";
  const indicator=(stats,formatter)=>!ready||stats.total===0||stats.known===0?noValue:
@@ -862,6 +886,11 @@ function salaryAccountingPage(){
    metricDetail(absenceDays,"Temps non effectué / durée prévue de chaque journée"))+
   salaryAccountingKpi("Avantages en nature",indicator(benefitsTotal,salaryAccountingMoney),
    metricDetail(benefitsTotal,"Valorisation mensuelle enregistrée · à vérifier pour la paie"))+
+  salaryAccountingKpi("Incidents signalés",ready?String(incidentEvents.length):noValue,
+   ready?(incidentEvents.length?
+    "Durée relevée : "+(missingIncidentMinutes?"≥ ":"")+salaryFormatLate(knownIncidentMinutes)+
+    (missingIncidentMinutes?" · "+missingIncidentMinutes+" durée(s) manquante(s)":"")+" · non déduits":
+    "Aucun incident pour la sélection"):"En attente des événements")+
   '</section>';
  const options='<option value="all"'+(salaryAccountingEmployeeId==="all"?' selected':'')+'>Tous les salariés</option>'+
   staffList.map(staff=>'<option value="'+esc(staff.id)+'"'+(salaryAccountingEmployeeId===staff.id?' selected':'')+'>'+esc(staff.name)+'</option>').join("");
@@ -875,10 +904,10 @@ function salaryAccountingPage(){
   (sourceStatus?'<p class="err">'+esc(sourceStatus)+'</p>':'')+
   (unfinished?'<p class="err">'+unfinished+' durée(s) ou équivalence(s) d’absence à vérifier : les indicateurs incomplets ne sont pas estimés arbitrairement.</p>':'')+
   (incompleteCalendar||incompleteEquivalents||incompleteBenefits?'<p class="muted">Calculs incomplets : '+incompleteCalendar+' planning(s) non vérifié(s), '+incompleteEquivalents+' équivalence(s) indisponible(s), '+incompleteBenefits+' valorisation(s) d’avantages à contrôler. Les totaux partiels sont signalés par « ≥ ».</p>':'')+
-  (pending?'<p class="muted">'+pending+' événement(s) d’absence, retard ou départ anticipé à vérifier : résultats provisoires, sans retenue automatique.</p>':'')+
+  (pendingEvents?'<p class="muted">'+pendingEvents+' événement(s) à vérifier sur les '+selectedEvents.length+' du tableau : résultats provisoires, sans retenue automatique.</p>':'')+
   '<p class="muted"><b>Répartition du temps non effectué :</b> '+esc(["absence","retard","depart_anticipe"].map(type=>(type==="absence"?"Absences":type==="retard"?"Retards":"Départs anticipés")+" : "+(breakdown[type].missing?"à vérifier":salaryFormatLate(breakdown[type].minutes))).join(" · "))+'</p>'+
   (unmatched?'<p class="err">'+unmatched+' événement(s) non rapproché(s) d’une fiche salarié : non inclus dans les indicateurs.</p>':'')+
-  '<p class="muted">Les équivalents en jours sont calculés à partir des horaires prévus, et non d’un pointage réel. Les absences, retards et départs anticipés sont comptés séparément par nature, puis additionnés pour le temps non effectué. Les incidents sont affichés à part et ne sont jamais déduits automatiquement. Les événements « Sans suite » sont exclus. Aucune retenue sur salaire n’est calculée.</p>':
+  '<p class="muted"><b>'+selectedEvents.length+' événement(s) dans le détail ci-dessous.</b> Les heures non effectuées sont calculées à partir de ces mêmes événements (absences, retards et départs anticipés). Les jours programmés proviennent des plannings et les avantages en nature des fiches salariés. Les incidents ne sont pas déduits automatiquement. Les événements « Sans suite » sont exclus des calculs de temps, mais restent visibles.</p>':
   '<p class="muted">'+esc(salaryStaffError||salaryError||"Chargement des horaires, événements et calendriers officiels…")+'</p>';
  const rowHtml=rows.map(r=>{
   const statusText=r.missingHours||r.unmatchedDays||r.overbookedDays?
@@ -896,12 +925,17 @@ function salaryAccountingPage(){
  const table='<section class="card"><h3>Récapitulatif par salarié</h3><div class="table"><table class="salary-accounting-table"><thead><tr><th>Salarié</th><th>Jours prévus</th><th>Jours équiv. après écarts</th><th>Temps non effectué (h)</th><th>Équivalent (jours)</th><th>Avantages en nature / mois</th><th>Autres incidents</th><th>Vérification</th><th>Fiche</th></tr></thead><tbody>'+
   (ready?rowHtml||'<tr><td colspan="9">Aucun salarié pour cette sélection.</td></tr>':'<tr><td colspan="9">Chargement ou données indisponibles.</td></tr>')+
   '</tbody></table></div></section>';
- const selectedEvents=ready?salaryAccountingSelectedEvents().slice().sort((a,b)=>String(b.event_date||"").localeCompare(String(a.event_date||""))):[];
- const eventsHtml=selectedEvents.map(e=>
-  '<tr><td>'+esc(e.event_date||"")+'</td><td>'+esc(e.personnel_name||"")+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td>'+
-  '<td>'+esc(salaryDuration(e))+'</td><td>'+esc(["absence","retard","depart_anticipe"].includes(e.event_type)?e.review_status==="sans_suite"?"Exclu du calcul":e.review_status==="valide"?"Comptabilisé":"Provisoire":e.event_type==="incident"?"Incident · non déduit":"Hors calcul")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td>'+
-  '<td>'+(e.attachment_path?'<button type="button" class="btn secondary compact" data-accounting-pdf="'+esc(e.id)+'">Voir PDF</button>':'—')+'</td></tr>').join("");
- const detail='<details class="card salary-accounting-detail"><summary>Détail des événements du mois ('+selectedEvents.length+')</summary>'+
+ const eventsHtml=eventGroups.map(group=>{
+  const pendingGroup=group.items.filter(e=>e.review_status==="a_verifier").length;
+  const heading='<tr class="salary-accounting-event-group"><th colspan="7" scope="rowgroup">'+esc(group.name)+
+   '<span>'+group.items.length+' événement(s)'+(pendingGroup?' · '+pendingGroup+' à vérifier':'')+'</span></th></tr>';
+  const items=group.items.map(e=>
+   '<tr><td>'+esc(e.event_date||"")+'</td><td>'+esc(e.personnel_name||"")+'</td><td>'+esc(salaryTypes[e.event_type]||e.event_type)+'</td>'+
+   '<td>'+esc(salaryDuration(e))+'</td><td>'+esc(["absence","retard","depart_anticipe"].includes(e.event_type)?e.review_status==="sans_suite"?"Exclu du calcul":e.review_status==="valide"?"Comptabilisé":"Provisoire":e.event_type==="incident"?"Incident · non déduit":"Hors calcul")+'</td><td>'+esc(salaryStatuses[e.review_status]||"À vérifier")+'</td>'+
+   '<td>'+(e.attachment_path?'<button type="button" class="btn secondary compact" data-accounting-pdf="'+esc(e.id)+'">Voir PDF</button>':'—')+'</td></tr>').join("");
+  return heading+items;
+ }).join("");
+ const detail='<details class="card salary-accounting-detail" open><summary>Détail des événements du mois ('+selectedEvents.length+') · classés par salarié</summary>'+
   '<div class="actions" style="margin:14px 0"><button class="btn secondary" id="salaryAccountingExport"'+(!ready||!selectedEvents.length?' disabled':'')+'>Exporter CSV</button>'+
   '<button class="btn secondary" id="salaryAccountingPrint"'+(!ready||!selectedEvents.length?' disabled':'')+'>Imprimer / PDF</button>'+
   '<a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></div>'+
@@ -971,7 +1005,7 @@ async function salaryLoad(){
 }
 function salaryExportCsv(){
  if(salaryLoading||salaryError)return;
- const selected=(page==="comptaSalaires"?salaryAccountingSelectedEvents():salaryGroups().filter(([key])=>salaryPerson==="all"||salaryPerson===key).flatMap(([,g])=>g.items));
+ const selected=(page==="comptaSalaires"?salaryAccountingGroupedEvents(salaryAccountingSelectedEvents()).flatMap(group=>group.items):salaryGroups().filter(([key])=>salaryPerson==="all"||salaryPerson===key).flatMap(([,g])=>g.items));
  if(!selected.length)return;
  const rows=[["Date","Salarié","Type","Journée entière","Durée (minutes)","Durée affichée","Justificatif","PDF joint","Observation","Statut","Traitement paie","Note administrative"],...selected.map(e=>[e.event_date,e.personnel_name,salaryTypes[e.event_type]||e.event_type,e.all_day?"Oui":"Non",e.duration_minutes??"",salaryDuration(e),salaryJust[e.justification_status]||"",e.attachment_path?"Oui":"Non",e.details,salaryStatuses[e.review_status]||"",e.payroll_action||"",e.payroll_note||""])];
  const content="\ufeff"+rows.map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(";")).join("\r\n");
