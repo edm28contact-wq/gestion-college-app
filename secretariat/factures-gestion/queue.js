@@ -74,7 +74,7 @@
         const manual=element("button",null,"Saisir manuellement");
         manual.type="button";manual.onclick=()=>GenVeryfi(invoice,true);
         actions.append(manual);
-        const sync=element("button",null,"Vérifier la réception Veryfi");
+        const sync=element("button",null,"Vérifier la réception");
         sync.type="button";sync.onclick=()=>void syncReceipt(invoice);
         actions.append(sync);
       }
@@ -99,7 +99,7 @@
     try{
       await api("sync-receipt","POST",{id:invoice.id});
       await fetchInvoices();
-      notice("Réception Veryfi vérifiée par le serveur. Facture déplacée dans « Faites ».");
+      notice("Réception vérifiée par le serveur. Facture déplacée dans « Faites ».");
     }catch(e){notice("Réception non synchronisée : "+e.message,true)}
     finally{setBusy(false)}
   }
