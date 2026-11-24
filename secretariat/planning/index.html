@@ -96,7 +96,7 @@ html.secretariat-embedded{background:transparent}
 <script src="./calendar.js?v=4"></script>
 <script src="./print-month.js?v=2"></script>
 <script>
-const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/',API=ROOT+'personnel-planning',LOGIN=ROOT+'admin-api?action=login';let token=localStorage.getItem('college_secretariat_token')||localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||'',events=[],admin=false,readonly=false,editing=null,loadVersion=0,legacyPersonnelName="",planningStaff=[],planningStaffError="",planningStaffLoading=false;
+const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/',API=ROOT+'personnel-planning',LOGIN=ROOT+'admin-api?action=login';let token=new URLSearchParams(location.search).get('embed')==='college'?(localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('college_secretariat_token')||''):(localStorage.getItem('college_secretariat_token')||localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||''),events=[],admin=false,readonly=false,editing=null,loadVersion=0,legacyPersonnelName="",planningStaff=[],planningStaffError="",planningStaffLoading=false;
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));const labels={absence:'Absence',retard:'Retard',depart_anticipe:'Départ anticipé',incident:'Événement'};
 
 function parseIncidentDuration(value){
