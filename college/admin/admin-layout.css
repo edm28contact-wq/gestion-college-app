@@ -85,6 +85,7 @@
 .college-admin-shell .salary-accounting-table th,.college-admin-shell .salary-accounting-table td{vertical-align:top}
 .college-admin-shell .salary-accounting-table th[scope=row]{font-size:13px;white-space:nowrap}
 .college-admin-shell .salary-accounting-num{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.college-admin-shell .salary-accounting-num small{display:block;max-width:280px;margin-top:6px;font-size:11px;font-weight:500;line-height:1.5;white-space:normal;color:#607287}
 .college-admin-shell .salary-accounting-benefits{min-width:170px}
 .college-admin-shell .salary-accounting-benefits small{display:block;margin-top:5px;white-space:normal;line-height:1.45}
 .college-admin-shell .salary-accounting-detail summary{font-size:15px;font-weight:750;cursor:pointer;list-style-position:inside}
