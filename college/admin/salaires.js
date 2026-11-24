@@ -155,6 +155,73 @@ function salaryWorkingDays(month,days){
  }
  return count;
 }
+function salaryWorkSlotSummary(days,slots){
+ const minutesByDay=Array(7).fill(0),counts=Array(7).fill(0),clean=[];
+ const clock=/^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+ const minutes=v=>Number(v.slice(0,2))*60+Number(v.slice(3,5));
+ const invalid=message=>({error:message,slots:[],weeklyMinutes:null,minutesByDay,missingDays:[]});
+ if(!Array.isArray(days)||days.some(d=>!Number.isInteger(d)||d<0||d>6)||new Set(days).size!==days.length||!Array.isArray(slots))return invalid("Planning invalide.");
+ for(const slot of slots){
+  if(!slot||!Number.isInteger(slot.day)||slot.day<0||slot.day>6)return invalid("Jour de travail invalide.");
+  if(!days.includes(slot.day))continue;
+  if(slot.start===""&&slot.end==="")continue;
+  if(typeof slot.start!=="string"||typeof slot.end!=="string"||!clock.test(slot.start)||!clock.test(slot.end)||slot.start>=slot.end)
+   return invalid(salaryWeekdayNames[slot.day]+" : renseignez un début et une fin valides le même jour.");
+  if(++counts[slot.day]>8)return invalid("8 créneaux maximum par jour.");
+  clean.push({day:slot.day,start:slot.start,end:slot.end});
+ }
+ clean.sort((a,b)=>a.day-b.day||a.start.localeCompare(b.start));
+ for(let i=0;i<clean.length;i++){
+  const slot=clean[i],previous=clean[i-1];
+  if(previous?.day===slot.day&&previous.end>slot.start)return invalid(salaryWeekdayNames[slot.day]+" : les créneaux se chevauchent.");
+  minutesByDay[slot.day]+=minutes(slot.end)-minutes(slot.start);
+ }
+ const missingDays=days.filter(d=>counts[d]===0);
+ return {error:"",slots:clean,minutesByDay,missingDays,weeklyMinutes:missingDays.length?null:minutesByDay.reduce((a,b)=>a+b,0)};
+}
+function salaryHoursBreakdown(staff,month,overrides){
+ const days=overrides?.days??staff.working_weekdays??[1,2,3,4,5];
+ const slots=overrides?.slots??staff.weekly_work_slots??[];
+ const summary=salaryWorkSlotSummary(days,slots),calendar=salaryCalendarBreakdown(staff,month,overrides);
+ const monthlyMinutes=summary.weeklyMinutes===null||calendar.net===null?null:calendar.workedDaysByWeekday.reduce((total,count,day)=>total+count*summary.minutesByDay[day],0);
+ return {...summary,monthlyMinutes,calendar};
+}
+function salaryHoursResultHtml(staff,month,overrides){
+ const r=salaryHoursBreakdown(staff,month,overrides);
+ if(r.error)return '<span class="err">'+esc(r.error)+'</span>';
+ if(r.missingDays.length)return '<span class="muted">Horaires à compléter : '+esc(r.missingDays.map(d=>salaryWeekdayNames[d]).join(", "))+' — totaux indisponibles.</span>';
+ return '<b>'+salaryFormatLate(r.weeklyMinutes)+'</b> / semaine · '+(r.monthlyMinutes===null?'<span class="muted">Total mensuel : calendrier à vérifier</span>':'<b>'+salaryFormatLate(r.monthlyMinutes)+'</b> théoriques sur le mois sélectionné');
+}
+function salaryWeeklyScheduleHtml(days,slots,disabled){
+ const lock=disabled?' disabled':'';
+ const order=[1,2,3,4,5,6,0],stats=salaryWorkSlotSummary(days,slots);
+ return '<div class="salary-weekly-grid">'+order.map(day=>{
+  const active=days.includes(day);
+  const existing=slots.filter(s=>s.day===day);
+  const entries=existing.length?existing:[{day,start:"",end:""}];
+  const dayName=salaryWeekdayNames[day],dayTotal=stats.error||stats.missingDays.includes(day)?"À renseigner":salaryFormatLate(stats.minutesByDay[day]);
+  return '<section class="salary-weekday'+(active?'':' salary-day-off')+'">'+
+   '<div class="salary-day-heading"><label><input type="checkbox" data-payroll-day="'+day+'" '+(active?'checked':'')+lock+'> <b>'+dayName+'</b></label><span class="muted" data-work-day-total="'+day+'">'+(active?dayTotal:"Repos")+'</span></div>'+
+   '<div class="salary-day-slots"'+(active?'':' hidden')+'>'+
+    entries.map((slot,index)=>'<div class="salary-slot-row" data-work-slot="'+day+'"><label><span>Début</span><input aria-label="'+dayName+' : début du créneau '+(index+1)+'" type="time" data-work-start value="'+esc(slot.start)+'"'+lock+'></label><label><span>Fin</span><input aria-label="'+dayName+' : fin du créneau '+(index+1)+'" type="time" data-work-end value="'+esc(slot.end)+'"'+lock+'></label><button class="btn secondary compact" type="button" data-remove-work-slot="'+day+':'+index+'" aria-label="Retirer le créneau '+(index+1)+' du '+dayName.toLowerCase()+'"'+lock+'>Retirer</button></div>').join("")+
+    '<button type="button" class="btn secondary compact" data-add-work-slot="'+day+'"'+(disabled||entries.length>=8?' disabled':'')+'>+ Ajouter un créneau</button>'+
+   '</div></section>';
+ }).join("")+'</div>';
+}
+function salaryRefreshPayrollTotals(){
+ const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
+ if(!staff||!salaryPayrollDraft)return;
+ const month=salaryProfileMonth||salaryCurrentMonth(),draft=salaryPayrollDraft;
+ const count=$("salaryPayrollWorkingCount"),hours=$("salaryPayrollHoursCount"),total=$("salaryBenefitTotal");
+ if(count)count.innerHTML=salaryCalendarResultHtml(staff,month,draft);
+ if(hours)hours.innerHTML=salaryHoursResultHtml(staff,month,draft);
+ if(total)total.textContent=draft.benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"});
+ const stats=salaryWorkSlotSummary(draft.days,draft.slots);
+ document.querySelectorAll("[data-work-day-total]").forEach(el=>{
+  const day=Number(el.dataset.workDayTotal);
+  el.textContent=!draft.days.includes(day)?"Repos":stats.error||stats.missingDays.includes(day)?"À renseigner":salaryFormatLate(stats.minutesByDay[day]);
+ });
+}
 const salaryCalendars=new Map(),salaryCalendarRequests=new Set();
 async function salaryCalendarEnsure(month,force=false){
  if(!/^20[2-9][0-9]-(0[1-9]|1[0-2])$/.test(month)||!token||page!=="salaires")return;
@@ -184,14 +251,15 @@ function salaryCalendarBreakdown(staff,month,overrides){
  const vacations=source?.vacations||[];
  const [year,m]=month.split("-").map(Number);
  let publicDays=0,schoolDays=0,net=0;
+ const workedDaysByWeekday=Array(7).fill(0);
  for(let d=1;d<=new Date(Date.UTC(year,m,0)).getUTCDate();d++){
   const date=month+"-"+String(d).padStart(2,"0"),weekday=new Date(Date.UTC(year,m-1,d)).getUTCDay();
   if(!days.includes(weekday))continue;
   if(excludePublic&&holidays.has(date)){publicDays++;continue}
   if(excludeSchool&&vacations.some(v=>date>v.start&&date<v.end)){schoolDays++;continue}
-  net++;
+  net++;workedDaysByWeekday[weekday]++;
  }
- return {base,net,publicDays,schoolDays,excludedPublic:excludePublic,excludedSchool:excludeSchool,source};
+ return {base,net,publicDays,schoolDays,workedDaysByWeekday,excludedPublic:excludePublic,excludedSchool:excludeSchool,source};
 }
 function salaryCalendarResultHtml(staff,month,overrides){
  const r=salaryCalendarBreakdown(staff,month,overrides),loading=salaryCalendarRequests.has(month);
@@ -207,40 +275,47 @@ function salaryPayrollPanel(staff,month){
  const activeDraft=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft:null;
  const excludePublic=activeDraft?.excludePublic??staff.exclude_public_holidays??true;
  const excludeSchool=activeDraft?.excludeSchool??staff.exclude_school_holidays??false;
- return '<section class="card" style="margin:12px 0"><h3>Planning et avantages en nature</h3>'+
+ const slots=activeDraft?.slots??(Array.isArray(staff.weekly_work_slots)?staff.weekly_work_slots:[]);
+ const readOnly=!salaryCanWrite||salaryStaffSaving,lock=readOnly?" disabled":"";
+ return '<section class="card" style="margin:12px 0"><h3>Horaires de travail, planning et avantages en nature</h3>'+
   '<p class="muted">Calcul mensuel selon les jours habituels du salarié et les calendriers officiels de France métropolitaine et des vacances scolaires de la zone C (académie de Versailles). Les congés individuels et les fermetures particulières restent à saisir séparément.</p>'+
-  '<div style="display:flex;gap:12px;flex-wrap:wrap">'+salaryWeekdayNames.map((name,i)=>'<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" style="width:auto" data-payroll-day="'+i+'" '+(days.includes(i)?'checked':'')+'>'+name+'</label>').join("")+'</div>'+
-  '<p><label><input type="checkbox" id="salaryExcludePublic" style="width:auto" '+(excludePublic?'checked':'')+'> Déduire les jours fériés non travaillés</label></p>'+
-  '<p><label><input type="checkbox" id="salaryExcludeSchool" style="width:auto" '+(excludeSchool?'checked':'')+'> Déduire les vacances scolaires (uniquement si non travaillées selon le contrat)</label></p>'+
+  '<h4>Horaires habituels de la semaine</h4><p class="muted">Cochez les jours travaillés et saisissez un ou plusieurs créneaux. Pour une pause non travaillée, séparez les créneaux (ex. 08:00–12:00 puis 13:00–17:00). Les horaires traversant minuit ne sont pas pris en charge.</p>'+
+  salaryWeeklyScheduleHtml(days,slots,readOnly)+
+  '<div class="salary-hours-summary"><p class="muted">Heures théoriques selon le planning actuel, pas des heures pointées ni un historique contractuel.</p><div id="salaryPayrollHoursCount">'+salaryHoursResultHtml(staff,month,{days,slots,excludePublic,excludeSchool})+'</div></div>'+
+  '<p><label><input type="checkbox" id="salaryExcludePublic" style="width:auto" '+(excludePublic?'checked':'')+lock+'> Déduire les jours fériés non travaillés</label></p>'+
+  '<p><label><input type="checkbox" id="salaryExcludeSchool" style="width:auto" '+(excludeSchool?'checked':'')+lock+'> Déduire les vacances scolaires (uniquement si non travaillées selon le contrat)</label></p>'+
   '<p id="salaryPayrollWorkingCount">'+salaryCalendarResultHtml(staff,month,{days,excludePublic,excludeSchool})+'</p>'+
   '<button type="button" class="btn secondary compact" id="salaryCalendarRetry">Actualiser le calendrier officiel</button>'+
   '<h4>Avantages en nature</h4><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>'<div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input data-benefit-label="'+i+'" aria-label="Désignation de l’avantage '+(i+1)+'" maxlength="100" value="'+esc(b.label)+'" placeholder="Repas, logement, véhicule…" style="flex:2;min-width:150px"><input data-benefit-amount="'+i+'" aria-label="Montant mensuel en euros" type="number" min="0" max="100000" step="0.01" value="'+esc(b.amount)+'" style="flex:1;min-width:100px"><button type="button" class="btn secondary" data-benefit-remove="'+i+'">Supprimer</button></div>').join("")+'</div>'+
   '<button type="button" class="btn secondary" id="salaryBenefitAdd">+ Ajouter un avantage</button>'+
   '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
-  '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer le planning et les avantages</button>'+
+  '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer les horaires, le planning et les avantages</button>'+
   (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
 }
 function salaryPayrollReadDraft(){
  const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
- if(!staff)return;
+ if(!staff||!$("salaryPayrollSave"))return;
  const days=[...document.querySelectorAll("[data-payroll-day]:checked")].map(x=>Number(x.dataset.payrollDay));
  const benefits=[...document.querySelectorAll("[data-benefit-label]")].map(x=>({label:x.value,amount:Number(document.querySelector('[data-benefit-amount="'+x.dataset.benefitLabel+'"]')?.value)}));
- salaryPayrollDraft={id:staff.id,days,benefits,excludePublic:document.getElementById("salaryExcludePublic")?.checked??staff.exclude_public_holidays??true,excludeSchool:document.getElementById("salaryExcludeSchool")?.checked??staff.exclude_school_holidays??false};
+ const slots=[...document.querySelectorAll("[data-work-slot]")].map(row=>({day:Number(row.dataset.workSlot),start:row.querySelector("[data-work-start]")?.value||"",end:row.querySelector("[data-work-end]")?.value||""}));
+ salaryPayrollDraft={id:staff.id,updated_at:salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.updated_at:staff.updated_at,days,slots,benefits,excludePublic:document.getElementById("salaryExcludePublic")?.checked??staff.exclude_public_holidays??true,excludeSchool:document.getElementById("salaryExcludeSchool")?.checked??staff.exclude_school_holidays??false};
 }
 function salaryPayrollRefreshDraft(){
  salaryPayrollReadDraft();
  salaryPage();
 }
 async function salaryPayrollSave(){
- if(salaryStaffSaving||!salaryPayrollDraft)return;
- const {id,days,benefits,excludePublic,excludeSchool}=salaryPayrollDraft;
- if(benefits.some(b=>!b.label.trim()||!Number.isFinite(b.amount)||b.amount<0||!Number.isInteger(b.amount*100))){salaryPayrollMessage="Vérifiez les désignations et montants des avantages.";salaryPage();return}
+ if(salaryStaffSaving||!salaryCanWrite||!salaryPayrollDraft)return;
+ const {id,updated_at,days,slots,benefits,excludePublic,excludeSchool}=salaryPayrollDraft;
+ const schedule=salaryWorkSlotSummary(days,slots);
+ if(schedule.error){salaryPayrollMessage=schedule.error;salaryPage();return}
+ if(benefits.some(b=>!b.label.trim()||!Number.isFinite(b.amount)||b.amount<0||Math.abs(Math.round(b.amount*100)-b.amount*100)>1e-7)){salaryPayrollMessage="Vérifiez les désignations et montants des avantages.";salaryPage();return}
  salaryStaffSaving=true;salaryPayrollMessage="";salaryPage();
  try{
-  await call(ROOT+'/personnel-planning','staff-payroll-update','POST',{id,working_weekdays:days,benefits_in_kind:benefits,exclude_public_holidays:excludePublic,exclude_school_holidays:excludeSchool});
+  await call(ROOT+'/personnel-planning','staff-payroll-update','POST',{id,updated_at,working_weekdays:days,weekly_work_slots:schedule.slots,benefits_in_kind:benefits,exclude_public_holidays:excludePublic,exclude_school_holidays:excludeSchool});
   salaryPayrollDraft=null;salaryStaffLoaded=false;
   await salaryLoadStaff();
-  salaryPayrollMessage="Planning et avantages enregistrés.";
+  salaryPayrollMessage="Horaires, planning et avantages enregistrés."+(schedule.missingDays.length?" Certains jours travaillés restent à compléter.":"");
  }catch(e){salaryPayrollMessage=frError(e.message)}
  finally{salaryStaffSaving=false;if(page==="salaires")salaryPage()}
 }
@@ -457,9 +532,23 @@ function salaryWireStaff(){
  $('salaryRoleAdd')?.addEventListener('submit',salarySaveRole);
  document.querySelectorAll('[data-salary-role-edit]').forEach(f=>f.addEventListener('submit',salarySaveRole));
  document.querySelectorAll('[data-salary-staff-profile]').forEach(button=>button.addEventListener('click',()=>void salaryOpenStaffProfile(button.dataset.salaryStaffProfile)));
- document.querySelectorAll("[data-payroll-day],#salaryExcludePublic,#salaryExcludeSchool").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);const count=$("salaryPayrollWorkingCount");if(count&&staff)count.innerHTML=salaryCalendarResultHtml(staff,salaryProfileMonth||salaryCurrentMonth(),salaryPayrollDraft)}));
+ document.querySelectorAll("[data-payroll-day]").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();salaryPage()}));
+ document.querySelectorAll("#salaryExcludePublic,#salaryExcludeSchool").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
+ document.querySelectorAll("[data-work-start],[data-work-end]").forEach(x=>x.addEventListener("input",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
+ document.querySelectorAll("[data-add-work-slot]").forEach(button=>button.addEventListener("click",()=>{
+  if(!salaryCanWrite||salaryStaffSaving)return;
+  salaryPayrollReadDraft();const day=Number(button.dataset.addWorkSlot);
+  if(!salaryPayrollDraft||!salaryPayrollDraft.days.includes(day)||salaryPayrollDraft.slots.filter(x=>x.day===day).length>=8)return;
+  salaryPayrollDraft.slots.push({day,start:"",end:""});salaryPage();
+ }));
+ document.querySelectorAll("[data-remove-work-slot]").forEach(button=>button.addEventListener("click",()=>{
+  if(!salaryCanWrite||salaryStaffSaving)return;
+  salaryPayrollReadDraft();if(!salaryPayrollDraft)return;
+  const [day,index]=button.dataset.removeWorkSlot.split(":").map(Number);let seen=0;
+  salaryPayrollDraft.slots=salaryPayrollDraft.slots.filter(slot=>slot.day!==day||seen++!==index);salaryPage();
+ }));
  $("salaryCalendarRetry")?.addEventListener("click",()=>void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth(),true));
- document.querySelectorAll("[data-benefit-label],[data-benefit-amount]").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();const total=$("salaryBenefitTotal");if(total)total.textContent=salaryPayrollDraft.benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"})}));
+ document.querySelectorAll("[data-benefit-label],[data-benefit-amount]").forEach(x=>x.addEventListener("input",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
  $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push({label:"",amount:0});salaryPage()});
  document.querySelectorAll("[data-benefit-remove]").forEach(x=>x.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.splice(Number(x.dataset.benefitRemove),1);salaryPage()}));
  $("salaryPayrollSave")?.addEventListener("click",()=>{salaryPayrollReadDraft();void salaryPayrollSave()});
@@ -486,10 +575,10 @@ function salarySettingsPanel(){
  return '<section class="card"><h2>Paramètres du personnel</h2><p class="muted">Les horaires et avantages en nature se modifient dans chaque fiche salarié.</p>'+
  '<div class="actions"><label for="salarySettingsMonth">Mois de référence</label><input id="salarySettingsMonth" type="month" value="'+esc(month)+'" style="max-width:200px"><button id="salarySettingsCalendarReload" type="button" class="btn secondary">Actualiser les calendriers</button></div>'+
  (salaryStaffLoading?'<p>Chargement…</p>':salaryStaffError?'<p class="err">'+esc(salaryStaffError)+'</p>':
- '<div class="table"><table><thead><tr><th>Salarié</th><th>Jours travaillés</th><th>Jours théoriques du mois</th><th>Avantages / mois</th><th>Action</th></tr></thead><tbody>'+
+ '<div class="table"><table><thead><tr><th>Salarié</th><th>Jours travaillés</th><th>Jours théoriques du mois</th><th>Horaires théoriques</th><th>Avantages / mois</th><th>Action</th></tr></thead><tbody>'+
  salaryStaff.filter(p=>!p.archived).map(p=>{
  const days=Array.isArray(p.working_weekdays)?p.working_weekdays:[1,2,3,4,5],benefits=Array.isArray(p.benefits_in_kind)?p.benefits_in_kind:[];
- return '<tr><td>'+esc(p.name)+'</td><td>'+esc(days.map(d=>salaryWeekdayNames[d]).join(", ")||"Aucun")+'</td><td>'+salaryCalendarResultHtml(p,month)+'</td><td>'+esc(benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"}))+' ('+benefits.length+')</td><td><button type="button" class="btn secondary compact" data-salary-staff-profile="'+esc(p.id)+'">Configurer</button></td></tr>';
+ return '<tr><td>'+esc(p.name)+'</td><td>'+esc(days.map(d=>salaryWeekdayNames[d]).join(", ")||"Aucun")+'</td><td>'+salaryCalendarResultHtml(p,month)+'</td><td>'+salaryHoursResultHtml(p,month)+'</td><td>'+esc(benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"}))+' ('+benefits.length+')</td><td><button type="button" class="btn secondary compact" data-salary-staff-profile="'+esc(p.id)+'">Configurer</button></td></tr>';
  }).join("")+'</tbody></table></div>')+
  '<p class="muted">Jours théoriques selon jours habituels, jours fériés et vacances scolaires de la zone C, suivant les options de chaque salarié. Les congés individuels ne sont pas déduits. Aucun calcul de paie automatique.</p><p><a class="btn primary" href="https://www2.75.letese.urssaf.fr/cetpeweb/connectempl.jsp" target="_blank" rel="noopener noreferrer">Ouvrir le TESE</a></p></section>';
 }
@@ -506,11 +595,13 @@ function salaryEventEmployeeSummary(name,events,month){
  let workdays='<span>Calendrier salarié non disponible</span>';
  if(staff){
   const calculation=salaryCalendarBreakdown(staff,month);
+  const hours=salaryHoursBreakdown(staff,month);
   workdays=calculation.net===null?
    '<span>'+calculation.base+' jour(s) planifié(s) · calendrier à vérifier</span>':
    '<span><b>'+calculation.net+'</b> jour(s) théoriques travaillés</span>'+
     '<span>'+calculation.publicDays+' jour(s) férié(s) déduit(s)</span>'+
     (calculation.excludedSchool?'<span>'+calculation.schoolDays+' jour(s) de vacances déduit(s)</span>':'<span>Vacances scolaires non déduites</span>');
+  workdays+='<span>'+salaryHoursResultHtml(staff,month)+'</span>';
  }
  return '<div class="muted" style="display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap;margin:6px 0 12px">'+
  (staff?'<span>Rôle : <b>'+esc(salaryRoleLabel(staff.professional_role_id))+'</b></span>':'')+workdays+metrics+'</div>';
