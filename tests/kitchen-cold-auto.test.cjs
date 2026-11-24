@@ -22,7 +22,7 @@ test("Accueil Cuisine : noms des chambres et température reçue du capteur",()=
  assert.match(result,/21,7 °C/);
  assert.match(result,/À jour/);
  assert.match(result,/Sans capteur/);
- assert.match(result,/toutes les 10 minutes/);
+ assert.match(result,/Toutes les 10 min/);
 });
 test("Accueil Cuisine : un relevé ancien ou hors ligne ne devient jamais du temps réel",()=>{
  const old=html({connected:[sensor],cold:[reading(6.4,35,true)]});
@@ -50,4 +50,33 @@ test("Collecte Govee : planification indépendante du navigateur et accès sign�
  assert.match(migration,/extensions\.hmac/);
  assert.match(migration,/net\.http_post/);
  assert.doesNotMatch(migration,/service_role/i);
+});
+
+test("Accueil Cuisine : affichage de la fréquence propre à une chambre et du prochain créneau",()=>{
+ const result=html({connected:[sensor],cold:[],cold_overview:[{
+  room_id:"negative",last_reading:reading(-21.7),next_slot_at:new Date(Date.now()+600000).toISOString()
+ }]});
+ assert.match(result,/21,7 °C/);
+ assert.match(result,/Prochain :/);
+ assert.match(result,/Toutes les 10 min/);
+});
+test("Administration Cuisine : programmation indépendante des quatre chambres",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ assert.match(admin,/data-room-schedule/);
+ assert.match(admin,/save-room-collection-schedule/);
+ assert.match(admin,/Heures fixes chaque jour/);
+ assert.match(admin,/Collecte automatique/);
+ assert.match(admin,/auto_collection_interval_minutes/);
+ assert.match(admin,/Prochain créneau/);
+ assert.match(backend,/action==="save-room-collection-schedule"/);
+ assert.match(backend,/c\.rpc\("kitchen_claim_govee_due"\)/);
+ assert.match(backend,/c\.rpc\("kitchen_cold_room_overview"\)/);
+ const slots=read("supabase/migrations/20261124081350_kitchen_individual_room_collection_schedules.sql");
+ const dispatch=read("supabase/migrations/20261124081516_kitchen_schedule_per_room_minute_dispatch.sql");
+ assert.match(slots,/for update of r skip locked/i);
+ assert.match(slots,/auto_collection_enabled/);
+ assert.match(slots,/Europe\/Paris/);
+ assert.match(dispatch,/'\* \* \* \* \*'/);
+ assert.match(dispatch,/where exists\(select 1 from public\.kitchen_govee_due_rooms\(now\(\)\)\)/i);
+ assert.match(dispatch,/cron\.unschedule/);
 });
