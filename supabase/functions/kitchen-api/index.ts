@@ -274,7 +274,7 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  }
  if(action==="pms-followups"&&req.method==="GET"){
  const id=url.searchParams.get("id");if(!uuid(id))return answer({error:"Dossier invalide"},400);
- const r=await c.from("kitchen_pms_followups").select("*").eq("record_id",id).order("recorded_at",{ascending:true});if(r.error)throw r.error;return answer({followups:r.data});
+ const r=await c.from("kitchen_pms_followups").select("*").eq("record_id",id).order("event_seq",{ascending:true});if(r.error)throw r.error;return answer({followups:r.data});
  }
  if(action==="list"&&req.method==="GET"){
  const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,coldOverview]=await Promise.all([
