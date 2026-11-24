@@ -61,3 +61,10 @@
 .college-admin-shell .salary-hours-summary{background:#edf3fa;border:1px solid #d8e4f1;border-radius:9px;padding:13px;margin:14px 0}
 .college-admin-shell .salary-hours-summary p{margin:0 0 7px}
 @media(max-width:420px){.college-admin-shell .salary-slot-row{grid-template-columns:repeat(2,minmax(0,1fr))}.college-admin-shell .salary-slot-row .btn{grid-column:1/-1}}
+
+/* Saisie rapide des horaires depuis la fiche salarié. */
+.college-admin-shell .salary-schedule-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0;padding:11px 12px;border:1px solid #dbe4ec;border-radius:9px;background:#f1f5f9}
+.college-admin-shell .salary-schedule-tools label{font-weight:700;font-size:12px}
+.college-admin-shell .salary-schedule-tools select{width:auto;min-width:155px}
+.college-admin-shell .salary-schedule-summary{font-weight:650;white-space:nowrap}
+@media(max-width:570px){.college-admin-shell .salary-schedule-tools{align-items:stretch;flex-direction:column}.college-admin-shell .salary-schedule-tools select,.college-admin-shell .salary-schedule-tools button{width:100%}}
