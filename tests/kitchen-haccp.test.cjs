@@ -30,12 +30,15 @@ test("Cuisine : l'administration et les accès proposent les deux espaces",()=>{
  assert.match(workspace,/link\("Cuisine","cuisine\/"\)/);
 });
 
-test("Cuisine : les températures finales restent bloquées avant les cinq dernières minutes",()=>{
+test("Cuisine : le rappel reste actif et un agent peut mesurer avant les cinq dernières minutes",()=>{
  const script=read("cuisine/cuisine.js"),html=read("cuisine/index.html");
  assert.match(script,/remainingMs\(due\)<5\*60\*1000/);
  assert.match(script,/input\.disabled=!unlocked/);
  assert.match(script,/button\.disabled=!unlocked/);
- assert.match(script,/!canFinish\(form\.dataset\.due\)/);
+ assert.match(script,/!canRecordReheat\(\)/);
+ assert.match(script,/const canRecordReheat=\(\)=>data\?\.me\.scope==="staff"&&!data\.me\.existingAccount/);
+ assert.match(read("supabase/functions/kitchen-api/index.ts"),/elapsedMs<=60\*60000/);
+ assert.doesNotMatch(read("supabase/functions/kitchen-api/index.ts"),/Saisie finale verrouillée/);
  assert.match(script,/const key=r\.id\+":"\+stage/);
  assert.match(script,/stage==="five"/);
  assert.match(script,/stage==="zero"/);
