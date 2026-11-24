@@ -286,8 +286,8 @@ function salaryPayrollPanel(staff,month){
   '<p><label><input type="checkbox" id="salaryExcludeSchool" style="width:auto" '+(excludeSchool?'checked':'')+lock+'> Déduire les vacances scolaires (uniquement si non travaillées selon le contrat)</label></p>'+
   '<p id="salaryPayrollWorkingCount">'+salaryCalendarResultHtml(staff,month,{days,excludePublic,excludeSchool})+'</p>'+
   '<button type="button" class="btn secondary compact" id="salaryCalendarRetry">Actualiser le calendrier officiel</button>'+
-  '<h4>Avantages en nature</h4><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>'<div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input data-benefit-label="'+i+'" aria-label="Désignation de l’avantage '+(i+1)+'" maxlength="100" value="'+esc(b.label)+'" placeholder="Repas, logement, véhicule…" style="flex:2;min-width:150px"><input data-benefit-amount="'+i+'" aria-label="Montant mensuel en euros" type="number" min="0" max="100000" step="0.01" value="'+esc(b.amount)+'" style="flex:1;min-width:100px"><button type="button" class="btn secondary" data-benefit-remove="'+i+'">Supprimer</button></div>').join("")+'</div>'+
-  '<button type="button" class="btn secondary" id="salaryBenefitAdd">+ Ajouter un avantage</button>'+
+  '<h4>Avantages en nature</h4><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>'<div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input data-benefit-label="'+i+'" aria-label="Désignation de l’avantage '+(i+1)+'" maxlength="100" value="'+esc(b.label)+'" placeholder="Repas, logement, véhicule…" style="flex:2;min-width:150px"'+lock+'><input data-benefit-amount="'+i+'" aria-label="Montant mensuel en euros" type="number" min="0" max="100000" step="0.01" value="'+esc(b.amount)+'" style="flex:1;min-width:100px"'+lock+'><button type="button" class="btn secondary" data-benefit-remove="'+i+'"'+lock+'>Supprimer</button></div>').join("")+'</div>'+
+  '<button type="button" class="btn secondary" id="salaryBenefitAdd"'+lock+'>+ Ajouter un avantage</button>'+
   '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
   '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer les horaires, le planning et les avantages</button>'+
   (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
@@ -312,7 +312,10 @@ async function salaryPayrollSave(){
  if(benefits.some(b=>!b.label.trim()||!Number.isFinite(b.amount)||b.amount<0||Math.abs(Math.round(b.amount*100)-b.amount*100)>1e-7)){salaryPayrollMessage="Vérifiez les désignations et montants des avantages.";salaryPage();return}
  salaryStaffSaving=true;salaryPayrollMessage="";salaryPage();
  try{
-  await call(ROOT+'/personnel-planning','staff-payroll-update','POST',{id,updated_at,working_weekdays:days,weekly_work_slots:schedule.slots,benefits_in_kind:benefits,exclude_public_holidays:excludePublic,exclude_school_holidays:excludeSchool});
+  const saved=await call(ROOT+'/personnel-planning','staff-payroll-update','POST',{id,updated_at,working_weekdays:days,weekly_work_slots:schedule.slots,benefits_in_kind:benefits,exclude_public_holidays:excludePublic,exclude_school_holidays:excludeSchool});
+  if(saved.staff?.id!==id||!Array.isArray(saved.staff.weekly_work_slots))throw Error("L'enregistrement des horaires n'a pas été confirmé.");
+  salaryStaff=salaryStaff.map(p=>p.id===id?{...p,...saved.staff}:p);
+  if(salaryProfileEditDraft?.id===id&&salaryProfileEditDraft.updated_at===updated_at)salaryProfileEditDraft.updated_at=saved.staff.updated_at;
   salaryPayrollDraft=null;salaryStaffLoaded=false;
   await salaryLoadStaff();
   salaryPayrollMessage="Horaires, planning et avantages enregistrés."+(schedule.missingDays.length?" Certains jours travaillés restent à compléter.":"");
@@ -353,6 +356,7 @@ async function salarySaveIdentity(event){
   salaryProfileEditDraft=null;salaryProfileEditMessage="Fiche salarié enregistrée.";
   salaryStaffLoaded=false;await salaryLoadStaff();
   if(salaryProfileEmployeeId===draft.id){
+   if(salaryPayrollDraft?.id===draft.id&&salaryPayrollDraft.updated_at===draft.updated_at)salaryPayrollDraft.updated_at=r.staff.updated_at;
    salaryProfileEvents=salaryProfileEvents.map(e=>e.personnel_id===draft.id?{...e,personnel_name:r.staff.name}:e);
   }
   salaryEvents=salaryEvents.map(e=>e.personnel_id===draft.id?{...e,personnel_name:r.staff.name}:e);
@@ -595,7 +599,6 @@ function salaryEventEmployeeSummary(name,events,month){
  let workdays='<span>Calendrier salarié non disponible</span>';
  if(staff){
   const calculation=salaryCalendarBreakdown(staff,month);
-  const hours=salaryHoursBreakdown(staff,month);
   workdays=calculation.net===null?
    '<span>'+calculation.base+' jour(s) planifié(s) · calendrier à vérifier</span>':
    '<span><b>'+calculation.net+'</b> jour(s) théoriques travaillés</span>'+
