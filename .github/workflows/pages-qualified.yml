@@ -1,0 +1,53 @@
+name: Publication qualifiée Cours Chambertin
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: chambertin-pages
+  cancel-in-progress: true
+jobs:
+  qualification:
+    if: github.ref == 'refs/heads/main' && vars.CHAMBERTIN_PAGES_CI == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Tests métier et syntaxe
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' source; do
+            node --check "$source"
+          done < <(git ls-files -z -- '*.js' '*.mjs' '*.cjs')
+          node --test tests/*.test.cjs tests/js/*.test.mjs tests/marne-invest-api.test.mjs tests/marne-invest-bank.test.mjs tests/marne-invest-mail.test.mjs tests/marne-invest-ui.test.mjs
+      - name: Préparer les fichiers publics uniquement
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/chambertin-pages"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/chambertin-pages"
+          rm -rf "$RUNNER_TEMP/chambertin-pages/.github" "$RUNNER_TEMP/chambertin-pages/supabase" "$RUNNER_TEMP/chambertin-pages/backend" "$RUNNER_TEMP/chambertin-pages/tests" "$RUNNER_TEMP/chambertin-pages/docs"
+          test -f "$RUNNER_TEMP/chambertin-pages/index.html"
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/chambertin-pages
+  deploy:
+    needs: qualification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publication des seuls artefacts qualifiés
+        id: deployment
+        uses: actions/deploy-pages@v4
