@@ -171,7 +171,8 @@ function salaryArchiveItemHtml(h){
  const vacationDays=[...new Set((h.vacation_weekly_work_slots||[]).map(x=>x.day))];
  const school=salaryWorkSlotSummary(schoolDays,h.school_weekly_work_slots);
  const vacation=salaryWorkSlotSummary(vacationDays,h.vacation_weekly_work_slots);
- const current=h.source_start<="2026-11-24"&&h.source_end>="2026-11-24";
+ const today=new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ const current=h.source_start<=today&&h.source_end>=today;
  const isTeam=h.schedule_scope==='team';
  const scopeLabel=isTeam?'Horaires collectifs de cantine · non affectés':h.personnel_id?'Fiche reliée':'Ancien salarié non rapproché';
  const sourceLabel='Source : '+h.source_document+(h.source_sheet_name?' · onglet '+h.source_sheet_name:'');
@@ -302,8 +303,11 @@ function salaryCalendarBreakdown(staff,month,overrides){
  const holidays=Array.isArray(source?.holidays)?new Set(source.holidays.map(x=>x.date)):null;
  const officialVacations=Array.isArray(source?.vacations)?source.vacations:null;
  const baseline=salaryWorkSlotSummary(days,slots);
+ const importedYear=salaryScheduleHistoryLoaded&&salaryScheduleHistory.some(x=>x.personnel_id===staff.id&&x.source_start==="2026-09-01"&&x.source_end==="2027-08-31");
  const inImportYear=month>="2026-09"&&month<="2027-08"&&["SEPULCHRE","SIMON","HUGUENOT","MOREL"].includes(String(staff.name).trim().toUpperCase());
- const noAnnual=inImportYear&&!salaryScheduleHistoryLoaded;
+ const outsideImportedYear=importedYear&&(month<"2026-09"||month>"2027-08")&&!salaryAnnualForDate(staff,month+"-15");
+ const missingAnnual=inImportYear&&(!salaryScheduleHistoryLoaded||!salaryAnnualForDate(staff,month+"-15"));
+ const noAnnual=missingAnnual||outsideImportedYear;
  const incompleteSource=noAnnual||(excludePublic&&!holidays)||(excludeSchool&&!officialVacations);
  const [year,m]=month.split("-").map(Number),last=new Date(Date.UTC(year,m,0)).getUTCDate();
  let base=0,net=0,publicDays=0,schoolDays=0,vacationDays=0,monthlyMinutes=0,missingHours=!!baseline.error;
@@ -334,7 +338,7 @@ function salaryCalendarBreakdown(staff,month,overrides){
   base,net:incompleteSource?null:net,publicDays,schoolDays,vacationDays,workedDaysByWeekday,
   monthlyScheduledMinutes:incompleteSource||missingHours?null:monthlyMinutes,
   excludedPublic:excludePublic,excludedSchool:excludeSchool,source,
-  error:noAnnual?'Chargement du planning annuel 2026-2027 nécessaire.':null
+  error:outsideImportedYear?"Pas de planning annuel vérifié pour cette période.":missingAnnual?(salaryScheduleHistoryLoaded?"Planning annuel 2026-2027 introuvable.":"Chargement du planning annuel 2026-2027 nécessaire."):null
  };
 }
 function salaryCalendarResultHtml(staff,month,overrides){
@@ -513,7 +517,7 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+('<h3>Horaires historiques (sans effet sur les horaires actuels)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
 }
 async function salaryOpenStaffProfile(id,focusSchedule=false){
  if(salaryView==="events")salaryView="staff";
@@ -590,7 +594,7 @@ function salaryStaffPanel(){
   '<div class="salary-staff-role"><label for="salaryStaffRole">Rôle professionnel</label><select id="salaryStaffRole" '+(!salaryCanWrite?'disabled':'')+'>'+salaryRoleOptions(null)+'</select></div>'+
   '<label><input id="salaryStaffVisible" type="checkbox" checked> Afficher dans le planning</label>'+
   '<button type="submit" class="btn primary" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Ajouter le salarié</button></form>'+
-  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires hebdomadaires</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
+  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires scolaires hebdomadaires</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
   active.map(row).join('')+archived.map(row).join('')+
   (!salaryStaff.length?'<tr><td colspan="7">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
 }
