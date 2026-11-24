@@ -131,7 +131,7 @@
 @media(max-width:700px){.salary-profile-kpis{grid-template-columns:1fr}}
 @media(max-width:700px){.salary-staff-form{display:flex;flex-direction:column;align-items:stretch}}
 </style>
-<link rel="stylesheet" href="./admin-layout.css?v=20261124-compta-salaire-kpis">
+<link rel="stylesheet" href="./admin-layout.css?v=20261124-ecarts-huguenot-correction">
 <link rel="stylesheet" href="../../cuisine/kitchen-ui.css?v=20261124-task-editor">
 </head>
 <body>
@@ -143,7 +143,7 @@
 <script src="./apps-organizer.js?v=1"></script>
 <script src="./product-invoice-aliases.js?v=2"></script>
 <script>
-const UI_VERSION='2026.11.24-compta-salaire-indicators';
+const UI_VERSION='2026.11.24-compta-salaire-ecarts-corrected';
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1';
 const ADMIN=ROOT+'/admin-api',SITE=ROOT+'/site-admin-api',STATS=ROOT+'/admin-stats',PRODUCT_IMAGE_BASE='https://zreegtzfpwrjgdhhunxx.supabase.co/storage/v1/object/public/product-images/';
 const requestedProduct=new URLSearchParams(location.search).get('product'),requestedPage=new URLSearchParams(location.search).get('page'),pageNames={dashboard:'Accueil',products:'Produits & stock',purchases:'Achats',commandes:'Commandes',events:'Mouvements',historicalStock:'Inventaires historiques',advanced:'Outils avancés',categories:'Catégories',subcategories:'Sous-catégories',apps:'Applications',stats:'Statistiques',readerSettings:'Lecteur PDF & IA',siteDesigner:'Configuration des sites',manual:'Manuel d’utilisation',salaires:'Liste salariés',comptaSalaires:'Compta salaire',comptaFournisseurs:'Compta fournisseur',cuisine:'Gestion Cuisine'},allowedPages=Object.keys(pageNames);let token=localStorage.getItem('college_admin_token')||localStorage.getItem('edm_admin_token')||localStorage.getItem('holding_admin_token')||'',db=null,page=allowedPages.includes(requestedPage||'')?requestedPage:'dashboard',statsCache=null,sensitiveToken='',sensitiveExpires=0,readerSettings=null;
@@ -682,7 +682,7 @@ function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/
 window.addEventListener('load',()=>{if(token)enterApp().catch(()=>logout())});
 </script>
 <script src="./qr-tools.js?v=20261024-apps4"></script>
-<script src="./salaires.js?v=20261124-compta-salaire-kpis"></script>
+<script src="./salaires.js?v=20261124-ecarts-huguenot-correction"></script>
 <script src="./historical-stock.js?v=20261106-1"></script>
 <script src="../../cuisine/releve-export.js?v=20261120-2"></script>
 <script src="../../cuisine/kitchen-ui.js?v=20261124-task-editor"></script>
