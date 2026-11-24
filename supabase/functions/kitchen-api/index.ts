@@ -24,6 +24,54 @@ function uuid(v:any){return typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8]
 const forbidden=()=>answer({error:"Accès non autorisé"},403);
 const allowed=(u:any,admin=false)=>!!u&&(!admin||u.scope==="admin");
 const query=async (p:any)=>{if(p.error)throw p.error;return p.data??[]};
+const MEATER_BASE="https://public-api.cloud.meater.com/v1";
+class MeaterError extends Error {}
+async function meaterCall(route:"/login"|"/devices",credential:any){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
+ try{
+  const login=route==="/login";
+  const response=await fetch(MEATER_BASE+route,{method:login?"POST":"GET",redirect:"error",headers:login?{"Content-Type":"application/json"}:{"Authorization":"Bearer "+credential,"Accept-Language":"fr"},body:login?JSON.stringify(credential):undefined,signal:controller.signal});
+  if(!response.ok)throw new MeaterError(response.status===401||response.status===403?"Identifiants ou jeton MEATER refusés":response.status===429?"Limite de requêtes MEATER atteinte":"MEATER indisponible (HTTP "+response.status+")");
+  const result=await response.json();if(result.statusCode!==200||!result.data)throw new MeaterError("Réponse MEATER invalide");
+  return result.data;
+ }catch(err){if(err instanceof MeaterError)throw err;throw new MeaterError("Connexion MEATER indisponible");}
+ finally{clearTimeout(timer);}
+}
+function normalizeMeaterDevices(value:any,now=Date.now()){
+ if(!Array.isArray(value))throw new MeaterError("Liste des sondes MEATER invalide");
+ const found=new Map<string,any>();
+ for(const d of value.slice(0,100)){
+  const id=d?.id,internal=d?.temperature?.internal,ambient=d?.temperature?.ambient,stamp=d?.updated_at;
+  if(typeof id!=="string"||id.length<1||id.length>160||typeof internal!=="number"||!Number.isFinite(internal)||internal< -10||internal>105||typeof ambient!=="number"||!Number.isFinite(ambient)||ambient< -10||ambient>550||!Number.isSafeInteger(stamp)||stamp<=0)continue;
+  const ms=stamp*1000;if(!Number.isFinite(ms)||ms>now+10000||ms<now-120000)continue;
+  const previous=found.get(id);if(previous&&Date.parse(previous.measured_at)>ms)continue;
+  found.set(id,{device_id:id,internal_c:internal,ambient_c:ambient,measured_at:new Date(ms).toISOString(),cook_id:typeof d.cook?.id==="string"&&d.cook.id.length>0&&d.cook.id.length<=160?d.cook.id:null,cook_state:typeof d.cook?.state==="string"?d.cook.state.slice(0,80):null});
+ }
+ return [...found.values()];
+}
+async function pollMeater(c:any,manual:boolean){
+ const claim=await c.rpc("kitchen_meater_claim",{p_manual:manual});
+ if(claim.error)throw Error("MEATER claim failed");
+ const slot=claim.data;if(slot?.error)return {error:slot.error};if(slot?.skipped)return {skipped:true};
+ if(!slot?.token||!slot?.generation)throw Error("MEATER claim missing");
+ let devices:any[]=[],problem:string|null=null;
+ try{const raw=await meaterCall("/devices",slot.token);devices=normalizeMeaterDevices(raw.devices);}
+ catch(err){problem=err instanceof MeaterError?err.message:"Connexion MEATER indisponible";}
+ const result=await c.rpc("kitchen_meater_apply",{p_generation:slot.generation,p_devices:devices,p_error:problem});
+ if(result.error)throw Error("MEATER collection failed");
+ return result.data;
+}
+async function meaterStatus(c:any){
+ const [cfg,probes,links]=await Promise.all([
+  c.from("kitchen_meater_settings").select("vault_secret_id,enabled,last_poll_at,last_ok_at,last_error,professional_permission_ref").eq("id",1).single(),
+  c.from("kitchen_meater_probes").select("device_id,slot,label,qualified_at,qualification_expires_at,present,internal_c,ambient_c,measured_at,cook_id,cook_state").order("slot",{ascending:true,nullsFirst:false}).limit(100),
+  c.from("kitchen_meater_links").select("reheat_id,device_id,cook_id,attached_at,kitchen_reheats!inner(status)").eq("kitchen_reheats.status","en_cours").is("detached_at",null)
+ ]);
+ if(cfg.error||probes.error||links.error)throw Error("État MEATER indisponible");
+ const now=Date.now();
+ return {professional_permission_confirmed:!!cfg.data.professional_permission_ref,configured:!!cfg.data.vault_secret_id,enabled:cfg.data.enabled,last_poll_at:cfg.data.last_poll_at,last_ok_at:cfg.data.last_ok_at,last_error:cfg.data.last_error,
+  probes:(probes.data||[]).map((p:any)=>({...p,qualified_at:Date.parse(p.qualification_expires_at)>now?p.qualified_at:null,fresh:p.present===true&&!cfg.data.last_error&&Number.isFinite(Date.parse(p.measured_at))&&Date.parse(p.measured_at)<=now+10000&&Date.parse(p.measured_at)>=now-120000})),links:links.data||[]};
+}
 const goveeBase="https://openapi.api.govee.com/router/api/v1";
 async function goveeCall(apiKey:string,route:"/user/devices"|"/device/state",payload?:Record<string,unknown>){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9000);
@@ -132,7 +180,13 @@ Deno.serve(async(req:Request)=>{
  if(!ok)return answer({error:"Identifiant ou code PIN incorrect"},401);
  return answer({token:await token(c,"kitchen-staff",a.id,a.session_version),staff:{id:a.id,name:a.name}});
  }
-if(action==="govee-auto-sync"&&req.method==="POST"){
+if(action==="meater-auto-sync"&&req.method==="POST"){
+ const payload=await req.json().catch(()=>null),timestamp=payload?.timestamp,signature=payload?.signature;
+ if(!Number.isSafeInteger(timestamp)||Math.abs(Date.now()-timestamp*1000)>120000||typeof signature!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(signature))return forbidden();
+ if(signature!==await mac(await secret(c),"kitchen-meater-cron:"+timestamp))return forbidden();
+ return answer(await pollMeater(c,false));
+ }
+ if(action==="govee-auto-sync"&&req.method==="POST"){
   const payload=await req.json().catch(()=>null);
   const timestamp=payload?.timestamp,signature=payload?.signature;
   if(!Number.isSafeInteger(timestamp)||Math.abs(Date.now()-timestamp*1000)>120000||
@@ -159,6 +213,12 @@ if(action==="govee-auto-sync"&&req.method==="POST"){
  }
  const u=await user(c,req);if(!u)return answer({error:"Session expirée ou accès non autorisé"},401);
   if(u.scope==="viewer"&&req.method!=="GET")return answer({error:"Ce pouvoir autorise uniquement la consultation de la cuisine."},403);
+ if(action==="meater-status"&&req.method==="GET")return answer(await meaterStatus(c));
+ if(action==="meater-history"&&req.method==="GET"){
+ const id=url.searchParams.get("reheat_id");if(!uuid(id))return answer({error:"Cycle invalide"},400);
+ const q=await c.from("kitchen_meater_samples").select("measured_at,internal_c,ambient_c,received_at").eq("reheat_id",id).order("measured_at",{ascending:false}).limit(1000);
+ if(q.error)throw q.error;return answer({samples:(q.data||[]).reverse()});
+ }
  if(action==="list"&&req.method==="GET"){
  const [rooms,ovens,dishes,defaults,tasks,staff,reheats,cold,checks,notes,connected,account,invalidated,coldOverview]=await Promise.all([
  query(await c.from("kitchen_cold_rooms").select("*").order("room_type").order("room_number")),
@@ -268,6 +328,12 @@ if(action==="task-settings"&&req.method==="GET"){
  }
  if(req.method!=="POST")return answer({error:"Action inconnue"},404);
  const x=await req.json().catch(()=>null);if(!x||typeof x!=="object")return answer({error:"Saisie JSON invalide"},400);
+ if(action==="meater-attach"){
+ if(u.scope!=="staff"||u.existingAccount)return forbidden();
+ if(!uuid(x.reheat_id)||typeof x.device_id!=="string"||x.device_id.length<1||x.device_id.length>160)return answer({error:"Cycle ou sonde invalide"},400);
+ const q=await c.rpc("kitchen_meater_attach",{p_reheat:x.reheat_id,p_device:x.device_id,p_actor:u.id});if(q.error)throw q.error;
+ return answer(q.data,q.data.error?409:200);
+ }
  if(action==="cold-reading"){
  if(u.scope!=="staff"||u.existingAccount)return forbidden();
  const room=(await c.from("kitchen_cold_rooms").select("*").eq("id",String(x.room_id||"")).maybeSingle()).data;
@@ -381,7 +447,43 @@ if(action==="task-settings"&&req.method==="GET"){
  }
 
  
-if(action==="govee-save-key"){
+if(action==="meater-permission"){
+ const ref=x.reference;if(!(ref===null||typeof ref==="string"&&ref.trim().length>=5&&ref.trim().length<=500))return answer({error:"Référence écrite invalide"},400);
+ const q=await c.rpc("kitchen_meater_professional_permission",{p_ref:ref});if(q.error)throw q.error;return answer(q.data,q.data.error?400:200);
+ }
+ if(action==="meater-qualification"){
+ const id=x.device_id,ev=x.evidence;
+ if(typeof id!=="string"||id.length<1||id.length>160||!ev||typeof ev!=="object")return answer({error:"Dossier invalide"},400);
+ for(const k of ["cold_ref","cold_probe","hot_ref","hot_probe","reference_uncertainty"])if(typeof ev[k]!=="number"||!Number.isFinite(ev[k]))return answer({error:"Mesures numériques requises"},400);
+ for(const k of ["manufacturer_certificate","reference_certificate"])if(typeof ev[k]!=="string"||ev[k].trim().length<3||ev[k].length>240)return answer({error:"Références de certificats requises"},400);
+ if(typeof ev.transmission_verified!=="boolean"||typeof ev.hygiene_verified!=="boolean")return answer({error:"Contrôles requis"},400);
+ const q=await c.rpc("kitchen_meater_record_qualification",{p_device:id,p_evidence:ev,p_actor:u.id});if(q.error)throw q.error;return answer(q.data,q.data.error?409:200);
+ }
+ if(action==="meater-login"){
+ const permission=await c.from("kitchen_meater_settings").select("professional_permission_ref").eq("id",1).single();if(permission.error)throw permission.error;
+ if(!permission.data.professional_permission_ref)return answer({error:"Autorisation professionnelle écrite de MEATER requise"},409);
+ const email=typeof x.email==="string"?x.email.trim().toLowerCase():"",password=typeof x.password==="string"?x.password:"";
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||password.length<1||password.length>512)return answer({error:"Identifiants MEATER invalides"},400);
+ let result;try{result=await meaterCall("/login",{email,password});}catch(err){return answer({error:err instanceof MeaterError?err.message:"Connexion impossible"},400);}
+ if(typeof result.token!=="string"||result.token.length<20||result.token.length>8192)return answer({error:"Jeton MEATER invalide"},502);
+ const q=await c.rpc("kitchen_meater_set_token",{p_token:result.token});
+ if(q.error)throw Error("Stockage sécurisé MEATER impossible");
+ return answer({configured:true,enabled:false});
+ }
+ if(action==="meater-test"){
+ const result=await pollMeater(c,true);return answer(result,result?.error?400:200);
+ }
+ if(action==="meater-probe-config"){
+ const id=x.device_id,slot=x.slot,label=typeof x.label==="string"?x.label.trim():"",qualified=x.qualified;
+ if(typeof id!=="string"||id.length<1||id.length>160||!(slot===null||Number.isInteger(slot)&&slot>=1&&slot<=12)||!label||label.length>80||typeof qualified!=="boolean")return answer({error:"Configuration invalide"},400);
+ const q=await c.rpc("kitchen_meater_configure_probe",{p_device:id,p_slot:slot,p_label:label,p_qualified:qualified,p_actor:u.id});if(q.error)throw q.error;
+ return answer(q.data,q.data.error?409:200);
+ }
+ if(action==="meater-enable"){
+ if(typeof x.enabled!=="boolean")return answer({error:"État invalide"},400);
+ const q=await c.rpc("kitchen_meater_enable",{p_enabled:x.enabled});if(q.error)throw q.error;return answer(q.data,q.data.error?409:200);
+ }
+ if(action==="govee-save-key"){
  const key=String(x.api_key||"").trim();
  if(key.length<10||key.length>240)return answer({error:"Clé API Govee invalide"},400);
  const tested=await goveeCall(key,"/user/devices");

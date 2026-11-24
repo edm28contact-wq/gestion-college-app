@@ -217,6 +217,7 @@ function renderDashboard(){
  $("content").innerHTML=
  renderColdOverview()+
  '<div class="card"><div class="section-heading"><div><div class="eyebrow">Organisation quotidienne</div><h2>Tâches du jour</h2></div><button type="button" class="btn btn-outline btn-small" data-go="tasks">Toutes les tâches</button></div>'+renderTaskItems(data.tasks)+'</div>'+
+ '<div id="meaterDashboardPanel"></div>'+
  '<div class="grid-3" style="margin-bottom:20px">'+
  '<div class="stat-box"><div class="muted">Chambres contrôlées aujourd’hui</div><div class="big-number">'+checked.size+' / '+rooms.length+'</div></div>'+
  '<div class="stat-box"><div class="muted">Remises en température en cours</div><div class="big-number">'+open.length+'</div></div>'+
@@ -229,6 +230,7 @@ function renderDashboard(){
  (alarms?'<div class="card info-warn"><strong>'+alarms+' anomalie(s) nécessitant une vérification.</strong> Prévenez le responsable et appliquez la procédure corrective prévue.</div>':'')+
  (open.length?'<div class="card"><div class="section-heading"><div><h2>Fours en cours</h2><p>Le compte à rebours continue même si vous changez de rubrique.</p></div><button type="button" class="btn btn-small btn-outline" data-go="reheat">Voir les cycles</button></div>'+
  open.map(r=>'<div class="line"><div><strong>'+esc(ovenName(r))+' · '+esc(dishName(r))+'</strong><div class="subline">'+esc(r.cold_room_label_snapshot||roomName(r.cold_room_id))+'</div></div><strong>'+remaining(r.due_at)+'</strong></div>').join("")+'</div>':'');
+ window.KitchenMeater.mountDashboard($("meaterDashboardPanel"),request);
 }
 
 function renderCold(){
@@ -270,6 +272,7 @@ function renderReheat(){
  '<div class="field"><label>Four utilisé</label><select name="oven_id" required><option value="">Choisir un four</option>'+ovenOptions+'</select></div>'+
  '<div class="field"><label>Température mesurée du plat avant réchauffage (°C)</label><input name="temperature_c" required type="number" step="0.1" min="-10" max="90" inputmode="decimal" placeholder="Ex. 2"></div></div>'+
  '<div class="row between"><div class="help">Référence de départ : '+number(d.target_start_c??2)+' °C. Ne saisissez pas une valeur non mesurée.</div><button type="submit" class="btn btn-primary">Démarrer le chronomètre</button></div></form></div>'+
+ '<div id="meaterReheatPanel"></div>'+
  '<div class="card"><div class="section-heading"><div><h2>2. Fours en cours</h2><p>La température finale sera saisissable pendant les 5 dernières minutes.</p></div><span class="tag">'+open.length+' cycle(s)</span></div>'+
  (open.length?open.map(r=>{
  const allow=canFinish(r.due_at),ms=remainingMs(r.due_at),duration=(r.reminder_minutes||55)*60000,progress=Math.min(100,Math.max(0,(duration-ms)/duration*100));
@@ -285,6 +288,7 @@ function renderReheat(){
  '<div class="card"><div class="section-heading"><div><h2>3. Derniers contrôles terminés</h2><p>Différence entre les températures réelles de départ et de fin.</p></div></div>'+
  (recent.length?recent.map(r=>'<div class="line"><div><strong>'+equipment(r)+'</strong><div class="subline">'+esc(dishName(r))+' · '+clock(r.started_at)+'</div><div class="subline">'+number(r.start_temperature_c)+' °C → '+number(r.end_temperature_c)+' °C · Écart : '+deltaC(r)+(r.ended_at&&new Date(r.ended_at)>new Date(r.due_at)?' · Mesure enregistrée après le rappel':'')+'</div></div><span class="tag '+(r.status==='alerte'?'tag-alert':'tag-ok')+'">'+(r.status==='alerte'?'À contrôler':'Seuils atteints')+'</span></div>').join(""):'<div class="empty"><strong>Aucun contrôle terminé</strong>Les contrôles apparaîtront ici.</div>')+'</div>'+
  '<p class="guided-note">Le minuteur est une aide à l’organisation, pas une preuve de conformité sanitaire. Les mesures sont conservées avec leur heure de saisie et les alertes restent visibles en administration.</p>';
+ window.KitchenMeater.mountKitchen($("meaterReheatPanel"),request,()=>data);
 }
 
 function canManageTasks(){return data?.me.scope==="admin"}
