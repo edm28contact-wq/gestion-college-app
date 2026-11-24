@@ -396,6 +396,7 @@ test("ligne automatiquement exclue : TVA PDF conservée, sans réception en stoc
  assert.equal(h.api.calc().included.length,0);
 });
 test("exclusions automatiques : confirmation explicite et trace des références conservées",()=>{
+ const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
  assert.ok(source.includes("auto_excluded_details:rows.filter("));
  assert.ok(source.includes("autoExcludedHt"));
  assert.ok(source.includes("ne pourront pas être réceptionnés plus tard à partir du même PDF"));
@@ -403,7 +404,6 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.ok(source.includes("setRowExclusion(row,e.target.checked)"));
  assert.match(source,/if\(manualMode\|\|accounting\|\|!catalog\|\|!Array\.isArray\(catalog\.products\)/);
  assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
- const page=file("lecteur-veryfi/index.html"),secretariat=file("secretariat/index.html");
  assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
  assert.match(secretariat,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
