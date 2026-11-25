@@ -1,17 +1,17 @@
 (()=>{
 "use strict";
 const ROOT="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/";
-const API={admin:ROOT+"admin-api",veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-catalog",finalize:ROOT+"secretariat-tableur-finalize",accounting:ROOT+"accounting-api",aliases:ROOT+"product-alias-keywords"};
+const API={secretariat:ROOT+"secretariat-api",admin:ROOT+"admin-api",veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-catalog",finalize:ROOT+"secretariat-tableur-finalize",accounting:ROOT+"accounting-api",aliases:ROOT+"product-alias-keywords"};
 const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V56";
+const READER_VERSION="V57";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
 let queueImportStarted=false,queueImported=false,manualStartRequested=false;
-let manualProductContext=null;
+let manualProductContext=null,manualInvoiceOptions=null,manualOptionsToken="";
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,veryfiSubscriptionBlocked=false,usageRefreshPending=false,issueFilter="all",manualMode=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -341,6 +341,61 @@ async function syncQueueAfterReception(){
   $("saveResult").textContent+=" · Réception enregistrée ; classement « Faites » non synchronisé. Utilisez « Vérifier la réception Veryfi » dans Secrétariat.";
  }
 }
+function foodSupplierKey(value){
+ const k=norm(value);
+ if(k.includes("passionfroid")||k==="pomona")return "passionfroid";
+ if(k.includes("henrijulien"))return "henrijulien";
+ if(k.includes("lanormande"))return "lanormande";
+ return k;
+}
+function manualSupplierProducts(vendor,directory,products){
+ const key=foodSupplierKey(vendor);
+ if(!key)return [];
+ const ids=new Set((directory?.supplier_products||[]).filter(x=>foodSupplierKey(x.supplier_key)===key).map(x=>x.product_id));
+ return products.filter(p=>p.active!==false&&ids.has(p.id)).sort((a,b)=>String(a.name).localeCompare(String(b.name),"fr"));
+}
+function renderManualSuppliers(){
+ const list=$("manualSupplierOptions"),hint=$("manualSupplierHint"),input=$("vendor");
+ if(!list||!hint)return;
+ list.replaceChildren();hint.hidden=!manualMode||accounting;
+ input.removeAttribute("list");
+ if(!manualMode||accounting)return;
+ const known=manualInvoiceOptions?.suppliers||[];
+ for(const supplier of known){
+  const option=document.createElement("option");option.value=supplier.name;list.append(option);
+ }
+ input.setAttribute("list","manualSupplierOptions");
+ hint.textContent=known.length?known.length+" fournisseur(s) alimentaire(s) du catalogue. Vous pouvez aussi saisir un nouveau fournisseur.": "Liste des fournisseurs indisponible ou vide : saisissez le nom exact du fournisseur.";
+}
+async function loadManualInvoiceOptions(){
+ if(accounting||!authToken)return;
+ const token=authToken;
+ try{
+  const data=await request(API.secretariat+"?action=manual-invoice-options",{token,timeout:20000});
+  if(authToken!==token)return;
+  if(data.ok!==true||!Array.isArray(data.suppliers)||!Array.isArray(data.categories)||!Array.isArray(data.products))throw Error("Réponse fournisseurs invalide");
+  manualInvoiceOptions=data;manualOptionsToken=token;
+ }catch(e){if(authToken===token){manualInvoiceOptions=null;manualOptionsToken="";notice("Liste alimentaire indisponible : "+e.message,"error")}}
+ renderManualSuppliers();
+}
+function manualSupplierPicker(row,index){
+ if(!manualMode||accounting||saved||row.excluded)return null;
+ const products=manualSupplierProducts($("vendor").value,manualInvoiceOptions,catalog?.products||[]);
+ if(!products.length)return null;
+ const label=document.createElement("label");label.className="field";
+ const title=document.createElement("span");title.textContent="Produits connus de ce fournisseur";
+ const select=document.createElement("select");select.setAttribute("aria-label","Produit connu de ce fournisseur");
+ select.append(new Option("Choisir un produit (ou rechercher dans tout le catalogue)",""));
+ for(const p of products)select.append(new Option(p.code+" — "+p.name,p.id));
+ select.value=products.some(p=>p.id===row.product_id)?row.product_id:"";
+ select.addEventListener("change",()=>{
+  const product=products.find(p=>p.id===select.value);
+  if(!product||loading||saved||rows[index]!==row)return;
+  if(!String(row.description||"").trim())row.description=product.name;
+  changeRow(index,"product_label",product.code+" — "+product.name);
+ });
+ label.append(title,select);return label;
+}
 function invoiceArchiveName(original,date,vendor,number){
  const clean=value=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-+|-+$/g,"");
  const supplier=clean(vendor).slice(0,80),reference=clean(number).slice(0,60);
@@ -401,6 +456,7 @@ async function startManualEntry(){
  showManualEntryState();
  renderRows();
  notice("Saisie manuelle ouverte. Saisissez le fournisseur, les montants et les produits ; le PDF est obligatoire uniquement pour valider et enregistrer.","success");
+ if(!accounting){await loadManualInvoiceOptions();if(manualMode&&!saved)renderRows()}
 }
 function setFile(newFile){
  if(loading)return;
@@ -1118,6 +1174,8 @@ function buildLine(row,index){
   input.addEventListener("change",()=>changeRow(index,key,input.value));
   label.append(input);fields.append(label);
  }
+ const picker=manualSupplierPicker(row,index);
+ if(picker)fields.prepend(picker);
  card.append(fields);
  const meta=document.createElement("div");meta.className="mapping";
  meta.textContent=color==="bad"?(row.stock_note||"Aucune réception automatique autorisée"):(row.reason+(row.stock_note?" · "+row.stock_note:"")+(row.account_source?" · Charge : "+row.account_source:""));
@@ -1227,11 +1285,16 @@ async function openManualProduct(row,button){
  if(loading||saved||!manualMode||accounting||trainingMode||!authToken||row.product_id||row.excluded||dialog.open)return;
  const token=authToken;button.disabled=true;
  try{
-  const data=await request(API.admin+"?action=data",{token});
+  if(!$("vendor").value.trim())throw Error("Renseignez d’abord le fournisseur de cette facture.");
+  if(manualOptionsToken!==token||!manualInvoiceOptions)await loadManualInvoiceOptions();
+  const options=manualOptionsToken===token?manualInvoiceOptions:null;
+  let admin=null;
+  if(!options||options.can_manage_catalog){try{admin=await request(API.admin+"?action=data",{token})}catch(e){if(!options?.can_create_food)throw e}}
   if(authToken!==token||saved||!manualMode||!rows.includes(row)||row.product_id||dialog.open)return;
-  if(!manualProductAllowed(data.current_user))throw Error("La création de produits nécessite le droit Produits : modification.");
-  const categories=(data.categories||[]).filter(c=>c.active!==false),products=data.products||[];
-  if(!categories.length||!Array.isArray(data.products))throw Error("Catalogue ou catégories indisponibles.");
+  const canManage=manualProductAllowed(admin?.current_user);
+  if(!options?.can_create_food&&!canManage)throw Error("La création nécessite le droit de modifier les factures alimentaires ou le catalogue.");
+  const categories=(canManage?admin.categories:options.categories).filter(c=>c.active!==false),products=canManage?admin.products:[...(catalog?.products||[]),...(catalog?.inactive_products||[]),...(options?.products||[])];
+  if(!categories.length||!Array.isArray(products))throw Error("Catalogue ou catégories indisponibles.");
   form.reset();
   form.elements.namedItem("name").value=row.description||"";
   form.elements.namedItem("code").value=row.reference||"";
@@ -1239,11 +1302,22 @@ async function openManualProduct(row,button){
   form.elements.namedItem("unit_price").value=amount(row.unit_price)??0;
   const select=form.elements.namedItem("category_id");
   select.replaceChildren(new Option("Choisir une catégorie",""),...categories.map(c=>new Option(c.name,c.id)));
+  const food=categories.find(c=>c.code==="alimentaire");
+  const knownFood=options?.suppliers?.some(s=>foodSupplierKey(s.key)===foodSupplierKey($("vendor").value));
+  if(food&&(knownFood||!canManage))select.value=food.id;
+  $("manualProductSupplier").textContent="Fournisseur : "+$("vendor").value.trim();
   $("manualProductStatus").textContent="";
-  manualProductContext={row,token,categories,products,busy:false};
+  manualProductContext={row,token,categories,products,options,canManage,supplier:$("vendor").value.trim(),busy:false};
+  updateManualProductSubcategories();
   dialog.showModal();
  }catch(e){notice("Création de produit indisponible : "+e.message,"error")}
  finally{button.disabled=false}
+}
+function updateManualProductSubcategories(){
+ const form=$("manualProductForm"),category=form.elements.namedItem("category_id").value,select=form.elements.namedItem("subcategory_id");
+ const subs=(manualProductContext?.options?.subcategories||[]).filter(s=>s.category_id===category);
+ select.replaceChildren(new Option("Aucune / à préciser",""),...subs.map(s=>new Option(s.name,s.id)));
+ select.disabled=!subs.length;
 }
 async function saveManualProduct(event){
  event.preventDefault();
@@ -1252,11 +1326,20 @@ async function saveManualProduct(event){
  const submit=$("manualProductSave"),cancel=$("manualProductCancel");
  let created=false;
  try{
-  const payload=manualProductPayload(Object.fromEntries(new FormData(form)),context.categories,context.products);
+  const values=Object.fromEntries(new FormData(form));
+  const payload=manualProductPayload(values,context.categories,context.products);
+  const food=context.options?.can_create_food&&context.options.categories.some(c=>c.id===payload.category_id&&c.code==="alimentaire");
+  if(!food&&!context.canManage)throw Error("Création réservée aux produits alimentaires.");
+  if(food){
+   if(values.subcategory_id&&!context.options.subcategories.some(s=>s.id===values.subcategory_id&&s.category_id===payload.category_id))throw Error("Sous-catégorie invalide.");
+   payload.subcategory_id=values.subcategory_id||null;
+   payload.supplier=context.supplier;
+  }
   if(context.products.some(p=>norm(p.name)===norm(payload.name))&&!confirm("Une désignation identique existe. Créer un produit distinct après avoir vérifié son conditionnement ?"))return;
   context.busy=true;submit.disabled=true;cancel.disabled=true;
   status.textContent="Création sécurisée en cours…";
-  const result=await request(API.admin+"?action=save-product",{method:"POST",token:context.token,payload});
+  const endpoint=food?API.secretariat+"?action=create-food-product":API.admin+"?action=save-product";
+  const result=await request(endpoint,{method:"POST",token:context.token,payload});
   if(result.ok!==true||!result.item?.id)throw Error("La création n’a pas été confirmée par le serveur.");
   created=true;
   status.textContent="Produit créé. Actualisation du catalogue…";
@@ -1267,7 +1350,14 @@ async function saveManualProduct(event){
   const row=context.row;row.product_manual=true;row.stock_manual=false;row.stock_confirmed=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.pdfEvidence=null;
   applyMatch(row,{product,source:"Nouveau produit créé et sélectionné manuellement"});
   $("confirmReview").checked=false;renderRows();
-  notice("Produit créé et associé. Vérifiez la ligne sur le PDF avant validation ; aucune quantité n’a encore été réceptionnée.","success");
+  if(food&&manualInvoiceOptions){
+   const key=foodSupplierKey(context.supplier);
+   if(!manualInvoiceOptions.suppliers.some(s=>foodSupplierKey(s.key)===key))manualInvoiceOptions.suppliers.push({key,name:context.supplier,product_count:1});
+   manualInvoiceOptions.supplier_products.push({supplier_key:key,product_id:product.id,source:"nouveau"});
+   renderRows();
+  }
+  const warnings=Array.isArray(result.warnings)?result.warnings:[];
+  notice("Produit créé et associé. Vérifiez la ligne sur le PDF avant validation ; aucune quantité n’a encore été réceptionnée."+(warnings.length?" "+warnings.join(" "):""),warnings.length?"":"success");
  }catch(e){if(created){notice("Produit créé, mais association non confirmée : "+e.message,"error")}else{status.textContent=e.message}}
  finally{
   context.busy=false;submit.disabled=false;cancel.disabled=false;
@@ -1346,6 +1436,7 @@ function groupedRows(){
  return groups;
 }
 function renderRows(){
+ renderManualSuppliers();
  updateManualArchiveName();
  synchronizeExcludedRows();
  autoVerifyGreenRows();
@@ -1657,6 +1748,7 @@ function setup(){
  $("analyze").addEventListener("click",analyze);
  $("manualEntry").addEventListener("click",()=>void startManualEntry());
  $("manualProductForm").addEventListener("submit",event=>void saveManualProduct(event));
+ $("manualProductForm").elements.namedItem("category_id").addEventListener("change",updateManualProductSubcategories);
  $("manualProductCancel").addEventListener("click",()=>$("manualProductDialog").close());
  $("manualProductDialog").addEventListener("cancel",event=>{if(manualProductContext?.busy)event.preventDefault()});
  $("manualProductDialog").addEventListener("close",()=>{manualProductContext=null});

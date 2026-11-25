@@ -36,6 +36,7 @@
    section("Gestion quotidienne",[
     tab("Stocks et produits","#tStocks"),
     link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat"),
+    link("Saisie manuelle des factures","lecteur-veryfi/?origine=secretariat&mode=manuel"),
     tab("Planning des événements","#tPlanning")
    ]),
    section("Réglages",[tab("Paramètres","#tSettings"),tab("Mot de passe","#tPassword")]),
@@ -183,7 +184,7 @@
   const host=target.closest("main")||target;
   host.classList.add("school-workspace-host");
   applyAuthorizedNavigation();
-  import(url("college/workspace-access.mjs?v=20261123-stable-3")).then(({attach})=>{
+  import(url("college/workspace-access.mjs?v=20261125-manual-food")).then(({attach})=>{
    applyAuthorizedNavigation=attach({aside,brand,footer,base,area,target,filterMenu});
   }).catch(()=>{
    footer.textContent="Contrôle des accès indisponible. Liens non vérifiés masqués.";

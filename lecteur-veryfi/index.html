@@ -7,7 +7,7 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Cours Chambertin</title>
 <link rel="stylesheet" href="./veryfi.css?v=55-manual-product-archive">
-<script defer src="./veryfi.js?v=56-manual-total-archive"></script>
+<script defer src="./veryfi.js?v=57-manual-food"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=20261123-stable-1">
 <style>
 html.secretariat-embedded{background:transparent}
@@ -93,7 +93,7 @@ html.secretariat-embedded{background:transparent}
       </div>
       <h3>Informations de la facture</h3>
       <div class="fields">
-        <label class="field field-wide"><span>Fournisseur</span><input id="vendor" autocomplete="off"></label>
+        <label class="field field-wide"><span>Fournisseur</span><input id="vendor" autocomplete="off" placeholder="Sélectionner ou saisir un fournisseur"><datalist id="manualSupplierOptions"></datalist><span id="manualSupplierHint" class="subtle" hidden></span></label>
         <label class="field"><span>N° facture</span><input id="invoiceNumber" autocomplete="off"></label>
         <label class="field"><span>Date de facture</span><input id="invoiceDate" type="date"></label>
         <label class="field"><span>Total HT du PDF</span><input id="subtotal" inputmode="decimal"></label>
@@ -149,11 +149,13 @@ html.secretariat-embedded{background:transparent}
 <dialog id="manualProductDialog" class="manual-product-dialog" aria-labelledby="manualProductTitle">
  <h2 id="manualProductTitle">Créer un produit du catalogue</h2>
  <p class="subtle">Le produit est créé avec un stock initial de zéro. La quantité facturée sera ajoutée uniquement après validation de la facture.</p>
+ <p id="manualProductSupplier" class="hint"></p>
  <form id="manualProductForm">
   <div class="fields">
    <label class="field field-wide"><span>Désignation</span><input name="name" maxlength="200" required></label>
-   <label class="field"><span>Code / référence</span><input name="code" maxlength="100" required></label>
+   <label class="field"><span>Code / référence</span><input name="code" maxlength="50" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,49}" title="Code interne unique : lettres, chiffres, point, tiret ou underscore"></label>
    <label class="field"><span>Catégorie</span><select name="category_id" required></select></label>
+   <label class="field"><span>Sous-catégorie alimentaire</span><select name="subcategory_id" disabled></select></label>
    <label class="field"><span>Unité facturée</span><input name="unit" maxlength="120" required placeholder="Ex. carton"></label>
    <label class="field"><span>Conditionnement d’achat</span><input name="conditionnement" maxlength="160" required placeholder="Ex. carton de 12 bouteilles"></label>
    <label class="field"><span>Unité de stock</span><input name="inventory_unit_label" maxlength="120" required placeholder="Ex. bouteille"></label>
@@ -184,6 +186,6 @@ html.secretariat-embedded{background:transparent}
  </div>
 </dialog>
 
-<script defer src="../college/workspace-layout.js?v=20261123-stable-2" data-area="veryfi" data-target="main.shell"></script>
+<script defer src="../college/workspace-layout.js?v=20261125-manual-food" data-area="veryfi" data-target="main.shell"></script>
 </body>
 </html>

@@ -31,7 +31,13 @@ function allowedLink(href,context,base){
  if(route==="secretariat/")return !!p.secretariat;
  if(route==="comptabilite/")return !!p.accounting;
  if(route==="secretariat/planning/")return !!p.planning;
- if(route==="lecteur-veryfi/")return !!p.veryfi;
+ if(route==="lecteur-veryfi/"){
+  if(target.searchParams.get("origine")==="secretariat"&&target.searchParams.get("mode")==="manuel"){
+   const perms=context?.permissions||{};
+   return !!p.veryfi&&!!p.secretariat&&context.read_only!==true&&(context.is_super_admin===true||perms.secretariat===true||perms["secretariat.invoices.write"]===true);
+  }
+  return !!p.veryfi;
+ }
  if(route==="cuisine/")return !!p.cuisine;
  if(route==="college/readiness/")return !!p.college_readiness;
  if(route==="admin/acces.html")return !!p.site_access;

@@ -62,6 +62,71 @@ async function supplierDirectory(c:any,orders:any,activeIds:Set<string>){
   supplier_products:[...connections.values()].map(({supplier_key,product_id,source})=>({supplier_key,product_id,source}))};
 }
 
+
+function canReadManualInvoices(a:any){
+ const p=a?.permissions||{};
+ return !!a&&(a.role==="admin"||p.secretariat===true||p["secretariat.read"]===true||p["secretariat.invoices.write"]===true);
+}
+function canCreateFoodProduct(a:any){
+ const p=a?.permissions||{};
+ return !!a&&!a.read_only&&p.readonly!==true&&(a.role==="admin"||p.secretariat===true||p["secretariat.invoices.write"]===true);
+}
+function foodProductPayload(x:any,categoryId:string){
+ const get=(key:string)=>String(x?.[key]??"").trim();
+ const code=get("code").toUpperCase(),name=get("name"),unit=get("unit"),sale=get("conditionnement"),stock=get("inventory_unit_label"),mode=get("stock_count_mode");
+ if(get("category_id")!==categoryId||x?.id||!get("supplier")||get("supplier").length>200)return null;
+ if(!/^[A-Z0-9][A-Z0-9_.-]{0,49}$/.test(code)||!name||name.length>200||!unit||unit.length>120||!sale||sale.length>160||!stock||stock.length>120||!["unit","litre"].includes(mode))return null;
+ const factor=Number(x.purchase_to_stock_factor),price=Number(x.unit_price??0),min=Number(x.min_stock??0),target=Number(x.target_stock??0);
+ if(!Number.isFinite(factor)||factor<=0||factor>1000000||[price,min,target].some(n=>!Number.isFinite(n)||n<0)||target<min)return null;
+ const sub=get("subcategory_id");
+ if(sub&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sub))return null;
+ return {code,name,category_id:categoryId,subcategory_id:sub||null,unit,conditionnement:sale,inventory_unit_label:stock,purchase_to_stock_factor:factor,inventory_to_stock_factor:1,stock_count_mode:mode,unit_price:price,initial_stock:0,min_stock:min,target_stock:target,active:true};
+}
+async function manualInvoiceOptions(c:any,a:any){
+ if(!canReadManualInvoices(a))return json({error:"Accès aux factures non autorisé"},403);
+ const category=await c.from("categories").select("id,code,name,active").eq("code","alimentaire").eq("active",true).maybeSingle();
+ if(category.error)throw category.error;
+ if(!category.data)return json({error:"Catégorie Alimentaire indisponible"},409);
+ const [products,subs,orders]=await Promise.all([
+  c.from("products").select("id,code,name,category_id,subcategory_id,active").eq("category_id",category.data.id).limit(2000),
+  c.from("product_subcategories").select("id,category_id,name").eq("category_id",category.data.id).eq("active",true).order("sort_order").order("name"),
+  loadOrders(c)
+ ]);
+ if(products.error)throw products.error;if(subs.error)throw subs.error;
+ const foodProducts=products.data||[],allIds=new Set<string>(foodProducts.map((x:any)=>x.id)),activeIds=new Set<string>(foodProducts.filter((x:any)=>x.active).map((x:any)=>x.id));
+ const directory=await supplierDirectory(c,orders,allIds);
+ return json({ok:true,can_create_food:canCreateFoodProduct(a),can_manage_catalog:canCreateFoodProduct(a)&&(a.role==="admin"||a.permissions?.["products.write"]===true||(a.role==="admin_limited"&&a.permissions?.college_admin===true)),categories:[category.data],subcategories:subs.data||[],products:foodProducts,suppliers:directory.suppliers.filter(x=>x.product_count>0),supplier_products:directory.supplier_products.filter(x=>activeIds.has(x.product_id))});
+}
+async function createFoodProduct(c:any,a:any,req:Request){
+ if(!canCreateFoodProduct(a))return json({error:"Création de produit alimentaire non autorisée"},403);
+ const x=await req.json().catch(()=>null);
+ const category=await c.from("categories").select("id,code,app_mode").eq("code","alimentaire").eq("active",true).maybeSingle();
+ if(category.error)throw category.error;
+ if(!category.data)return json({error:"Catégorie Alimentaire indisponible"},409);
+ const payload=foodProductPayload(x,category.data.id);
+ if(!payload)return json({error:"Produit invalide : fournisseur, code (50 caractères maximum), catégorie, conditionnements et valeurs numériques à vérifier"},400);
+ if(payload.subcategory_id){
+  const sub=await c.from("product_subcategories").select("id").eq("id",payload.subcategory_id).eq("category_id",category.data.id).eq("active",true).maybeSingle();
+  if(sub.error)throw sub.error;
+  if(!sub.data)return json({error:"Sous-catégorie alimentaire invalide"},400);
+ }
+ const duplicate=await c.from("products").select("id").ilike("code",payload.code.replace(/_/g,"\\_")).limit(1);
+ if(duplicate.error)throw duplicate.error;
+ if(duplicate.data?.length)return json({error:"Ce code existe déjà, y compris parmi les produits inactifs. Rapprochez le produit existant ou utilisez un code interne distinct."},409);
+ const app=await c.from("applications").select("id").eq("code","garage-nfc-alimentaire").eq("active",true).maybeSingle();
+ if(app.error)throw app.error;
+ const result=await c.from("products").insert(payload).select("id,code,name,category_id,subcategory_id,unit,conditionnement,inventory_unit_label,purchase_to_stock_factor,stock_count_mode,unit_price,active").single();
+ if(result.error){if(result.error.code==="23505")return json({error:"Code déjà utilisé. Actualisez le catalogue."},409);throw result.error}
+ // The existing ensure_product_balance trigger creates a zero stock balance atomically.
+ // After insertion, report secondary failures explicitly instead of inviting a duplicate retry.
+ const warnings:string[]=[];
+ if(app.data?.id&&["sortie","sortie_inventaire"].includes(category.data.app_mode)){
+  try{const linked=await c.from("application_products").upsert({application_id:app.data.id,product_id:result.data.id,active:true,sort_order:100},{onConflict:"application_id,product_id"});if(linked.error)throw linked.error}catch{warnings.push("Association QR/NFC à vérifier dans l’administration.")}
+ }
+ try{const audit=await c.from("admin_audit_log").insert({username:a.username,action:"create-food-product-from-invoice",entity_type:"product",entity_id:result.data.id,details:{code:payload.code,supplier:String(x.supplier).trim()}});if(audit.error)throw audit.error}catch{warnings.push("Journal d’audit à vérifier.")}
+ return json({ok:true,item:result.data,warnings},201);
+}
+
 async function load(c:any,a:any){
  const p=a.permissions||{};
  const broad=a.role==="admin"||p.secretariat===true||p["secretariat.read"]===true;
@@ -82,6 +147,6 @@ async function load(c:any,a:any){
  const directory=ordersAllowed?await supplierDirectory(c,orders,new Set<string>(orderProducts.map((x:any)=>x.id))):{suppliers:[],supplier_products:[]};
  return {current_user,categories:cats.data||[],products:stock?orderProducts:[],order_products:ordersAllowed?orderProducts:[],balances:balances.data||[],...orders,...directory,stock_scope:stock?"all_active":"none",server_time:new Date().toISOString()};
 }
-Deno.serve(async(req:Request)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:cors});try{const c=db(),acct=await verify(c,req);if(!acct)return json({error:"Session expirée ou invalide"},401);const action=new URL(req.url).searchParams.get("action")||"data";if(action==="data"&&req.method==="GET")return json(await load(c,acct));if(req.method==="POST"){if(acct.read_only)return json({error:"Compte visiteur : modification interdite"},403);if(acct.role!=="admin"&&acct.permissions?.secretariat!==true){const need=action==="save-order"||action==="receive-order"?"secretariat.orders.write":"secretariat.invoices.write";if(acct.permissions?.[need]!==true)return json({error:"Modification non autorisée pour ce compte"},403)}}
+Deno.serve(async(req:Request)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:cors});try{const c=db(),acct=await verify(c,req);if(!acct)return json({error:"Session expirée ou invalide"},401);const action=new URL(req.url).searchParams.get("action")||"data";if(action==="data"&&req.method==="GET")return json(await load(c,acct));if(action==="manual-invoice-options"&&req.method==="GET")return await manualInvoiceOptions(c,acct);if(action==="create-food-product"&&req.method==="POST")return await createFoodProduct(c,acct,req);if(req.method==="POST"){if(acct.read_only)return json({error:"Compte visiteur : modification interdite"},403);if(acct.role!=="admin"&&acct.permissions?.secretariat!==true){const need=action==="save-order"||action==="receive-order"?"secretariat.orders.write":"secretariat.invoices.write";if(acct.permissions?.[need]!==true)return json({error:"Modification non autorisée pour ce compte"},403)}}
 if(action==="save-order"&&req.method==="POST"){const x=await req.json(),status=["brouillon","commandee"].includes(String(x.status))?String(x.status):"brouillon",items=Array.isArray(x.items)?x.items.map((v:any)=>({product_id:String(v.product_id||""),quantity:Number(v.quantity||0)})).filter((v:any)=>v.quantity>0):[],r=await c.rpc("save_stock_order",{p_order_id:x.id?String(x.id):null,p_supplier:String(x.supplier??"").slice(0,200),p_order_date:String(x.order_date||new Date().toISOString().slice(0,10)),p_expected_date:x.expected_date?String(x.expected_date):null,p_note:String(x.note??"").slice(0,500),p_status:status,p_username:acct.username,p_items:items});if(r.error)throw r.error;return json({ok:true,id:r.data})}
 if(action==="receive-order"&&req.method==="POST"){const x=await req.json(),r=await c.rpc("receive_stock_order",{p_order_id:String(x.id??""),p_username:acct.username});if(r.error)throw r.error;return json({ok:true,id:r.data})}return json({error:"Action inconnue"},404)}catch(e){console.error(e);return json({error:e instanceof Error?e.message:"Erreur serveur"},500)}});
