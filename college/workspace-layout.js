@@ -36,7 +36,7 @@
    section("Gestion quotidienne",[
     tab("Stocks et produits","#tStocks"),
     tab("Commandes fournisseurs","#tOrders"),
-    tab("Factures · Lecteur Veryfi","#tInvoices"),
+    tab("Commande manuelle / Lecteur Veryfi","#tInvoices"),
     tab("Planning des événements","#tPlanning")
    ]),
    section("Réglages",[tab("Paramètres","#tSettings"),tab("Mot de passe","#tPassword")]),
