@@ -25,7 +25,7 @@ function draw(key){
  if(s.error){host.innerHTML='<p class="err" role="alert">'+esc(s.error)+'</p><button type="button" class="btn secondary" id="profileDeclarationRetry">Réessayer</button>';host.querySelector("button").addEventListener("click",()=>{states.delete(key);mount(s.id,s.month,s.session,s.writable)});return}
  const inputs=fields.map(([id,label,max])=>{
   const val=s.values[id]||"",long=max>200,date=id==="start"||id==="end";
-  const attr='data-declaration-field="'+id+'" maxlength="'+max+'" autocomplete="off" '+(!s.writable||s.saving?'disabled':'');
+  const attr='data-declaration-field="'+id+'" maxlength="'+max+'" autocomplete="off" '+(!s.writable||s.saving||s.status!=='draft'?'disabled':'');
   const input=long?'<textarea rows="2" '+attr+'>'+esc(val)+'</textarea>':'<input type="'+(date?'date':'text')+'" '+attr+' value="'+esc(val)+'">';
   return '<label class="'+(long?'salary-declaration-wide':'')+'">'+esc(label)+input+'</label>';
  }).join("");
@@ -41,7 +41,8 @@ function draw(key){
 async function mount(id,month,session,writable){
  const key=id+":"+month;current=key;
  const cached=states.get(key);
- if(cached){cached.writable=writable;draw(key);return}
+ if(cached&&cached.session===session){cached.writable=writable;draw(key);return}
+ if(cached)states.delete(key);
  const state={id,month,session,writable,loading:true,status:"draft",values:{},base:{},changed:false,saving:false,message:""};
  states.set(key,state);draw(key);
  try{
