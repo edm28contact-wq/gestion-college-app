@@ -113,7 +113,7 @@ function findPayPeriod(lines,filename=""){
 }
 function matchEmployee(lines,staff,filename=""){
  const header=lines.slice(0,115).map(cleanText);
- const basename=canonicalName(String(filename||"").replace(/\.pdf$/i,"").replace(/^(?:20\d{2}[-_. ](?:0?[1-9]|1[0-2]))[\s_.-]*/i,""));
+ const basename=canonicalName(String(filename||"").replace(/\.pdf$/i,"").replace(/^20\d{2}[-_. ](?:1[0-2]|0?[1-9])(?=[\s_.-]|$)[\s_.-]*/i,""));
  const find=(name,source)=>{
   const names=canonicalName(name);
   if(!names||names.length<2)return false;
