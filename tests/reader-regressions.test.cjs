@@ -660,3 +660,44 @@ test("V57 : le code interne proposé ne confond pas des références identiques 
  assert.equal(ctx.code("","La Normande",[]),"");
  assert.match(source,/manualOptionsToken!==authToken/);
 });
+
+test("V58 : le mode simplifié conserve les contrôles de ligne, y compris les conversions de stock",()=>{
+ const ctx=vm.createContext({eligible:r=>r.valid===true,lineVatAcceptable:r=>r.vat!==false,validStockQuantity:r=>r.stockValid===true,stockProposal:r=>r.proposal?{quantity:12}:null});
+ vm.runInContext(functionSource("compactLineProblem")+";this.problem=compactLineProblem",ctx);
+ const line={product_id:"p1",valid:true,unit:"carton",stockValid:true};
+ assert.equal(ctx.problem(line),"");
+ assert.match(ctx.problem({...line,product_id:""}),/Choisissez un produit/);
+ assert.match(ctx.problem({...line,valid:false}),/quantité, le prix/);
+ assert.match(ctx.problem({...line,unit:""}),/unité/);
+ assert.match(ctx.problem({...line,vat:false}),/TVA/);
+ assert.match(ctx.problem({...line,stockValid:false}),/conditionnement/);
+ assert.equal(ctx.problem({...line,stockValid:false,proposal:true}),"");
+ assert.match(ctx.problem({...line,stockValid:false,stock_manual:true,proposal:true}),/quantité en stock/);
+ assert.equal(ctx.problem({...line,stock_needs_review:true,stock_confirmed:false,proposal:true}),"");
+});
+test("V58 : la confirmation globale manuelle passe par les vérifications existantes",()=>{
+ const row1={id:1},row2={id:2},check={checked:true},confirmed=[];
+ const ctx=vm.createContext({rows:[row1,row2],saved:false,loading:false,$:()=>check,compactInvoiceProblem:()=>"",calc:()=>({ok:confirmed.length===2}),isRetainedGreen:r=>confirmed.includes(r),confirmRowManually:r=>{confirmed.push(r);return {ok:true,partial:false}},renderRows:()=>{},updateTotals:()=>{},notice:()=>{}});
+ vm.runInContext(functionSource("confirmCompactInvoice")+";this.run=confirmCompactInvoice",ctx);
+ ctx.run();assert.deepEqual(confirmed,[row1,row2]);assert.equal(check.checked,true);
+ check.checked=true;confirmed.length=0;ctx.confirmRowManually=()=>({ok:false,message:"Conversion refusée"});ctx.run();assert.equal(check.checked,false);
+ check.checked=true;ctx.compactInvoiceProblem=()=>"PDF absent";ctx.run();assert.equal(check.checked,false);
+ assert.match(functionSource("save"),/if\(compactManualMode\(\)\)\{const problem=compactInvoiceProblem\(c\)/);
+});
+test("V58 : le lecteur automatique conserve son interface et son calcul, le manuel utilise les lignes compactes",()=>{
+ const html=file("lecteur-veryfi/index.html"),css=file("lecteur-veryfi/veryfi.css");
+ assert.match(html,/id="compactLineTotal"/);assert.match(html,/id="manualPreviewToggle"/);
+ assert.match(css,/\.manual-simple \.usage-panel/);
+ assert.match(functionSource("renderRows"),/if\(compactManualMode\(\)\)/);
+ assert.match(source,/group\.items\.forEach\(\(\{row,index\}\)=>cards\.append\(buildLine\(row,index\)\)\)/);
+ assert.match(source,/if\(compactManualMode\(\)\)\{updateCompactTotals\(c\);return\}/);
+});
+
+test("V58 : les produits du fournisseur sont proposés en premier, sans supprimer les autres",()=>{
+ const make=(value,id)=>({value,dataset:{productId:id},cloneNode(){return {value:this.value,dataset:{...this.dataset}}}});
+ const options=[make("Autre","b"),make("Fournisseur","a")],list={replaceChildren(...children){this.options=children}};
+ const ctx=vm.createContext({catalog:{products:[]},authToken:"t",manualOptionsToken:"t",manualInvoiceOptions:{},manualSupplierProducts:()=>[{id:"a"}],$:id=>id==="compactProductOptions"?list:id==="productOptions"?{options}:{value:"Henri Julien"}});
+ vm.runInContext(functionSource("refreshCompactProductOptions")+";this.run=refreshCompactProductOptions",ctx);
+ ctx.run();assert.deepEqual(Array.from(list.options,x=>x.value),["Fournisseur","Autre"]);
+ assert.match(source,/compactChooseProduct\(row,input\.value\);input\.value=row\.product_label\|\|"";refreshCompactLine/);
+});
