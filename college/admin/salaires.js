@@ -518,7 +518,7 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+'<section class="card"><h3>Coordonnées bancaires</h3><div class="salary-bank-cell">'+salaryBankCell(staff)+'</div></section>'+salaryPayrollPanel(staff,month)+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+'<section class="card"><h3>Coordonnées bancaires</h3><div class="salary-bank-cell">'+salaryBankCell(staff)+'</div></section>'+salaryPayrollPanel(staff,month)+(window.ChambertinSalaryProfileDeclaration?.html(staff,month)||'')+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
 }
 async function salaryOpenStaffProfile(id,focusSchedule=false){
  if(salaryView==="events")salaryView="staff";
@@ -1054,6 +1054,7 @@ function salaryPage(){
  $('salarySettingsMonth')?.addEventListener('change',e=>{if(/^20[2-9][0-9]-(0[1-9]|1[0-2])$/.test(e.target.value)){salaryMonth=e.target.value;salaryPage()}});
  $('salarySettingsCalendarReload')?.addEventListener('click',()=>void salaryCalendarEnsure(salaryMonth,true));
  salaryWireStaff();
+ if(salaryProfileEmployeeId&&window.ChambertinSalaryProfileDeclaration&&document.getElementById('salaryProfileDeclaration'))void window.ChambertinSalaryProfileDeclaration.mount(salaryProfileEmployeeId,salaryProfileMonth||salaryCurrentMonth(),token,salaryCanWrite);
  document.querySelectorAll('[data-salary-month]').forEach(button=>button.addEventListener('click',()=>salarySelectMonth(button.dataset.salaryMonth)));
  const month=$('salaryMonth');if(month)month.addEventListener('change',e=>salarySelectMonth(e.target.value));
  const person=$('salaryPerson');if(person)person.addEventListener('change',e=>{salaryPerson=e.target.value;salaryPage()});
