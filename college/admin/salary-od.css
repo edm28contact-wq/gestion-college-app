@@ -1,0 +1,30 @@
+/* Compta salaire — preparation mensuelle. */
+.salary-od-nav{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.salary-od-nav>.btn{flex:1;min-width:170px;justify-content:center}
+.salary-od-section{padding:20px}
+.salary-od-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.salary-od-heading h2{margin:0 0 6px}
+.salary-od-heading p{margin:0 0 12px;max-width:780px}
+.salary-od-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 18px}
+.salary-od-totals>div{background:#f1f6fa;border:1px solid #d8e4ed;border-radius:10px;padding:13px 16px}
+.salary-od-totals span{display:block;font-size:12px;color:#52687d}
+.salary-od-totals strong{display:block;font-size:23px;margin-top:4px;font-variant-numeric:tabular-nums}
+.salary-od-table{width:100%;min-width:580px!important}
+.salary-od-table th[scope=row]{font-weight:600;text-align:left}
+.salary-od-table td:nth-child(n+3),.salary-od-table th:nth-child(n+3){text-align:right}
+.salary-od-table input{width:min(100%,160px);min-width:95px;text-align:right;font-variant-numeric:tabular-nums;background:#fff;border:1px solid #b5c9db;border-radius:7px;padding:8px 10px}
+.salary-od-table .salary-od-group th{padding:10px 12px;background:#e8f0f7;color:#244760;text-align:left;font-size:13px}
+.salary-od-table small{display:block;font-size:11px}
+.salary-pay-table td:nth-child(2){text-align:right;width:190px}
+.salary-pay-table td:nth-child(3){text-align:left}
+.salary-od-confirm{display:flex;align-items:flex-start;gap:8px;font-weight:650;margin:16px 0}
+.salary-od-confirm input{width:auto;margin-top:3px}
+.salary-od-status{padding:10px 12px;background:#edf4fa;border-radius:8px;margin:12px 0;color:#284963}
+.salary-od-draft{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px;border:1px solid #dce4ec;border-radius:10px;background:#fff;margin-top:12px}
+.salary-od-draft .muted{width:100%;margin:0;font-size:12px}
+.salary-od-file{position:relative;overflow:hidden;cursor:pointer}
+.salary-od-file input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}
+.salary-od-file:focus-within{outline:2px solid #1b6a9c}
+.salary-od-extra{align-items:end;margin-top:12px}
+#salaryPayrollWorkArea[hidden],#salaryVariableSection[hidden]{display:none!important}
+@media(max-width:650px){.salary-od-section{padding:13px}.salary-od-totals{grid-template-columns:1fr}.salary-od-nav>.btn{flex-basis:100%}.salary-od-totals strong{font-size:20px}}
