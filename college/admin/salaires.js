@@ -518,7 +518,7 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+salaryPayrollPanel(staff,month)+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+'<section class="card"><h3>Coordonnées bancaires</h3><div class="salary-bank-cell">'+salaryBankCell(staff)+'</div></section>'+salaryPayrollPanel(staff,month)+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
 }
 async function salaryOpenStaffProfile(id,focusSchedule=false){
  if(salaryView==="events")salaryView="staff";
@@ -572,6 +572,61 @@ function salaryCloseStaffProfile(){
  if(salaryPageVisible())salaryPage();
 }
 
+let salaryBankAvailable=false,salaryBankDialogVersion=0;
+function salaryBankCell(staff){
+ if(!salaryBankAvailable)return '<span class="muted">Indisponible</span>';
+ const bank=staff.bank_summary;
+ return (bank?'<span class="salary-bank-mask">•••• '+esc(bank.iban_last4)+'</span><small class="muted">'+esc(bank.bic)+'</small>':'<span class="muted">À renseigner</span>')+
+  (salaryCanWrite?'<button type="button" class="btn secondary compact" data-salary-bank="'+esc(staff.id)+'">'+(bank?'Modifier le RIB':'Ajouter le RIB')+'</button>':'');
+}
+function salaryBankClear(){
+ salaryBankDialogVersion++;
+ const dialog=document.getElementById("salaryBankDialog");
+ if(dialog){if(dialog.open)dialog.close();dialog.remove()}
+}
+async function salaryOpenBank(id){
+ if(!salaryCanWrite||!token||!canPage("salaires"))return;
+ const staff=salaryStaff.find(p=>p.id===id);
+ if(!staff)return;
+ salaryBankClear();
+ const version=salaryBankDialogVersion,owner=token;
+ const dialog=document.createElement("dialog");
+ dialog.id="salaryBankDialog";dialog.className="salary-bank-dialog";dialog.setAttribute("aria-labelledby","salaryBankTitle");
+ dialog.innerHTML='<h2 id="salaryBankTitle">Coordonnées bancaires — '+esc(staff.name)+'</h2><p class="muted">Vérifiez le RIB original du salarié. Le contrôle IBAN/BIC ne confirme pas l’identité du titulaire.</p><form id="salaryBankForm"><div class="salary-doc-fields"><label>IBAN<input id="salaryBankIban" autocomplete="off" spellcheck="false" maxlength="80" required disabled></label><label>BIC<input id="salaryBankBic" autocomplete="off" spellcheck="false" maxlength="30" required disabled></label></div><label class="salary-od-confirm"><input type="checkbox" id="salaryBankVerified" required disabled> J’ai vérifié ces coordonnées sur un RIB authentique.</label><p id="salaryBankMessage" role="status">Chargement sécurisé…</p><div class="actions"><button type="submit" class="btn primary" id="salaryBankSave" disabled>Enregistrer le RIB</button><button type="button" class="btn secondary" id="salaryBankCancel">Fermer</button></div></form>';
+ document.body.append(dialog);dialog.showModal();
+ const el=key=>dialog.querySelector("#"+key);
+ const current=()=>version===salaryBankDialogVersion&&owner===token&&salaryCanWrite&&dialog.open;
+ let busy=false,recordVersion=0;
+ dialog.addEventListener("cancel",e=>{if(busy)e.preventDefault()});
+ dialog.addEventListener("close",()=>{if(dialog.isConnected)dialog.remove();if(version===salaryBankDialogVersion)salaryBankDialogVersion++});
+ el("salaryBankCancel").addEventListener("click",()=>{if(!busy)dialog.close()});
+ try{
+  const result=await call(ROOT+"/personnel-planning","staff-bank-detail","GET",undefined,{id});
+  if(!current())return;
+  if(result.ok!==true||(result.bank&&result.bank.personnel_id!==id))throw Error("Réponse bancaire invalide.");
+  const bank=result.bank;recordVersion=bank?.version||0;
+  el("salaryBankIban").value=bank?.iban||"";el("salaryBankBic").value=bank?.bic||"";
+  for(const key of ["salaryBankIban","salaryBankBic","salaryBankVerified","salaryBankSave"])el(key).disabled=false;
+  el("salaryBankMessage").textContent=bank?"Coordonnées enregistrées.":"Aucun RIB enregistré.";
+ }catch(e){if(current())el("salaryBankMessage").textContent=frError(e.message);return}
+ el("salaryBankForm").addEventListener("submit",async event=>{
+  event.preventDefault();if(!current()||busy||!el("salaryBankVerified").checked)return;
+  const iban=el("salaryBankIban").value.replace(/\s/g,"").toUpperCase(),bic=el("salaryBankBic").value.trim().toUpperCase();
+  if(!confirm("Enregistrer les coordonnées bancaires de "+staff.name+" après vérification du RIB ?"))return;
+  busy=true;for(const key of ["salaryBankIban","salaryBankBic","salaryBankVerified","salaryBankSave","salaryBankCancel"])el(key).disabled=true;
+  el("salaryBankMessage").textContent="Enregistrement sécurisé…";
+  try{
+   const result=await call(ROOT+"/personnel-planning","staff-bank-save","POST",{id,iban,bic,version:recordVersion,confirmed:true});
+   if(!current())return;
+   if(result.ok!==true||!result.bank||!Number.isInteger(result.bank.version))throw Error("Enregistrement non confirmé.");
+   salaryStaff=salaryStaff.map(p=>p.id===id?{...p,bank_summary:result.bank}:p);
+   salaryBankAvailable=true;salaryStaffMessage="Coordonnées bancaires enregistrées.";
+   if(typeof window.salaryOdInvalidateBank==="function")window.salaryOdInvalidateBank();
+   dialog.close();salaryPage();
+  }catch(e){if(current()){el("salaryBankMessage").textContent=frError(e.message);el("salaryBankVerified").checked=false}}
+  finally{busy=false;if(current())for(const key of ["salaryBankIban","salaryBankBic","salaryBankVerified","salaryBankSave","salaryBankCancel"])el(key).disabled=false}
+ });
+}
 function salaryStaffPanel(){
  const state=salaryStaffLoading?'<p class="muted">Chargement de la liste du personnel…</p>':
   salaryStaffError?'<p class="err">'+esc(salaryStaffError)+'</p><button type="button" class="btn secondary" onclick="salaryLoadStaff()">Réessayer</button>':'';
@@ -583,7 +638,7 @@ function salaryStaffPanel(){
   const hoursText=schedule.error?'Horaires invalides':schedule.missingDays.length?'À compléter':salaryFormatLate(schedule.weeklyMinutes)+' / semaine';
   return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+esc(salaryRoleLabel(p.professional_role_id))+'</td><td>'+(p.archived?'Archivé':visible?'Visible dans le planning':'Masqué du planning')+'</td>'+
    '<td><input type="checkbox" data-salary-staff-id="'+esc(p.id)+'" '+(visible?'checked':'')+' '+(p.archived||salaryStaffSaving||!salaryCanWrite?'disabled':'')+' aria-label="Afficher '+esc(p.name)+' dans le planning"></td>'+
-   '<td class="salary-schedule-summary">'+esc(hoursText)+'</td>'+
+   '<td class="salary-schedule-summary">'+esc(hoursText)+'</td><td class="salary-bank-cell">'+salaryBankCell(p)+'</td>'+
    '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Ouvrir la fiche</button> <button type="button" class="btn secondary compact" data-salary-schedule-profile="'+esc(p.id)+'">Horaires</button></td>'+
    '<td><button type="button" class="btn secondary compact" data-salary-archive="'+esc(p.id)+'" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>'+(p.archived?'Réactiver':'Retirer de la liste')+'</button></td></tr>';
  };
@@ -595,9 +650,9 @@ function salaryStaffPanel(){
   '<div class="salary-staff-role"><label for="salaryStaffRole">Rôle professionnel</label><select id="salaryStaffRole" '+(!salaryCanWrite?'disabled':'')+'>'+salaryRoleOptions(null)+'</select></div>'+
   '<label><input id="salaryStaffVisible" type="checkbox" checked> Afficher dans le planning</label>'+
   '<button type="submit" class="btn primary" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Ajouter le salarié</button></form>'+
-  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires scolaires hebdomadaires</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
+  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires scolaires hebdomadaires</th><th>IBAN / BIC</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
   active.map(row).join('')+archived.map(row).join('')+
-  (!salaryStaff.length?'<tr><td colspan="7">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
+  (!salaryStaff.length?'<tr><td colspan="8">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
 }
 async function salaryLoadStaff(){
  if(!token||salaryStaffLoading)return;
@@ -606,7 +661,7 @@ async function salaryLoadStaff(){
  try{
   const r=await call(ROOT+'/personnel-planning','staff-list');
   salaryStaff=Array.isArray(r.staff)?r.staff:[];
-  salaryProfessionalRoles=Array.isArray(r.roles)?r.roles:[];salaryCanWrite=r.salary_write===true;
+  salaryProfessionalRoles=Array.isArray(r.roles)?r.roles:[];salaryCanWrite=r.salary_write===true;salaryBankAvailable=r.bank_available===true;
   salaryStaffLoaded=true;
   if(salaryPageVisible())void salaryLoadScheduleHistory();
  }catch(e){salaryStaffError=frError(e.message)}
@@ -639,6 +694,7 @@ async function salaryUpdateStaff(id,archived,visible){
  finally{salaryStaffSaving=false;await salaryLoadStaff()}
 }
 function salaryWireStaff(){
+ document.querySelectorAll("[data-salary-bank]").forEach(button=>button.addEventListener("click",()=>void salaryOpenBank(button.dataset.salaryBank)));
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
  $("salaryArchiveRetry")?.addEventListener("click",()=>{salaryScheduleHistoryError="";salaryScheduleHistoryLoaded=false;void salaryLoadScheduleHistory()});
  $('salaryStaffProfileEdit')?.addEventListener('submit',salarySaveIdentity);

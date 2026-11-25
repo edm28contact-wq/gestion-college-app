@@ -96,7 +96,7 @@ function reconcilePayments(d){
 const drafts=new Map();
 let session="",activeView="variables",context=null;
 function clear(){drafts.clear();session="";context=null;activeView="variables"}
-function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,dirty:false}}
+function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,bankSignature:"",bankLoading:false,bankError:"",dirty:false}}
 function draftFor(month){if(!drafts.has(month))drafts.set(month,blankDraft());return drafts.get(month)}
 function download(filename,content,type){
  const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement("a");
@@ -169,7 +169,7 @@ function bankProblem(d){
  return "";
 }
 function bankInput(value,key,label,max,id){
- return '<input autocomplete="off" '+(key==="date"?'type="date"':'type="text" maxlength="'+max+'"')+' aria-label="'+esc(label)+'" '+(id?'data-bank-person="'+esc(id)+'"':'data-bank-issuer="1"')+' data-bank-key="'+key+'" value="'+esc(value||"")+'">';
+ return '<input autocomplete="off" '+(key==="date"?'type="date"':'type="text" maxlength="'+max+'"')+' aria-label="'+esc(label)+'" '+(id?'data-bank-person="'+esc(id)+'"':'data-bank-issuer="1"')+' data-bank-key="'+key+'" '+(id&&["iban","bic","country"].includes(key)?'readonly ':'')+'value="'+esc(value||"")+'">';
 }
 function bankHtml(d){
  const i=d.bank.issuer,people=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr"));
@@ -178,7 +178,48 @@ function bankHtml(d){
   const b=d.bank.beneficiaries.get(id)||{};
   return '<tr><th scope="row">'+esc(staffName(id))+'</th><td data-bank-amount="'+esc(id)+'">'+ (cents(value)===null?"—":esc(money(cents(value))))+'</td>'+beneficiaryFields.map(([key,label,max])=>'<td>'+bankInput(b[key],key,label+" — "+staffName(id),max,id)+'</td>').join("")+'</tr>';
  }).join("");
- return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">Coordonnées privées : saisies en mémoire dans ce navigateur, jamais envoyées au serveur. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><button id="salaryBankPrint" type="button" class="btn primary" disabled>Imprimer / enregistrer le bordereau PDF</button><p class="muted">Bordereau préparatoire, pas un fichier d’ordre SEPA. Aucun paiement n’est déclenché.</p></section>';
+ return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">IBAN et BIC récupérés depuis les fiches salariés. Modifiez-les dans Liste salariés ; les autres champs du bordereau restent dans le brouillon. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><button type="button" class="btn secondary" id="salaryBankReload">Actualiser les RIB des salariés</button><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><button id="salaryBankPrint" type="button" class="btn primary" disabled>Imprimer / enregistrer le bordereau PDF</button><p class="muted">Bordereau préparatoire, pas un fichier d’ordre SEPA. Aucun paiement n’est déclenché.</p></section>';
+}
+function bankSignature(d){
+ return JSON.stringify([...d.payments.keys()].sort().map(id=>[id,context.staff.find(s=>s.id===id)?.bank_summary?.version??0]));
+}
+function mergeSavedBanks(d,banks){
+ const byId=new Map(banks.map(b=>[b.personnel_id,b]));
+ let changed=false;
+ for(const id of d.payments.keys()){
+  const before=d.bank.beneficiaries.get(id)||{},record=byId.get(id);
+  const after={...before,iban:record?.iban||"",bic:record?.bic||"",country:record?.iban?.slice(0,2)||""};
+  if(["iban","bic","country"].some(k=>String(before[k]||"")!==after[k]))changed=true;
+  d.bank.beneficiaries.set(id,after);
+ }
+ if(changed)d.bankConfirmed=false;
+ return changed;
+}
+function bankDraftEntries(d){
+ return [...d.bank.beneficiaries].map(([id,b])=>[id,{matricule:b.matricule||"",comment:b.comment||""}]);
+}
+async function loadSavedBanks(d,force=false){
+ if(!permissionsValid()||activeView!=="pay"||d.bankLoading)return;
+ const signature=bankSignature(d);
+ if(!force&&(d.bankSignature===signature||d.bankFailedSignature===signature))return;
+ const owner=session,month=context.month,ids=[...d.payments.keys()];
+ d.bankLoading=true;d.bankError="";d.bankConfirmed=false;
+ refresh();
+ try{
+  const r=await call(ROOT+"/personnel-planning","staff-bank-payroll","POST",{ids});
+  if(!permissionsValid()||session!==owner||context.month!==month||getDraft()!==d||bankSignature(d)!==signature)return;
+  if(r.ok!==true||!Array.isArray(r.banks)||r.banks.some(b=>!ids.includes(b.personnel_id)||!validIban(b.iban)||!validBic(b.bic)))throw Error("Réponse bancaire invalide.");
+  mergeSavedBanks(d,r.banks);
+  d.bankSignature=signature;d.bankFailedSignature="";
+ }catch(e){
+  if(session===owner){d.bankError=String(e.message||"RIB indisponibles.");d.bankFailedSignature=signature;d.bankSignature=""}
+ }finally{
+  d.bankLoading=false;
+  if(permissionsValid()&&session===owner&&context.month===month&&getDraft()===d&&activeView==="pay")render();
+ }
+}
+function invalidateBank(){
+ for(const d of drafts.values()){d.bankSignature="";d.bankFailedSignature="";d.bankConfirmed=false}
 }
 function bankPrintHtml(month,d,nameFor){
  const problem=bankProblem(d);if(problem)throw Error(problem);
@@ -190,12 +231,29 @@ function bankPrintHtml(month,d,nameFor){
  }).join("");
  return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bordereau salaires '+esc(month)+'</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#172b3d}h1{text-align:center;font-size:19px;margin:0 0 24px}.head{display:grid;grid-template-columns:1fr 1fr;gap:14px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #9babb8;padding:7px 6px;text-align:left;overflow-wrap:anywhere}th{background:#dbe8f4}tbody tr{break-inside:avoid}.summary{font-size:15px;font-weight:bold;margin:15px 0}.money{text-align:right}p{line-height:1.5}</style></head><body><h1>VIREMENT DES SALAIRES — '+esc(month)+'</h1><div class="head"><table><tr><th>IBAN émetteur</th><th>BIC émetteur</th></tr><tr><td>'+esc(compactIban(i.iban))+'</td><td>'+esc(i.bic.toUpperCase())+'</td></tr><tr><th>Nom émetteur</th><th>Num émetteur</th></tr><tr><td>'+esc(i.name)+'</td><td>'+esc(i.number)+'</td></tr></table><table><tr><th>Date d’exécution</th><td>'+esc(i.date.split("-").reverse().join("/"))+'</td></tr><tr><th>Nom du fichier de sortie</th><td>'+esc(i.filename)+'</td></tr><tr><th>Libellé écriture</th><td>'+esc(i.label)+'</td></tr></table></div><p class="summary">Total : '+esc(money(p.total))+' · Nombre de virements : '+active.length+'</p><table><thead><tr>'+["Inactif","Nom","Montant (€)","Commentaires","Matricule","Date","BIC","IBAN","Pays"].map(v=>"<th>"+esc(v)+"</th>").join("")+'</tr></thead><tbody>'+rows+'</tbody></table><p>Compte 421 : '+esc(money(rec.account))+' · Écart : '+esc(money(rec.difference))+(rec.justified?" · Justification : "+esc(d.reconciliation.reason):"")+'</p><p>Document confidentiel préparatoire. Ne constitue pas un ordre de virement SEPA.</p></body></html>';
 }
-function printBank(d){
- if(!permissionsValid()||!d.payConfirmed||!d.bankConfirmed)return;
+async function printBank(d){
+ if(!permissionsValid()||!d.payConfirmed||!d.bankConfirmed||d.bankLoading||d.bankSignature!==bankSignature(d))return;
  if([...d.payments.keys()].some(id=>!context.staff.some(s=>s.id===id)))return;
- const html=bankPrintHtml(context.month,d,staffName);
+ const signature=bankSignature(d),owner=session,month=context.month,ids=[...d.payments.keys()];
  const w=window.open("","_blank");if(!w)return alert("Autorisez les fenêtres pop-up pour imprimer le bordereau.");
- w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),250);
+ w.opener=null;w.document.write("<p>Vérification des coordonnées bancaires…</p>");w.document.close();
+ d.bankLoading=true;refresh();
+ const current=()=>permissionsValid()&&session===owner&&context.month===month&&getDraft()===d&&activeView==="pay"&&bankSignature(d)===signature;
+ let printed=false;
+ try{
+  const r=await call(ROOT+"/personnel-planning","staff-bank-payroll","POST",{ids});
+  if(!current()||!d.payConfirmed||!d.bankConfirmed)return;
+  if(r.ok!==true||!Array.isArray(r.banks)||r.banks.some(b=>!ids.includes(b.personnel_id)||!validIban(b.iban)||!validBic(b.bic)))throw Error("Réponse bancaire invalide.");
+  if(mergeSavedBanks(d,r.banks)){
+   d.bankError="Un RIB a changé depuis le chargement. Actualisez et vérifiez de nouveau le bordereau.";
+   d.bankSignature="";
+   return;
+  }
+  if(w.closed)return;
+  const html=bankPrintHtml(month,d,staffName);
+  w.document.open();w.document.write(html);w.document.close();w.focus();printed=true;setTimeout(()=>{if(!w.closed)w.print()},250);
+ }catch(e){if(current()){d.bankConfirmed=false;d.bankError="Vérification des RIB impossible. Actualisez avant impression.";d.bankSignature=""}}
+ finally{if(!printed&&!w.closed)w.close();d.bankLoading=false;if(current())render()}
 }
 function restoreBank(raw,staffIds){
  const bank={issuer:{},beneficiaries:new Map()};
@@ -213,7 +271,7 @@ function restoreBank(raw,staffIds){
  bank.issuer=copy(raw.issuer,issuerFields);
  for(const row of raw.beneficiaries){
   if(!Array.isArray(row)||row.length!==2||!staffIds.has(row[0])||bank.beneficiaries.has(row[0]))throw Error("Bénéficiaire du brouillon invalide.");
-  bank.beneficiaries.set(row[0],copy(row[1],beneficiaryFields));
+  bank.beneficiaries.set(row[0],copy(row[1],beneficiaryFields.filter(([key])=>["matricule","comment"].includes(key))));
  }
  return bank;
 }
@@ -317,6 +375,7 @@ function render(){
  const d=getDraft();
  host.innerHTML=(activeView==="pay"?payHtml(d):activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
  wire(host,d);refresh();
+ if(activeView==="pay")void loadSavedBanks(d);
 }
 function refresh(){
  if(!permissionsValid())return;
@@ -342,8 +401,9 @@ function refresh(){
  set("salaryDeclarationStatus",declarationError||"Déclaration prête à vérifier.");
  if(el("salaryDeclarationConfirm")){el("salaryDeclarationConfirm").checked=d.declarationConfirmed;el("salaryDeclarationConfirm").disabled=!!declarationError}
  for(const id of ["salaryDeclarationCsv","salaryDeclarationPrint"])if(el(id))el(id).disabled=!!declarationError||!d.declarationConfirmed;
- const bankError=bankProblem(d);
+ const bankError=d.bankLoading?"Chargement des RIB enregistrés…":d.bankError|| (d.bankSignature!==bankSignature(d)?"Actualisez les RIB enregistrés.":bankProblem(d));
  set("salaryBankStatus",bankError||"Bordereau prêt à contrôler.");
+ if(el("salaryBankReload"))el("salaryBankReload").disabled=d.bankLoading;
  if(el("salaryBankConfirm")){el("salaryBankConfirm").checked=d.bankConfirmed;el("salaryBankConfirm").disabled=!!bankError||!d.payConfirmed||unknown}
  if(el("salaryBankPrint"))el("salaryBankPrint").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown;
 }
@@ -377,12 +437,13 @@ function wire(host,d){
  host.querySelectorAll("[data-bank-key]").forEach(input=>input.addEventListener("input",()=>{
   if(!permissionsValid())return;
   const id=input.dataset.bankPerson,key=input.dataset.bankKey;
-  if(id){const b=d.bank.beneficiaries.get(id)||{};b[key]=input.value;d.bank.beneficiaries.set(id,b)}
+  if(id){if(["iban","bic","country"].includes(key))return;const b=d.bank.beneficiaries.get(id)||{};b[key]=input.value;d.bank.beneficiaries.set(id,b)}
   else d.bank.issuer[key]=input.value;
   d.bankConfirmed=false;d.dirty=true;refresh();
  }));
+ el("salaryBankReload")?.addEventListener("click",()=>void loadSavedBanks(d,true));
  el("salaryBankConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.bankConfirmed=e.target.checked;refresh()}});
- el("salaryBankPrint")?.addEventListener("click",()=>{try{printBank(d)}catch(error){alert(error.message)}});
+ el("salaryBankPrint")?.addEventListener("click",()=>void printBank(d));
  host.querySelectorAll("[data-declaration-key]").forEach(input=>input.addEventListener("input",()=>{
   if(!permissionsValid())return;
   const id=input.dataset.declarationPerson,key=input.dataset.declarationKey;
@@ -412,7 +473,7 @@ function wire(host,d){
  el("salaryOdBackup")?.addEventListener("click",()=>{
   if(!permissionsValid())return;
   if(!confirm("Télécharger un fichier privé non chiffré pouvant contenir salaires, coordonnées bancaires et N° SS ? Conservez-le dans un espace sécurisé."))return;
-  download("chambertin-salaires-brouillon-"+context.month+".json",JSON.stringify({version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,bank:{issuer:d.bank.issuer,beneficiaries:[...d.bank.beneficiaries]},declarations:[...d.declarations]},null,2),"application/json");
+  download("chambertin-salaires-brouillon-"+context.month+".json",JSON.stringify({version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,bank:{issuer:d.bank.issuer,beneficiaries:bankDraftEntries(d)},declarations:[...d.declarations]},null,2),"application/json");
   d.dirty=false;
  });
  el("salaryOdImport")?.addEventListener("change",async e=>{
@@ -445,7 +506,7 @@ function mount(config){
  nav.querySelectorAll("[data-salary-od-view]").forEach(b=>b.addEventListener("click",()=>{activeView=b.dataset.salaryOdView;render()}));
  render();
 }
-window.salaryOdMount=mount;window.salaryOdClear=clear;
+window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
-if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,csv};
+if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,csv};
 })();

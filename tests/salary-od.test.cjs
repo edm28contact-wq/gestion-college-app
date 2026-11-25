@@ -37,7 +37,7 @@ test("Virements : le net est reporté sans nouvelle déduction et les données i
 });
 test("Compta salaire : module intégré au mois, aux droits de modification et à la déconnexion",()=>{
  const html=fs.readFileSync("college/admin/index.html","utf8"),salary=fs.readFileSync("college/admin/salaires.js","utf8");
- assert.match(html,/salary-od\.js\?v=2-documents/);assert.match(html,/salaryOdClear\(\)/);
+ assert.match(html,/salary-od\.js\?v=3-rib/);assert.match(html,/salaryOdClear\(\)/);
  assert.match(salary,/salaryOdMount\(\{month,staff:staffAvailable\?salaryStaff:\[\],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token,declarationStaff\}/);
  assert.doesNotMatch(source,/\b(localStorage|sessionStorage|fetch)\b/);
  assert.match(source,/!reconcilePayments\(d\)\.ok/);assert.doesNotMatch(source,/salaryPayToOD/);
@@ -99,4 +99,33 @@ test("Déclaration gérance : champs du modèle, contrôle explicite et exclusio
  assert.doesNotMatch(api.declarationPrintHtml("2026-10",data),/NE PAS EXPORTER/);
  d.declarations.get("a").gross="";assert.match(api.declarationProblem(d,staff),/montants/);
  assert.throws(()=>api.restoreDraft({version:2,month:"2026-10",values:{},payments:[],declarations:[["intrus",{gross:"1"}]]},"2026-10",new Set(["a"]),["a"]));
+});
+
+test("RIB salariés : rattachement par identifiant, effacement des anciens RIB du brouillon et reconfirmation",()=>{
+ const d=api.restoreDraft({version:2,month:"2026-10",values:{},payments:[["a","100"],["b","200"]],bank:{issuer:{},beneficiaries:[["a",{iban:"ancien",bic:"ancien",country:"FR",matricule:"1",comment:"Paie"}]]}},"2026-10",new Set(["a","b"]),["a","b"]);
+ assert.equal(d.bank.beneficiaries.get("a").iban,undefined);
+ d.bankConfirmed=true;
+ assert.equal(api.mergeSavedBanks(d,[{personnel_id:"a",iban:"FR-EXEMPLE",bic:"TESTFRPP"}]),true);
+ assert.equal(d.bankConfirmed,false);
+ assert.equal(d.bank.beneficiaries.get("a").matricule,"1");
+ assert.equal(d.bank.beneficiaries.get("a").iban,"FR-EXEMPLE");
+ assert.equal(d.bank.beneficiaries.get("b").iban,"");
+ assert.doesNotMatch(JSON.stringify(api.bankDraftEntries(d)),/FR-EXEMPLE|TESTFRPP/);
+ assert.equal(api.mergeSavedBanks(d,[]),true);
+ assert.equal(d.bank.beneficiaries.get("a").iban,"");
+ assert.match(source,/staff-bank-payroll/);
+ assert.match(source,/d\.bankSignature!==bankSignature\(d\)/);
+});
+test("RIB : accès serveur séparé du planning et privilèges directs révoqués",()=>{
+ const backend=fs.readFileSync("supabase/functions/personnel-planning/index.ts","utf8");
+ const sql=fs.readFileSync("supabase/migrations/20261125150644_college_personnel_private_bank_details.sql","utf8");
+ for(const action of ["staff-bank-detail","staff-bank-payroll","staff-bank-save"])assert.match(backend,new RegExp('action==="'+action+'"[^\\n]*\\{\\s*if\\(!user\\.salaryWrite\\)'));
+ assert.match(backend,/iban_last4:String\(row\.iban\)\.slice\(-4\)/);
+ assert.match(backend,/bank=normalizeStaffBank\(x\)/);
+ assert.match(backend,/x\.confirmed!==true/);
+ assert.match(sql,/enable row level security/i);
+ assert.match(sql,/revoke all on table .* from public, anon, authenticated, service_role/i);
+ assert.match(sql,/security invoker/i);
+ assert.match(sql,/where personnel_id=p_personnel_id and version=p_version/i);
+ assert.match(sql,/jsonb_build_object\('version',v\)/);
 });
