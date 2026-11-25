@@ -89,14 +89,14 @@ function render(state){
   const cells=[
    row.filename,
    row.staffName||"Non identifié",
-   row.period||"Non reconnue",
+   row.period?row.period+(row.periodSource==="filename"?" (nom du fichier)":""):"Non reconnue",
    euro(row.amountCents),
    row.status==="imported"?"Net prérempli":row.status==="same"?"Déjà identique":row.status==="conflict"?"Montant différent déjà saisi":row.status==="duplicate"?"Doublon du même salarié":row.status==="review"?"À vérifier":row.status==="error"?"Lecture impossible":"À traiter"
   ];
   for(const value of cells)tr.append(makeEl("td",value));
   const action=makeEl("td");
   if(row.reason){const p=makeEl("small",row.reason);action.append(p)}
-  const canManual=allowed&&!state.busy&&row.amountCents!==null&&row.period===state.opts.month&&row.documentOk===true&&["review","duplicate","conflict"].includes(row.status);
+  const canManual=allowed&&!state.busy&&(row.amountCents!==null||row.amountCandidates?.length>0)&&row.period===state.opts.month&&row.documentOk===true&&["review","duplicate","conflict"].includes(row.status);
   if(canManual){
    const select=makeEl("select",null,{"aria-label":"Salarié pour "+row.filename});
    select.append(makeEl("option","Choisir le salarié",{value:""}));
@@ -106,14 +106,31 @@ function render(state){
     select.append(option);
    }
    action.append(select);
+   const choice=makeEl("select",null,{"aria-label":"Montant net vérifié pour "+row.filename});
+   choice.append(makeEl("option","Choisir le net après impôt",{value:""}));
+   const options=[...(row.amountCandidates||[])];
+   if(row.amountCents!==null&&!options.some(v=>v.cents===row.amountCents))options.unshift({cents:row.amountCents,label:row.label||"Net extrait"});
+   options.filter(v=>Number.isSafeInteger(v.cents)&&v.cents>=0).forEach(entry=>{
+    const label=euro(entry.cents)+" — "+String(entry.label||"Montant extrait").replace(/\s+/g," ").slice(0,85);
+    const option=makeEl("option",label,{value:String(entry.cents)});
+    if(row.amountCents===entry.cents)option.selected=true;
+    choice.append(option);
+   });
+   if(options.length){action.append(choice)}
    const button=makeEl("button","Reporter après vérification",{type:"button",class:"btn secondary compact"});
-   button.disabled=!select.value;
-   select.addEventListener("change",()=>{button.disabled=!select.value});
+   const check=()=>{button.disabled=!select.value||!choice.value};
+   check();
+   select.addEventListener("change",check);
+   choice.addEventListener("change",check);
    button.addEventListener("click",()=>{
-    if(!valid(state)||!select.value||!state.opts.staff.some(p=>p.id===select.value))return;
-    if(!confirm("Confirmer : "+state.opts.staff.find(p=>p.id===select.value).name+" — "+euro(row.amountCents)+" — mois "+state.opts.month+" ?\nCe montant remplacera le net à payer éventuellement présent."))return;
-    const outcome=state.opts.apply([{staffId:select.value,amountCents:row.amountCents}],true)[0];
+    const verified=Number(choice.value);
+    if(!valid(state)||!select.value||!choice.value||!Number.isSafeInteger(verified)||verified<0||
+       !state.opts.staff.some(p=>p.id===select.value)||!options.some(x=>x.cents===verified))return;
+    if(!confirm("Après contrôle du bulletin PDF, confirmer : "+state.opts.staff.find(p=>p.id===select.value).name+
+      " — "+euro(verified)+" — mois "+state.opts.month+" ?\nCe montant remplacera le net à payer éventuellement présent."))return;
+    const outcome=state.opts.apply([{staffId:select.value,amountCents:verified}],true)[0];
     row.status=outcome||"review";
+    row.amountCents=verified;
     row.staffId=select.value;row.staffName=state.opts.staff.find(p=>p.id===select.value)?.name||"";
     row.reason=outcome==="imported"?"Confirmation manuelle enregistrée.":"Opération non appliquée.";
     state.opts.refresh();
@@ -135,7 +152,7 @@ async function processFiles(state,files){
   if(state!==current||serial!==state.serial||!state.opts.isCurrent())return;
   try{
    const lines=await readFile(file);
-   const parsed=window.ChambertinPayslipNet.inspectPayslip(lines,state.opts.staff,state.opts.month);
+   const parsed=window.ChambertinPayslipNet.inspectPayslip(lines,state.opts.staff,state.opts.month,file.name);
    const reason=parsed.reasons.join(" ");
    results.push({...parsed,filename:file.name,status:parsed.ready?"ready":"review",reason,
     documentOk:!parsed.reasons.some(x=>x.includes("Nature « bulletin"))});
