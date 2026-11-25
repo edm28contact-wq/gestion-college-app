@@ -58,3 +58,22 @@ test("Les commandes en attente de facture gardent leur statut technique et leur 
  assert.ok(!sec.includes("openManualOrderFromInvoices"));
  assert.ok(sec.includes("key==='orders'||!secretaryCanSee(key)"));
 });
+
+test("Planning : ordre de création stable et indépendant de la date de l'événement ou de sa modification",()=>{
+ const original=[
+  {id:"b",event_date:"2026-11-02",created_at:"2026-11-25T10:30:00Z",event_type:"retard",personnel_name:"Martin"},
+  {id:"a",event_date:"2026-11-21",created_at:"2026-11-25T09:00:00Z",updated_at:"2026-11-26T12:00:00Z",event_type:"retard",personnel_name:"Martin"},
+  {id:"c",event_date:"2026-11-01",created_at:"2026-11-25T11:00:00+01:00",event_type:"absence",personnel_name:"Durand"},
+  {id:"legacy",event_date:"2026-11-01",created_at:null,event_type:"retard",personnel_name:"Martin"},
+  {id:"d",event_date:"2026-11-03",created_at:"2026-11-25T10:30:00Z",event_type:"incident",personnel_name:"Durand"}
+ ];
+ const filters={filter:{value:"all"},personFilter:{value:""}};
+ const ctx=vm.createContext({events:original,document:{getElementById:id=>filters[id]}});
+ vm.runInContext(read("secretariat/planning/calendar.js")+";this.filtered=filteredPlanningEvents",ctx);
+ assert.deepEqual(Array.from(ctx.filtered(),x=>x.id),["a","c","b","d","legacy"]);
+ assert.deepEqual(original.map(x=>x.id),["b","a","c","legacy","d"],"ne pas modifier les événements sources");
+ filters.filter.value="retard";filters.personFilter.value="martin";
+ assert.deepEqual(Array.from(ctx.filtered(),x=>x.id),["a","b","legacy"]);
+ assert.match(read("secretariat/planning/index.html"),/calendar\.js\?v=5-ordre-saisie/);
+ assert.match(read("secretariat/planning/index.html"),/Ordre de saisie : du plus ancien au plus récent/);
+});

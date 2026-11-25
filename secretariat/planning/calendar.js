@@ -1,8 +1,18 @@
 /* Planning mensuel des événements — fonctions de présentation uniquement. */
+function sortPlanningByEntryOrder(items){
+ const timestamp=item=>{
+  const value=Date.parse(item.created_at??"");
+  return Number.isFinite(value)?value:Infinity;
+ };
+ return items.slice().sort((a,b)=>{
+  const first=timestamp(a),second=timestamp(b);
+  return first===second?0:first<second?-1:1;
+ });
+}
 function filteredPlanningEvents(){
  const type=document.getElementById("filter").value;
  const text=document.getElementById("personFilter").value.trim().toLocaleLowerCase("fr-FR");
- return events.filter(e=>(type==="all"||e.event_type===type)&&(!text||String(e.personnel_name||"").toLocaleLowerCase("fr-FR").includes(text)));
+ return sortPlanningByEntryOrder(events.filter(e=>(type==="all"||e.event_type===type)&&(!text||String(e.personnel_name||"").toLocaleLowerCase("fr-FR").includes(text))));
 }
 function shiftPlanningMonth(month,by){
  const m=/^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
