@@ -227,9 +227,9 @@ function bankPrintHtml(month,d,nameFor){
  const active=[...d.payments].filter(([,v])=>cents(v)>0).sort((a,b)=>nameFor(a[0]).localeCompare(nameFor(b[0]),"fr"));
  const rows=active.map(([id,value])=>{
   const b=d.bank.beneficiaries.get(id);
-  return "<tr>"+["",nameFor(id),decimal(cents(value)),b.comment||i.label,b.matricule,i.date.slice(-2),String(b.bic).toUpperCase(),compactIban(b.iban),String(b.country).toUpperCase()].map(v=>"<td>"+esc(v)+"</td>").join("")+"</tr>";
+  return "<tr>"+["",nameFor(id),decimal(cents(value)),b.comment||i.label,b.matricule,i.date.slice(-2),String(b.bic).toUpperCase(),compactIban(b.iban),String(b.country).toUpperCase(),b.postcode||"",b.city||"",b.address||""].map(v=>"<td>"+esc(v)+"</td>").join("")+"</tr>";
  }).join("");
- return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bordereau salaires '+esc(month)+'</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#172b3d}h1{text-align:center;font-size:19px;margin:0 0 24px}.head{display:grid;grid-template-columns:1fr 1fr;gap:14px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #9babb8;padding:7px 6px;text-align:left;overflow-wrap:anywhere}th{background:#dbe8f4}tbody tr{break-inside:avoid}.summary{font-size:15px;font-weight:bold;margin:15px 0}.money{text-align:right}p{line-height:1.5}</style></head><body><h1>VIREMENT DES SALAIRES — '+esc(month)+'</h1><div class="head"><table><tr><th>IBAN émetteur</th><th>BIC émetteur</th></tr><tr><td>'+esc(compactIban(i.iban))+'</td><td>'+esc(i.bic.toUpperCase())+'</td></tr><tr><th>Nom émetteur</th><th>Num émetteur</th></tr><tr><td>'+esc(i.name)+'</td><td>'+esc(i.number)+'</td></tr></table><table><tr><th>Date d’exécution</th><td>'+esc(i.date.split("-").reverse().join("/"))+'</td></tr><tr><th>Nom du fichier de sortie</th><td>'+esc(i.filename)+'</td></tr><tr><th>Libellé écriture</th><td>'+esc(i.label)+'</td></tr></table></div><p class="summary">Total : '+esc(money(p.total))+' · Nombre de virements : '+active.length+'</p><table><thead><tr>'+["Inactif","Nom","Montant (€)","Commentaires","Matricule","Date","BIC","IBAN","Pays"].map(v=>"<th>"+esc(v)+"</th>").join("")+'</tr></thead><tbody>'+rows+'</tbody></table><p>Compte 421 : '+esc(money(rec.account))+' · Écart : '+esc(money(rec.difference))+(rec.justified?" · Justification : "+esc(d.reconciliation.reason):"")+'</p><p>Document confidentiel préparatoire. Ne constitue pas un ordre de virement SEPA.</p></body></html>';
+ return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bordereau salaires '+esc(month)+'</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#172b3d}h1{text-align:center;font-size:19px;margin:0 0 24px}.head{display:grid;grid-template-columns:1fr 1fr;gap:14px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #9babb8;padding:7px 6px;text-align:left;overflow-wrap:anywhere}th{background:#dbe8f4}tbody tr{break-inside:avoid}.summary{font-size:15px;font-weight:bold;margin:15px 0}.money{text-align:right}p{line-height:1.5}</style></head><body><h1>VIREMENT DES SALAIRES — '+esc(month)+'</h1><div class="head"><table><tr><th>IBAN émetteur</th><th>BIC émetteur</th></tr><tr><td>'+esc(compactIban(i.iban))+'</td><td>'+esc(i.bic.toUpperCase())+'</td></tr><tr><th>Nom émetteur</th><th>Num émetteur</th></tr><tr><td>'+esc(i.name)+'</td><td>'+esc(i.number)+'</td></tr></table><table><tr><th>Date d’exécution</th><td>'+esc(i.date.split("-").reverse().join("/"))+'</td></tr><tr><th>Nom du fichier de sortie</th><td>'+esc(i.filename)+'</td></tr><tr><th>Libellé écriture</th><td>'+esc(i.label)+'</td></tr></table></div><p class="summary">Total : '+esc(money(p.total))+' · Nombre de virements : '+active.length+'</p><table><thead><tr>'+["Inactif","Nom","Montant (€)","Commentaires","Matricule","Date","BIC","IBAN","Pays","Code postal","Ville","Adresse"].map(v=>"<th>"+esc(v)+"</th>").join("")+'</tr></thead><tbody>'+rows+'</tbody></table><p>Compte 421 : '+esc(money(rec.account))+' · Écart : '+esc(money(rec.difference))+(rec.justified?" · Justification : "+esc(d.reconciliation.reason):"")+'</p><p>Document confidentiel préparatoire. Ne constitue pas un ordre de virement SEPA.</p></body></html>';
 }
 async function printBank(d){
  if(!permissionsValid()||!d.payConfirmed||!d.bankConfirmed||d.bankLoading||d.bankSignature!==bankSignature(d))return;
@@ -255,6 +255,47 @@ async function printBank(d){
  }catch(e){if(current()){d.bankConfirmed=false;d.bankError="Vérification des RIB impossible. Actualisez avant impression.";d.bankSignature=""}}
  finally{if(!printed&&!w.closed)w.close();d.bankLoading=false;if(current())render()}
 }
+
+async function exportSepa(d){
+ if(!permissionsValid()||!d.payConfirmed||!d.bankConfirmed||d.bankLoading||d.bankSignature!==bankSignature(d)||bankProblem(d))return;
+ const owner=session,month=context.month,signature=bankSignature(d),ids=[...d.payments.keys()];
+ const current=()=>permissionsValid()&&session===owner&&context.month===month&&getDraft()===d&&activeView==="pay"&&bankSignature(d)===signature;
+ d.bankLoading=true;d.bankError="";refresh();
+ try{
+  const response=await call(ROOT+"/personnel-planning","staff-bank-payroll","POST",{ids});
+  if(!current()||!d.payConfirmed||!d.bankConfirmed)return;
+  if(response.ok!==true||!Array.isArray(response.banks)||response.banks.some(b=>!ids.includes(b.personnel_id)||!validIban(b.iban)||!validBic(b.bic)))
+   throw Error("Les RIB enregistrés n’ont pas été vérifiés.");
+  if(mergeSavedBanks(d,response.banks)){
+   d.bankConfirmed=false;d.bankSignature="";
+   throw Error("Un RIB a changé depuis la confirmation. Revérifiez le bordereau avant l’export XML.");
+  }
+  const problem=bankProblem(d);
+  if(problem)throw Error(problem);
+  const generator=window.ChambertinSEPA?.createCreditTransfer;
+  if(typeof generator!=="function")throw Error("Générateur SEPA indisponible. Actualisez la page.");
+  const beneficiaries=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr")).map(([id,value])=>{
+   const bank=d.bank.beneficiaries.get(id)||{};
+   return {name:staffName(id),amountCents:cents(value),...bank};
+  });
+  const snapshot=JSON.stringify([month,d.bank.issuer,beneficiaries]);
+  const batchId=d.sepaExport?.snapshot===snapshot?d.sepaExport.batchId:crypto.randomUUID().replace(/-/g,"").slice(0,12).toUpperCase();
+  const result=generator({month,issuer:d.bank.issuer,beneficiaries,batchId,now:new Date()});
+  if(result.totalCents!==paymentTotals(d.payments).total)throw Error("Le total SEPA ne correspond pas aux montants confirmés.");
+  if(!current()||!d.payConfirmed||!d.bankConfirmed)return;
+  const accepted=confirm("Télécharger "+result.filename+" ?\n\n"+result.count+" virement(s) — "+money(result.totalCents)+".\n\nLe format pain.001.001.03 de votre classeur doit être accepté par votre banque. L’import et l’autorisation des paiements se font uniquement sur le site bancaire. Ne déposez jamais deux fois le même lot.");
+  if(!accepted)return;
+  if(!current())return;
+  d.sepaExport={snapshot,batchId};
+  download(result.filename,result.xml,"application/xml;charset=utf-8");
+ }catch(e){
+  if(current()){d.bankError=String(e.message||"Export SEPA impossible.");d.bankConfirmed=false}
+ }finally{
+  d.bankLoading=false;
+  if(current())refresh();
+ }
+}
+
 function restoreBank(raw,staffIds){
  const bank={issuer:{},beneficiaries:new Map()};
  if(raw===undefined)return bank;
@@ -440,7 +481,7 @@ function wire(host,d){
   const id=input.dataset.bankPerson,key=input.dataset.bankKey;
   if(id){if(["iban","bic"].includes(key))return;const b=d.bank.beneficiaries.get(id)||{};b[key]=input.value;d.bank.beneficiaries.set(id,b)}
   else d.bank.issuer[key]=input.value;
-  d.bankConfirmed=false;d.dirty=true;refresh();
+  d.bankConfirmed=false;d.bankError="";d.dirty=true;refresh();
  }));
  el("salaryBankReload")?.addEventListener("click",()=>void loadSavedBanks(d,true));
  el("salaryBankConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.bankConfirmed=e.target.checked;refresh()}});
