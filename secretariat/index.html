@@ -31,9 +31,18 @@
 #content[hidden],#embeddedContent[hidden],#embeddedContent iframe[hidden]{display:none!important}
 #embeddedContent{width:100%;min-width:0}
 #embeddedContent iframe{display:block;width:100%;border:0;background:transparent;min-width:0;min-height:850px;overflow:hidden}
+
+.invoice-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch}
+.invoice-entry-card{padding:25px;display:flex;flex-direction:column;gap:14px;min-height:260px}
+.invoice-entry-card h3{margin:0;font-size:22px;color:#1b344e}
+.invoice-entry-card p{margin:0;line-height:1.55}
+.invoice-entry-card .muted{font-size:12px}
+.invoice-entry-step{font-size:12px;font-weight:800;letter-spacing:.04em;color:#41617f}
+.invoice-entry-action{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:48px;margin-top:auto;text-align:center}
+.invoice-entry-action:disabled{opacity:.48;cursor:not-allowed}
+@media(max-width:760px){.invoice-entry-grid{grid-template-columns:1fr}.invoice-entry-card{min-height:0}}
 </style><link rel="stylesheet" href="../college/workspace-layout.css?v=20261123-stable-1">
 </head><body><main class="wrap"><form id="login" class="card login" onsubmit="event.preventDefault();doLogin()"><h1>Secrétariat commandes</h1><p class="muted">Connexion avec <b>admin</b> ou avec un compte Secrétariat créé depuis la Holding.</p><label>Identifiant</label><input id="user" value="admin" autocomplete="username"><br><br><label>Mot de passe</label><input id="pass" type="password" autocomplete="current-password"><br><br><button class="btn primary" type="submit" style="width:100%">Se connecter</button><p id="loginMsg" class="status"></p></form><form id="firstPassword" class="card login hide" onsubmit="event.preventDefault();completeFirstPassword()"><h2>Première connexion : changement de mot de passe</h2><p class="muted">Pour activer votre compte, définissez votre mot de passe personnel (au moins 10 caractères).</p><label for="firstNewPass">Nouveau mot de passe</label><input id="firstNewPass" type="password" autocomplete="new-password" minlength="10" required><label for="firstConfirmPass">Confirmer le mot de passe</label><input id="firstConfirmPass" type="password" autocomplete="new-password" minlength="10" required><button class="btn primary" type="submit">Enregistrer le mot de passe</button><p id="firstPasswordStatus" class="status" role="status"></p></form><section id="app" class="hide"><div class="actions" style="justify-content:space-between;align-items:center"><div><h1>Secrétariat</h1><div id="who" class="muted"></div><div id="syncInfo" class="muted"></div></div><div class="actions"><a id="secretariatAdminSpace" class="btn secondary" href="../college/admin/">Administration Cours Chambertin</a><a id="secretariatHoldingSpace" class="btn secondary" href="../admin/holding/">Holding</a><button class="btn secondary" onclick="logout()">Déconnexion</button></div></div><br><div class="tabs"><button id="tStocks" class="btn active" onclick="show('stocks')">Stocks et produits</button><button id="tOrders" class="btn secondary" onclick="show('orders')">Commandes</button><button id="tInvoices" class="btn secondary" onclick="show('invoices')">Factures</button><button id="tPlanning" class="btn secondary" onclick="show('planning')">Planning</button><button id="tSettings" class="btn secondary" onclick="show('settings')">Paramètres</button><button id="tPassword" class="btn secondary" onclick="show('password')">Mot de passe</button></div><br><div id="content"></div><div id="embeddedContent" hidden>
-<iframe id="embeddedInvoices" title="Gestion des factures du Secrétariat" data-src="factures-gestion/?embed=secretariat&amp;v=20261124-chambertin1" hidden></iframe>
 <iframe id="embeddedPlanning" title="Planning du personnel du Secrétariat" data-src="planning/?embed=secretariat&amp;v=20261124-absence-calcul-v2" hidden></iframe>
 </div></section></main><script>
 const ROOT='https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1',ADMIN=ROOT+'/admin-api',SEC=ROOT+'/secretariat-api',GEMINI_CONFIG=ROOT+'/secretariat-gemini-config';let token=localStorage.getItem('college_secretariat_token')||localStorage.getItem('edm_admin_token')||'',db=null,page='stocks';const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));function headers(){return {'content-type':'application/json','x-admin-session':token,'authorization':'Bearer '+token}}
@@ -88,10 +97,10 @@ function resizeEmbeddedFrame(frame){
  }catch{frame.style.height='1100px'}
 }
 function showEmbeddedSection(section){
- const embedded=section==='invoices'||section==='planning';
+ const embedded=section==='planning';
  $('content').hidden=embedded;
  $('embeddedContent').hidden=!embedded;
- for(const [tab,id] of [['invoices','embeddedInvoices'],['planning','embeddedPlanning']]){
+ for(const [tab,id] of [['planning','embeddedPlanning']]){
   const frame=$(id);
   frame.hidden=section!==tab;
   if(section!==tab)continue;
@@ -123,8 +132,33 @@ function readOnly(){return db?.current_user?.read_only===true}function logout(){
 }function render(){
  if(!secretaryCanSee(page))page=['stocks','orders','invoices','planning','settings','password'].find(secretaryCanSee)||'stocks';
  showEmbeddedSection(page);
- if(page==='invoices'||page==='planning')return;
+ if(page==='planning')return;
+ if(page==='invoices')return invoiceChoice();
  if(page==='stocks')stocks();else if(page==='orders')orders();else if(page==='settings')settingsPage();else passwordPage();
+}
+
+function canCreateManualOrder(){
+ const user=db?.current_user,permissions=user?.permissions||{};
+ return !!user&&!readOnly()&&(user.role==='admin'||permissions.secretariat===true||permissions['secretariat.orders.write']===true);
+}
+function openManualOrderFromInvoices(){
+ if(!canCreateManualOrder()||!secretaryCanSee('orders'))return;
+ show('orders');
+ newOrder();
+}
+function invoiceChoice(){
+ const manualAllowed=canCreateManualOrder()&&secretaryCanSee('orders');
+ $('content').innerHTML=
+ '<div class="secretariat-section-heading"><div><h2>Commandes et factures</h2><p class="muted">Choisissez directement la méthode de traitement.</p></div></div>'+
+ '<div class="invoice-entry-grid">'+
+ '<section class="card invoice-entry-card"><div class="invoice-entry-step">01 · SAISIE DIRECTE</div><h3>Commande manuelle</h3>'+
+ '<p>Créez une commande fournisseur en sélectionnant ses produits, les quantités et les informations de commande.</p>'+
+ '<button type="button" class="btn primary invoice-entry-action" onclick="openManualOrderFromInvoices()" '+(manualAllowed?'':'disabled')+'>Créer une commande manuelle</button>'+
+ (manualAllowed?'':'<p class="muted">Vous ne disposez pas du droit de création de commandes.</p>')+'</section>'+
+ '<section class="card invoice-entry-card"><div class="invoice-entry-step">02 · LECTURE AUTOMATIQUE</div><h3>Lecteur Veryfi</h3>'+
+ '<p>Déposez une facture PDF pour extraire les informations, vérifier les produits et préparer la réception.</p>'+
+ '<a class="btn primary invoice-entry-action" href="../lecteur-veryfi/?origine=secretariat" target="_top">Ouvrir le lecteur Veryfi</a>'+
+ '<p class="muted">La lecture automatique dépend de l’accès API Veryfi. La saisie manuelle reste disponible dans le lecteur.</p></section></div>';
 }
 function stocks(){
  const ps=(db.products||[]).filter(p=>p.active!==false).sort((a,b)=>Number(low(b))-Number(low(a))||String(a.name).localeCompare(String(b.name),'fr'));
