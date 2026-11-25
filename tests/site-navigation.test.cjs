@@ -49,3 +49,12 @@ test("date de commande : la date dépend du fuseau Europe/Paris et non de UTC",(
  assert.equal(run("2026-06-30T22:30:00.000Z"),"2026-07-01");
  assert.equal(run("2026-12-31T23:30:00.000Z"),"2027-01-01");
 });
+
+test("Les commandes en attente de facture gardent leur statut technique et leur réception historique",()=>{
+ const sec=read("secretariat/index.html"),admin=read("college/admin/index.html"),orders=read("admin/commandes/index.html");
+ for(const source of [sec,admin,orders])assert.match(source,/o\.status==='commandee'\?'En attente de facture'/);
+ assert.ok(sec.includes('value="commandee">En attente de facture</option>'));
+ assert.ok(sec.includes("o.status==='commandee'?\`<button"));
+ assert.ok(!sec.includes("openManualOrderFromInvoices"));
+ assert.ok(sec.includes("key==='orders'||!secretaryCanSee(key)"));
+});

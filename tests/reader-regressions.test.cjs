@@ -260,7 +260,8 @@ test("le menu Factures ouvre directement le lecteur Veryfi autonome",()=>{
  assert.ok(navigation.includes('link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat")'));
  assert.ok(!navigation.includes('tab("Commande manuelle / Lecteur Veryfi","#tInvoices")'));
  assert.ok(designer.includes('["Factures · Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"]'));
- assert.ok(navigation.includes('tab("Commandes fournisseurs","#tOrders")'));
+ assert.ok(!navigation.includes('tab("Commandes fournisseurs","#tOrders")'));
+ assert.ok(!designer.includes('["Commandes fournisseurs","tab:#tOrders"]'));
  assert.match(page,/id="usageTrack"/);assert.match(page,/id="manualEntry"/);assert.match(page,/id="pdfTitle"/);assert.match(page,/id="resultTitle"/);
  assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
  assert.match(sec,/href="\.\.\/lecteur-veryfi\/\?origine=secretariat" target="_top"/);
