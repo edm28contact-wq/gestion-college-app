@@ -45,5 +45,6 @@ begin
 end;
 $$;
 revoke all on function public.college_payroll_audit_write() from public,anon,authenticated;
+grant execute on function public.college_payroll_audit_write() to service_role;
 drop trigger if exists college_payroll_audit_changes on public.college_payroll_months;
 create trigger college_payroll_audit_changes after insert or update on public.college_payroll_months for each row execute function public.college_payroll_audit_write();
