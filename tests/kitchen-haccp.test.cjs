@@ -151,8 +151,9 @@ test("Cuisine : chaque thermomètre Govee est affectable à une seule chambre",(
  const admin=read("college/admin/cuisine-admin.js");
  assert.match(admin,/data-govee-room/);
  assert.match(admin,/govee-reassign-sensor/);
- assert.match(admin,/other\.room_id===r\.id/);
- assert.match(admin,/r\.id===d\.room_id/);
+ assert.match(admin,/d\.device_identifier!==device&&d\.room_id===r\.id/);
+ assert.match(admin,/current\?\.room_id===r\.id/);
+ assert.match(read("supabase/functions/kitchen-api/index.ts"),/if\(occupant\.data\)return answer/);
  assert.match(admin,/data-govee-associate/);
 });
 test("Cuisine : exporter le suivi des tâches ménagères en PDF à une date choisie",()=>{
