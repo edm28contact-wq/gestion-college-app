@@ -692,3 +692,12 @@ test("V58 : le lecteur automatique conserve son interface et son calcul, le manu
  assert.match(source,/group\.items\.forEach\(\(\{row,index\}\)=>cards\.append\(buildLine\(row,index\)\)\)/);
  assert.match(source,/if\(compactManualMode\(\)\)\{updateCompactTotals\(c\);return\}/);
 });
+
+test("V58 : les produits du fournisseur sont proposés en premier, sans supprimer les autres",()=>{
+ const make=(value,id)=>({value,dataset:{productId:id},cloneNode(){return {value:this.value,dataset:{...this.dataset}}}});
+ const options=[make("Autre","b"),make("Fournisseur","a")],list={replaceChildren(...children){this.options=children}};
+ const ctx=vm.createContext({catalog:{products:[]},authToken:"t",manualOptionsToken:"t",manualInvoiceOptions:{},manualSupplierProducts:()=>[{id:"a"}],$:id=>id==="compactProductOptions"?list:id==="productOptions"?{options}:{value:"Henri Julien"}});
+ vm.runInContext(functionSource("refreshCompactProductOptions")+";this.run=refreshCompactProductOptions",ctx);
+ ctx.run();assert.deepEqual(Array.from(list.options,x=>x.value),["Fournisseur","Autre"]);
+ assert.match(source,/compactChooseProduct\(row,input\.value\);input\.value=row\.product_label\|\|"";refreshCompactLine/);
+});

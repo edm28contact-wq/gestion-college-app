@@ -1467,6 +1467,12 @@ function applyManualPresentation(){
  preview.setAttribute("aria-expanded",String(document.documentElement.classList.contains("manual-preview-open")));
  preview.textContent=document.documentElement.classList.contains("manual-preview-open")?"Masquer l’aperçu":"Afficher l’aperçu du PDF";
 }
+function refreshCompactProductOptions(){
+ const list=$("compactProductOptions");if(!list)return;
+ const known=new Set(manualSupplierProducts($("vendor").value,manualOptionsToken===authToken?manualInvoiceOptions:null,catalog?.products||[]).map(p=>p.id));
+ const options=[...$("productOptions").options].sort((a,b)=>Number(known.has(b.dataset.productId))-Number(known.has(a.dataset.productId)));
+ list.replaceChildren(...options.map(option=>option.cloneNode(true)));
+}
 function compactLineProblem(row){
  if(!row.product_id)return "Choisissez un produit ou créez-le.";
  if(!eligible(row))return "Vérifiez la quantité, le prix et le total HT.";
@@ -1529,7 +1535,7 @@ function refreshCompactLine(card,row){
  status.classList.toggle("compact-ok",!row.excluded&&isRetainedGreen(row));
  stock.textContent=product?"Unité facturée : "+(row.unit||"à renseigner")+" · Stock : "+(row.stock_quantity===""?"à préciser":row.stock_quantity)+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||""):"";
  const create=card.querySelector("[data-compact-create]");
- if(create)create.hidden=!!row.product_id||row.excluded||saved;
+ if(create){create.hidden=!!row.product_id||row.excluded||saved;create.disabled=saved||loading;}
  card.classList.toggle("compact-excluded",!!row.excluded);
 }
 function buildCompactLine(row,index){
@@ -1541,10 +1547,10 @@ function buildCompactLine(row,index){
   const input=document.createElement("input");input.type="text";input.autocomplete="off";input.dataset.compactKey=key;input.value=row[key]??"";input.disabled=saved||loading||row.excluded;
   if(decimal)input.inputMode="decimal";
   if(key==="product_label"){
-   input.setAttribute("list","productOptions");input.placeholder="Nom ou référence du produit";
+   input.setAttribute("list","compactProductOptions");input.placeholder="Nom ou référence du produit";
    input.addEventListener("change",()=>{
     if(saved||loading||rows[index]!==row)return;
-    compactChooseProduct(row,input.value);renderRows();
+    compactChooseProduct(row,input.value);input.value=row.product_label||"";refreshCompactLine(card,row);updateTotals();
    });
   }else{
    input.addEventListener("input",()=>{
@@ -1619,6 +1625,7 @@ function renderRows(){
  synchronizeExcludedRows();
  autoVerifyGreenRows();
  if(compactManualMode()){
+  refreshCompactProductOptions();
   const box=$("lines");box.replaceChildren();
   rows.forEach((row,index)=>box.append(buildCompactLine(row,index)));
   updateTotals();return;
