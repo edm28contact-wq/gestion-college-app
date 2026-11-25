@@ -39,7 +39,7 @@ begin
   case when tg_op='INSERT' then 'created' when old.status is distinct from new.status then 'status_changed' else 'saved' end,
   case when tg_op='INSERT' then null else old.status end,
   new.status,new.version,
-  case when old.status is distinct from new.status then new.status_note else '' end
+  case when tg_op='INSERT' then '' when old.status is distinct from new.status then new.status_note else '' end
  );
  return new;
 end;
