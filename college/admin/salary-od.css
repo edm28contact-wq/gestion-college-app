@@ -53,6 +53,18 @@
 .salary-bank-dialog input:not([type=checkbox]){font-family:monospace}
 .salary-bank-table input[readonly]{background:#f1f5f8;color:#334a60}
 
+.salary-payslip-import{border:1px solid #c8dbeb;background:#f8fbff;border-radius:12px;padding:18px;margin:12px 0 22px}
+.salary-payslip-import h3{margin:0 0 6px;font-size:19px}
+.salary-payslip-import .salary-payslip-file{display:flex;flex-direction:column;gap:8px;padding:14px 16px;background:white;border:1px dashed #89a9c2;border-radius:9px;max-width:510px;font-weight:700;cursor:pointer}
+.salary-payslip-import input[type=file]{font:inherit;font-weight:400;max-width:100%;color:#203e56}
+.salary-payslip-table{min-width:750px!important}
+.salary-payslip-table td,.salary-payslip-table th{vertical-align:middle;overflow-wrap:anywhere;text-align:left!important}
+.salary-payslip-table td:first-child{max-width:200px}
+.salary-payslip-table td:nth-child(4){font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.salary-payslip-table select{max-width:220px;display:block;margin:7px 0;padding:7px;border:1px solid #b4cadc;border-radius:7px}
+.salary-payslip-table button{white-space:normal}
+.salary-payslip-import [hidden]{display:none!important}
+@media(max-width:620px){.salary-payslip-import{padding:13px}}
 #salaryWorkflowPanel{border-color:#bad1e0;background:#f8fbfe}
 #salaryWorkflowPanel h3{margin:0 0 4px;font-size:19px}
 #salaryWorkflowPanel .salary-od-heading p{margin:0 0 12px}
