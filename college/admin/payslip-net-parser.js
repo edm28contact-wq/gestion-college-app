@@ -12,7 +12,7 @@ function canonicalName(value){
   .replace(/[^A-Z0-9]+/g," ").replace(/\s+/g," ").trim();
 }
 function moneyFromText(line){
- const rex=/(?<!\d)(?:\d{1,3}(?:[ \u00a0\u202f.]\d{3})+|\d{1,8})[,.]\d{2}(?!\d)/g;
+ const rex=/(?<![\d./-])(?:\d{1,3}(?:[ \u00a0\u202f.]\d{3})+|\d{1,8})[,.]\d{2}(?![\d./])/g;
  const values=[];
  for(const match of String(line).matchAll(rex)){
   const numeric=match[0].replace(/[ \u00a0\u202f]/g,"").replace(/\.(?=\d{3}(?:[.,]|$))/g,"").replace(",",".");
@@ -34,6 +34,7 @@ function extractNetPay(lines){
   if(!found)continue;
   if(notAfterTax.test(line)||/\bNET\s+SOCIAL\b/.test(line)||/\bNET\s+IMPOSABLE\b/.test(line))continue;
   const suffix=original.slice(found.index+found[0].length);
+  if(/-\s*\d/.test(suffix)){warnings.push("Montant net négatif : vérification manuelle requise.");continue}
   let amounts=moneyFromText(suffix);
   if(!amounts.length&&i+1<lines.length){
    const next=String(lines[i+1]||"").trim();
