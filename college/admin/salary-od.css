@@ -34,3 +34,11 @@
 .salary-od-reconcile-form textarea,.salary-doc-fields input,.salary-bank-table input{width:100%;font:inherit;padding:8px;border:1px solid #b5c9db;border-radius:7px;background:#fff}
 .salary-od-reconcile-form p{grid-column:1/-1;margin:0}.salary-od-reconcile-form button{align-self:end}
 .salary-bank-table{min-width:1040px}.salary-bank-table input[data-bank-key=iban]{min-width:245px}.salary-bank-table input[data-bank-key=bic]{min-width:100px}.salary-bank-table input[data-bank-key=country]{min-width:50px}.salary-bank-table input[data-bank-key=matricule]{min-width:80px}.salary-bank-table input[data-bank-key=comment]{min-width:135px}
+
+.salary-declaration-person{border:1px solid #d5e2eb;border-radius:9px;margin:10px 0;padding:12px 14px;background:#fff}
+.salary-declaration-person>summary{font-weight:700;cursor:pointer}
+.salary-declaration-person>summary .muted{font-size:12px;font-weight:400;margin-left:10px}
+.salary-declaration-source{background:#edf4fa;padding:10px 12px;border-radius:7px}
+.salary-declaration-wide{grid-column:span 2}
+.salary-doc-fields textarea{width:100%;font:inherit;padding:8px;border:1px solid #b5c9db;border-radius:7px}
+@media(max-width:620px){.salary-declaration-wide{grid-column:1/-1}}

@@ -38,7 +38,7 @@ test("Virements : le net est reporté sans nouvelle déduction et les données i
 test("Compta salaire : module intégré au mois, aux droits de modification et à la déconnexion",()=>{
  const html=fs.readFileSync("college/admin/index.html","utf8"),salary=fs.readFileSync("college/admin/salaires.js","utf8");
  assert.match(html,/salary-od\.js\?v=2-documents/);assert.match(html,/salaryOdClear\(\)/);
- assert.match(salary,/salaryOdMount\(\{month,staff:staffAvailable\?salaryStaff:\[\],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token\}/);
+ assert.match(salary,/salaryOdMount\(\{month,staff:staffAvailable\?salaryStaff:\[\],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token,declarationStaff\}/);
  assert.doesNotMatch(source,/\b(localStorage|sessionStorage|fetch)\b/);
  assert.match(source,/!reconcilePayments\(d\)\.ok/);assert.doesNotMatch(source,/salaryPayToOD/);
  assert.match(source,/Aucun paiement n’est émis/);
@@ -80,4 +80,18 @@ test("Bordereau : vérification syntaxique de l'IBAN, du BIC et de la date",()=>
  assert.match(api.bankProblem(d),/bénéficiaires/);
  d.bank.beneficiaries.set("a",{matricule:"1",iban,bic:"TESTFRPP",country:"FR",comment:"Paie"});
  assert.equal(api.bankProblem(d),"");
+});
+
+test("Déclaration gérance : champs du modèle, contrôle explicite et exclusion des notes internes",()=>{
+ const staff=[{id:"a",name:"Salarié fictif",roleLabel:"Cuisine"}];
+ const d=api.restoreDraft({version:2,month:"2026-10",values:{},payments:[["a",""]]},"2026-10",new Set(["a"]),["a"]);
+ assert.match(api.declarationProblem(d,staff),/contrat/);
+ d.declarations.set("a",{contract:"CDI",status:"Employé",start:"2020-09-01",hours:"151,67",rate:"15",gross:"2275,05",transport:"0",health:"0",comments:"Note sociale",internal:"NE PAS EXPORTER"});
+ assert.equal(api.declarationProblem(d,staff),"");
+ const data=api.declarationData(d,staff);
+ assert.equal(data[0].length,16);
+ assert.ok(data[0].includes("N° SS"));assert.ok(data[1].includes("Cuisine"));
+ assert.ok(data[1].includes("Note sociale"));assert.doesNotMatch(api.csv(data),/NE PAS EXPORTER/);
+ d.declarations.get("a").gross="";assert.match(api.declarationProblem(d,staff),/montants/);
+ assert.throws(()=>api.restoreDraft({version:2,month:"2026-10",values:{},payments:[],declarations:[["intrus",{gross:"1"}]]},"2026-10",new Set(["a"]),["a"]));
 });

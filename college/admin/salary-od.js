@@ -96,7 +96,7 @@ function reconcilePayments(d){
 const drafts=new Map();
 let session="",activeView="variables",context=null;
 function clear(){drafts.clear();session="";context=null;activeView="variables"}
-function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},odConfirmed:false,payConfirmed:false,bankConfirmed:false,dirty:false}}
+function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,dirty:false}}
 function draftFor(month){if(!drafts.has(month))drafts.set(month,blankDraft());return drafts.get(month)}
 function download(filename,content,type){
  const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement("a");
@@ -108,13 +108,13 @@ function staffName(id){return context.staff.find(s=>s.id===id)?.name||"Salarié 
 function getDraft(){return draftFor(context.month)}
 function field(value,attrs,label){return '<input type="text" inputmode="decimal" autocomplete="off" maxlength="16" placeholder="0,00" aria-label="'+esc(label)+'" '+attrs+' value="'+esc(value??"")+'">'}
 function draftTools(){
- return '<div class="salary-od-draft"><span>Brouillon de session · sauvegardez un fichier privé pour reprendre plus tard.</span><div class="actions"><button type="button" class="btn secondary compact" id="salaryOdBackup">Sauvegarder le brouillon</button><label class="btn secondary compact salary-od-file">Reprendre un brouillon<input type="file" id="salaryOdImport" accept=".json,application/json"></label></div><p class="muted">Ce fichier contient des données salariales confidentielles. Ne le partagez pas.</p></div>';
+ return '<div class="salary-od-draft"><span>Brouillon de session · sauvegardez un fichier privé pour reprendre plus tard.</span><div class="actions"><button type="button" class="btn secondary compact" id="salaryOdBackup">Sauvegarder le brouillon</button><label class="btn secondary compact salary-od-file">Reprendre un brouillon<input type="file" id="salaryOdImport" accept=".json,application/json"></label></div><p class="muted">Ce fichier privé non chiffré peut contenir salaires, coordonnées bancaires et N° SS. Conservez-le uniquement dans un espace sécurisé.</p></div>';
 }
 function odHtml(d){
  const rows=lines.map(line=>(line.group?'<tr class="salary-od-group"><th colspan="4">'+esc(line.group)+'</th></tr>':'')+
   '<tr><td><b>'+line.account+'</b></td><th scope="row">'+esc(line.label)+(line.derived?' <small class="muted">Reprise automatique</small>':'')+'</th>'+
   ["D","C"].map(side=>'<td>'+ (side!==line.side?'—':line.derived?'<strong id="salaryOdBenefitCredit">—</strong>':field(d.values[line.key],'data-od-key="'+line.key+'"',line.label+" "+(side==="D"?"débit":"crédit")))+'</td>').join("")+'</tr>').join("");
- return '<section class="card salary-od-section"><div class="salary-od-heading"><div><h2>3. OD de salaires</h2><p class="muted">Modèle Chambertin · journal OD · date '+monthEnd(context.month).replace(/(\d{4})(\d{2})(\d{2})/,"$3/$2/$1")+'. Renseignez les montants du journal de paie validé.</p></div><button class="btn secondary" type="button" id="salaryOdZero">Mettre les champs vides à zéro</button></div>'+
+ return '<section class="card salary-od-section"><div class="salary-od-heading"><div><h2>4. OD de salaires</h2><p class="muted">Modèle Chambertin · journal OD · date '+monthEnd(context.month).replace(/(\d{4})(\d{2})(\d{2})/,"$3/$2/$1")+'. Renseignez les montants du journal de paie validé.</p></div><button class="btn secondary" type="button" id="salaryOdZero">Mettre les champs vides à zéro</button></div>'+
  '<div class="salary-od-totals"><div><span>Total débit</span><strong id="salaryOdDebit">—</strong></div><div><span>Total crédit</span><strong id="salaryOdCredit">—</strong></div><div><span>Écart</span><strong id="salaryOdBalance">—</strong></div></div>'+
  '<div class="table"><table class="salary-od-table"><thead><tr><th>Compte</th><th>Libellé</th><th>Débit (€)</th><th>Crédit (€)</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
  '<p class="muted">Les comptes et sens suivent le classeur fourni. Vérifiez leur validité avec la comptabilité avant import. Les cotisations, la taxe sur les salaires et le prélèvement à la source ne sont pas estimés.</p>'+
@@ -125,7 +125,7 @@ function payHtml(d){
  const people=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr"));
  const rows=people.map(([id,value])=>'<tr><th scope="row">'+esc(staffName(id))+'</th><td>'+field(value,'data-pay-id="'+esc(id)+'"',"Net à virer : "+staffName(id))+'</td><td>'+(context.staff.some(s=>s.id===id&&!s.archived)?'<span class="muted">0 si aucun virement</span>':'<button type="button" class="btn secondary compact" data-pay-remove="'+esc(id)+'">Retirer</button>')+'</td></tr>').join("");
  const extra=context.staff.filter(s=>!d.payments.has(s.id)).sort((a,b)=>a.name.localeCompare(b.name,"fr"));
- return '<section class="card salary-od-section"><div class="salary-od-heading"><div><h2>2. Virements de salaires</h2><p class="muted">Reportez le montant net réellement à verser de chaque bulletin validé, après acomptes et prélèvement à la source. Ne les déduisez pas une deuxième fois.</p></div></div>'+
+ return '<section class="card salary-od-section"><div class="salary-od-heading"><div><h2>3. Virements de salaires</h2><p class="muted">Reportez le montant net réellement à verser de chaque bulletin validé, après acomptes et prélèvement à la source. Ne les déduisez pas une deuxième fois.</p></div></div>'+
  '<div class="salary-od-totals"><div><span>Total à virer</span><strong id="salaryPayTotal">—</strong></div><div><span>Compte 42100000</span><strong id="salaryPayAccount">—</strong></div><div><span>Écart</span><strong id="salaryPayBalance">—</strong></div></div>'+
  '<div class="table"><table class="salary-od-table salary-pay-table"><thead><tr><th>Salarié</th><th>Net à virer (€)</th><th>Information</th></tr></thead><tbody>'+(rows||'<tr><td colspan="3">Aucun salarié disponible.</td></tr>')+'</tbody></table></div>'+
  (extra.length?'<div class="actions salary-od-extra"><label>Autre salarié du catalogue <select id="salaryPayExtra"><option value="">Choisir</option>'+extra.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("")+'</select></label><button type="button" class="btn secondary" id="salaryPayAdd">Ajouter</button></div>':'')+
@@ -176,7 +176,7 @@ function bankHtml(d){
  const fields=issuerFields.map(([key,label,max])=>'<label>'+esc(label)+bankInput(i[key],key,label,max)+'</label>').join("");
  const rows=people.map(([id,value])=>{
   const b=d.bank.beneficiaries.get(id)||{};
-  return '<tr><th scope="row">'+esc(staffName(id))+'</th><td>'+ (cents(value)===null?"—":esc(money(cents(value))))+'</td>'+beneficiaryFields.map(([key,label,max])=>'<td>'+bankInput(b[key],key,label+" — "+staffName(id),max,id)+'</td>').join("")+'</tr>';
+  return '<tr><th scope="row">'+esc(staffName(id))+'</th><td data-bank-amount="'+esc(id)+'">'+ (cents(value)===null?"—":esc(money(cents(value))))+'</td>'+beneficiaryFields.map(([key,label,max])=>'<td>'+bankInput(b[key],key,label+" — "+staffName(id),max,id)+'</td>').join("")+'</tr>';
  }).join("");
  return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">Coordonnées privées : saisies en mémoire dans ce navigateur, jamais envoyées au serveur. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><button id="salaryBankPrint" type="button" class="btn primary" disabled>Imprimer / enregistrer le bordereau PDF</button><p class="muted">Bordereau préparatoire, pas un fichier d’ordre SEPA. Aucun paiement n’est déclenché.</p></section>';
 }
@@ -217,6 +217,75 @@ function restoreBank(raw,staffIds){
  }
  return bank;
 }
+
+const declarationFields=Object.freeze([
+ ["nir","N° SS",32],["contract","Contrat",100],["function","Fonction",160],["status","Statut",100],
+ ["start","Date d’entrée",10],["end","Date de fin de contrat",10],["hours","Base horaire mensuelle",40],["rate","Taux horaire brut",40],
+ ["gross","Salaire brut",40],["transport","Forfait Navigo",40],["health","Mutuelle Swisslife",40],
+ ["adjustments","Retenue / prime / heures compl. ou sup.",1000],["absence","Absences (maladie sans subrogation, congés payés, JNT)",1000],
+ ["absencePay","Absences payées / non payées",1000],["comments","Commentaires pour le social",1000],["internal","Commentaires internes — non transmis",1000]
+].map(Object.freeze));
+function declarationValues(d,staff){
+ const row=d.declarations.get(staff.id)||{};
+ return {...row,function:Object.hasOwn(row,"function")?row.function:staff.roleLabel||""};
+}
+function declarationData(d,staff){
+ const rows=staff.map(s=>{
+  const row=declarationValues(d,s);
+  return [s.name,...declarationFields.filter(([key])=>key!=="internal").map(([key])=>row[key]||"")];
+ });
+ return [["NOM",...declarationFields.filter(([key])=>key!=="internal").map(([,label])=>label)],...rows];
+}
+function declarationProblem(d,staff){
+ if(!staff.length)return "Aucun salarié à déclarer pour ce mois.";
+ for(const s of staff){
+  const row=declarationValues(d,s);
+  if(!String(row.contract||"").trim()||!String(row.function||"").trim()||!String(row.status||"").trim()||!validExecutionDate(row.start))return "Complétez le contrat, la fonction, le statut et la date d’entrée de chaque salarié.";
+  if(row.end&&(!validExecutionDate(row.end)||row.end<row.start))return "Vérifiez les dates de contrat.";
+  for(const key of ["hours","rate","gross","transport","health"]){
+   const v=String(row[key]||"").trim();
+   // Zero is explicit; an empty field is not silently interpreted as zero.
+   // Some contracts have no applicable hourly rate; allow the explicit marker N/A.
+   if(key==="rate"&&v.toUpperCase()==="N/A")continue;
+   if(cents(v)===null)return "Renseignez les montants et la base horaire (0 si aucun ; N/A pour un taux horaire non applicable).";
+  }
+ }
+ return "";
+}
+function declarationHtml(d){
+ const staff=context.declarationStaff||[];
+ const cards=staff.map(s=>{
+  const row=declarationValues(d,s);
+  const fields=declarationFields.map(([key,label,max])=>{
+   const long=max>200,type=key==="start"||key==="end"?"date":"text";
+   const attrs='data-declaration-person="'+esc(s.id)+'" data-declaration-key="'+key+'" autocomplete="off" aria-label="'+esc(label+" — "+s.name)+'" maxlength="'+max+'"';
+   const input=long?'<textarea '+attrs+' rows="2">'+esc(row[key]||"")+'</textarea>':'<input '+attrs+' type="'+type+'" value="'+esc(row[key]||"")+'">';
+   return '<label class="'+(long?"salary-declaration-wide":"")+'">'+esc(label)+input+'</label>';
+  }).join("");
+  return '<details class="salary-declaration-person"><summary>'+esc(s.name)+' <span class="muted">'+esc(row.gross?row.gross+" € brut":"À renseigner")+'</span></summary><p class="muted salary-declaration-source">'+esc(s.source||"Éléments du planning indisponibles")+'</p><p class="muted">Ces informations sont des aides de contrôle ; les absences payées/non payées et montants restent à confirmer.</p><div class="salary-doc-fields">'+fields+'</div></details>';
+ }).join("");
+ return '<section class="card salary-od-section"><h2>2. Déclaration des salaires — Gérance</h2><p class="muted">Tableau mensuel pour la réalisation des bulletins de salaires. Renseignez les informations contractuelles et les éléments variables validés ; les heures théoriques ne sont pas une base contractuelle de paie.</p><p class="muted">N° SS et commentaires internes : saisie confidentielle dans cette session. Ne renseignez le N° SS que si nécessaire au destinataire. Les commentaires internes ne figurent dans aucun export social.</p>'+cards+'<p class="salary-od-status" id="salaryDeclarationStatus" role="status"></p><label class="salary-od-confirm"><input id="salaryDeclarationConfirm" type="checkbox"> J’ai vérifié les données de déclaration et les éléments transmis au social.</label><div class="actions"><button id="salaryDeclarationCsv" class="btn primary" type="button" disabled>Exporter le tableau pour Excel (CSV)</button><button id="salaryDeclarationPrint" class="btn secondary" type="button" disabled>Imprimer / enregistrer en PDF</button></div><p class="muted">Export de préparation, non-déclaration automatique. Les informations non connues doivent être contrôlées sur les contrats et bulletins.</p></section>';
+}
+function declarationPrintHtml(month,data){
+ const [header,...rows]=data;
+ const blocks=rows.map(row=>'<section><h2>'+esc(row[0])+'</h2><table><tbody>'+header.slice(1).map((label,index)=>'<tr><th>'+esc(label)+'</th><td>'+esc(row[index+1])+'</td></tr>').join("")+'</tbody></table></section>').join("");
+ return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Déclaration salaires '+esc(month)+'</title><style>@page{size:A4;margin:12mm}body{font:11px Arial,sans-serif;color:#172b3d}h1{font-size:19px}h2{font-size:14px}section{break-inside:avoid;margin-bottom:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #b8c5d0;padding:4px 6px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}th{width:36%;background:#e8f0f7}</style></head><body><h1>Tableau récapitulatif pour la réalisation des bulletins de salaires</h1><p>Cours Chambertin — '+esc(month)+' · Confidentiel, destiné au social</p>'+blocks+'</body></html>';
+}
+function restoreDeclarations(raw,staffIds){
+ const result=new Map();
+ if(raw===undefined)return result;
+ if(!Array.isArray(raw)||raw.length>1000)throw Error("Déclarations du brouillon invalides.");
+ for(const item of raw){
+  if(!Array.isArray(item)||item.length!==2||!staffIds.has(item[0])||result.has(item[0])||!item[1]||typeof item[1]!=="object")throw Error("Salarié de la déclaration invalide.");
+  const row={};
+  for(const [key,,max] of declarationFields)if(Object.hasOwn(item[1],key)){
+   const value=item[1][key];if(typeof value!=="string"||value.length>max)throw Error("Champ de déclaration invalide.");
+   row[key]=value;
+  }
+  result.set(item[0],row);
+ }
+ return result;
+}
 function restoreDraft(raw,month,staffIds,defaultIds){
  if(!raw||![1,2].includes(raw.version)||raw.month!==month||!raw.values||typeof raw.values!=="object"||!Array.isArray(raw.payments)||raw.payments.length>1000)throw Error("Brouillon invalide ou mois différent.");
  const d=blankDraft();
@@ -231,6 +300,7 @@ function restoreDraft(raw,month,staffIds,defaultIds){
  }
  for(const id of defaultIds)if(!d.payments.has(id))d.payments.set(id,"");
  d.bank=restoreBank(raw.bank,staffIds);
+ d.declarations=restoreDeclarations(raw.declarations,staffIds);
  if(raw.reconciliation&&typeof raw.reconciliation.reason==="string"&&raw.reconciliation.reason.length<=1000)d.reconciliation.reason=raw.reconciliation.reason;
  // A restored draft must be checked again, including any previously justified discrepancy.
  d.dirty=true;
@@ -245,7 +315,7 @@ function render(){
  if(activeView==="variables"){host.replaceChildren();return}
  if(!context.ready||!context.canWrite){host.innerHTML='<section class="card"><h3>Préparation des salaires</h3><p class="muted">La saisie des montants nécessite les droits de modification des salaires et le chargement des données.</p></section>';return}
  const d=getDraft();
- host.innerHTML=(activeView==="pay"?payHtml(d):odHtml(d))+draftTools();
+ host.innerHTML=(activeView==="pay"?payHtml(d):activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
  wire(host,d);refresh();
 }
 function refresh(){
@@ -267,6 +337,11 @@ function refresh(){
  if(el("salaryPayExport"))el("salaryPayExport").disabled=!payReady||!d.payConfirmed;
  if(el("salaryOdCsv"))el("salaryOdCsv").disabled=!odReady||!d.odConfirmed;
  if(el("salaryPayJustify"))el("salaryPayJustify").disabled=unknown||reconcile===null||reconcile===0||d.reconciliation.reason.trim().length<10;
+ for(const cell of document.querySelectorAll("[data-bank-amount]")){const value=cents(d.payments.get(cell.dataset.bankAmount));cell.textContent=value===null?"—":money(value)}
+ const declarationError=declarationProblem(d,context.declarationStaff||[]);
+ set("salaryDeclarationStatus",declarationError||"Déclaration prête à vérifier.");
+ if(el("salaryDeclarationConfirm")){el("salaryDeclarationConfirm").checked=d.declarationConfirmed;el("salaryDeclarationConfirm").disabled=!!declarationError}
+ for(const id of ["salaryDeclarationCsv","salaryDeclarationPrint"])if(el(id))el(id).disabled=!!declarationError||!d.declarationConfirmed;
  const bankError=bankProblem(d);
  set("salaryBankStatus",bankError||"Bordereau prêt à contrôler.");
  if(el("salaryBankConfirm")){el("salaryBankConfirm").checked=d.bankConfirmed;el("salaryBankConfirm").disabled=!!bankError||!d.payConfirmed||unknown}
@@ -308,6 +383,24 @@ function wire(host,d){
  }));
  el("salaryBankConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.bankConfirmed=e.target.checked;refresh()}});
  el("salaryBankPrint")?.addEventListener("click",()=>{try{printBank(d)}catch(error){alert(error.message)}});
+ host.querySelectorAll("[data-declaration-key]").forEach(input=>input.addEventListener("input",()=>{
+  if(!permissionsValid())return;
+  const id=input.dataset.declarationPerson,key=input.dataset.declarationKey;
+  if(!context.declarationStaff?.some(s=>s.id===id)||!declarationFields.some(([k])=>k===key))return;
+  const row=d.declarations.get(id)||{};row[key]=input.value;d.declarations.set(id,row);
+  d.declarationConfirmed=false;d.dirty=true;refresh();
+ }));
+ el("salaryDeclarationConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.declarationConfirmed=e.target.checked;refresh()}});
+ const exportDeclaration=print=>{
+  if(!permissionsValid()||!d.declarationConfirmed||declarationProblem(d,context.declarationStaff||[]))return;
+  if(!confirm("Créer un document confidentiel destiné au social ? Vérifiez le destinataire et conservez-le dans un espace sécurisé."))return;
+  const data=declarationData(d,context.declarationStaff);
+  if(!print)return download("chambertin-declaration-salaires-"+context.month+".csv",csv(data),"text/csv;charset=utf-8");
+  const html=declarationPrintHtml(context.month,data),w=window.open("","_blank");if(!w)return alert("Autorisez les fenêtres pop-up pour imprimer la déclaration.");
+  w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),250);
+ };
+ el("salaryDeclarationCsv")?.addEventListener("click",()=>exportDeclaration(false));
+ el("salaryDeclarationPrint")?.addEventListener("click",()=>exportDeclaration(true));
  el("salaryPayExport")?.addEventListener("click",()=>{
   if(!permissionsValid()||!d.payConfirmed)return;
   const p=paymentTotals(d.payments);
@@ -318,8 +411,8 @@ function wire(host,d){
  });
  el("salaryOdBackup")?.addEventListener("click",()=>{
   if(!permissionsValid())return;
-  if(!confirm("Télécharger un fichier privé contenant les montants de salaires ? Conservez-le dans un espace sécurisé."))return;
-  download("chambertin-salaires-brouillon-"+context.month+".json",JSON.stringify({version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,bank:{issuer:d.bank.issuer,beneficiaries:[...d.bank.beneficiaries]}},null,2),"application/json");
+  if(!confirm("Télécharger un fichier privé non chiffré pouvant contenir salaires, coordonnées bancaires et N° SS ? Conservez-le dans un espace sécurisé."))return;
+  download("chambertin-salaires-brouillon-"+context.month+".json",JSON.stringify({version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,bank:{issuer:d.bank.issuer,beneficiaries:[...d.bank.beneficiaries]},declarations:[...d.declarations]},null,2),"application/json");
   d.dirty=false;
  });
  el("salaryOdImport")?.addEventListener("change",async e=>{
@@ -338,16 +431,16 @@ function mount(config){
  if(session!==config.session){clear();session=config.session}
  context=config;
  const nav=document.getElementById("salaryPayrollNavigation");if(!nav)return;
- const tabs=[["variables","1. Éléments variables"],["pay","2. Virements de salaires"],["od","3. OD de salaires"]];
+ const tabs=[["variables","1. Éléments variables"],["declaration","2. Déclaration gérance"],["pay","3. Virements de salaires"],["od","4. OD de salaires"]];
  nav.innerHTML='<nav class="card salary-od-nav" aria-label="Étapes de préparation des salaires">'+tabs.map(([key,label])=>'<button type="button" class="btn secondary" data-salary-od-view="'+key+'" aria-pressed="false">'+label+'</button>').join("")+'</nav>';
  if(config.ready&&config.canWrite&&validMonth(config.month)){
   const d=getDraft();
-  for(const staff of config.defaultStaff)if(!d.payments.has(staff.id)){d.payments.set(staff.id,"");updateDraft(d)}
+  for(const staff of config.defaultStaff)if(!d.payments.has(staff.id)){d.payments.set(staff.id,"");d.payConfirmed=false;d.bankConfirmed=false;d.odConfirmed=false;d.declarationConfirmed=false;d.reconciliation.difference=null}
  }
  nav.querySelectorAll("[data-salary-od-view]").forEach(b=>b.addEventListener("click",()=>{activeView=b.dataset.salaryOdView;render()}));
  render();
 }
 window.salaryOdMount=mount;window.salaryOdClear=clear;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
-if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,restoreDraft,csv};
+if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,csv};
 })();
