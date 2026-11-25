@@ -78,6 +78,7 @@ function createCreditTransfer(input){
   const postcode=clean(item.postcode,16,"Code postal de "+name,false);
   const city=clean(item.city,35,"Ville de "+name,false);
   const address=clean(item.address,70,"Adresse de "+name,false);
+  if(postcode&&!city)throw Error("Ville manquante pour le code postal de "+name+".");
   const comment=clean(item.comment||label,140,"Libellé de "+name);
   total+=cents;
   if(!Number.isSafeInteger(total))throw Error("Montant total trop élevé.");
@@ -126,13 +127,12 @@ function createCreditTransfer(input){
    '        <CdtrAgt><FinInstnId><BIC>'+row.bic+'</BIC></FinInstnId></CdtrAgt>',
    '        <Cdtr><Nm>'+esc(row.name)+'</Nm></Cdtr>'
   );
-  if(row.country||row.postcode||row.city||row.address){
-   lines.push(
-    '        <PstlAdr>',
-    '          <Ctry>'+row.country+'</Ctry>'
-   );
+  if(row.postcode||row.city||row.address){
+   lines.push('        <PstlAdr>');
+   // L'ordre est imposé par PostalAddress6 (XSD pain.001.001.03).
    if(row.postcode)lines.push('          <PstCd>'+esc(row.postcode)+'</PstCd>');
    if(row.city)lines.push('          <TwnNm>'+esc(row.city)+'</TwnNm>');
+   lines.push('          <Ctry>'+row.country+'</Ctry>');
    if(row.address)lines.push('          <AdrLine>'+esc(row.address)+'</AdrLine>');
    lines.push('        </PstlAdr>');
   }
