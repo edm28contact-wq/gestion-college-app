@@ -52,3 +52,16 @@
 .salary-bank-dialog .salary-doc-fields{grid-template-columns:1fr}
 .salary-bank-dialog input:not([type=checkbox]){font-family:monospace}
 .salary-bank-table input[readonly]{background:#f1f5f8;color:#334a60}
+
+#salaryWorkflowPanel{border-color:#bad1e0;background:#f8fbfe}
+#salaryWorkflowPanel h3{margin:0 0 4px;font-size:19px}
+#salaryWorkflowPanel .salary-od-heading p{margin:0 0 12px}
+#salaryWorkflowPanel .actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+#salaryWorkflowPanel .salary-od-inline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0;font-weight:650;font-size:13px}
+#salaryWorkflowPanel select{font:inherit;max-width:100%;padding:8px;border:1px solid #b5c9db;border-radius:7px;background:#fff}
+#salaryWorkflowPanel details{margin-top:12px;padding:10px 12px;border:1px solid #d5e2eb;border-radius:8px;background:#fff}
+#salaryWorkflowPanel summary{cursor:pointer;font-weight:650}
+#salaryWorkflowPanel ul{padding-left:20px;max-height:220px;overflow:auto}
+#salaryWorkflowPanel li{margin:7px 0;overflow-wrap:anywhere}
+#salaryWorkflowPanel .err{color:#ab2828;font-weight:650}
+@media(max-width:620px){#salaryWorkflowPanel .actions .btn{flex:1 1 100%}#salaryWorkflowPanel .salary-od-inline{align-items:stretch;flex-direction:column}}
