@@ -1,16 +1,17 @@
 (()=>{
 "use strict";
 const ROOT="https://zreegtzfpwrjgdhhunxx.supabase.co/functions/v1/";
-const API={veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-catalog",finalize:ROOT+"secretariat-tableur-finalize",accounting:ROOT+"accounting-api",aliases:ROOT+"product-alias-keywords"};
+const API={admin:ROOT+"admin-api",veryfi:ROOT+"invoice-veryfi-reader",catalog:ROOT+"invoice-central-catalog",finalize:ROOT+"secretariat-tableur-finalize",accounting:ROOT+"accounting-api",aliases:ROOT+"product-alias-keywords"};
 const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V54";
+const READER_VERSION="V55";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
 let queueImportStarted=false,queueImported=false,manualStartRequested=false;
+let manualProductContext=null;
 const authKeys=accounting?["college_accounting_token","college_admin_token","edm_admin_token","holding_admin_token"]:["college_secretariat_token","college_admin_token","edm_admin_token","holding_admin_token"];
 let file=null,objectUrl=null,authToken="",catalog=null,documentData=null,rows=[],removedRows=[],aliases=[],loading=false,saved=false,revision=0,serverReady=false,veryfiSubscriptionBlocked=false,usageRefreshPending=false,issueFilter="all",manualMode=false;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -339,6 +340,22 @@ async function syncQueueAfterReception(){
  }catch(e){
   $("saveResult").textContent+=" · Réception enregistrée ; classement « Faites » non synchronisé. Utilisez « Vérifier la réception Veryfi » dans Secrétariat.";
  }
+}
+function invoiceArchiveName(original,date,vendor,number){
+ const clean=value=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+ const supplier=clean(vendor).slice(0,80),reference=clean(number).slice(0,60);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!supplier||!reference)return original;
+ const canonical=date+"_"+supplier+"_"+reference+".pdf";
+ return String(original).toLowerCase()===canonical.toLowerCase()?original:canonical;
+}
+function updateManualArchiveName(){
+ const preview=$("manualArchiveName");
+ if(!preview)return;
+ preview.hidden=!manualMode;
+ if(!manualMode)return;
+ if(!file){preview.textContent="Joignez le PDF original pour préparer son nom d’archivage.";return}
+ const name=invoiceArchiveName(file.name,$("invoiceDate").value,$("vendor").value,$("invoiceNumber").value);
+ preview.textContent="Nom à l’archivage : "+name+" · Le PDF original reste inchangé.";
 }
 function showManualEntryState(){
  const note=$("manualEntryNote");
@@ -1122,6 +1139,10 @@ function buildLine(row,index){
   card.append(reason);
   const open=document.createElement("a");open.className="btn secondary small";open.href="../college/admin/?page=products";open.target="_blank";open.rel="noopener noreferrer";open.textContent="Ouvrir le catalogue pour créer ou retrouver le produit";card.append(open);
  }
+ if(manualMode&&!accounting&&!trainingMode&&!saved&&!row.product_id&&!row.excluded){
+  const create=document.createElement("button");create.type="button";create.className="btn primary small";create.textContent="+ Créer un nouveau produit";
+  create.addEventListener("click",()=>void openManualProduct(row,create));card.append(create);
+ }
  if(color==="warn"){
   const reason=document.createElement("div");
   reason.className="row-warning";
@@ -1175,6 +1196,71 @@ function buildLine(row,index){
  card.append(foot);card.append(keywordNotebook(row,index));card.classList.toggle("excluded",row.excluded);
  card.classList.add(color);
  return card;
+}
+function manualProductAllowed(user){
+ const p=user?.permissions||{};
+ return !!user&&(user.role==="admin"||(user.read_only!==true&&p.readonly!==true&&(p["products.write"]===true||(user.role==="admin_limited"&&p.college_admin===true))));
+}
+function manualProductPayload(values,categories,products){
+ const get=key=>String(values[key]??"").trim();
+ const code=get("code"),name=get("name"),category=get("category_id"),unit=get("unit"),sale=get("conditionnement"),stock=get("inventory_unit_label"),factor=Number(get("purchase_to_stock_factor"));
+ if(!code||!name||!unit||!sale||!stock||!get("purchase_to_stock_factor"))throw Error("Code, désignation et les deux conditionnements sont obligatoires.");
+ if(!categories.some(c=>c.id===category&&c.active!==false))throw Error("Sélectionnez une catégorie active.");
+ if(products.some(p=>String(p.code??"").trim().toUpperCase()===code.toUpperCase()))throw Error("Ce code existe déjà dans le catalogue, y compris parmi les produits inactifs.");
+ if(!Number.isFinite(factor)||factor<=0||factor>1000000)throw Error("La conversion achat → stock doit être strictement positive.");
+ const price=Number(get("unit_price")),min=Number(get("min_stock")),target=Number(get("target_stock"));
+ if([price,min,target].some(n=>!Number.isFinite(n)||n<0)||target<min)throw Error("Prix et seuils de stock invalides : le stock cible doit être au moins égal au minimum.");
+ const mode=get("stock_count_mode");
+ if(!["unit","litre"].includes(mode))throw Error("Unité de comptabilisation du stock invalide.");
+ return {id:null,code,name,category_id:category,subcategory_id:null,unit,conditionnement:sale,inventory_unit_label:stock,purchase_to_stock_factor:factor,inventory_to_stock_factor:1,stock_count_mode:mode,unit_price:price,initial_stock:0,min_stock:min,target_stock:target,active:true};
+}
+async function openManualProduct(row,button){
+ const dialog=$("manualProductDialog"),form=$("manualProductForm");
+ if(loading||saved||!manualMode||accounting||trainingMode||!authToken||row.product_id||row.excluded||dialog.open)return;
+ const token=authToken;button.disabled=true;
+ try{
+  const data=await request(API.admin+"?action=data",{token});
+  if(authToken!==token||saved||!manualMode||!rows.includes(row)||row.product_id||dialog.open)return;
+  if(!manualProductAllowed(data.current_user))throw Error("La création de produits nécessite le droit Produits : modification.");
+  const categories=(data.categories||[]).filter(c=>c.active!==false),products=data.products||[];
+  if(!categories.length||!Array.isArray(data.products))throw Error("Catalogue ou catégories indisponibles.");
+  form.reset();
+  form.elements.namedItem("name").value=row.description||"";
+  form.elements.namedItem("code").value=row.reference||"";
+  form.elements.namedItem("unit").value=row.unit||"";
+  form.elements.namedItem("unit_price").value=amount(row.unit_price)??0;
+  const select=form.elements.namedItem("category_id");
+  select.replaceChildren(new Option("Choisir une catégorie",""),...categories.map(c=>new Option(c.name,c.id)));
+  $("manualProductStatus").textContent="";
+  manualProductContext={row,token,categories,products,busy:false};
+  dialog.showModal();
+ }catch(e){notice("Création de produit indisponible : "+e.message,"error")}
+ finally{button.disabled=false}
+}
+async function saveManualProduct(event){
+ event.preventDefault();
+ const context=manualProductContext,form=$("manualProductForm"),status=$("manualProductStatus"),dialog=$("manualProductDialog");
+ if(!context||context.busy||saved||loading||!manualMode||accounting||trainingMode||context.token!==authToken||!rows.includes(context.row))return;
+ const submit=$("manualProductSave"),cancel=$("manualProductCancel");
+ let created=false;
+ try{
+  const payload=manualProductPayload(Object.fromEntries(new FormData(form)),context.categories,context.products);
+  if(context.products.some(p=>norm(p.name)===norm(payload.name))&&!confirm("Une désignation identique existe. Créer un produit distinct après avoir vérifié son conditionnement ?"))return;
+  context.busy=true;submit.disabled=true;cancel.disabled=true;
+  status.textContent="Création sécurisée en cours…";
+  const result=await request(API.admin+"?action=save-product",{method:"POST",token:context.token,payload});
+  if(result.ok!==true||!result.item?.id)throw Error("La création n’a pas été confirmée par le serveur.");
+  created=true;dialog.close();
+  await loadCatalog();
+  if(context.token!==authToken||!manualMode||saved||!rows.includes(context.row))return notice("Produit créé dans le catalogue. Sélectionnez-le après actualisation.","success");
+  const product=(catalog?.products||[]).find(p=>p.id===result.item.id&&p.active!==false);
+  if(!product)return notice("Produit créé, mais catalogue non actualisé. Actualisez les conditionnements avant de poursuivre.","error");
+  const row=context.row;row.product_manual=true;row.stock_manual=false;row.stock_confirmed=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.pdfEvidence=null;
+  applyMatch(row,{product,source:"Nouveau produit créé et sélectionné manuellement"});
+  $("confirmReview").checked=false;renderRows();
+  notice("Produit créé et associé. Vérifiez la ligne sur le PDF avant validation ; aucune quantité n’a encore été réceptionnée.","success");
+ }catch(e){if(created){notice("Produit créé, mais association non confirmée : "+e.message,"error")}else{status.textContent=e.message}}
+ finally{context.busy=false;submit.disabled=false;cancel.disabled=false}
 }
 function changeRow(index,key,value){
  const row=rows[index];if(!row||saved)return;
@@ -1242,6 +1328,7 @@ function groupedRows(){
  return groups;
 }
 function renderRows(){
+ updateManualArchiveName();
  synchronizeExcludedRows();
  autoVerifyGreenRows();
  const active=rows.filter(r=>!r.excluded),red=active.filter(r=>productColor(r)==="bad").length,orange=active.filter(r=>productColor(r)==="warn").length,green=active.filter(r=>productColor(r)==="good").length;
@@ -1492,10 +1579,12 @@ async function save(){
  try{
   if(!currentFile)throw Error("La facture PDF n’est plus disponible.");
   const bytes=new Uint8Array(await currentFile.arrayBuffer());
+  const supplier=$("vendor").value.trim(),number=$("invoiceNumber").value.trim(),date=$("invoiceDate").value;
+  const archiveName=manualMode?invoiceArchiveName(currentFile.name,date,supplier,number):currentFile.name;
   if(accounting){
    const fd=new FormData();
-   fd.append("file",currentFile);fd.append("supplier",$("vendor").value.trim());
-   fd.append("invoice_number",$("invoiceNumber").value.trim());fd.append("invoice_date",$("invoiceDate").value);
+   fd.append("file",currentFile,archiveName);fd.append("supplier",supplier);
+   fd.append("invoice_number",number);fd.append("invoice_date",date);
    fd.append("amount_ht",String(c.ht));fd.append("amount_vat",String(c.vat));fd.append("amount_ttc",String(c.ttc));
    fd.append("vat_rate","");fd.append("raw_text",JSON.stringify({provider:manualMode?"manual":"veryfi",document_id:manualMode?null:documentData.id,lines:c.included.map(r=>({reference:r.reference,description:r.description,quantity:amount(r.quantity),unit:r.unit,unit_price:amount(r.unit_price),total:amount(r.total),account:r.account}))}));
    const response=await fetch(API.accounting+"?action=upload",{method:"POST",headers:{authorization:"Bearer "+authToken},body:fd,cache:"no-store",signal:AbortSignal.timeout(80000)});
@@ -1513,8 +1602,8 @@ async function save(){
       unit_price_ht:amount(r.unit_price),line_total_ht:amount(r.total),vat_rate:amount(r.tax_rate),verified:true};
    });
    if(items.some(x=>!x.product_id||!(x.stock_quantity>0)||Math.abs(x.stock_quantity-Math.round(x.stock_quantity*1000)/1000)>1e-9))throw Error("Une ou plusieurs quantités de stock sont invalides ou dépassent 3 décimales.");
-   const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:currentFile.name,pdf_base64:encode(bytes),supplier:$("vendor").value.trim(),
-    supplier_key:supplierNorm(),invoice_number:$("invoiceNumber").value.trim(),invoice_date:$("invoiceDate").value,expected_ht:c.sum,
+   const data=await request(API.finalize,{method:"POST",payload:{file_hash:await digest(bytes),file_name:archiveName,pdf_base64:encode(bytes),supplier,
+    supplier_key:supplierNorm(),invoice_number:number,invoice_date:date,expected_ht:c.sum,
     raw_text:JSON.stringify({provider:manualMode?"manual":"veryfi",document_id:manualMode?null:documentData.id,original_invoice:{ht:c.ht,vat:c.vat,ttc:c.ttc},ocr_subtotal:manualMode?null:amount(documentData.subtotal),amount_basis:"green_validated_product_lines",retained_ht:c.sum,retained_vat:c.selectedVat,retained_ttc:c.selectedTtc,discarded_ht:c.discarded,removed_lines:c.removedCount,excluded_lines:c.excludedCount,auto_excluded_lines:c.autoExcludedCount,auto_excluded_details:rows.filter(r=>r.excluded&&r.autoExcluded).map(r=>({source_index:r.id,reference:r.reference,description:r.description,total_ht:amount(r.total),reason:r.autoExclusionReason})),pending_lines:c.pending.length,partial_reception:c.adjusted}),items,
      provider_document_id:manualMode?null:documentData.id,learning_page_count:manualMode?null:documentData.page_count,learning:manualMode?null:c.included.map(learningPayload)},timeout:80000});
    if(data.ok!==true)throw Error(data.error||"Validation rejetée");
@@ -1549,6 +1638,11 @@ function setup(){
  $("clearFile").addEventListener("click",()=>{input.value="";setFile(null)});
  $("analyze").addEventListener("click",analyze);
  $("manualEntry").addEventListener("click",()=>void startManualEntry());
+ $("manualProductForm").addEventListener("submit",event=>void saveManualProduct(event));
+ $("manualProductCancel").addEventListener("click",()=>$("manualProductDialog").close());
+ $("manualProductDialog").addEventListener("cancel",event=>{if(manualProductContext?.busy)event.preventDefault()});
+ $("manualProductDialog").addEventListener("close",()=>{manualProductContext=null});
+ for(const key of ["vendor","invoiceDate","invoiceNumber"])$(key).addEventListener("input",updateManualArchiveName);
  $("refreshSession").addEventListener("click",()=>{veryfiSubscriptionBlocked=false;resolveSession()});
  $("reloadCatalog").addEventListener("click",async()=>{
   const button=$("reloadCatalog");button.disabled=true;

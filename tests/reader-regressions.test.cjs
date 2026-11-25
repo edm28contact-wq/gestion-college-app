@@ -260,7 +260,8 @@ test("le menu Factures ouvre directement le lecteur Veryfi autonome",()=>{
  assert.ok(navigation.includes('link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat")'));
  assert.ok(!navigation.includes('tab("Commande manuelle / Lecteur Veryfi","#tInvoices")'));
  assert.ok(designer.includes('["Factures · Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"]'));
- assert.ok(navigation.includes('tab("Commandes fournisseurs","#tOrders")'));
+ assert.ok(!navigation.includes('tab("Commandes fournisseurs","#tOrders")'));
+ assert.ok(!designer.includes('["Commandes fournisseurs","tab:#tOrders"]'));
  assert.match(page,/id="usageTrack"/);assert.match(page,/id="manualEntry"/);assert.match(page,/id="pdfTitle"/);assert.match(page,/id="resultTitle"/);
  assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
  assert.match(sec,/href="\.\.\/lecteur-veryfi\/\?origine=secretariat" target="_top"/);
@@ -579,4 +580,31 @@ test("Veryfi : une session bloquée par l’abonnement n’envoie aucun nouveau 
  const h={loading:false,file:{name:"x.pdf"},serverReady:true,veryfiSubscriptionBlocked:true,manualMode:false,request:()=>{throw Error("Envoi interdit")},notice:()=>{}};
  vm.runInNewContext("async "+functionSource("analyze")+";this.run=analyze",h);
  await h.run();assert.equal(h.loading,false);
+});
+
+test("Nom d'archivage manuel : date, fournisseur et référence sans modifier les octets",()=>{
+ const context=vm.createContext({});
+ vm.runInContext(functionSource("invoiceArchiveName")+";this.name=invoiceArchiveName",context);
+ assert.equal(context.name("scan.pdf","2026-11-25","MÉTRO / France","FAC-00125"),"2026-11-25_METRO-FRANCE_FAC-00125.pdf");
+ assert.equal(context.name("2026-11-25_METRO_FAC-00125.pdf","2026-11-25","METRO","FAC-00125"),"2026-11-25_METRO_FAC-00125.pdf");
+ assert.equal(context.name("scan.pdf","","METRO","FAC-00125"),"scan.pdf");
+ assert.match(source,/file_name:archiveName,pdf_base64:encode\(bytes\)/);
+ assert.match(source,/fd\.append\("file",currentFile,archiveName\)/);
+ assert.match(source,/file_hash:await digest\(bytes\)/);
+});
+test("Création manuelle : droits, anti-doublon et stock initial nul",()=>{
+ const context=vm.createContext({});
+ vm.runInContext(["manualProductAllowed","manualProductPayload"].map(functionSource).join("\n")+";this.allowed=manualProductAllowed;this.payload=manualProductPayload",context);
+ assert.equal(context.allowed({role:"secretariat",permissions:{"secretariat.invoices.write":true}}),false);
+ assert.equal(context.allowed({role:"secretariat",permissions:{"products.write":true},read_only:true}),false);
+ assert.equal(context.allowed({role:"secretariat",permissions:{"products.write":true}}),true);
+ const values={code:"REF-1",name:"Produit",category_id:"cat",unit:"carton",conditionnement:"carton de 12",inventory_unit_label:"pièce",purchase_to_stock_factor:"12",stock_count_mode:"unit",unit_price:"10",min_stock:"0",target_stock:"0"};
+ const categories=[{id:"cat",active:true}];
+ const payload=context.payload(values,categories,[]);
+ assert.equal(payload.initial_stock,0);assert.equal(payload.purchase_to_stock_factor,12);
+ assert.throws(()=>context.payload(values,categories,[{code:"ref-1",active:false}]),/existe déjà/);
+ assert.throws(()=>context.payload({...values,purchase_to_stock_factor:"0"},categories,[]),/positive/);
+ assert.throws(()=>context.payload(values,[{id:"cat",active:false}],[]),/active/);
+ assert.match(source,/manualMode&&!accounting&&!trainingMode&&!saved&&!row\.product_id/);
+ assert.match(source,/action=save-product/);
 });

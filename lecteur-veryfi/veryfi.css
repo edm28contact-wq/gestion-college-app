@@ -100,3 +100,5 @@
 .shell .workspace .row-head .score.warn{background:#ffeab8;color:#785000}
 .shell .workspace .row-head .score.good{background:#ccebd7;color:#145e35}
 @media(max-width:680px){.shell .status-legend{grid-template-columns:1fr;gap:7px}.shell .status-legend .legend-item{padding:9px 11px}.shell .metrics .metric strong{font-size:25px}}
+
+.manual-product-dialog{width:min(740px,95vw);max-height:90dvh;overflow:auto;padding:22px;border:1px solid var(--line);border-radius:13px;background:#fff;color:var(--ink);box-shadow:0 18px 80px #142c4260}.manual-product-dialog::backdrop{background:#112637b8}.manual-product-dialog h2{margin:0 0 10px;font-size:21px}.manual-product-dialog .fields{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.manual-product-dialog select{width:100%;min-height:38px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:8px}.manual-product-dialog .buttons{justify-content:flex-end;flex-wrap:wrap}

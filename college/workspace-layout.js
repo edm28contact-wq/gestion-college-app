@@ -35,7 +35,6 @@
   secretariat:{label:"Secrétariat",hideTabs:true,sections:[
    section("Gestion quotidienne",[
     tab("Stocks et produits","#tStocks"),
-    tab("Commandes fournisseurs","#tOrders"),
     link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat"),
     tab("Planning des événements","#tPlanning")
    ]),
