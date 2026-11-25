@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V55";
+const READER_VERSION="V56";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
@@ -345,17 +345,25 @@ function invoiceArchiveName(original,date,vendor,number){
  const clean=value=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-+|-+$/g,"");
  const supplier=clean(vendor).slice(0,80),reference=clean(number).slice(0,60);
  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!supplier||!reference)return original;
+ const parsed=new Date(date+"T00:00:00Z");
+ if(!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==date)return original;
  const canonical=date+"_"+supplier+"_"+reference+".pdf";
  return String(original).toLowerCase()===canonical.toLowerCase()?original:canonical;
 }
 function updateManualArchiveName(){
- const preview=$("manualArchiveName");
- if(!preview)return;
+ const preview=$("manualArchiveName"),download=$("manualArchiveDownload");
+ if(!preview||!download)return;
  preview.hidden=!manualMode;
+ download.hidden=true;download.removeAttribute("href");download.removeAttribute("download");
  if(!manualMode)return;
  if(!file){preview.textContent="Joignez le PDF original pour préparer son nom d’archivage.";return}
- const name=invoiceArchiveName(file.name,$("invoiceDate").value,$("vendor").value,$("invoiceNumber").value);
+ const date=$("invoiceDate").value,vendor=$("vendor").value,number=$("invoiceNumber").value;
+ if(!invoiceArchiveName("",date,vendor,number)){
+  preview.textContent="Renseignez la date, le fournisseur et le numéro de facture pour générer le nom d’archivage.";return;
+ }
+ const name=invoiceArchiveName(file.name,date,vendor,number);
  preview.textContent="Nom à l’archivage : "+name+" · Le PDF original reste inchangé.";
+ if(objectUrl){download.href=objectUrl;download.download=name;download.hidden=false}
 }
 function showManualEntryState(){
  const note=$("manualEntryNote");
@@ -1250,7 +1258,8 @@ async function saveManualProduct(event){
   status.textContent="Création sécurisée en cours…";
   const result=await request(API.admin+"?action=save-product",{method:"POST",token:context.token,payload});
   if(result.ok!==true||!result.item?.id)throw Error("La création n’a pas été confirmée par le serveur.");
-  created=true;dialog.close();
+  created=true;
+  status.textContent="Produit créé. Actualisation du catalogue…";
   await loadCatalog();
   if(context.token!==authToken||!manualMode||saved||!rows.includes(context.row))return notice("Produit créé dans le catalogue. Sélectionnez-le après actualisation.","success");
   const product=(catalog?.products||[]).find(p=>p.id===result.item.id&&p.active!==false);
@@ -1260,15 +1269,24 @@ async function saveManualProduct(event){
   $("confirmReview").checked=false;renderRows();
   notice("Produit créé et associé. Vérifiez la ligne sur le PDF avant validation ; aucune quantité n’a encore été réceptionnée.","success");
  }catch(e){if(created){notice("Produit créé, mais association non confirmée : "+e.message,"error")}else{status.textContent=e.message}}
- finally{context.busy=false;submit.disabled=false;cancel.disabled=false}
+ finally{
+  context.busy=false;submit.disabled=false;cancel.disabled=false;
+  if(created&&dialog.open)dialog.close();
+ }
+}
+function recalculateManualLineTotal(row,key){
+ if(key==="total")row.manualTotalAutomatic=String(row.total??"").trim()==="";
+ else if(key!=="quantity"&&key!=="unit_price")return;
+ if(row.manualTotalAutomatic===false)return;
+ if(row.manualTotalAutomatic!==true&&String(row.total??"").trim()!=="")return;
+ row.manualTotalAutomatic=true;
+ const q=amount(row.quantity),price=amount(row.unit_price);
+ row.total=q!==null&&q>0&&price!==null&&price>=0?String(round(q*price)):"";
 }
 function changeRow(index,key,value){
- const row=rows[index];if(!row||saved)return;
+ const row=rows[index];if(!row||saved||loading)return;
  row[key]=value;
- if(manualMode&&["quantity","unit_price"].includes(key)&&String(row.total??"").trim()===""){
-  const q=amount(row.quantity),price=amount(row.unit_price);
-  if(q!==null&&q>0&&price!==null&&price>=0)row.total=String(round(q*price));
- }
+ if(manualMode)recalculateManualLineTotal(row,key);
  row.pdfEvidence=null;if(["quantity","unit","description","unit_price","total"].includes(key))row.autoQuantityReconciled=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;$("confirmReview").checked=false;
  if(key==="reference"||key==="description"){
   if(key==="description"&&row.unit_label_source)row.unit="";
