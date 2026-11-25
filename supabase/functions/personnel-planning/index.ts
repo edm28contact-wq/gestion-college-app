@@ -96,6 +96,20 @@ const bucket="personnel-incident-pdfs";
 const maxPdf=6291456;
 async function findEvent(db:any,id:string){return await db.from("personnel_events").select("id,attachment_path,attachment_name,attachment_size_bytes,review_status,version").eq("id",id).maybeSingle()}
 
+function normalizeStaffBank(input:any){
+ if(typeof input?.iban!=="string"||typeof input?.bic!=="string"||input.iban.length>80||input.bic.length>30)return null;
+ const iban=input.iban.replace(/\s/g,"").toUpperCase(),bic=input.bic.trim().toUpperCase();
+ if(!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)||(iban.startsWith("FR")&&iban.length!==27)||!/^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?$/.test(bic))return null;
+ let remainder=0;
+ for(const ch of iban.slice(4)+iban.slice(0,4)){
+  const digits=/[A-Z]/.test(ch)?String(ch.charCodeAt(0)-55):ch;
+  for(const d of digits)remainder=(remainder*10+Number(d))%97;
+ }
+ return remainder===1?{iban,bic}:null;
+}
+function staffBankSummary(row:any){
+ return row?{iban_last4:String(row.iban).slice(-4),bic:row.bic,version:row.version}:null;
+}
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  try{
@@ -149,13 +163,58 @@ Deno.serve(async(req:Request)=>{
   if((q.data||[]).length===200)return reply({error:"Liste des archives incomplète"},409);
   return reply({ok:true,history:q.data||[]});
  }
+ if(action==="staff-bank-detail"&&req.method==="GET"){
+  if(!user.salaryWrite)return reply({error:"Accès bancaire réservé aux droits de modification des salaires"},403);
+  const id=new URL(req.url).searchParams.get("id");
+  if(!isUuid(id))return reply({error:"Salarié invalide"},400);
+  const person=await db.from("college_personnel").select("id").eq("id",id).maybeSingle();
+  if(person.error)return reply({error:"Consultation bancaire indisponible"},500);
+  if(!person.data)return reply({error:"Salarié introuvable"},404);
+  const q=await db.from("college_personnel_bank_details").select("personnel_id,iban,bic,version").eq("personnel_id",id).maybeSingle();
+  if(q.error)return reply({error:"Consultation bancaire indisponible"},500);
+  return reply({ok:true,bank:q.data||null});
+ }
+ if(action==="staff-bank-payroll"&&req.method==="POST"){
+  if(!user.salaryWrite)return reply({error:"Accès bancaire réservé aux droits de modification des salaires"},403);
+  const x=await req.json().catch(()=>null),ids=x?.ids;
+  if(!Array.isArray(ids)||ids.length>500||!ids.every(isUuid)||new Set(ids).size!==ids.length)return reply({error:"Liste de salariés invalide"},400);
+  const banks=[];
+  for(let offset=0;offset<ids.length;offset+=50){
+   const q=await db.from("college_personnel_bank_details").select("personnel_id,iban,bic,version").in("personnel_id",ids.slice(offset,offset+50));
+   if(q.error)return reply({error:"Consultation bancaire indisponible"},500);
+   banks.push(...(q.data||[]));
+  }
+  return reply({ok:true,banks});
+ }
+ if(action==="staff-bank-save"&&req.method==="POST"){
+  if(!user.salaryWrite)return reply({error:"Modification bancaire réservée aux droits Salaires"},403);
+  const x=await req.json().catch(()=>null),bank=normalizeStaffBank(x);
+  if(!isUuid(x?.id)||!Number.isInteger(x?.version)||x.version<0||x.version>=2147483647||!bank||x.confirmed!==true)return reply({error:"Vérifiez l’IBAN, le BIC et la confirmation du RIB."},400);
+  const staff=await db.from("college_personnel").select("id").eq("id",x.id).maybeSingle();
+  if(staff.error)return reply({error:"Enregistrement bancaire indisponible"},500);
+  if(!staff.data)return reply({error:"Salarié introuvable"},404);
+  const q=await db.rpc("college_save_personnel_bank",{p_personnel_id:x.id,p_iban:bank.iban,p_bic:bank.bic,p_version:x.version,p_actor:user.username});
+  if(q.error)return reply({error:"Enregistrement bancaire refusé. Aucun changement confirmé."},500);
+  if(q.data===null)return reply({error:"Coordonnées modifiées entre-temps. Fermez la fenêtre et rechargez la fiche."},409);
+  return reply({ok:true,bank:staffBankSummary({...bank,version:q.data})});
+ }
  if(action==="staff-list"&&req.method==="GET"){
   const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,weekly_work_slots,benefits_in_kind,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
   if(q.error)throw q.error;
   if((q.data||[]).length===500)return reply({error:"Liste du personnel trop importante pour être affichée entièrement"},409);
   const roles=user.admin?await db.from("college_personnel_roles").select("id,label,updated_at").order("label"):null;
   if(roles?.error)throw roles.error;
-  return reply({ok:true,staff:user.admin?q.data:(q.data||[]).filter((x:any)=>!x.archived&&x.visible_in_planning).map((x:any)=>({id:x.id,name:x.name,name_key:x.name_key,visible_in_planning:x.visible_in_planning,archived:x.archived})),roles:roles?.data||[],admin:user.admin,salary_write:user.salaryWrite});
+  let salaryStaff=q.data||[];
+  let bankAvailable=false;
+  if(user.admin){
+   const bank=await db.from("college_personnel_bank_details").select("personnel_id,iban,bic,version").limit(500);
+   if(!bank.error){
+    const summaries=new Map((bank.data||[]).map((r:any)=>[r.personnel_id,staffBankSummary(r)]));
+    salaryStaff=salaryStaff.map((r:any)=>({...r,bank_summary:summaries.get(r.id)||null}));
+    bankAvailable=true;
+   }
+  }
+  return reply({ok:true,staff:user.admin?salaryStaff:(q.data||[]).filter((x:any)=>!x.archived&&x.visible_in_planning).map((x:any)=>({id:x.id,name:x.name,name_key:x.name_key,visible_in_planning:x.visible_in_planning,archived:x.archived})),roles:roles?.data||[],admin:user.admin,salary_write:user.salaryWrite,bank_available:bankAvailable});
  }
  if(action==="calendar-month"&&req.method==="GET"){
   if(!user.admin)return reply({error:"Lecture Salaires non autorisée"},403);
