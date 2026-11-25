@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Cours Chambertin</title>
-<link rel="stylesheet" href="./veryfi.css?v=55-manual-product-archive">
-<script defer src="./veryfi.js?v=57-manual-food"></script>
+<link rel="stylesheet" href="./veryfi.css?v=58-manual-simple">
+<script defer src="./veryfi.js?v=58-manual-simple"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=20261123-stable-1">
 <style>
 html.secretariat-embedded{background:transparent}
@@ -20,11 +20,14 @@ html.secretariat-embedded{background:transparent}
 <main class="shell">
 <header class="header">
   <div><div class="eyebrow">COURS CHAMBERTIN · FACTURES FOURNISSEURS</div>
-    <h1>Lecteur <span>Veryfi</span></h1>
-    <p class="subtitle">Lecture structurée des PDF · contrôle visuel · rapprochement au catalogue</p>
+    <h1 class="ocr-only-title">Lecteur <span>Veryfi</span></h1>
+    <h1 class="manual-only">Saisie manuelle des factures</h1>
+    <p class="subtitle ocr-only-title">Lecture structurée des PDF · contrôle visuel · rapprochement au catalogue</p>
+    <p class="subtitle manual-only">Fournisseur, facture et produits · sans lecture Veryfi</p>
   </div>
   <div class="header-actions">
     <span id="scope" class="scope">Secrétariat</span>
+    <a class="btn secondary manual-only" href="./?origine=secretariat">Lecteur automatique Veryfi</a>
     <a id="backLink" class="btn secondary" href="../secretariat/">Retour à l'application</a>
   </div>
 </header>
@@ -73,7 +76,7 @@ html.secretariat-embedded{background:transparent}
       <button type="button" id="newDocument" class="btn secondary" hidden>Nouvelle facture</button>
     </div>
     <p class="hint">Vous pouvez saisir une facture sans OCR et sans consommer de lecture Veryfi. Joignez le PDF original avant validation ; aucune entrée en stock ne se fait pendant la saisie.</p>
-    <div class="viewerbar"><strong>Facture originale</strong><a id="openPdf" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans un autre onglet</a></div>
+    <div class="viewerbar"><strong>Facture originale</strong><button type="button" id="manualPreviewToggle" class="btn secondary small manual-only" aria-expanded="false" hidden>Afficher l’aperçu du PDF</button><a id="openPdf" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans un autre onglet</a></div>
     <div id="viewerEmpty" class="viewer-empty">L’aperçu du PDF s’affichera ici.</div>
     <iframe id="viewer" title="Facture PDF originale" hidden></iframe>
   </section>
@@ -91,8 +94,9 @@ html.secretariat-embedded{background:transparent}
         <div class="legend-item warn"><strong>ORANGE</strong><span>Contrôle ou correction nécessaire</span></div>
         <div class="legend-item good"><strong>VERT</strong><span>Produit vérifié, retenu pour réception</span></div>
       </div>
-      <h3>Informations de la facture</h3>
-      <div class="fields">
+      <h3 class="ocr-only-title">Informations de la facture</h3>
+      <h3 class="manual-only">2. Informations de la facture</h3>
+      <div class="fields invoice-header-fields">
         <label class="field field-wide"><span>Fournisseur</span><input id="vendor" autocomplete="off" placeholder="Sélectionner ou saisir un fournisseur"><datalist id="manualSupplierOptions"></datalist><span id="manualSupplierHint" class="subtle" hidden></span></label>
         <label class="field"><span>N° facture</span><input id="invoiceNumber" autocomplete="off"></label>
         <label class="field"><span>Date de facture</span><input id="invoiceDate" type="date"></label>
@@ -109,7 +113,7 @@ html.secretariat-embedded{background:transparent}
       <p class="hint" id="vatNonRecoverableNote">TVA non récupérable : son taux par produit est facultatif pour la validation. Conservez les montants HT, TVA et TTC indiqués sur la facture ; le TTC constitue le montant payé.</p><div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>
       <p id="greenOnlyInfo" class="subtle">Les montants de réception proviennent uniquement des produits verts validés. Les montants du PDF sont conservés pour contrôle et ne remplacent jamais ceux des produits retenus. Les corrections confirmées après vérification du PDF enrichissent le carnet d’apprentissage interne pour les prochaines factures.</p>
       <div class="section-heading">
-        <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF. En saisie manuelle, le HT calculé suit la quantité et le prix ; un HT saisi explicitement reste inchangé.</p></div>
+        <div><h3 class="ocr-only-title">Produits et prestations</h3><h3 class="manual-only">3. Produits facturés</h3><p class="subtle ocr-only-title">Chaque ligne reste modifiable et doit être vérifiée sur le PDF.</p><p class="subtle manual-only">Choisissez un produit, puis indiquez la quantité et le prix facturés.</p></div>
         <button id="addLine" type="button" class="btn secondary small">Ajouter une ligne</button>
       </div>
             <div class="triage-bar"><label for="issueFilter" class="triage-field"><span>Filtrer les lignes par cause</span>
@@ -130,6 +134,8 @@ html.secretariat-embedded{background:transparent}
       <option value="excluded">Lignes écartées</option>
       </select></label><div class="bulk-vat-tools"><label for="bulkVatRate">Taux TVA facultatif (%)</label><input id="bulkVatRate" type="number" min="0" max="100" step="0.01" placeholder="Ex. 20" inputmode="decimal"><button id="applyBulkVat" type="button" class="btn secondary small">Renseigner les TVA manquantes</button></div><p id="vatSuggestion" class="subtle vat-suggestion" aria-live="polite" hidden></p><p id="triageSummary" class="subtle" aria-live="polite"></p></div>
       <div id="lines" class="lines"></div>
+      <div class="manual-only compact-summary"><div><span id="compactLineCount">0 produit</span><strong>Total HT des produits</strong></div><strong id="compactLineTotal">0,00 €</strong></div>
+      <p class="manual-only compact-status" id="compactStatus" role="status" aria-live="polite"></p>
       <datalist id="productOptions"></datalist>
       <datalist id="accountOptions"></datalist>
       <div id="reconciliation" class="reconciliation" aria-live="polite"></div>

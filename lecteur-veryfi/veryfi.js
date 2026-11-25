@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const parameters=new URLSearchParams(location.search);
 const accounting=parameters.get("origine")==="comptabilite";
 const trainingMode=parameters.get("entrainement")==="1";
-const READER_VERSION="V57";
+const READER_VERSION="V58";
 const queuedManualEntry=parameters.get("mode")==="manuel";
 const queueId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parameters.get("queue_id")||"")?parameters.get("queue_id"):"";
 const QUEUE_API=ROOT+"secretariat-invoice-queue";
@@ -422,6 +422,7 @@ function updateManualArchiveName(){
  if(objectUrl){download.href=objectUrl;download.download=name;download.hidden=false}
 }
 function showManualEntryState(){
+ applyManualPresentation();
  const note=$("manualEntryNote");
  note.hidden=!manualMode;
  if(manualMode){
@@ -483,6 +484,7 @@ function setFile(newFile){
   return;
  }
  clearPdf();queueImported=false;manualMode=false;
+ applyManualPresentation();
  $("manualEntryNote").hidden=true;$("resultTitle").textContent="Vérification des données";
  file=newFile||null;saved=false;documentData=null;rows=[];removedRows=[];revision++;issueFilter="all";$("issueFilter").value="all";$("triageSummary").textContent="";$("bulkVatRate").value="";$("repairHeader").hidden=true;$("vatActionRequired").hidden=true;
  document.dispatchEvent(new CustomEvent("veryfi:source-file",{detail:{file}}));
@@ -1314,11 +1316,14 @@ async function openManualProduct(row,button){
   form.elements.namedItem("code").value=suggestManualProductCode(row.reference,$("vendor").value,products);
   form.elements.namedItem("unit").value=row.unit||"";
   form.elements.namedItem("unit_price").value=amount(row.unit_price)??0;
+  if(compactManualMode()&&!form.elements.namedItem("code").value){
+   form.elements.namedItem("code").value=suggestManualProductCode("ALIM-"+Date.now().toString(36),$("vendor").value,products);
+  }
   const select=form.elements.namedItem("category_id");
   select.replaceChildren(new Option("Choisir une catégorie",""),...categories.map(c=>new Option(c.name,c.id)));
   const food=categories.find(c=>c.code==="alimentaire");
   const knownFood=options?.suppliers?.some(s=>foodSupplierKey(s.key)===foodSupplierKey($("vendor").value));
-  if(food&&(knownFood||!canManage))select.value=food.id;
+  if(food&&(compactManualMode()||knownFood||!canManage))select.value=food.id;
   $("manualProductSupplier").textContent="Fournisseur : "+$("vendor").value.trim();
   $("manualProductStatus").textContent="";
   manualProductContext={row,token,categories,products,options,canManage,supplier:$("vendor").value.trim(),busy:false};
@@ -1362,6 +1367,7 @@ async function saveManualProduct(event){
   const product=(catalog?.products||[]).find(p=>p.id===result.item.id&&p.active!==false);
   if(!product)return notice("Produit créé, mais catalogue non actualisé. Actualisez les conditionnements avant de poursuivre.","error");
   const row=context.row;row.product_manual=true;row.stock_manual=false;row.stock_confirmed=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.pdfEvidence=null;
+  if(compactManualMode()){row.description=String(row.description||"").trim()||product.name;row.unit=String(product.unit||"");row.unit_inferred=true;row.unit_label_conflict=false;row.unit_label_source=false;row.unit_label_pair=null;}
   applyMatch(row,{product,source:"Nouveau produit créé et sélectionné manuellement"});
   $("confirmReview").checked=false;renderRows();
   if(food&&manualInvoiceOptions){
@@ -1387,7 +1393,7 @@ function recalculateManualLineTotal(row,key){
  const q=amount(row.quantity),price=amount(row.unit_price);
  row.total=q!==null&&q>0&&price!==null&&price>=0?String(round(q*price)):"";
 }
-function changeRow(index,key,value){
+function changeRow(index,key,value,refresh=true){
  const row=rows[index];if(!row||saved||loading)return;
  row[key]=value;
  if(manualMode)recalculateManualLineTotal(row,key);
@@ -1415,7 +1421,7 @@ function changeRow(index,key,value){
   row.stock_note="Quantité renseignée manuellement : confirmer la ligne après vérification du conditionnement";
  }
  else if(key==="account"){row.account_manual=true;row.account_source="Compte saisi manuellement : à vérifier"}
- renderRows();
+ if(refresh)renderRows();
 }
 const issuePriority=Object.freeze({montant:0,doublon:1,tva:2,stock:3,unite:4,rapprochement:5,ocr:6,validation:7,catalogue:8});
 function issueCategories(row){
@@ -1449,11 +1455,174 @@ function groupedRows(){
  for(const group of groups)group.items.sort((a,b)=>issueRank(a.row)-issueRank(b.row)||a.index-b.index);
  return groups;
 }
+function compactManualMode(){return manualMode&&!accounting&&!trainingMode}
+function applyManualPresentation(){
+ const simple=compactManualMode()||(queuedManualEntry&&!documentData&&!accounting&&!trainingMode);
+ document.documentElement.classList.toggle("manual-simple",simple);
+ if(!simple)document.documentElement.classList.remove("manual-preview-open");
+ $("pdfTitle").textContent=simple?"1. Joindre la facture PDF":"Document à analyser";
+ $("save").textContent=simple?"Enregistrer la facture":accounting?"Envoyer en Comptabilité — à contrôler":trainingMode?"Réception désactivée — entraînement":"Valider vers Commandes + Achats + Stocks";
+ const preview=$("manualPreviewToggle");
+ preview.hidden=!simple||!file;
+ preview.setAttribute("aria-expanded",String(document.documentElement.classList.contains("manual-preview-open")));
+ preview.textContent=document.documentElement.classList.contains("manual-preview-open")?"Masquer l’aperçu":"Afficher l’aperçu du PDF";
+}
+function compactLineProblem(row){
+ if(!row.product_id)return "Choisissez un produit ou créez-le.";
+ if(!eligible(row))return "Vérifiez la quantité, le prix et le total HT.";
+ if(!String(row.unit||"").trim()||row.unit_label_conflict)return "Vérifiez l’unité facturée.";
+ if(!lineVatAcceptable(row))return "Corrigez le taux de TVA ou laissez-le vide.";
+ if(!validStockQuantity(row)||row.stock_needs_review&&!row.stock_confirmed){
+  if(row.stock_manual){if(!validStockQuantity(row))return "Indiquez la quantité en stock (3 décimales maximum)."}
+  else if(!stockProposal(row))return "Vérifiez le conditionnement ou indiquez la quantité en stock.";
+ }
+ return "";
+}
+function compactInvoiceProblem(c){
+ if(!authToken||!catalog)return "Reconnectez-vous pour accéder au catalogue.";
+ if(!file)return "Joignez le PDF de la facture.";
+ if(!$("vendor").value.trim())return "Choisissez le fournisseur.";
+ if(!$("invoiceNumber").value.trim())return "Renseignez le numéro de facture.";
+ if(!invoiceArchiveName("",$("invoiceDate").value,$("vendor").value,$("invoiceNumber").value))return "Vérifiez la date et les références de la facture.";
+ const active=rows.filter(r=>!r.excluded);
+ if(!active.length)return "Ajoutez au moins un produit.";
+ for(let i=0;i<rows.length;i++){
+  if(rows[i].excluded)continue;
+  const problem=compactLineProblem(rows[i]);if(problem)return "Ligne "+(i+1)+" : "+problem;
+ }
+ if(c.ht===null||c.ht<=0)return "Renseignez le total HT figurant sur la facture.";
+ if(c.discrepancy||c.discardedInvalid)return "Le total HT des lignes doit correspondre au PDF.";
+ if(c.grossMismatch)return "Le total HT + la TVA ne correspond pas au TTC.";
+ for(const [id,value] of [["tax",c.vat],["total",c.ttc]])if(String($(id).value).trim()&&(value===null||value<0))return "Vérifiez le montant de TVA ou TTC renseigné.";
+ return "";
+}
+function compactChooseProduct(row,value){
+ const available=(catalog?.products||[]).filter(p=>p.active!==false);
+ const exact=[...$("productOptions").options].filter(o=>o.value===value);
+ const ids=[...new Set(exact.map(o=>o.dataset.productId))];
+ const fallback=available.filter(p=>norm(p.code)===norm(value)||norm(p.name)===norm(value));
+ const product=ids.length===1?available.find(p=>p.id===ids[0]):ids.length===0&&fallback.length===1?fallback[0]:null;
+ const previous=row.product_id;
+ if(product){
+  if(previous!==product.id){
+   row.description=product.name;row.reference="";
+   row.unit=String(product.unit||"");row.unit_inferred=true;row.unit_label_conflict=false;row.unit_label_source=false;row.unit_label_pair=null;row.unit_label_note="";
+  }
+  row.product_manual=true;row.stock_manual=false;row.stock_confirmed=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.pdfEvidence=null;
+  applyMatch(row,{product,source:"Produit sélectionné dans le catalogue"});
+ }else{
+  row.description=String(value||"").trim();row.reference="";row.unit="";row.unit_inferred=false;row.unit_label_conflict=false;row.unit_label_source=false;row.unit_label_pair=null;row.unit_label_note="";
+  row.product_manual=false;row.stock_manual=false;row.stock_confirmed=false;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.pdfEvidence=null;
+  applyMatch(row,{product:null,source:"Choisissez ou créez ce produit"});
+  row.product_label=String(value||"");
+ }
+ $("confirmReview").checked=false;
+}
+function refreshCompactLine(card,row){
+ const product=(catalog?.products||[]).find(p=>p.id===row.product_id&&p.active!==false);
+ for(const input of card.querySelectorAll("[data-compact-key]")){
+  if(input!==document.activeElement)input.value=row[input.dataset.compactKey]??"";
+ }
+ const status=card.querySelector(".compact-line-status"),stock=card.querySelector(".compact-stock");
+ const problem=compactLineProblem(row);
+ status.textContent=row.excluded?"Non réceptionnée":isRetainedGreen(row)?"Vérifiée":problem||"Prête à vérifier";
+ status.classList.toggle("compact-ok",!row.excluded&&isRetainedGreen(row));
+ stock.textContent=product?"Unité facturée : "+(row.unit||"à renseigner")+" · Stock : "+(row.stock_quantity===""?"à préciser":row.stock_quantity)+" "+(product.stock_count_mode==="litre"?"litres":product.inventory_unit_label||product.unit||""):"";
+ const create=card.querySelector("[data-compact-create]");
+ if(create)create.hidden=!!row.product_id||row.excluded||saved;
+ card.classList.toggle("compact-excluded",!!row.excluded);
+}
+function buildCompactLine(row,index){
+ const card=document.createElement("article");card.className="compact-line";card.dataset.index=String(index);
+ const main=document.createElement("div");main.className="compact-line-main";
+ const field=(key,title,decimal=false)=>{
+  const label=document.createElement("label");label.className="field";
+  const caption=document.createElement("span");caption.textContent=title;
+  const input=document.createElement("input");input.type="text";input.autocomplete="off";input.dataset.compactKey=key;input.value=row[key]??"";input.disabled=saved||loading||row.excluded;
+  if(decimal)input.inputMode="decimal";
+  if(key==="product_label"){
+   input.setAttribute("list","productOptions");input.placeholder="Nom ou référence du produit";
+   input.addEventListener("change",()=>{
+    if(saved||loading||rows[index]!==row)return;
+    compactChooseProduct(row,input.value);renderRows();
+   });
+  }else{
+   input.addEventListener("input",()=>{
+    if(saved||loading||rows[index]!==row)return;
+    if((key==="reference"||key==="description")&&row.product_manual){
+     row[key]=input.value;row.changed=true;row.verified=false;row.autoVerified=false;row.manualVerified=false;row.confirmedOnPdf=false;row.pdfEvidence=null;$("confirmReview").checked=false;
+    }else changeRow(index,key,input.value,false);
+    refreshCompactLine(card,row);updateTotals();
+   });
+  }
+  label.append(caption,input);return label;
+ };
+ const picker=field("product_label","Produit "+(index+1));
+ const create=document.createElement("button");create.type="button";create.className="compact-create";create.dataset.compactCreate="1";create.textContent="+ Nouveau produit";create.disabled=saved||loading;
+ create.addEventListener("click",()=>void openManualProduct(row,create));picker.append(create);
+ main.append(picker,field("quantity","Quantité",true),field("unit_price","Prix unitaire HT",true),field("total","Total HT",true));
+ const remove=document.createElement("button");remove.type="button";remove.className="btn secondary small compact-remove";remove.textContent="Retirer";remove.disabled=saved||loading;
+ remove.addEventListener("click",()=>{
+  if(saved||loading||rows[index]!==row)return;
+  if((row.product_id||row.description||row.quantity||row.total)&&!confirm("Retirer ce produit de la facture ?"))return;
+  if(!row.userAdded)removedRows.push({total:row.total,tax_rate:row.tax_rate});
+  rows.splice(index,1);$("confirmReview").checked=false;renderRows();
+ });main.append(remove);card.append(main);
+ const foot=document.createElement("div");foot.className="compact-line-foot";
+ const stock=document.createElement("span");stock.className="compact-stock";
+ const status=document.createElement("span");status.className="compact-line-status";status.setAttribute("role","status");
+ foot.append(stock,status);card.append(foot);
+ const details=document.createElement("details");details.className="compact-extra";
+ const summary=document.createElement("summary");summary.textContent="Détails facultatifs / corriger le conditionnement";details.append(summary);
+ const more=document.createElement("div");more.className="compact-extra-fields";
+ more.append(field("reference","Référence sur la facture"),field("description","Désignation sur la facture"),field("unit","Unité facturée"),field("stock_quantity","Quantité en stock",true),field("tax_rate","TVA (%) facultative",true),field("account","Compte de charge"));
+ const excluded=document.createElement("label");excluded.className="compact-exclude";
+ const check=document.createElement("input");check.type="checkbox";check.checked=!!row.excluded;check.disabled=saved||loading;
+ check.addEventListener("change",()=>{if(saved||loading)return;setRowExclusion(row,check.checked);$("confirmReview").checked=false;renderRows()});
+ excluded.append(check,"Ne pas réceptionner cette ligne (le montant reste dans la facture)");
+ details.append(more,excluded);card.append(details);refreshCompactLine(card,row);return card;
+}
+function updateCompactTotals(c){
+ const check=$("confirmReview"),problem=saved?"":compactInvoiceProblem(c);
+ const active=rows.filter(r=>!r.excluded);
+ const typed=round(active.reduce((sum,r)=>sum+(amount(r.total)||0),0));
+ $("compactLineTotal").textContent=fmt(typed);
+ $("compactLineCount").textContent=active.length+" produit(s)";
+ $("compactStatus").textContent=saved?"Facture enregistrée.":problem||(check.checked&&c.ok?"Facture vérifiée, prête à enregistrer.":"Vérifiez la facture et les quantités, puis cochez la confirmation.");
+ $("compactStatus").classList.toggle("compact-ok",saved||(!problem&&check.checked&&c.ok));
+ check.disabled=saved||loading||!!problem;
+ if(problem&&!saved)check.checked=false;
+ $("save").disabled=saved||loading||!c.ok||!check.checked||!!problem;
+ $("saveHelp").textContent=saved?"Enregistrée.":"Le PDF et les contrôles de stock sont conservés.";
+}
+function confirmCompactInvoice(){
+ const check=$("confirmReview");
+ if(!check.checked||saved||loading)return updateTotals();
+ const problem=compactInvoiceProblem(calc());
+ if(problem){check.checked=false;notice(problem,"error");return updateTotals()}
+ for(let i=0;i<rows.length;i++){
+  const row=rows[i];if(row.excluded||isRetainedGreen(row))continue;
+  const result=confirmRowManually(row);
+  if(!result.ok||result.partial||!isRetainedGreen(row)){
+   check.checked=false;
+   if(!result.quiet)notice("Ligne "+(i+1)+" : "+result.message,"error");
+   return renderRows();
+  }
+ }
+ if(!calc().ok){check.checked=false;notice("La facture n’est pas prête : vérifiez les montants et les lignes.","error")}
+ renderRows();
+}
 function renderRows(){
+ applyManualPresentation();
  renderManualSuppliers();
  updateManualArchiveName();
  synchronizeExcludedRows();
  autoVerifyGreenRows();
+ if(compactManualMode()){
+  const box=$("lines");box.replaceChildren();
+  rows.forEach((row,index)=>box.append(buildCompactLine(row,index)));
+  updateTotals();return;
+ }
  const active=rows.filter(r=>!r.excluded),red=active.filter(r=>productColor(r)==="bad").length,orange=active.filter(r=>productColor(r)==="warn").length,green=active.filter(r=>productColor(r)==="good").length;
  const missingTaxes=active.filter(r=>!validLineVat(r)).length;
  const inactive=active.filter(r=>productColor(r)==="bad"&&String(r.reason||"").startsWith("Produit DÉSACTIVÉ")).length;
@@ -1614,6 +1783,7 @@ function repairHeaderFromPdf(){
 function updateTotals(){
  if(!documentData)return;
  const c=calc();
+ if(compactManualMode()){updateCompactTotals(c);return}
  const correctionNote=$("headerRepairNote");
  const vatHint=suggestInvoiceVatRate(),vatHintElement=$("vatSuggestion"),banner=$("vatActionRequired");
  const projection=vatHint?previewVatApproval(vatHint.rate):null;
@@ -1691,6 +1861,7 @@ async function save(){
  if(loading||saved)return;
  if(trainingMode)return notice("Mode entraînement : aucune réception et aucune facture enregistrée. Ouvrez le lecteur normal seulement pour une vraie réception.","error");
  const c=calc();
+ if(compactManualMode()){const problem=compactInvoiceProblem(c);if(problem)return notice(problem,"error")}
  if(!c.ok||!$("confirmReview").checked)return notice("La facture n’est pas prête : contrôles incomplets.","error");
  if(!accounting&&c.adjusted&&c.discrepancy&&!confirm(
   "ATTENTION : le HT du PDF ("+fmt(c.ht)+") ne correspond pas à toutes les lignes OCR ("+
@@ -1699,10 +1870,12 @@ async function save(){
  ))return;
  if(!confirm(accounting?"Enregistrer cette facture en Comptabilité pour contrôle, sans la valider définitivement ?":c.autoExcludedCount?"ATTENTION : "+c.autoExcludedCount+" produit(s) écarté(s) automatiquement ("+fmt(c.autoExcludedHt)+" HT). Ces produits ne seront PAS ajoutés au stock et ne pourront pas être réceptionnés plus tard à partir du même PDF (anti-doublon). Réintégrez d’abord les lignes à réceptionner. Confirmer la réception partielle ?":c.pending.length?"Il reste "+c.pending.length+" ligne(s) rouge(s)/orange(s). Elles ne seront PAS ajoutées au stock. Après validation, elles ne pourront pas être ajoutées depuis le même PDF (protection anti-doublon). Si vous souhaitez les ajouter plus tard, annulez et passez-les au vert d’abord. Confirmer la réception partielle ?":c.adjusted?"Valider cette réception partielle ? Seuls les produits verts seront ajoutés au stock. Les montants et le PDF d’origine restent conservés.":"Valider cette facture ? Les produits verts seront ajoutés au stock et transmis à Commandes et Achats."))return;
  const currentFile=file;loading=true;$("save").disabled=true;notice("Enregistrement sécurisé en cours…");
+ const supplier=$("vendor").value.trim(),number=$("invoiceNumber").value.trim(),date=$("invoiceDate").value;
+ const compactControls=compactManualMode()?[...$("results").querySelectorAll("input,button,select")].filter(el=>!el.disabled):[];
+ compactControls.forEach(el=>el.disabled=true);
  try{
   if(!currentFile)throw Error("La facture PDF n’est plus disponible.");
   const bytes=new Uint8Array(await currentFile.arrayBuffer());
-  const supplier=$("vendor").value.trim(),number=$("invoiceNumber").value.trim(),date=$("invoiceDate").value;
   const archiveName=manualMode?invoiceArchiveName(currentFile.name,date,supplier,number):currentFile.name;
   if(accounting){
    const fd=new FormData();
@@ -1740,13 +1913,17 @@ async function save(){
   }
   lockFields();$("newDocument").hidden=false;$("manualEntry").disabled=true;
  }catch(e){notice("Enregistrement refusé : "+e.message,"error");$("saveResult").textContent=e.message}
- finally{loading=false;updateTotals()}
+ finally{loading=false;if(!saved)compactControls.forEach(el=>el.disabled=false);updateTotals()}
 }
 function lockFields(){
- $("results").querySelectorAll("input,button").forEach(el=>{if(el.id!=="newDocument"&&el.dataset.action!=="view-pdf")el.disabled=true});
+ $("results").querySelectorAll("input,button,select").forEach(el=>{if(el.id!=="newDocument"&&el.dataset.action!=="view-pdf")el.disabled=true});
 }
 function setup(){
- setScope();
+ setScope();applyManualPresentation();
+ $("manualPreviewToggle").addEventListener("click",()=>{
+  document.documentElement.classList.toggle("manual-preview-open");
+  applyManualPresentation();
+ });
  $("trainingBanner").hidden=!trainingMode;
  if(trainingMode)$("save").textContent="Réception désactivée — entraînement";
  $("pdfCompareClose").addEventListener("click",()=>$("pdfCompare").close());
@@ -1793,7 +1970,7 @@ function setup(){
  $("issueFilter").addEventListener("change",e=>{issueFilter=e.target.value;renderRows()});
  $("addLine").addEventListener("click",addLine);
  $("save").addEventListener("click",save);
- $("confirmReview").addEventListener("change",updateTotals);
+ $("confirmReview").addEventListener("change",()=>compactManualMode()?confirmCompactInvoice():updateTotals());
  for(const key of ["vendor","invoiceNumber","invoiceDate","subtotal","tax","total"])
   $(key).addEventListener("change",()=>{if(key==="vendor"){populateDatalists();rows.forEach(r=>{r.product_manual=false;r.account_manual=false;r.stock_manual=false;r.product_id="";r.verified=false;r.autoVerified=false;r.manualVerified=false;r.confirmedOnPdf=false;r.changed=true});refreshMatches()}renderRows();$("confirmReview").checked=false;updateTotals()});
  $("newDocument").addEventListener("click",()=>{location.reload()});
