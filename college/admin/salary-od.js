@@ -567,7 +567,9 @@ function workflowWire(){
  });
 }
 function workflowReadOnly(){
- if(!context?.month||remoteFor(context.month).status==="draft"&&remoteFor(context.month).loaded)return;
+ if(!context?.month)return;
+ const state=remoteFor(context.month);
+ if(state.status==="draft"&&state.loaded&&!state.loading&&!state.saving)return;
  const host=document.getElementById("salaryPayrollWorkArea");
  if(!host||host.hidden)return;
  for(const input of host.querySelectorAll("input,textarea,select,button"))input.disabled=true;
@@ -576,6 +578,8 @@ function workflowReadOnly(){
 function render(){
  const host=document.getElementById("salaryPayrollWorkArea"),variables=document.getElementById("salaryVariableSection");
  if(!host||!variables||!context)return;
+ const workflow=document.getElementById("salaryWorkflowPanel");
+ if(workflow){workflow.innerHTML=workflowPanel();workflowWire()}
  variables.hidden=activeView!=="variables";host.hidden=activeView==="variables";
  const employee=document.getElementById("salaryAccountingEmployee");if(employee)employee.disabled=activeView!=="variables"||!context.ready;
  document.querySelectorAll("[data-salary-od-view]").forEach(b=>{const selected=b.dataset.salaryOdView===activeView;b.classList.toggle("primary",selected);b.classList.toggle("secondary",!selected);b.setAttribute("aria-pressed",String(selected))});
@@ -585,6 +589,7 @@ function render(){
  host.innerHTML=(activeView==="pay"?payHtml(d):activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
  wire(host,d);refresh();
  if(activeView==="pay")void loadSavedBanks(d);
+ workflowReadOnly();
 }
 function refresh(){
  if(!permissionsValid())return;
@@ -615,7 +620,8 @@ function refresh(){
  if(el("salaryBankReload"))el("salaryBankReload").disabled=d.bankLoading;
  if(el("salaryBankConfirm")){el("salaryBankConfirm").checked=d.bankConfirmed;el("salaryBankConfirm").disabled=!!bankError||!d.payConfirmed||unknown}
  if(el("salaryBankPrint"))el("salaryBankPrint").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown;
- if(el("salaryBankXml"))el("salaryBankXml").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown||!payReady;
+ if(el("salaryBankXml"))el("salaryBankXml").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown||!payReady||!workflowEditable();
+ workflowReadOnly();
 }
 function wire(host,d){
  const el=id=>document.getElementById(id);
@@ -709,13 +715,17 @@ function mount(config){
  }
  const nav=document.getElementById("salaryPayrollNavigation");if(!nav)return;
  const tabs=[["variables","1. Éléments variables"],["declaration","2. Déclaration gérance"],["pay","3. Virements de salaires"],["od","4. OD de salaires"]];
- nav.innerHTML='<nav class="card salary-od-nav" aria-label="Étapes de préparation des salaires">'+tabs.map(([key,label])=>'<button type="button" class="btn secondary" data-salary-od-view="'+key+'" aria-pressed="false">'+label+'</button>').join("")+'</nav>';
+ nav.innerHTML='<nav class="card salary-od-nav" aria-label="Étapes de préparation des salaires">'+tabs.map(([key,label])=>'<button type="button" class="btn secondary" data-salary-od-view="'+key+'" aria-pressed="false">'+label+'</button>').join("")+'</nav><section class="card salary-od-section" id="salaryWorkflowPanel" aria-label="Dossier mensuel en ligne"></section>';
  if(config.ready&&config.canWrite&&validMonth(config.month)){
   const d=getDraft();
   for(const staff of config.defaultStaff)if(!d.payments.has(staff.id)){d.payments.set(staff.id,"");d.payConfirmed=false;d.bankConfirmed=false;d.odConfirmed=false;d.declarationConfirmed=false;d.reconciliation.difference=null}
  }
  nav.querySelectorAll("[data-salary-od-view]").forEach(b=>b.addEventListener("click",()=>{activeView=b.dataset.salaryOdView;render()}));
  render();
+ if(config.ready&&config.canWrite&&validMonth(config.month)){
+  if(!remoteFor(config.month).tried)void workflowLoad(config.month);
+  if(!remoteListLoaded&&!remoteListLoading)void workflowList();
+ }
 }
 window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
