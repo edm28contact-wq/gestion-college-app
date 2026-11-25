@@ -44,6 +44,7 @@ test("génère un XML SEPA pain.001.001.03 bien formé, avec les montants exacts
  assert.match(output.xml,/<InstdAmt Ccy="EUR">427\.78<\/InstdAmt>/);
  assert.match(output.xml,/<Nm>Alice &amp; Bob<\/Nm>/);
  assert.match(output.xml,/<Ustrd>Salaire &lt;novembre&gt;<\/Ustrd>/);
+ assert.match(output.xml,/<PstlAdr>\s*<PstCd>92600<\/PstCd>\s*<TwnNm>Asnières-sur-Seine<\/TwnNm>\s*<Ctry>FR<\/Ctry>/);
  assert.doesNotMatch(output.xml,/Compte inactif/);
  assert.equal((new Set([...output.xml.matchAll(/<EndToEndId>([^<]+)<\/EndToEndId>/g)].map(x=>x[1]))).size,2);
  const parser=[
@@ -70,7 +71,8 @@ test("bloque les virements si le compte, le BIC ou la date sont invalides",()=>{
   ["montant négatif",x=>x.beneficiaries[0].amountCents=-1],
   ["montant fractionné",x=>x.beneficiaries[0].amountCents=0.1],
   ["doublon matricule",x=>x.beneficiaries[1].matricule="101"],
-  ["caractère XML interdit",x=>x.issuer.name="COLLEGE\u0001TEST"]
+  ["caractère XML interdit",x=>x.issuer.name="COLLEGE\u0001TEST"],
+  ["code postal sans ville",x=>x.beneficiaries[0].city=""]
  ]){
   const input=sample();mutate(input);
   assert.throws(()=>createCreditTransfer(input),undefined,label);
