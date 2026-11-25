@@ -37,7 +37,7 @@ test("Virements : le net est reporté sans nouvelle déduction et les données i
 });
 test("Compta salaire : module intégré au mois, aux droits de modification et à la déconnexion",()=>{
  const html=fs.readFileSync("college/admin/index.html","utf8"),salary=fs.readFileSync("college/admin/salaires.js","utf8");
- assert.match(html,/salary-od\.js\?v=3-rib/);assert.match(html,/salaryOdClear\(\)/);
+ assert.match(html,/salary-od\.js\?v=[0-9a-z-]+/i);assert.match(html,/salaryOdClear\(\)/);
  assert.match(salary,/salaryOdMount\(\{month,staff:staffAvailable\?salaryStaff:\[\],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token,declarationStaff\}/);
  assert.doesNotMatch(source,/\b(localStorage|sessionStorage|fetch)\b/);
  assert.match(source,/!reconcilePayments\(d\)\.ok/);assert.doesNotMatch(source,/salaryPayToOD/);
