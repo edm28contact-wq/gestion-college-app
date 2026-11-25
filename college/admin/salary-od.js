@@ -143,6 +143,7 @@ function payHtml(d){
  const rows=people.map(([id,value])=>'<tr><th scope="row">'+esc(staffName(id))+'</th><td>'+field(value,'data-pay-id="'+esc(id)+'"',"Net à virer : "+staffName(id))+'</td><td>'+(context.staff.some(s=>s.id===id&&!s.archived)?'<span class="muted">0 si aucun virement</span>':'<button type="button" class="btn secondary compact" data-pay-remove="'+esc(id)+'">Retirer</button>')+'</td></tr>').join("");
  const extra=context.staff.filter(s=>!d.payments.has(s.id)).sort((a,b)=>a.name.localeCompare(b.name,"fr"));
  return '<section class="card salary-od-section"><div class="salary-od-heading"><div><h2>3. Virements de salaires</h2><p class="muted">Reportez le montant net réellement à verser de chaque bulletin validé, après acomptes et prélèvement à la source. Ne les déduisez pas une deuxième fois.</p></div></div>'+
+ '<section id="salaryPayslipImport" class="salary-payslip-import" aria-label="Import des bulletins de paie"></section>'+ 
  '<div class="salary-od-totals"><div><span>Total à virer</span><strong id="salaryPayTotal">—</strong></div><div><span>Compte 42100000</span><strong id="salaryPayAccount">—</strong></div><div><span>Écart</span><strong id="salaryPayBalance">—</strong></div></div>'+
  '<div class="table"><table class="salary-od-table salary-pay-table"><thead><tr><th>Salarié</th><th>Net à virer (€)</th><th>Information</th></tr></thead><tbody>'+(rows||'<tr><td colspan="3">Aucun salarié disponible.</td></tr>')+'</tbody></table></div>'+
  (extra.length?'<div class="actions salary-od-extra"><label>Autre salarié du catalogue <select id="salaryPayExtra"><option value="">Choisir</option>'+extra.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("")+'</select></label><button type="button" class="btn secondary" id="salaryPayAdd">Ajouter</button></div>':'')+
@@ -597,7 +598,34 @@ function render(){
  const d=getDraft();
  host.innerHTML=(activeView==="pay"?payHtml(d):activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
  wire(host,d);refresh();
- if(activeView==="pay")void loadSavedBanks(d);
+ if(activeView==="pay"){
+  const capturedSession=session,capturedMonth=context.month,staff=context.staff.map(p=>({id:p.id,name:p.name}));
+  window.ChambertinPayslipImporter?.mount({
+   root:document.getElementById("salaryPayslipImport"),
+   month:capturedMonth,session:capturedSession,staff,
+   editable:()=>workflowEditable()&&!d.bankLoading,
+   isCurrent:()=>permissionsValid()&&session===capturedSession&&context.month===capturedMonth&&getDraft()===d&&activeView==="pay",
+   apply:(amounts,overwrite)=>{
+    const output=[];let changed=false;
+    if(!permissionsValid()||!workflowEditable()||session!==capturedSession||context.month!==capturedMonth||getDraft()!==d)
+     return amounts.map(()=>"review");
+    for(const entry of amounts){
+     if(!staff.some(p=>p.id===entry.staffId)||!Number.isSafeInteger(entry.amountCents)||entry.amountCents<0||entry.amountCents>999999999){
+      output.push("review");continue;
+     }
+     const previous=d.payments.get(entry.staffId),existing=String(previous??"").trim();
+     const next=(entry.amountCents/100).toFixed(2).replace(".",",");
+     if(existing&&cents(previous)===entry.amountCents){output.push("same");continue}
+     if(existing&&!overwrite){output.push("conflict");continue}
+     d.payments.set(entry.staffId,next);changed=true;output.push("imported");
+    }
+    if(changed)updateDraft(d);
+    return output;
+   },
+   refresh:()=>render()
+  });
+  void loadSavedBanks(d);
+ }
  workflowReadOnly();
 }
 function refresh(){
