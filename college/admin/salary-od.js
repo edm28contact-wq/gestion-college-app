@@ -136,7 +136,7 @@ function payHtml(d){
 }
 
 const issuerFields=Object.freeze([["name","Nom émetteur",140],["iban","IBAN émetteur",42],["bic","BIC émetteur",11],["number","Num émetteur",40],["date","Date d’exécution",10],["filename","Nom du fichier de sortie",100],["label","Libellé écriture",140]]);
-const beneficiaryFields=Object.freeze([["matricule","Matricule",40],["iban","IBAN",42],["bic","BIC",11],["country","Pays",2],["comment","Commentaire",140]]);
+const beneficiaryFields=Object.freeze([["matricule","Matricule",35],["iban","IBAN",42],["bic","BIC",11],["country","Pays",2],["postcode","Code postal",16],["city","Ville",35],["address","Adresse",70],["comment","Commentaire",140]]);
 function compactIban(value){return String(value??"").replace(/\s/g,"").toUpperCase()}
 function validIban(value){
  const iban=compactIban(value);
@@ -163,13 +163,13 @@ function bankProblem(d){
  for(const [id,value] of d.payments){
   if(!(cents(value)>0))continue;
   const b=d.bank.beneficiaries.get(id)||{},code=String(b.matricule||"").trim();
-  if(!code||matricules.has(code)||!validIban(b.iban)||!validBic(b.bic)||!(/^[A-Z]{2}$/.test(String(b.country||"").toUpperCase()))||compactIban(b.iban).slice(0,2)!==String(b.country||"").toUpperCase())return "Vérifiez les coordonnées et les matricules de tous les bénéficiaires à payer.";
+  if(!code||matricules.has(code)||!validIban(b.iban)||!validBic(b.bic)||!(/^[A-Z]{2}$/.test(String(b.country||"").toUpperCase()))||String(b.country||"").length!==2)return "Vérifiez les coordonnées et les matricules de tous les bénéficiaires à payer.";
   matricules.add(code);
  }
  return "";
 }
 function bankInput(value,key,label,max,id){
- return '<input autocomplete="off" '+(key==="date"?'type="date"':'type="text" maxlength="'+max+'"')+' aria-label="'+esc(label)+'" '+(id?'data-bank-person="'+esc(id)+'"':'data-bank-issuer="1"')+' data-bank-key="'+key+'" '+(id&&["iban","bic","country"].includes(key)?'readonly ':'')+'value="'+esc(value||"")+'">';
+ return '<input autocomplete="off" '+(key==="date"?'type="date"':'type="text" maxlength="'+max+'"')+' aria-label="'+esc(label)+'" '+(id?'data-bank-person="'+esc(id)+'"':'data-bank-issuer="1"')+' data-bank-key="'+key+'" '+(id&&["iban","bic"].includes(key)?'readonly ':'')+'value="'+esc(value||"")+'">';
 }
 function bankHtml(d){
  const i=d.bank.issuer,people=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr"));
@@ -178,7 +178,7 @@ function bankHtml(d){
   const b=d.bank.beneficiaries.get(id)||{};
   return '<tr><th scope="row">'+esc(staffName(id))+'</th><td data-bank-amount="'+esc(id)+'">'+ (cents(value)===null?"—":esc(money(cents(value))))+'</td>'+beneficiaryFields.map(([key,label,max])=>'<td>'+bankInput(b[key],key,label+" — "+staffName(id),max,id)+'</td>').join("")+'</tr>';
  }).join("");
- return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">IBAN et BIC récupérés depuis les fiches salariés. Modifiez-les dans Liste salariés ; les autres champs du bordereau restent dans le brouillon. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><button type="button" class="btn secondary" id="salaryBankReload">Actualiser les RIB des salariés</button><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><button id="salaryBankPrint" type="button" class="btn primary" disabled>Imprimer / enregistrer le bordereau PDF</button><p class="muted">Bordereau préparatoire, pas un fichier d’ordre SEPA. Aucun paiement n’est déclenché.</p></section>';
+ return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">IBAN et BIC récupérés depuis les fiches salariés. Modifiez-les dans Liste salariés ; les autres champs du bordereau restent dans le brouillon. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><button type="button" class="btn secondary" id="salaryBankReload">Actualiser les RIB des salariés</button><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><div class="actions"><button id="salaryBankPrint" type="button" class="btn secondary" disabled>Imprimer le bordereau PDF</button><button id="salaryBankXml" type="button" class="btn primary" disabled>Télécharger le XML SEPA bancaire</button></div><p class="muted">Format du classeur fourni : pain.001.001.03 (historique). Vérifiez auprès de la banque qu’elle accepte cette version avant import. Le fichier est généré uniquement dans le navigateur, jamais transmis automatiquement. Le virement nécessite une validation séparée dans la banque.</p></section>';
 }
 function bankSignature(d){
  return JSON.stringify([...d.payments.keys()].sort().map(id=>[id,context.staff.find(s=>s.id===id)?.bank_summary?.version??0]));
@@ -188,7 +188,7 @@ function mergeSavedBanks(d,banks){
  let changed=false;
  for(const id of d.payments.keys()){
   const before=d.bank.beneficiaries.get(id)||{},record=byId.get(id);
-  const after={...before,iban:record?.iban||"",bic:record?.bic||"",country:record?.iban?.slice(0,2)||""};
+  const after={...before,iban:record?.iban||"",bic:record?.bic||"",country:before.country||record?.iban?.slice(0,2)||""};
   if(["iban","bic","country"].some(k=>String(before[k]||"")!==after[k]))changed=true;
   d.bank.beneficiaries.set(id,after);
  }
@@ -196,7 +196,7 @@ function mergeSavedBanks(d,banks){
  return changed;
 }
 function bankDraftEntries(d){
- return [...d.bank.beneficiaries].map(([id,b])=>[id,{matricule:b.matricule||"",comment:b.comment||""}]);
+ return [...d.bank.beneficiaries].map(([id,b])=>[id,{matricule:b.matricule||"",country:b.country||"",postcode:b.postcode||"",city:b.city||"",address:b.address||"",comment:b.comment||""}]);
 }
 async function loadSavedBanks(d,force=false){
  if(!permissionsValid()||activeView!=="pay"||d.bankLoading)return;
@@ -271,7 +271,7 @@ function restoreBank(raw,staffIds){
  bank.issuer=copy(raw.issuer,issuerFields);
  for(const row of raw.beneficiaries){
   if(!Array.isArray(row)||row.length!==2||!staffIds.has(row[0])||bank.beneficiaries.has(row[0]))throw Error("Bénéficiaire du brouillon invalide.");
-  bank.beneficiaries.set(row[0],copy(row[1],beneficiaryFields.filter(([key])=>["matricule","comment"].includes(key))));
+  bank.beneficiaries.set(row[0],copy(row[1],beneficiaryFields.filter(([key])=>["matricule","country","postcode","city","address","comment"].includes(key))));
  }
  return bank;
 }
@@ -406,6 +406,7 @@ function refresh(){
  if(el("salaryBankReload"))el("salaryBankReload").disabled=d.bankLoading;
  if(el("salaryBankConfirm")){el("salaryBankConfirm").checked=d.bankConfirmed;el("salaryBankConfirm").disabled=!!bankError||!d.payConfirmed||unknown}
  if(el("salaryBankPrint"))el("salaryBankPrint").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown;
+ if(el("salaryBankXml"))el("salaryBankXml").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown||!payReady;
 }
 function wire(host,d){
  const el=id=>document.getElementById(id);
@@ -437,13 +438,14 @@ function wire(host,d){
  host.querySelectorAll("[data-bank-key]").forEach(input=>input.addEventListener("input",()=>{
   if(!permissionsValid())return;
   const id=input.dataset.bankPerson,key=input.dataset.bankKey;
-  if(id){if(["iban","bic","country"].includes(key))return;const b=d.bank.beneficiaries.get(id)||{};b[key]=input.value;d.bank.beneficiaries.set(id,b)}
+  if(id){if(["iban","bic"].includes(key))return;const b=d.bank.beneficiaries.get(id)||{};b[key]=input.value;d.bank.beneficiaries.set(id,b)}
   else d.bank.issuer[key]=input.value;
   d.bankConfirmed=false;d.dirty=true;refresh();
  }));
  el("salaryBankReload")?.addEventListener("click",()=>void loadSavedBanks(d,true));
  el("salaryBankConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.bankConfirmed=e.target.checked;refresh()}});
  el("salaryBankPrint")?.addEventListener("click",()=>void printBank(d));
+ el("salaryBankXml")?.addEventListener("click",()=>void exportSepa(d));
  host.querySelectorAll("[data-declaration-key]").forEach(input=>input.addEventListener("input",()=>{
   if(!permissionsValid())return;
   const id=input.dataset.declarationPerson,key=input.dataset.declarationKey;
