@@ -13,8 +13,8 @@ const fields=[
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const euro=value=>Number(value).toLocaleString("fr-FR",{style:"currency",currency:"EUR"});
 function moneyCents(value){
- const str=String(value??"").trim().replace(/[\\u00a0\\u202f ]/g,"").replace(",",".");
- if(!/^\\d{1,9}(?:\\.\\d{1,2})?$/.test(str))return null;
+ const str=String(value??"").trim().replace(/[\u00a0\u202f ]/g,"").replace(",",".");
+ if(!/^\d{1,9}(?:\.\d{1,2})?$/.test(str))return null;
  const [euros,cents=""]=str.split(".");
  return Number(euros)*100+Number(cents.padEnd(2,"0"));
 }
