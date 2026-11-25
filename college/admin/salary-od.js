@@ -97,7 +97,19 @@ const drafts=new Map();
 let session="",activeView="variables",context=null;
 function clear(){drafts.clear();session="";context=null;activeView="variables"}
 function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,bankSignature:"",bankLoading:false,bankError:"",dirty:false}}
-function draftFor(month){if(!drafts.has(month))drafts.set(month,blankDraft());return drafts.get(month)}
+function draftFor(month){
+ if(!drafts.has(month)){
+  const draft=blankDraft();
+  if(validMonth(month)){
+   draft.bank.issuer.name="COLLEGE PRIVE CHAMBERTIN SAS";
+   draft.bank.issuer.filename="Salaires "+month.slice(5)+"-"+month.slice(0,4);
+   const [year,m]=month.split("-").map(Number);
+   draft.bank.issuer.label="Salaire "+new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(year,m-1,1)));
+  }
+  drafts.set(month,draft);
+ }
+ return drafts.get(month);
+}
 function download(filename,content,type){
  const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -135,7 +147,7 @@ function payHtml(d){
  '<p class="muted">Liste préparatoire. Aucun paiement n’est émis depuis cette page.</p></section>'+bankHtml(d);
 }
 
-const issuerFields=Object.freeze([["name","Nom émetteur",140],["iban","IBAN émetteur",42],["bic","BIC émetteur",11],["number","Num émetteur",40],["date","Date d’exécution",10],["filename","Nom du fichier de sortie",100],["label","Libellé écriture",140]]);
+const issuerFields=Object.freeze([["name","Nom émetteur",70],["iban","IBAN émetteur",42],["bic","BIC émetteur",11],["number","Num émetteur",35],["date","Date d’exécution",10],["filename","Nom du fichier de sortie",100],["label","Libellé écriture",140]]);
 const beneficiaryFields=Object.freeze([["matricule","Matricule",35],["iban","IBAN",42],["bic","BIC",11],["country","Pays",2],["postcode","Code postal",16],["city","Ville",35],["address","Adresse",70],["comment","Commentaire",140]]);
 function compactIban(value){return String(value??"").replace(/\s/g,"").toUpperCase()}
 function validIban(value){
