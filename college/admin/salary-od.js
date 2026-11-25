@@ -97,7 +97,7 @@ const drafts=new Map(),remoteMonths=new Map();
 let session="",activeView="variables",context=null,remoteMonthList=[],remoteListLoading=false,remoteListLoaded=false;
 function clear(){drafts.clear();remoteMonths.clear();session="";context=null;activeView="variables";remoteMonthList=[];remoteListLoading=false;remoteListLoaded=false}
 function remoteFor(month){
- if(!remoteMonths.has(month))remoteMonths.set(month,{tried:false,loaded:false,loading:false,saving:false,version:0,status:"draft",updated_at:"",updated_by:"",bank_reference:"",history:[],error:""});
+ if(!remoteMonths.has(month))remoteMonths.set(month,{tried:false,loaded:false,loading:false,saving:false,version:0,status:"draft",updated_at:"",updated_by:"",bank_reference:"",export_info:{},history:[],error:""});
  return remoteMonths.get(month);
 }
 
@@ -475,7 +475,7 @@ async function workflowLoad(month,force=false){
    d.bankConfirmed=false;
   }
   state.version=row?.version||0;state.status=row?.status||"draft";state.updated_at=row?.updated_at||"";
-  state.updated_by=row?.updated_by||"";state.bank_reference=row?.bank_reference||"";
+  state.updated_by=row?.updated_by||"";state.bank_reference=row?.bank_reference||"";state.export_info=row?.export_info||{};
   state.history=reply.history||[];state.loaded=true;
  }catch(e){if(owner===session)state.error=String(e.message||"Chargement indisponible.")}
  finally{state.loading=false;if(owner===session&&context?.month===month&&salaryPageVisible())render()}
@@ -506,7 +506,7 @@ async function workflowStatus(action,details={}){
   if(owner!==session||context?.month!==month)return false;
   state.version=response.record.version;state.status=response.record.status;
   state.updated_at=response.record.updated_at;state.updated_by=response.record.updated_by;
-  state.bank_reference=response.record.bank_reference||"";state.history=response.history||[];
+  state.bank_reference=response.record.bank_reference||"";state.export_info=response.record.export_info||{};state.history=response.history||[];
   if(action==="draft"){
    const d=getDraft();d.payConfirmed=false;d.odConfirmed=false;d.bankConfirmed=false;d.sepaExport=null;d.bankSignature="";
   }else getDraft().dirty=false;
@@ -522,7 +522,8 @@ function workflowPanel(){
  const summary=state.loaded?'<strong>'+esc(workflowNames[state.status]||state.status)+'</strong> · version '+state.version+
   (state.updated_at?' · Enregistré le '+esc(new Date(state.updated_at).toLocaleString("fr-FR")):'')+
   (state.updated_by?' par '+esc(state.updated_by):'')+
-  (state.bank_reference?' · Référence banque : '+esc(state.bank_reference):''):
+  (state.bank_reference?' · Référence banque : '+esc(state.bank_reference):'')+
+  (state.export_info?.filename?' · XML : '+esc(state.export_info.filename):''):
   state.loading?'Chargement du dossier serveur…':'Dossier non chargé depuis le serveur.';
  const entries=(state.history||[]).map(x=>'<li>'+esc(new Date(x.created_at).toLocaleString("fr-FR"))+' · '+esc(x.actor)+' · '+esc(workflowNames[x.new_status]||x.new_status)+
   (x.note?' · '+esc(x.note):'')+'</li>').join("");
@@ -539,7 +540,7 @@ function workflowPanel(){
   '</div>'+
   (options?'<label class="salary-od-inline">Dossiers précédents <select id="salaryWorkflowMonths"><option value="">Choisir un mois</option>'+options+'</select></label>':'')+
   '<details><summary>Historique des modifications et des validations ('+state.history.length+')</summary><ul>'+(entries||'<li>Aucune activité enregistrée</li>')+'</ul></details>'+
-  '<p class="muted">La génération du XML ne transmet aucun virement. La remise et l’exécution sont à confirmer manuellement après vérification sur le portail bancaire.</p>';
+  '<p class="muted">Les RIB du tableau sont ceux actuellement enregistrés : ils peuvent avoir changé depuis un export antérieur. L’empreinte du XML est conservée dans le suivi mais aucun ordre n’est transmis à la banque. La remise et l’exécution doivent être confirmées séparément.</p>';
 }
 function workflowWire(){
  const scope=document.getElementById("salaryWorkflowPanel");
