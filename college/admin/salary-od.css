@@ -42,3 +42,13 @@
 .salary-declaration-wide{grid-column:span 2}
 .salary-doc-fields textarea{width:100%;font:inherit;padding:8px;border:1px solid #b5c9db;border-radius:7px}
 @media(max-width:620px){.salary-declaration-wide{grid-column:1/-1}}
+
+.salary-bank-cell{min-width:150px;display:table-cell}
+.salary-bank-cell>span,.salary-bank-cell>small{display:block;margin-bottom:5px}
+.salary-bank-mask{font-variant-numeric:tabular-nums;letter-spacing:.04em;font-weight:650}
+.salary-bank-dialog{width:min(620px,94vw);padding:22px;border:1px solid #c3d2df;border-radius:12px;background:#fff;color:#1d3448}
+.salary-bank-dialog::backdrop{background:#172b3d99}
+.salary-bank-dialog h2{margin-top:0;font-size:20px}
+.salary-bank-dialog .salary-doc-fields{grid-template-columns:1fr}
+.salary-bank-dialog input:not([type=checkbox]){font-family:monospace}
+.salary-bank-table input[readonly]{background:#f1f5f8;color:#334a60}
