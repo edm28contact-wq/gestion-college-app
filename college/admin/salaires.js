@@ -946,7 +946,8 @@ function salaryAccountingPage(){
   '<div class="table"><table><thead><tr><th>Date</th><th>Salarié</th><th>Type</th><th>Durée renseignée</th><th>Prise en compte</th><th>Statut</th><th>Justificatif</th></tr></thead>'+
   (eventsHtml||'<tbody><tr><td colspan="7">Aucun événement enregistré pour la sélection.</td></tr></tbody>')+
   '</table></div></details>';
- $('content').innerHTML=controls+cardHtml+'<section class="card" role="status">'+status+'</section>'+table+detail;
+ $('content').innerHTML=controls+'<div id="salaryPayrollNavigation"></div><div id="salaryPayrollWorkArea" hidden></div><div id="salaryVariableSection">'+cardHtml+'<section class="card" role="status">'+status+'</section>'+table+detail+'</div>';
+ if(typeof salaryOdMount==="function")salaryOdMount({month,staff:staffAvailable?salaryStaff:[],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token});
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
  $('salaryAccountingEmployee')?.addEventListener('change',e=>{salaryAccountingEmployeeId=e.target.value;salaryAccountingPage()});
  $('salaryAccountingRefresh')?.addEventListener('click',()=>{
