@@ -95,7 +95,8 @@ function findPayPeriod(lines,filename=""){
  for(let i=0;i<Math.min(lines.length,130);i++){
   const line=cleanText(lines[i]);
   const next=cleanText(lines[i+1]||"");
-  const period=/\b(?:PERIODE|MOIS\s+DE\s+PAIE|MOIS\s+CONCERNE|MOIS|PAIE\s+(?:DE|DU|D'|:)|REMUNERATION)\b/.test(line);
+  const period=/\b(?:PERIODE|MOIS\s+DE\s+PAIE|MOIS\s+CONCERNE|MOIS|PAIE\s+(?:DE|DU|D'|:)|REMUNERATION)\b/.test(line)||
+   /\bBULLETIN\s+DE\s+PAIE\s+(?:0?[1-9]|1[0-2])[\/.-]20\d{2}\b/.test(line);
   const labelOnly=/^(?:PERIODE(?:\s+DE\s+PAIE)?|MOIS(?:\s+DE\s+PAIE)?|PAIE)\s*[:\-]?$/.test(line);
   const range=/\bDU\s+(?:0?[1-9]|[12]\d|3[01])[\/.-](0?[1-9]|1[0-2])[\/.-](20\d{2})\s+(?:AU|A)\s+(?:0?[1-9]|[12]\d|3[01])[\/.-](0?[1-9]|1[0-2])[\/.-](20\d{2})\b/.test(line);
   const standalone=/^(?:BULLETIN\s+DE\s+PAIE\s+)?(?:JANVIER|FEVRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AOUT|SEPTEMBRE|OCTOBRE|NOVEMBRE|DECEMBRE)\s+20\d{2}$/.test(line);
