@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Cours Chambertin</title>
-<link rel="stylesheet" href="./veryfi.css?v=17-statut-couleurs-classiques">
-<script defer src="./veryfi.js?v=54-chambertin"></script>
+<link rel="stylesheet" href="./veryfi.css?v=55-manual-product-archive">
+<script defer src="./veryfi.js?v=55-manual-product-archive"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=20261123-stable-1">
 <style>
 html.secretariat-embedded{background:transparent}
@@ -100,6 +100,7 @@ html.secretariat-embedded{background:transparent}
         <label class="field"><span>TVA du PDF</span><input id="tax" inputmode="decimal"></label>
         <label class="field"><span>Total TTC du PDF</span><input id="total" inputmode="decimal"></label>
       </div>
+      <p id="manualArchiveName" class="hint" role="status" aria-live="polite" hidden></p>
       <div id="fieldScores" class="subtle" aria-live="polite"></div>
 <div id="vatActionRequired" class="vat-action-required" role="region" aria-label="TVA manquante : action nécessaire" hidden><strong>Action nécessaire pour débloquer les lignes vertes</strong><p id="vatActionText"></p><button id="applyVatBanner" type="button" class="btn primary">Confirmer la TVA et recalculer les lignes</button></div>
       <p id="headerRepairNote" class="hint" role="status" aria-live="polite" hidden></p>
@@ -144,6 +145,27 @@ html.secretariat-embedded{background:transparent}
 </div>
 <footer>Veryfi extrait les données. Le rapprochement et l’enregistrement restent soumis aux contrôles du Cours Chambertin.</footer>
 </main>
+<dialog id="manualProductDialog" class="manual-product-dialog" aria-labelledby="manualProductTitle">
+ <h2 id="manualProductTitle">Créer un produit du catalogue</h2>
+ <p class="subtle">Le produit est créé avec un stock initial de zéro. La quantité facturée sera ajoutée uniquement après validation de la facture.</p>
+ <form id="manualProductForm">
+  <div class="fields">
+   <label class="field field-wide"><span>Désignation</span><input name="name" maxlength="200" required></label>
+   <label class="field"><span>Code / référence</span><input name="code" maxlength="100" required></label>
+   <label class="field"><span>Catégorie</span><select name="category_id" required></select></label>
+   <label class="field"><span>Unité facturée</span><input name="unit" maxlength="120" required placeholder="Ex. carton"></label>
+   <label class="field"><span>Conditionnement d’achat</span><input name="conditionnement" maxlength="160" required placeholder="Ex. carton de 12 bouteilles"></label>
+   <label class="field"><span>Unité de stock</span><input name="inventory_unit_label" maxlength="120" required placeholder="Ex. bouteille"></label>
+   <label class="field"><span>1 acheté = X en stock</span><input name="purchase_to_stock_factor" type="number" min="0.000001" max="1000000" step="any" required></label>
+   <label class="field"><span>Comptabilisation du stock</span><select name="stock_count_mode"><option value="unit">Unités</option><option value="litre">Litres</option></select></label>
+   <label class="field"><span>Prix unitaire HT</span><input name="unit_price" type="number" min="0" step="any" value="0"></label>
+   <label class="field"><span>Stock minimum</span><input name="min_stock" type="number" min="0" step="any" value="0"></label>
+   <label class="field"><span>Stock cible</span><input name="target_stock" type="number" min="0" step="any" value="0"></label>
+  </div>
+  <p id="manualProductStatus" class="subtle" role="status" aria-live="polite"></p>
+  <div class="buttons"><button id="manualProductSave" class="btn primary" type="submit">Créer et associer</button><button id="manualProductCancel" class="btn secondary" type="button">Annuler</button></div>
+ </form>
+</dialog>
 <dialog id="pdfCompare" class="pdf-compare" aria-labelledby="pdfCompareTitle">
  <div class="pdf-compare-header">
   <div><h2 id="pdfCompareTitle">Comparer avec la facture</h2><p id="pdfComparePage" class="subtle"></p></div>
