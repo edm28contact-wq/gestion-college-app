@@ -422,6 +422,157 @@ function restoreDraft(raw,month,staffIds,defaultIds){
  d.dirty=true;
  return d;
 }
+
+const workflowNames={draft:"Brouillon",exported:"XML généré",submitted:"Remis à la banque",paid:"Virement confirmé",rejected:"Refusé par la banque"};
+function workflowEditable(){return permissionsValid()&&remoteFor(context.month).loaded&&remoteFor(context.month).status==="draft"&&!remoteFor(context.month).saving&&!remoteFor(context.month).loading}
+function workflowDraft(d){
+ return {version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,
+  bank:{issuer:d.bank.issuer,beneficiaries:bankDraftEntries(d)},declarations:[...d.declarations]};
+}
+async function workflowList(force=false){
+ if(!window.ChambertinPayroll||!session||remoteListLoading||remoteListLoaded&&!force)return;
+ const owner=session;remoteListLoading=true;
+ try{
+  const response=await window.ChambertinPayroll.list(owner);
+  if(owner!==session)return;
+  remoteMonthList=response.months||[];remoteListLoaded=true;
+ }catch{if(owner===session)remoteListLoaded=false}
+ finally{remoteListLoading=false;if(owner===session&&salaryPageVisible())render()}
+}
+async function workflowLoad(month,force=false){
+ const state=remoteFor(month),service=window.ChambertinPayroll;
+ if(!service||!session||state.loading||state.saving||!validMonth(month))return;
+ if(!force&&state.tried)return;
+ const owner=session,staff=context?.staff||[],defaults=context?.defaultStaff||[],local=draftFor(month);
+ state.tried=true;state.loading=true;state.error="";
+ if(context?.month===month)render();
+ try{
+  const reply=await service.load(month,owner);
+  if(owner!==session)return;
+  if(local.dirty&&!force){
+   state.error="Une saisie locale non enregistrée existe. Sauvegardez-la en fichier privé, puis utilisez « Recharger » pour reprendre le dossier en ligne.";
+   return;
+  }
+  const row=reply.record;
+  if(row){
+   const restored=restoreDraft(row.draft,month,new Set(staff.map(x=>x.id)),defaults.map(x=>x.id));
+   restored.dirty=false;
+   drafts.set(month,restored);
+  }else if(!local.dirty){
+   const defaultBank=reply.defaults||{};
+   const d=draftFor(month);
+   d.bank.issuer={...d.bank.issuer,...(defaultBank.issuer||{}),date:""};
+   for(const [id,details] of defaultBank.beneficiaries||[])
+    if(staff.some(x=>x.id===id))d.bank.beneficiaries.set(id,{...details,comment:""});
+   d.bankConfirmed=false;
+  }
+  state.version=row?.version||0;state.status=row?.status||"draft";state.updated_at=row?.updated_at||"";
+  state.updated_by=row?.updated_by||"";state.bank_reference=row?.bank_reference||"";
+  state.history=reply.history||[];state.loaded=true;
+ }catch(e){if(owner===session)state.error=String(e.message||"Chargement indisponible.")}
+ finally{state.loading=false;if(owner===session&&context?.month===month&&salaryPageVisible())render()}
+}
+async function workflowSave(d,quiet=false){
+ if(!permissionsValid()||!d||getDraft()!==d||!workflowEditable())return false;
+ const state=remoteFor(context.month),owner=session,month=context.month;
+ const payload=workflowDraft(d),snapshot=JSON.stringify(payload);
+ state.saving=true;state.error="";
+ if(!quiet)render();
+ try{
+  const reply=await window.ChambertinPayroll.save(month,owner,state.version,payload);
+  if(owner!==session)return false;
+  state.version=reply.record.version;state.status=reply.record.status;
+  state.updated_at=reply.record.updated_at;state.updated_by=reply.record.updated_by;
+  if(JSON.stringify(workflowDraft(d))===snapshot)d.dirty=false;
+  void workflowList(true);
+  return true;
+ }catch(e){if(owner===session)state.error=String(e.message||"Enregistrement non confirmé.");return false}
+ finally{state.saving=false;if(owner===session&&context?.month===month&&salaryPageVisible())render()}
+}
+async function workflowStatus(action,details={}){
+ const month=context?.month,owner=session,state=month?remoteFor(month):null;
+ if(!state?.loaded||state.loading||state.saving||!permissionsValid())return false;
+ state.saving=true;state.error="";render();
+ try{
+  const response=await window.ChambertinPayroll.status(month,owner,state.version,action,details);
+  if(owner!==session||context?.month!==month)return false;
+  state.version=response.record.version;state.status=response.record.status;
+  state.updated_at=response.record.updated_at;state.updated_by=response.record.updated_by;
+  state.bank_reference=response.record.bank_reference||"";state.history=response.history||[];
+  if(action==="draft"){
+   const d=getDraft();d.payConfirmed=false;d.odConfirmed=false;d.bankConfirmed=false;d.sepaExport=null;d.bankSignature="";
+  }else getDraft().dirty=false;
+  void workflowList(true);
+  return true;
+ }catch(e){if(owner===session)state.error=String(e.message||"Changement de statut non confirmé.");return false}
+ finally{state.saving=false;if(owner===session&&context?.month===month&&salaryPageVisible())render()}
+}
+function workflowPanel(){
+ if(!context?.ready||!context?.canWrite)return '<p class="muted">Le dossier de paie en ligne nécessite les droits de modification Salaires.</p>';
+ const month=context.month,state=remoteFor(month),busy=state.loading||state.saving;
+ const options=remoteMonthList.map(x=>'<option value="'+esc(x.month)+'">'+esc(x.month)+" — "+esc(workflowNames[x.status]||x.status)+'</option>').join("");
+ const summary=state.loaded?'<strong>'+esc(workflowNames[state.status]||state.status)+'</strong> · version '+state.version+
+  (state.updated_at?' · Enregistré le '+esc(new Date(state.updated_at).toLocaleString("fr-FR")):'')+
+  (state.updated_by?' par '+esc(state.updated_by):'')+
+  (state.bank_reference?' · Référence banque : '+esc(state.bank_reference):''):
+  state.loading?'Chargement du dossier serveur…':'Dossier non chargé depuis le serveur.';
+ const entries=(state.history||[]).map(x=>'<li>'+esc(new Date(x.created_at).toLocaleString("fr-FR"))+' · '+esc(x.actor)+' · '+esc(workflowNames[x.new_status]||x.new_status)+
+  (x.note?' · '+esc(x.note):'')+'</li>').join("");
+ return '<div class="salary-od-heading"><div><h3>Dossier mensuel en ligne</h3><p class="muted">Mois '+esc(month)+' · Enregistrement sécurisé et historique des étapes bancaires</p></div></div>'+
+  '<p role="status">'+summary+'</p>'+
+  (state.error?'<p class="err" role="alert">'+esc(state.error)+'</p>':'')+
+  '<div class="actions">'+
+  '<button type="button" class="btn primary" id="salaryWorkflowSave" '+(!state.loaded||busy||state.status!=="draft"?'disabled':'')+'>Enregistrer le mois</button>'+
+  '<button type="button" class="btn secondary" id="salaryWorkflowReload" '+(busy?'disabled':'')+'>Recharger le dossier</button>'+
+  (state.status==="exported"?'<button type="button" class="btn secondary" id="salaryWorkflowSubmit" '+(busy?'disabled':'')+'>Marquer remis à la banque</button>':'')+
+  (state.status==="submitted"?'<button type="button" class="btn primary" id="salaryWorkflowPaid" '+(busy?'disabled':'')+'>Confirmer le virement exécuté</button>':'')+
+  (["submitted","exported"].includes(state.status)?'<button type="button" class="btn secondary" id="salaryWorkflowReject" '+(busy?'disabled':'')+'>Signaler un rejet</button>':'')+
+  (["exported","rejected"].includes(state.status)?'<button type="button" class="btn secondary" id="salaryWorkflowReopen" '+(busy?'disabled':'')+'>Corriger le dossier</button>':'')+
+  '</div>'+
+  (options?'<label class="salary-od-inline">Dossiers précédents <select id="salaryWorkflowMonths"><option value="">Choisir un mois</option>'+options+'</select></label>':'')+
+  '<details><summary>Historique des modifications et des validations ('+state.history.length+')</summary><ul>'+(entries||'<li>Aucune activité enregistrée</li>')+'</ul></details>'+
+  '<p class="muted">La génération du XML ne transmet aucun virement. La remise et l’exécution sont à confirmer manuellement après vérification sur le portail bancaire.</p>';
+}
+function workflowWire(){
+ const scope=document.getElementById("salaryWorkflowPanel");
+ if(!scope)return;
+ scope.querySelector("#salaryWorkflowSave")?.addEventListener("click",()=>void workflowSave(getDraft()));
+ scope.querySelector("#salaryWorkflowReload")?.addEventListener("click",()=>{
+  const d=getDraft();
+  if(d.dirty&&!confirm("Des modifications locales ne sont pas enregistrées. Les écraser par le dossier en ligne ?"))return;
+  const state=remoteFor(context.month);state.tried=false;void workflowLoad(context.month,true);
+ });
+ scope.querySelector("#salaryWorkflowMonths")?.addEventListener("change",e=>{
+  if(validMonth(e.target.value)&&!getDraft().dirty)salarySelectMonth(e.target.value);
+  else if(e.target.value)alert("Enregistrez ou sauvegardez le brouillon avant de changer de mois.");
+ });
+ scope.querySelector("#salaryWorkflowSubmit")?.addEventListener("click",()=>{
+  const reference=prompt("Référence du dépôt bancaire (obligatoire) :");
+  if(reference&&reference.trim().length>=4&&confirm("Confirmer que le fichier SEPA a réellement été déposé sur le portail bancaire ?"))
+   void workflowStatus("submitted",{reference:reference.trim()});
+ });
+ scope.querySelector("#salaryWorkflowPaid")?.addEventListener("click",()=>{
+  const note=prompt("Inscrivez la date et le justificatif bancaire d’exécution (10 caractères minimum) :");
+  if(note&&note.trim().length>=10&&confirm("Le virement est-il effectivement exécuté et confirmé par la banque ?"))
+   void workflowStatus("paid",{note:note.trim()});
+ });
+ scope.querySelector("#salaryWorkflowReject")?.addEventListener("click",()=>{
+  const note=prompt("Motif du rejet bancaire (10 caractères minimum) :");
+  if(note&&note.trim().length>=10&&confirm("Confirmer le rejet signalé par la banque ?"))void workflowStatus("rejected",{note:note.trim()});
+ });
+ scope.querySelector("#salaryWorkflowReopen")?.addEventListener("click",()=>{
+  const note=prompt("Justifiez la réouverture du dossier (10 caractères minimum) :");
+  if(note&&note.trim().length>=10&&confirm("Attention : l’ancien fichier SEPA ne doit pas être réimporté. Rouvrir le dossier ?"))
+   void workflowStatus("draft",{note:note.trim()});
+ });
+}
+function workflowReadOnly(){
+ if(!context?.month||remoteFor(context.month).status==="draft"&&remoteFor(context.month).loaded)return;
+ const host=document.getElementById("salaryPayrollWorkArea");
+ if(!host||host.hidden)return;
+ for(const input of host.querySelectorAll("input,textarea,select,button"))input.disabled=true;
+}
+
 function render(){
  const host=document.getElementById("salaryPayrollWorkArea"),variables=document.getElementById("salaryVariableSection");
  if(!host||!variables||!context)return;
