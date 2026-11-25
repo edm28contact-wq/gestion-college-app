@@ -947,7 +947,18 @@ function salaryAccountingPage(){
   (eventsHtml||'<tbody><tr><td colspan="7">Aucun événement enregistré pour la sélection.</td></tr></tbody>')+
   '</table></div></details>';
  $('content').innerHTML=controls+'<div id="salaryPayrollNavigation"></div><div id="salaryPayrollWorkArea" hidden></div><div id="salaryVariableSection">'+cardHtml+'<section class="card" role="status">'+status+'</section>'+table+detail+'</div>';
- if(typeof salaryOdMount==="function")salaryOdMount({month,staff:staffAvailable?salaryStaff:[],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token});
+ if(typeof salaryOdMount==="function"){
+  const declarationStaff=ready?staffList.map(staff=>{
+   const r=salaryAccountingMetrics(staff,month),role=salaryRoleLabel(staff.professional_role_id);
+   const source=["Jours prévus : "+(r.plannedDays===null?"à vérifier":salaryAccountingMetricFormat(r.plannedDays)),
+    "Heures théoriques : "+(r.plannedMinutes===null?"à vérifier":salaryFormatLate(r.plannedMinutes)),
+    "Temps non effectué : "+(r.absenceMinutes===null?"à vérifier":salaryFormatLate(r.absenceMinutes)),
+    "Avantages en nature : "+(r.benefits.total===null?"à vérifier":salaryAccountingMoney(r.benefits.total)),
+    r.pending+" événement(s) de durée à vérifier"].join(" · ");
+   return {id:staff.id,name:staff.name,roleLabel:role==="Non attribué"?"":role,source};
+  }):[];
+  salaryOdMount({month,staff:staffAvailable?salaryStaff:[],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token,declarationStaff});
+ }
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
  $('salaryAccountingEmployee')?.addEventListener('change',e=>{salaryAccountingEmployeeId=e.target.value;salaryAccountingPage()});
  $('salaryAccountingRefresh')?.addEventListener('click',()=>{
