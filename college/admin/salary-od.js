@@ -93,9 +93,14 @@ function reconcilePayments(d){
  const justified=difference!==null&&difference!==0&&d.reconciliation?.difference===difference&&String(d.reconciliation.reason||"").trim().length>=10;
  return {p,account,difference,justified,ok:difference!==null&&(difference===0||justified)};
 }
-const drafts=new Map();
-let session="",activeView="variables",context=null;
-function clear(){drafts.clear();session="";context=null;activeView="variables"}
+const drafts=new Map(),remoteMonths=new Map();
+let session="",activeView="variables",context=null,remoteMonthList=[],remoteListLoading=false,remoteListLoaded=false;
+function clear(){drafts.clear();remoteMonths.clear();session="";context=null;activeView="variables";remoteMonthList=[];remoteListLoading=false;remoteListLoaded=false}
+function remoteFor(month){
+ if(!remoteMonths.has(month))remoteMonths.set(month,{tried:false,loaded:false,loading:false,saving:false,version:0,status:"draft",updated_at:"",updated_by:"",bank_reference:"",history:[],error:""});
+ return remoteMonths.get(month);
+}
+
 function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,bankSignature:"",bankLoading:false,bankError:"",dirty:false}}
 function draftFor(month){
  if(!drafts.has(month)){
@@ -120,7 +125,7 @@ function staffName(id){return context.staff.find(s=>s.id===id)?.name||"Salarié 
 function getDraft(){return draftFor(context.month)}
 function field(value,attrs,label){return '<input type="text" inputmode="decimal" autocomplete="off" maxlength="16" placeholder="0,00" aria-label="'+esc(label)+'" '+attrs+' value="'+esc(value??"")+'">'}
 function draftTools(){
- return '<div class="salary-od-draft"><span>Brouillon de session · sauvegardez un fichier privé pour reprendre plus tard.</span><div class="actions"><button type="button" class="btn secondary compact" id="salaryOdBackup">Sauvegarder le brouillon</button><label class="btn secondary compact salary-od-file">Reprendre un brouillon<input type="file" id="salaryOdImport" accept=".json,application/json"></label></div><p class="muted">Ce fichier privé non chiffré peut contenir salaires, coordonnées bancaires et N° SS. Conservez-le uniquement dans un espace sécurisé.</p></div>';
+ return '<div class="salary-od-draft"><span>Sauvegarde en ligne dans le dossier mensuel sécurisé · une copie locale reste possible.</span><div class="actions"><button type="button" class="btn secondary compact" id="salaryOdBackup">Sauvegarder le brouillon</button><label class="btn secondary compact salary-od-file">Reprendre un brouillon<input type="file" id="salaryOdImport" accept=".json,application/json"></label></div><p class="muted">Ce fichier privé non chiffré peut contenir salaires, coordonnées bancaires et N° SS. Conservez-le uniquement dans un espace sécurisé.</p></div>';
 }
 function odHtml(d){
  const rows=lines.map(line=>(line.group?'<tr class="salary-od-group"><th colspan="4">'+esc(line.group)+'</th></tr>':'')+
