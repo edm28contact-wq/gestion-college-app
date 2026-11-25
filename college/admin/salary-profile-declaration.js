@@ -30,7 +30,7 @@ function summary(state){
  stat("Forfait Navigo",nav===null?"Non renseigné":euro(nav/100),"Déjà inclus dans le bulletin : ne pas ajouter au net")+
  stat("Champs renseignés",(fields.length-1-missing.length)+"/"+(fields.length-1),"Champs de déclaration, hors notes internes")+
  '</div><p class="muted">'+(missing.length?'À compléter ou confirmer : '+esc(missing.join(", "))+'.':'Tous les champs sont renseignés ; vérification humaine requise.')+
- '</p><p class="muted">Le net provient du montant validé du bulletin, pas d’une simulation automatique de cotisations. Aucun virement bancaire n’est déclenché ici.</p>';
+ '</p><p class="muted">Le net affiché provient du montant renseigné dans les virements : vérifiez-le avec le bulletin de paie. Il ne résulte pas d’une simulation des cotisations. Aucun virement bancaire n’est déclenché ici.</p>';
 }
 const states=new Map();
 let current="";
