@@ -68,9 +68,9 @@ function render(state){
  const root=state.opts.root;
  if(!root?.isConnected)return;
  const allowed=state.opts.editable();
- root.innerHTML='<div class="salary-od-heading"><div><h3>Importer les bulletins de paie (PDF)</h3><p class="muted">Les nets à payer après prélèvement à la source sont reportés automatiquement lorsque le salarié, la période et le montant sont reconnus sans ambiguïté.</p></div></div>'+
+ root.innerHTML='<div class="salary-od-heading"><div><h3>Importer les bulletins de paie (PDF)</h3><p class="muted">Le net à payer après prélèvement à la source est proposé pour chaque bulletin. Un montant certain est reporté seulement si le mois et le salarié sont confirmés dans le PDF ; sinon, choisissez et confirmez la proposition après lecture du bulletin.</p></div></div>'+
   '<label class="salary-payslip-file">Déposer plusieurs bulletins PDF <input id="salaryPayslipFiles" type="file" accept=".pdf,application/pdf" multiple></label>'+
-  '<p class="muted">Lecture dans ce navigateur, sans transmettre ni stocker les PDF. Maximum 30 fichiers, 12 Mo chacun. Un scan sans texte ou un montant douteux nécessite une vérification manuelle.</p>'+
+  '<p class="muted">Lecture uniquement dans ce navigateur, sans transmission des PDF. Maximum 30 fichiers, 12 Mo chacun. Le nom 2026-11 renseigne le mois provisoirement, mais ne remplace pas une vérification sur le bulletin. Si plusieurs nets sont détectés, sélectionnez celui après prélèvement à la source.</p>'+
   '<p id="salaryPayslipStatus" class="salary-od-status" role="status" aria-live="polite"></p>'+
   '<div class="table" id="salaryPayslipTable" hidden><table class="salary-od-table salary-payslip-table"><thead><tr><th>Bulletin</th><th>Salarié</th><th>Période</th><th>Net à payer</th><th>Résultat</th><th>Action</th></tr></thead><tbody id="salaryPayslipRows"></tbody></table></div>';
  const fileInput=root.querySelector("#salaryPayslipFiles");
