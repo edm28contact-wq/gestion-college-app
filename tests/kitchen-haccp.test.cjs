@@ -71,7 +71,10 @@ test("Cuisine : raccordement Govee identifiable et provenance des relevés prés
  const kitchen=read("cuisine/cuisine.js");
  assert.match(admin,/kitchenGoveeKey/);
  assert.match(admin,/govee-save-key/);
- assert.match(admin,/govee-discover/);
+ assert.match(admin,/api\("govee-test"\)/);
+ assert.match(admin,/goveeCards\(snapshot,goveeDiscovery\)/);
+ assert.match(admin,/e\(d\.device\)/);
+ assert.match(read("supabase/functions/kitchen-api/index.ts"),/devices:checked,discovered/);
  assert.match(admin,/govee-add-sensor/);
  assert.match(admin,/govee-sync/);
  assert.match(admin,/kitchenProbeRegister/);
@@ -148,8 +151,9 @@ test("Cuisine : chaque thermomètre Govee est affectable à une seule chambre",(
  const admin=read("college/admin/cuisine-admin.js");
  assert.match(admin,/data-govee-room/);
  assert.match(admin,/govee-reassign-sensor/);
- assert.match(admin,/other\.room_id===r\.id/);
- assert.match(admin,/r\.id===d\.room_id/);
+ assert.match(admin,/d\.device_identifier!==device&&d\.room_id===r\.id/);
+ assert.match(admin,/current\?\.room_id===r\.id/);
+ assert.match(read("supabase/functions/kitchen-api/index.ts"),/if\(occupant\.data\)return answer/);
  assert.match(admin,/data-govee-associate/);
 });
 test("Cuisine : exporter le suivi des tâches ménagères en PDF à une date choisie",()=>{

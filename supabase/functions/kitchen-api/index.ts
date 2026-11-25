@@ -405,7 +405,11 @@ if(action==="task-settings"&&req.method==="GET"){
   }
  };
  const checked=await Promise.all(relevant.slice(0,8).map(check));
- return answer({key_verified:true,devices:checked,matching_devices:relevant.length,checked_devices:checked.length,
+ const discovered=all.filter((d:any)=>validDeviceId(d.device)&&typeof d.sku==="string").map((d:any)=>({
+  device:d.device,sku:d.sku,label:String(d.deviceName||d.sku).slice(0,80),
+  temperature_capability:Array.isArray(d.capabilities)&&d.capabilities.some((cap:any)=>cap.instance==="sensorTemperature")
+ }));
+ return answer({key_verified:true,devices:checked,discovered,matching_devices:relevant.length,checked_devices:checked.length,
    account_devices:all.length,unit_confirmed:checked.some((d:any)=>d.raw_unit==="F"||d.raw_unit==="C")});
  }
  if(action==="govee-discover"&&req.method==="GET"){
@@ -643,13 +647,22 @@ if(action==="govee-add-sensor"){
  const devices=Array.isArray(discovered.data)?discovered.data:discovered.data?.devices;
  const matched=(Array.isArray(devices)?devices:[]).find((d:any)=>d.device===device&&d.sku===sku);
  if(!matched)return answer({error:"Capteur absent du compte Govee"},404);
- if(!matched.capabilities?.some((cap:any)=>cap.instance==="sensorTemperature"))
+ if(!Array.isArray(matched.capabilities)||!matched.capabilities.some((cap:any)=>cap.instance==="sensorTemperature"))
   return answer({error:"Ce capteur ne présente pas de mesure de température accessible dans l'API"},409);
+ const existing=await c.from("kitchen_connected_devices").select("id,label,status,room_id,raw_unit,model").eq("provider","govee").eq("device_identifier",device).maybeSingle();
+ if(existing.error)throw existing.error;
+ if(existing.data){
+  if(existing.data.room_id===roomId&&existing.data.raw_unit===unit&&existing.data.model===sku)return answer({sensor:existing.data,unchanged:true});
+  return answer({error:"Cette sonde est déjà enregistrée. Utilisez Modifier l’association sur sa fiche."},409);
+ }
+ const occupant=await c.from("kitchen_connected_devices").select("id").eq("provider","govee").eq("kind","cold_room").eq("room_id",roomId).maybeSingle();
+ if(occupant.error)throw occupant.error;
+ if(occupant.data)return answer({error:"Cette chambre possède déjà une sonde Govee. Choisissez une chambre libre."},409);
  const q=await c.from("kitchen_connected_devices").insert({
   kind:"cold_room",provider:"govee",label:String(matched.deviceName||sku).slice(0,80),
   model:sku,device_identifier:device,raw_unit:unit,room_id:roomId,status:"configured"
  }).select("id,label,status").single();
- if(q.error?.code==="23505")return answer({error:"Capteur ou chambre déjà associés"},409);
+ if(q.error?.code==="23505")return answer({error:"Association modifiée entre-temps. Actualisez les sondes et choisissez une chambre libre."},409);
  if(q.error)throw q.error;return answer({sensor:q.data},201);
  }
 
