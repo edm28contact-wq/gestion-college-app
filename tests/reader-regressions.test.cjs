@@ -608,3 +608,30 @@ test("Création manuelle : droits, anti-doublon et stock initial nul",()=>{
  assert.match(source,/manualMode&&!accounting&&!trainingMode&&!saved&&!row\.product_id/);
  assert.match(source,/action=save-product/);
 });
+
+test("V56 : le HT automatique suit les corrections de quantité et de prix sans écraser le HT saisi",()=>{
+ const ctx=vm.createContext({});
+ vm.runInContext('const amount=x=>String(x??"").trim()===""?null:Number(String(x).replace(",","."));const round=x=>Math.round((x+Number.EPSILON)*100)/100;'+functionSource("recalculateManualLineTotal")+";this.recalc=recalculateManualLineTotal",ctx);
+ const line={quantity:"2",unit_price:"3,50",total:""};
+ ctx.recalc(line,"unit_price");assert.equal(line.total,"7");
+ line.quantity="4";ctx.recalc(line,"quantity");assert.equal(line.total,"14");
+ line.unit_price="";ctx.recalc(line,"unit_price");assert.equal(line.total,"");
+ line.unit_price="2.25";ctx.recalc(line,"unit_price");assert.equal(line.total,"9");
+ line.total="8.95";ctx.recalc(line,"total");
+ line.quantity="8";ctx.recalc(line,"quantity");assert.equal(line.total,"8.95");
+ line.total="";ctx.recalc(line,"total");assert.equal(line.total,"18");
+ const old={quantity:"1",unit_price:"2",total:"3"};ctx.recalc(old,"quantity");assert.equal(old.total,"3");
+ assert.match(functionSource("changeRow"),/if\(manualMode\)recalculateManualLineTotal/);
+});
+test("V56 : téléchargement du scan renommé seulement lorsque les métadonnées sont valides",()=>{
+ const controls={manualArchiveName:{},manualArchiveDownload:{removeAttribute(key){delete this[key]}},invoiceDate:{value:"2026-11-25"},vendor:{value:"MÉTRO"},invoiceNumber:{value:"F-15"}};
+ const ctx=vm.createContext({manualMode:true,file:{name:"scan.pdf"},objectUrl:"blob:pdf-test",$:id=>controls[id]});
+ vm.runInContext(functionSource("invoiceArchiveName")+"\n"+functionSource("updateManualArchiveName")+";this.update=updateManualArchiveName;this.name=invoiceArchiveName",ctx);
+ ctx.update();assert.equal(controls.manualArchiveDownload.hidden,false);assert.equal(controls.manualArchiveDownload.download,"2026-11-25_METRO_F-15.pdf");assert.equal(controls.manualArchiveDownload.href,"blob:pdf-test");
+ controls.invoiceDate.value="2026-02-30";ctx.update();assert.equal(controls.manualArchiveDownload.hidden,true);assert.equal(controls.manualArchiveDownload.href,undefined);
+ controls.invoiceDate.value="2026-11-25";controls.vendor.value="";ctx.update();assert.equal(controls.manualArchiveDownload.hidden,true);
+ controls.vendor.value="METRO";ctx.file=null;ctx.update();assert.equal(controls.manualArchiveDownload.hidden,true);
+ ctx.file={name:"scan.pdf"};ctx.manualMode=false;ctx.update();assert.equal(controls.manualArchiveName.hidden,true);
+ assert.equal(ctx.name("scan.pdf","2026-02-30","METRO","F-15"),"scan.pdf");
+ assert.match(file("lecteur-veryfi/index.html"),/id="manualArchiveDownload"/);
+});

@@ -7,7 +7,7 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Lecteur Veryfi | Gestion Cours Chambertin</title>
 <link rel="stylesheet" href="./veryfi.css?v=55-manual-product-archive">
-<script defer src="./veryfi.js?v=55-manual-product-archive"></script>
+<script defer src="./veryfi.js?v=56-manual-total-archive"></script>
 <link rel="stylesheet" href="../college/workspace-layout.css?v=20261123-stable-1">
 <style>
 html.secretariat-embedded{background:transparent}
@@ -101,6 +101,7 @@ html.secretariat-embedded{background:transparent}
         <label class="field"><span>Total TTC du PDF</span><input id="total" inputmode="decimal"></label>
       </div>
       <p id="manualArchiveName" class="hint" role="status" aria-live="polite" hidden></p>
+      <a id="manualArchiveDownload" class="btn secondary small" hidden>Récupérer le PDF renommé</a>
       <div id="fieldScores" class="subtle" aria-live="polite"></div>
 <div id="vatActionRequired" class="vat-action-required" role="region" aria-label="TVA manquante : action nécessaire" hidden><strong>Action nécessaire pour débloquer les lignes vertes</strong><p id="vatActionText"></p><button id="applyVatBanner" type="button" class="btn primary">Confirmer la TVA et recalculer les lignes</button></div>
       <p id="headerRepairNote" class="hint" role="status" aria-live="polite" hidden></p>
@@ -108,7 +109,7 @@ html.secretariat-embedded{background:transparent}
       <p class="hint" id="vatNonRecoverableNote">TVA non récupérable : son taux par produit est facultatif pour la validation. Conservez les montants HT, TVA et TTC indiqués sur la facture ; le TTC constitue le montant payé.</p><div id="retainedAmounts" class="reconciliation" aria-live="polite"></div>
       <p id="greenOnlyInfo" class="subtle">Les montants de réception proviennent uniquement des produits verts validés. Les montants du PDF sont conservés pour contrôle et ne remplacent jamais ceux des produits retenus. Les corrections confirmées après vérification du PDF enrichissent le carnet d’apprentissage interne pour les prochaines factures.</p>
       <div class="section-heading">
-        <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF.</p></div>
+        <div><h3>Produits et prestations</h3><p class="subtle">Chaque ligne reste modifiable et doit être vérifiée sur le PDF. En saisie manuelle, le HT calculé suit la quantité et le prix ; un HT saisi explicitement reste inchangé.</p></div>
         <button id="addLine" type="button" class="btn secondary small">Ajouter une ligne</button>
       </div>
             <div class="triage-bar"><label for="issueFilter" class="triage-field"><span>Filtrer les lignes par cause</span>
