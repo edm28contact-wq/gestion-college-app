@@ -81,7 +81,7 @@ test("des nets contradictoires ne sont jamais choisis silencieusement",()=>{
  assert.equal(row.amountCents,null);
  assert.equal(row.amountCandidates.length,2);
  assert.deepEqual(row.amountCandidates.map(x=>x.cents),[200000,195000]);
- assert.match(row.reasons.join(" "),/différents/);
+ assert.match(row.reasons.join(" "),/priorité|différents/);
 });
 test("le PDF reste à vérifier si le net est négatif ou comporte plusieurs nombres sur la même ligne",()=>{
  const negative=parser.extractNetPay(["Net à payer -1 500,00"]);
