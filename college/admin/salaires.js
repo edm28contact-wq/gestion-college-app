@@ -1011,7 +1011,10 @@ function salaryAccountingPage(){
     "Temps non effectué : "+(r.absenceMinutes===null?"à vérifier":salaryFormatLate(r.absenceMinutes)),
     "Avantages en nature : "+(r.benefits.total===null?"à vérifier":salaryAccountingMoney(r.benefits.total)),
     r.pending+" événement(s) de durée à vérifier"].join(" · ");
-   return {id:staff.id,name:staff.name,roleLabel:role==="Non attribué"?"":role,source};
+   const roleLabel=role==="Non attribué"?"":role;
+   const known=window.ChambertinDeclarationKnown?.declarationKnown(staff,r,salaryAccountingEventsFor(staff,month),roleLabel);
+   return {id:staff.id,name:staff.name,roleLabel,source,
+    prefill:known?.prefill||{},evidence:known?.evidence||[],pending:known?.pending||0};
   }):[];
   salaryOdMount({month,staff:staffAvailable?salaryStaff:[],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token,declarationStaff});
  }

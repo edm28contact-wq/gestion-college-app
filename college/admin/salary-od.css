@@ -29,6 +29,11 @@
 #salaryPayrollWorkArea[hidden],#salaryVariableSection[hidden]{display:none!important}
 @media(max-width:650px){.salary-od-section{padding:13px}.salary-od-totals{grid-template-columns:1fr}.salary-od-nav>.btn{flex-basis:100%}.salary-od-totals strong{font-size:20px}}
 
+.salary-declaration-known{background:#f4f8fc;border:1px solid #d6e4ef;border-radius:10px;padding:12px 15px;margin:11px 0}
+.salary-declaration-known strong{font-size:13px;color:#23465f}
+.salary-declaration-known ul{margin:9px 0 0;padding-left:20px}
+.salary-declaration-known li{margin:6px 0;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.salary-declaration-known li strong{font-weight:650}
 .salary-od-reconcile-form,.salary-doc-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
 .salary-od-reconcile-form label,.salary-doc-fields label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:650}
 .salary-od-reconcile-form textarea,.salary-doc-fields input,.salary-bank-table input{width:100%;font:inherit;padding:8px;border:1px solid #b5c9db;border-radius:7px;background:#fff}

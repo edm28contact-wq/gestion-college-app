@@ -351,8 +351,23 @@ const declarationFields=Object.freeze([
  ["absencePay","Absences payées / non payées",1000],["comments","Commentaires pour le social",1000],["internal","Commentaires internes — non transmis",1000]
 ].map(Object.freeze));
 function declarationValues(d,staff){
- const row=d.declarations.get(staff.id)||{};
- return {...row,function:Object.hasOwn(row,"function")?row.function:staff.roleLabel||""};
+ const row=d.declarations.get(staff.id)||{},known=staff.prefill||{};
+ return {...known,...row,function:Object.hasOwn(row,"function")?row.function:known.function||staff.roleLabel||""};
+}
+function materializeKnownDeclaration(d,staff){
+ let changed=false;
+ for(const person of staff||[]){
+  const known=person.prefill||{},row={...(d.declarations.get(person.id)||{})};
+  let added=false;
+  for(const [key,,max] of declarationFields){
+   const value=known[key];
+   if(Object.hasOwn(row,key)||typeof value!=="string"||!value.trim()||value.length>max)continue;
+   row[key]=value;added=true;
+  }
+  if(added){d.declarations.set(person.id,row);changed=true}
+ }
+ if(changed){d.declarationConfirmed=false;d.dirty=true}
+ return changed;
 }
 function declarationData(d,staff){
  const rows=staff.map(s=>{
@@ -381,15 +396,22 @@ function declarationHtml(d){
  const staff=context.declarationStaff||[];
  const cards=staff.map(s=>{
   const row=declarationValues(d,s);
+  const evidence=(Array.isArray(s.evidence)?s.evidence:[]).filter(note=>typeof note?.label==="string"&&typeof note?.value==="string");
+  const knownHtml=evidence.map(note=>'<li><strong>'+esc(note.label)+'</strong> : '+esc(note.value)+'</li>').join("");
+  const missing=declarationFields.filter(([key])=>key!=="internal"&&!String(row[key]||"").trim()).length;
   const fields=declarationFields.map(([key,label,max])=>{
    const long=max>200,type=key==="start"||key==="end"?"date":"text";
    const attrs='data-declaration-person="'+esc(s.id)+'" data-declaration-key="'+key+'" autocomplete="off" aria-label="'+esc(label+" — "+s.name)+'" maxlength="'+max+'"';
    const input=long?'<textarea '+attrs+' rows="2">'+esc(row[key]||"")+'</textarea>':'<input '+attrs+' type="'+type+'" value="'+esc(row[key]||"")+'">';
    return '<label class="'+(long?"salary-declaration-wide":"")+'">'+esc(label)+input+'</label>';
   }).join("");
-  return '<details class="salary-declaration-person"><summary>'+esc(s.name)+' <span class="muted">'+esc(row.gross?row.gross+" € brut":"À renseigner")+'</span></summary><p class="muted salary-declaration-source">'+esc(s.source||"Éléments du planning indisponibles")+'</p><p class="muted">Ces informations sont des aides de contrôle ; les absences payées/non payées et montants restent à confirmer.</p><div class="salary-doc-fields">'+fields+'</div></details>';
+  return '<details class="salary-declaration-person"><summary>'+esc(s.name)+' <span class="muted">'+esc(row.gross?row.gross+" € brut":"À renseigner")+'</span></summary><p class="muted salary-declaration-source">'+esc(s.source||"Éléments du planning indisponibles")+'</p>'+
+  '<div class="salary-declaration-known"><strong>Informations récupérées de la fiche salarié et du planning</strong>'+
+  (knownHtml?'<ul>'+knownHtml+'</ul>':'<p>Aucune information supplémentaire disponible.</p>')+'</div>'+
+  '<p class="muted">'+missing+' champ(s) encore à renseigner ou à confirmer. Les horaires calculés ne sont pas une base contractuelle ; les événements non validés ne créent aucune retenue.</p>'+
+  '<div class="salary-doc-fields">'+fields+'</div></details>';
  }).join("");
- return '<section class="card salary-od-section"><h2>2. Déclaration des salaires — Gérance</h2><p class="muted">Tableau mensuel pour la réalisation des bulletins de salaires. Renseignez les informations contractuelles et les éléments variables validés ; les heures théoriques ne sont pas une base contractuelle de paie.</p><p class="muted">N° SS et commentaires internes : saisie confidentielle dans cette session. Ne renseignez le N° SS que si nécessaire au destinataire. Les commentaires internes ne figurent dans aucun export social.</p>'+cards+'<p class="salary-od-status" id="salaryDeclarationStatus" role="status"></p><label class="salary-od-confirm"><input id="salaryDeclarationConfirm" type="checkbox"> J’ai vérifié les données de déclaration et les éléments transmis au social.</label><div class="actions"><button id="salaryDeclarationCsv" class="btn primary" type="button" disabled>Exporter le tableau pour Excel (CSV)</button><button id="salaryDeclarationPrint" class="btn secondary" type="button" disabled>Imprimer / enregistrer en PDF</button></div><p class="muted">Export de préparation, non-déclaration automatique. Les informations non connues doivent être contrôlées sur les contrats et bulletins.</p></section>';
+ return '<section class="card salary-od-section"><h2>2. Déclaration des salaires — Gérance</h2><p class="muted">Données connues préremplies depuis les fiches salariés et le planning. Les valeurs déjà saisies sont conservées. Les contrats, salaires bruts, taux et cotisations absents du système ne sont pas inventés ; les heures théoriques ne constituent pas une base horaire contractuelle.</p><p class="muted">N° SS et commentaires internes : saisie confidentielle dans cette session. Ne renseignez le N° SS que si nécessaire au destinataire. Les commentaires internes ne figurent dans aucun export social.</p>'+cards+'<p class="salary-od-status" id="salaryDeclarationStatus" role="status"></p><label class="salary-od-confirm"><input id="salaryDeclarationConfirm" type="checkbox"> J’ai vérifié les données de déclaration et les éléments transmis au social.</label><div class="actions"><button id="salaryDeclarationCsv" class="btn primary" type="button" disabled>Exporter le tableau pour Excel (CSV)</button><button id="salaryDeclarationPrint" class="btn secondary" type="button" disabled>Imprimer / enregistrer en PDF</button></div><p class="muted">Export de préparation, non-déclaration automatique. Les informations non connues doivent être contrôlées sur les contrats et bulletins.</p></section>';
 }
 function declarationPrintHtml(month,data){
  const [header,...rows]=data;
@@ -435,6 +457,7 @@ function restoreDraft(raw,month,staffIds,defaultIds){
 const workflowNames={draft:"Brouillon",exported:"XML généré",submitted:"Remis à la banque",paid:"Virement confirmé",rejected:"Refusé par la banque"};
 function workflowEditable(){return permissionsValid()&&remoteFor(context.month).loaded&&remoteFor(context.month).status==="draft"&&!remoteFor(context.month).saving&&!remoteFor(context.month).loading}
 function workflowDraft(d){
+ if(context?.ready&&remoteFor(context.month).status==="draft")materializeKnownDeclaration(d,context.declarationStaff||[]);
  return {version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,
   bank:{issuer:d.bank.issuer,beneficiaries:bankDraftEntries(d)},declarations:[...d.declarations]};
 }
@@ -766,5 +789,5 @@ function mount(config){
 }
 window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
-if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,csv};
+if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,materializeKnownDeclaration,csv};
 })();
