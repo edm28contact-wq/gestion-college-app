@@ -1,7 +1,7 @@
 "use strict";
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const source=fs.readFileSync("college/admin/salary-od.js","utf8");
-const ctx={window:{addEventListener(){}},module:{exports:{}}};
+const ctx={window:{addEventListener(){}},module:{exports:{}},esc:value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))};
 vm.runInNewContext(source,ctx);
 const api=ctx.module.exports;
 test("OD Chambertin : les 19 lignes suivent le modèle et le crédit TESE du TXT réel",()=>{
@@ -80,6 +80,10 @@ test("Bordereau : vérification syntaxique de l'IBAN, du BIC et de la date",()=>
  assert.match(api.bankProblem(d),/bénéficiaires/);
  d.bank.beneficiaries.set("a",{matricule:"1",iban,bic:"TESTFRPP",country:"FR",comment:"Paie"});
  assert.equal(api.bankProblem(d),"");
+ const html=api.bankPrintHtml("2026-10",d,()=>"<Salarié fictif>");
+ assert.match(html,/&lt;Salarié fictif&gt;/);
+ assert.match(html,/Nombre de virements : 1/);
+ assert.match(html,/Ne constitue pas un ordre de virement SEPA/);
 });
 
 test("Déclaration gérance : champs du modèle, contrôle explicite et exclusion des notes internes",()=>{
@@ -92,6 +96,7 @@ test("Déclaration gérance : champs du modèle, contrôle explicite et exclusio
  assert.equal(data[0].length,16);
  assert.ok(data[0].includes("N° SS"));assert.ok(data[1].includes("Cuisine"));
  assert.ok(data[1].includes("Note sociale"));assert.doesNotMatch(api.csv(data),/NE PAS EXPORTER/);
+ assert.doesNotMatch(api.declarationPrintHtml("2026-10",data),/NE PAS EXPORTER/);
  d.declarations.get("a").gross="";assert.match(api.declarationProblem(d,staff),/montants/);
  assert.throws(()=>api.restoreDraft({version:2,month:"2026-10",values:{},payments:[],declarations:[["intrus",{gross:"1"}]]},"2026-10",new Set(["a"]),["a"]));
 });

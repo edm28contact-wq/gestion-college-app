@@ -429,7 +429,12 @@ function wire(host,d){
 }
 function mount(config){
  if(session!==config.session){clear();session=config.session}
+ const previous=context;
  context=config;
+ if(previous?.month===config.month&&config.ready&&config.canWrite){
+  const signature=value=>JSON.stringify((value.declarationStaff||[]).map(s=>[s.id,s.name,s.roleLabel,s.source]));
+  if(signature(previous)!==signature(config))getDraft().declarationConfirmed=false;
+ }
  const nav=document.getElementById("salaryPayrollNavigation");if(!nav)return;
  const tabs=[["variables","1. Éléments variables"],["declaration","2. Déclaration gérance"],["pay","3. Virements de salaires"],["od","4. OD de salaires"]];
  nav.innerHTML='<nav class="card salary-od-nav" aria-label="Étapes de préparation des salaires">'+tabs.map(([key,label])=>'<button type="button" class="btn secondary" data-salary-od-view="'+key+'" aria-pressed="false">'+label+'</button>').join("")+'</nav>';
