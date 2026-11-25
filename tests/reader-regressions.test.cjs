@@ -226,7 +226,7 @@ test("Secrétariat : l'interface de factures conserve un acces explicite au lect
  assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
  assert.ok(source.includes('stamp.textContent=READER_VERSION'));
  assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
- assert.match(sec,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
+ assert.match(sec,/href="\.\.\/lecteur-veryfi\/\?origine=secretariat" target="_top"/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
  assert.ok(source.includes('$("applyBulkVat").addEventListener("click",applyVatFromPdf)'));
  assert.ok(source.includes('$("applyVatBanner").addEventListener("click"'));
@@ -254,10 +254,16 @@ test("fin de lecture : les boutons TVA et HT/TTC sont réactivés après loading
  assert.equal(controls.applyBulkVat.disabled,false,"L'action TVA doit rester cliquable après lecture.");
  assert.equal(controls.repairHeader.disabled,false,"La correction de l'en-tête doit rester cliquable.");
 });
-test("la page integree de factures conserve le lecteur Veryfi accessible",()=>{
+test("le menu Factures ouvre directement le lecteur Veryfi autonome",()=>{
  const page=file("lecteur-veryfi/index.html"),sec=file("secretariat/index.html");
+ const navigation=file("college/workspace-layout.js"),designer=file("college/admin/site-designer.js");
+ assert.ok(navigation.includes('link("Factures · Lecteur Veryfi","lecteur-veryfi/?origine=secretariat")'));
+ assert.ok(!navigation.includes('tab("Commande manuelle / Lecteur Veryfi","#tInvoices")'));
+ assert.ok(designer.includes('["Factures · Lecteur Veryfi","link:lecteur-veryfi/?origine=secretariat"]'));
+ assert.ok(navigation.includes('tab("Commandes fournisseurs","#tOrders")'));
+ assert.match(page,/id="usageTrack"/);assert.match(page,/id="manualEntry"/);assert.match(page,/id="pdfTitle"/);assert.match(page,/id="resultTitle"/);
  assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
- assert.match(sec,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
+ assert.match(sec,/href="\.\.\/lecteur-veryfi\/\?origine=secretariat" target="_top"/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
  assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
 });
@@ -405,7 +411,7 @@ test("exclusions automatiques : confirmation explicite et trace des références
  assert.match(source,/if\(manualMode\|\|accounting\|\|!catalog\|\|!Array\.isArray\(catalog\.products\)/);
  assert.equal(Number(source.match(/const READER_VERSION="V(\d+)"/)[1]),Number(page.match(/veryfi\.js\?v=(\d+)/)[1]),"Version visible cohérente avec la ressource chargée");
  assert.match(page,/veryfi\.js\?v=\d+(?:-[a-z0-9-]+)?/i);
- assert.match(secretariat,/factures-gestion\/\?embed=secretariat&amp;v=\d{8}-[a-z0-9-]+/);
+ assert.match(secretariat,/href="\.\.\/lecteur-veryfi\/\?origine=secretariat" target="_top"/);
   assert.ok(file("secretariat/factures-gestion/index.html").includes("../../lecteur-veryfi/?origine=secretariat"));
 });
 test("les intégrations de base restent présentes",()=>{
@@ -414,7 +420,9 @@ test("les intégrations de base restent présentes",()=>{
  assert.ok(admin.includes("restoreProductFilters()"));assert.ok(payroll.includes("salaryStaffPanel()"));
  assert.ok(planning.includes('<option value="incident">Incident</option>'));
  assert.ok(planning.includes("Planning des événements du personnel"));
- assert.ok(secretariat.includes("embeddedInvoices")&&secretariat.includes("embeddedPlanning"));
+ assert.ok(secretariat.includes("embeddedPlanning"));
+ assert.doesNotMatch(secretariat,/id="embeddedInvoices"/);
+ assert.match(secretariat,/onclick="newOrder\(\)"/);
  assert.ok(reader.includes('id="issueFilter"')&&reader.includes('id="manualEntry"'));
 });
 
