@@ -176,6 +176,8 @@ Deno.serve(async req=>{
      !Number.isSafeInteger(meta.totalCents)||!Number.isInteger(meta.count))return reply({error:"Métadonnées SEPA invalides."},400);
     const expected=totals(record.draft);
     if(expected.totalCents!==meta.totalCents||expected.count!==meta.count||expected.count===0)return reply({error:"Le XML ne correspond pas au dossier enregistré."},409);
+    const payable=record.draft?.values?.payable;
+    if(typeof payable!=="string"||!amount(payable)||toCents(payable)!==expected.totalCents)return reply({error:"Le compte 421 doit être égal au total des virements avant la génération du XML."},409);
     exportInfo={...meta,created_at:new Date().toISOString()};
     note="Fichier XML généré : "+meta.messageId;
    }else if(action==="submitted"){
