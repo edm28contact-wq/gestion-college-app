@@ -80,3 +80,24 @@ test("Administration Cuisine : programmation indépendante des quatre chambres",
  assert.match(dispatch,/where exists\(select 1 from public\.kitchen_govee_due_rooms\(now\(\)\)\)/i);
  assert.match(dispatch,/cron\.unschedule/);
 });
+
+test("Govee : les chambres occupées ne sont jamais proposées à un autre capteur",()=>{
+ const admin=read("college/admin/cuisine-admin.js");
+ const start=admin.indexOf(" function goveeRoomOptions("),end=admin.indexOf(" function renderGoveeDiscovery(",start);
+ const ctx=vm.createContext({e:v=>String(v??""),t:String,when:String});
+ vm.runInContext(admin.slice(start,end)+";this.options=goveeRoomOptions;this.cards=goveeCards",ctx);
+ const s={me:{scope:"admin"},rooms:[roomN,roomP,{id:"old",label:"Archivée",archived_at:"2026-01-01"}],connected:[{...sensor,device_identifier:"aa:bb:cc",label:"Wifi Thermometer",raw_unit:"F"}]};
+ assert.deepEqual(Array.from(ctx.options(s,"new"),r=>r.id),["positive"]);
+ assert.deepEqual(Array.from(ctx.options(s,"aa:bb:cc"),r=>r.id),["negative","positive"]);
+ const result=ctx.cards(s,{discovered:[{device:"aa:bb:cc",sku:"H5179",label:"Wifi Thermometer",temperature_capability:true},{device:"dd:ee:ff",sku:"H5179",label:"Wifi Thermometer",temperature_capability:true}],devices:[{device:"aa:bb:cc",online:true,temperature_c:5,raw_unit:"F"}]});
+ assert.match(result,/aa:bb:cc/);assert.match(result,/dd:ee:ff/);
+ assert.match(result,/Température hors seuil/);
+ const form=result.match(/<form class="grid" data-govee-associate="dd:ee:ff"[\s\S]*?<\/form>/)[0];
+ assert.match(form,/value="">Choisir une chambre froide/);assert.match(form,/value="positive"/);assert.doesNotMatch(form,/value="negative"/);
+ assert.equal((result.match(/data-govee-associate=/g)||[]).length,1);
+ assert.match(result,/Modifier l’association/);
+ assert.match(admin,/goveeDiscovery=result/);
+ assert.match(admin,/goveeFeedback\(err\.message,true\)/);
+ assert.match(backend,/sensor:existing\.data,unchanged:true/);
+ assert.match(backend,/if\(occupant\.data\)return answer/);
+});
