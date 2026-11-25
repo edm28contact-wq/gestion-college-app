@@ -231,12 +231,29 @@ function bankPrintHtml(month,d,nameFor){
  }).join("");
  return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bordereau salaires '+esc(month)+'</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#172b3d}h1{text-align:center;font-size:19px;margin:0 0 24px}.head{display:grid;grid-template-columns:1fr 1fr;gap:14px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #9babb8;padding:7px 6px;text-align:left;overflow-wrap:anywhere}th{background:#dbe8f4}tbody tr{break-inside:avoid}.summary{font-size:15px;font-weight:bold;margin:15px 0}.money{text-align:right}p{line-height:1.5}</style></head><body><h1>VIREMENT DES SALAIRES — '+esc(month)+'</h1><div class="head"><table><tr><th>IBAN émetteur</th><th>BIC émetteur</th></tr><tr><td>'+esc(compactIban(i.iban))+'</td><td>'+esc(i.bic.toUpperCase())+'</td></tr><tr><th>Nom émetteur</th><th>Num émetteur</th></tr><tr><td>'+esc(i.name)+'</td><td>'+esc(i.number)+'</td></tr></table><table><tr><th>Date d’exécution</th><td>'+esc(i.date.split("-").reverse().join("/"))+'</td></tr><tr><th>Nom du fichier de sortie</th><td>'+esc(i.filename)+'</td></tr><tr><th>Libellé écriture</th><td>'+esc(i.label)+'</td></tr></table></div><p class="summary">Total : '+esc(money(p.total))+' · Nombre de virements : '+active.length+'</p><table><thead><tr>'+["Inactif","Nom","Montant (€)","Commentaires","Matricule","Date","BIC","IBAN","Pays"].map(v=>"<th>"+esc(v)+"</th>").join("")+'</tr></thead><tbody>'+rows+'</tbody></table><p>Compte 421 : '+esc(money(rec.account))+' · Écart : '+esc(money(rec.difference))+(rec.justified?" · Justification : "+esc(d.reconciliation.reason):"")+'</p><p>Document confidentiel préparatoire. Ne constitue pas un ordre de virement SEPA.</p></body></html>';
 }
-function printBank(d){
+async function printBank(d){
  if(!permissionsValid()||!d.payConfirmed||!d.bankConfirmed||d.bankLoading||d.bankSignature!==bankSignature(d))return;
  if([...d.payments.keys()].some(id=>!context.staff.some(s=>s.id===id)))return;
- const html=bankPrintHtml(context.month,d,staffName);
+ const signature=bankSignature(d),owner=session,month=context.month,ids=[...d.payments.keys()];
  const w=window.open("","_blank");if(!w)return alert("Autorisez les fenêtres pop-up pour imprimer le bordereau.");
- w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),250);
+ w.opener=null;w.document.write("<p>Vérification des coordonnées bancaires…</p>");w.document.close();
+ d.bankLoading=true;refresh();
+ const current=()=>permissionsValid()&&session===owner&&context.month===month&&getDraft()===d&&activeView==="pay"&&bankSignature(d)===signature;
+ let printed=false;
+ try{
+  const r=await call(ROOT+"/personnel-planning","staff-bank-payroll","POST",{ids});
+  if(!current()||!d.payConfirmed||!d.bankConfirmed)return;
+  if(r.ok!==true||!Array.isArray(r.banks)||r.banks.some(b=>!ids.includes(b.personnel_id)||!validIban(b.iban)||!validBic(b.bic)))throw Error("Réponse bancaire invalide.");
+  if(mergeSavedBanks(d,r.banks)){
+   d.bankError="Un RIB a changé depuis le chargement. Actualisez et vérifiez de nouveau le bordereau.";
+   d.bankSignature="";
+   return;
+  }
+  if(w.closed)return;
+  const html=bankPrintHtml(month,d,staffName);
+  w.document.open();w.document.write(html);w.document.close();w.focus();printed=true;setTimeout(()=>{if(!w.closed)w.print()},250);
+ }catch(e){if(current()){d.bankConfirmed=false;d.bankError="Vérification des RIB impossible. Actualisez avant impression.";d.bankSignature=""}}
+ finally{if(!printed&&!w.closed)w.close();d.bankLoading=false;if(current())render()}
 }
 function restoreBank(raw,staffIds){
  const bank={issuer:{},beneficiaries:new Map()};
@@ -426,7 +443,7 @@ function wire(host,d){
  }));
  el("salaryBankReload")?.addEventListener("click",()=>void loadSavedBanks(d,true));
  el("salaryBankConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.bankConfirmed=e.target.checked;refresh()}});
- el("salaryBankPrint")?.addEventListener("click",()=>{try{printBank(d)}catch(error){alert(error.message)}});
+ el("salaryBankPrint")?.addEventListener("click",()=>void printBank(d));
  host.querySelectorAll("[data-declaration-key]").forEach(input=>input.addEventListener("input",()=>{
   if(!permissionsValid())return;
   const id=input.dataset.declarationPerson,key=input.dataset.declarationKey;
