@@ -274,7 +274,7 @@ async function printBank(d){
 }
 
 async function exportSepa(d){
- if(!permissionsValid()||!d.payConfirmed||!d.bankConfirmed||d.bankLoading||d.bankSignature!==bankSignature(d)||bankProblem(d))return;
+ if(!workflowEditable()||!d.payConfirmed||!d.bankConfirmed||d.bankLoading||d.bankSignature!==bankSignature(d)||bankProblem(d))return;
  const owner=session,month=context.month,signature=bankSignature(d),ids=[...d.payments.keys()];
  const current=()=>permissionsValid()&&session===owner&&context.month===month&&getDraft()===d&&activeView==="pay"&&bankSignature(d)===signature;
  d.bankLoading=true;d.bankError="";refresh();
@@ -300,11 +300,19 @@ async function exportSepa(d){
   const result=generator({month,issuer:d.bank.issuer,beneficiaries,batchId,now:new Date()});
   if(result.totalCents!==paymentTotals(d.payments).total)throw Error("Le total SEPA ne correspond pas aux montants confirmés.");
   if(!current()||!d.payConfirmed||!d.bankConfirmed)return;
+  if(reconcilePayments(d).difference!==0)throw Error("Le fichier SEPA exige la concordance exacte avec le compte 421. Corrigez le rapprochement avant export.");
   const accepted=confirm("Télécharger "+result.filename+" ?\n\n"+result.count+" virement(s) — "+money(result.totalCents)+".\n\nLe format pain.001.001.03 de votre classeur doit être accepté par votre banque. L’import et l’autorisation des paiements se font uniquement sur le site bancaire. Ne déposez jamais deux fois le même lot.");
   if(!accepted)return;
   if(!current())return;
+  if(!await workflowSave(d,true))throw Error("Le dossier doit être enregistré en ligne avant de générer le virement bancaire.");
+  if(!current()||d.dirty)throw Error("Le dossier a changé pendant la sauvegarde. Revérifiez les montants.");
+  const hashBytes=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(result.xml)));
+  const sha256=Array.from(hashBytes,b=>b.toString(16).padStart(2,"0")).join("");
+  if(!current())return;
   d.sepaExport={snapshot,batchId};
   download(result.filename,result.xml,"application/xml;charset=utf-8");
+  const done=await workflowStatus("exported",{exportInfo:{messageId:result.messageId,filename:result.filename,sha256,totalCents:result.totalCents,count:result.count}});
+  if(!done)throw Error("Le fichier XML est généré, mais son suivi en ligne n’a pas été confirmé. Ne le réimportez pas avant de vérifier le dossier mensuel.");
  }catch(e){
   if(current()){d.bankError=String(e.message||"Export SEPA impossible.");d.bankConfirmed=false}
  }finally{
@@ -569,7 +577,7 @@ function workflowWire(){
 function workflowReadOnly(){
  if(!context?.month)return;
  const state=remoteFor(context.month);
- if(state.status==="draft"&&state.loaded&&!state.loading&&!state.saving)return;
+ if(state.status==="draft"&&state.loaded&&!state.loading&&!state.saving&&!getDraft().bankLoading)return;
  const host=document.getElementById("salaryPayrollWorkArea");
  if(!host||host.hidden)return;
  for(const input of host.querySelectorAll("input,textarea,select,button"))input.disabled=true;
