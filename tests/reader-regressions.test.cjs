@@ -650,3 +650,13 @@ test("V57 : sélection des produits du fournisseur sans masquer le catalogue gé
  assert.match(file("college/workspace-layout.js"),/Saisie manuelle des factures/);
  assert.match(file("lecteur-veryfi/index.html"),/id="manualSupplierOptions"/);
 });
+
+test("V57 : le code interne proposé ne confond pas des références identiques chez deux fournisseurs",()=>{
+ const ctx=vm.createContext({});
+ vm.runInContext(functionSource("suggestManualProductCode")+";this.code=suggestManualProductCode",ctx);
+ assert.equal(ctx.code("123","Henri Julien",[]),"123");
+ assert.equal(ctx.code("123","La Normande",[{code:"123"}]),"LA-NORMANDE-123");
+ assert.equal(ctx.code("123","La Normande",[{code:"123"},{code:"LA-NORMANDE-123"}]),"LA-NORMANDE-123-2");
+ assert.equal(ctx.code("","La Normande",[]),"");
+ assert.match(source,/manualOptionsToken!==authToken/);
+});

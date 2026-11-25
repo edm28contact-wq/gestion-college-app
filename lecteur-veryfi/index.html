@@ -153,7 +153,7 @@ html.secretariat-embedded{background:transparent}
  <form id="manualProductForm">
   <div class="fields">
    <label class="field field-wide"><span>Désignation</span><input name="name" maxlength="200" required></label>
-   <label class="field"><span>Code / référence</span><input name="code" maxlength="50" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,49}" title="Code interne unique : lettres, chiffres, point, tiret ou underscore"></label>
+   <label class="field"><span>Code interne unique (la référence fournisseur reste sur la facture)</span><input name="code" maxlength="50" required pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,49}" title="Code interne unique : lettres, chiffres, point, tiret ou underscore"></label>
    <label class="field"><span>Catégorie</span><select name="category_id" required></select></label>
    <label class="field"><span>Sous-catégorie alimentaire</span><select name="subcategory_id" disabled></select></label>
    <label class="field"><span>Unité facturée</span><input name="unit" maxlength="120" required placeholder="Ex. carton"></label>

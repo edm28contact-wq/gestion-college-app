@@ -217,6 +217,7 @@ async function resolveSession(){
     $("analyze").disabled=!file||loading||!serverReady||veryfiSubscriptionBlocked;
     if(!serverReady)notice("Veryfi non configuré ; le mode de saisie manuelle reste disponible après chargement du catalogue.");
     await loadCatalog();
+    if(manualMode&&!accounting&&manualOptionsToken!==token){await loadManualInvoiceOptions();if(manualMode&&!saved)renderRows()}
     if(queueId&&!queueImportStarted&&!file)void importQueuedInvoice();
     else if(queuedManualEntry&&!queueId&&!manualStartRequested){manualStartRequested=true;await startManualEntry();}
     return;
@@ -224,7 +225,7 @@ async function resolveSession(){
   }
   throw last||new Error("Aucune session autorisée.");
  }catch(e){
-  serverReady=false;authToken="";document.dispatchEvent(new CustomEvent("veryfi:session",{detail:{token:""}}));showUsage(null);$("sessionDot").className="dot bad";
+  serverReady=false;authToken="";manualInvoiceOptions=null;manualOptionsToken="";renderManualSuppliers();document.dispatchEvent(new CustomEvent("veryfi:session",{detail:{token:""}}));showUsage(null);$("sessionDot").className="dot bad";
   $("sessionState").textContent=e.message;$("loginLink").hidden=false;$("analyze").disabled=true;
   $("catalogState").textContent="";notice(e.message,"error");
  }finally{$("refreshSession").disabled=false}
@@ -360,7 +361,7 @@ function renderManualSuppliers(){
  list.replaceChildren();hint.hidden=!manualMode||accounting;
  input.removeAttribute("list");
  if(!manualMode||accounting)return;
- const known=manualInvoiceOptions?.suppliers||[];
+ const known=(manualOptionsToken===authToken?manualInvoiceOptions?.suppliers:[])||[];
  for(const supplier of known){
   const option=document.createElement("option");option.value=supplier.name;list.append(option);
  }
@@ -379,7 +380,7 @@ async function loadManualInvoiceOptions(){
  renderManualSuppliers();
 }
 function manualSupplierPicker(row,index){
- if(!manualMode||accounting||saved||row.excluded)return null;
+ if(!manualMode||accounting||saved||row.excluded||!authToken||manualOptionsToken!==authToken)return null;
  const products=manualSupplierProducts($("vendor").value,manualInvoiceOptions,catalog?.products||[]);
  if(!products.length)return null;
  const label=document.createElement("label");label.className="field";
@@ -1263,6 +1264,19 @@ function buildLine(row,index){
  card.classList.add(color);
  return card;
 }
+function suggestManualProductCode(reference,supplier,products){
+ const raw=String(reference||"").trim(),clean=value=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9_.-]+/g,"-").replace(/^[^A-Z0-9]+|[-.]+$/g,"");
+ if(!raw)return "";
+ const ref=clean(raw).slice(0,50);
+ const used=new Set(products.map(p=>String(p.code||"").trim().toUpperCase()));
+ if(ref&&/^[A-Z0-9][A-Z0-9_.-]{0,49}$/.test(ref)&&!used.has(ref))return ref;
+ const prefix=clean(supplier).slice(0,20);
+ if(!prefix||!ref)return "";
+ const base=(prefix+"-"+ref).slice(0,46);
+ if(!used.has(base))return base;
+ for(let i=2;i<=99;i++){const candidate=base+"-"+i;if(!used.has(candidate))return candidate}
+ return "";
+}
 function manualProductAllowed(user){
  const p=user?.permissions||{};
  return !!user&&(user.role==="admin"||(user.read_only!==true&&p.readonly!==true&&(p["products.write"]===true||(user.role==="admin_limited"&&p.college_admin===true))));
@@ -1297,7 +1311,7 @@ async function openManualProduct(row,button){
   if(!categories.length||!Array.isArray(products))throw Error("Catalogue ou catégories indisponibles.");
   form.reset();
   form.elements.namedItem("name").value=row.description||"";
-  form.elements.namedItem("code").value=row.reference||"";
+  form.elements.namedItem("code").value=suggestManualProductCode(row.reference,$("vendor").value,products);
   form.elements.namedItem("unit").value=row.unit||"";
   form.elements.namedItem("unit_price").value=amount(row.unit_price)??0;
   const select=form.elements.namedItem("category_id");
