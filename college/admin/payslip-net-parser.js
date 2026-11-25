@@ -67,7 +67,7 @@ function extractNetPay(lines){
  // A strong, explicit label resolves differences from "net avant impôt".
  // If no strong label exists, contradictory lower-priority lines remain a warning.
  const contradictory=reliable.some(x=>x.cents!==selected.cents);
- if(contradictory&&maxPriority<5){
+ if(contradictory&&maxPriority<6){
   return {cents:null,label:"",candidates,reason:"Plusieurs montants nets à payer différents dans le bulletin.",confidence:"ambiguous"};
  }
  return {cents:selected.cents,label:selected.label,candidates,reason:"",confidence:maxPriority>=6?"after-tax":maxPriority>=5?"paid":"standard"};
@@ -99,7 +99,7 @@ function findPayPeriod(lines,filename=""){
    /\bBULLETIN\s+DE\s+PAIE\s+(?:0?[1-9]|1[0-2])[\/.-]20\d{2}\b/.test(line);
   const labelOnly=/^(?:PERIODE(?:\s+DE\s+PAIE)?|MOIS(?:\s+DE\s+PAIE)?|PAIE)\s*[:\-]?$/.test(line);
   const range=/\bDU\s+(?:0?[1-9]|[12]\d|3[01])[\/.-](0?[1-9]|1[0-2])[\/.-](20\d{2})\s+(?:AU|A)\s+(?:0?[1-9]|[12]\d|3[01])[\/.-](0?[1-9]|1[0-2])[\/.-](20\d{2})\b/.test(line);
-  const standalone=/^(?:BULLETIN\s+DE\s+PAIE\s+)?(?:JANVIER|FEVRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AOUT|SEPTEMBRE|OCTOBRE|NOVEMBRE|DECEMBRE)\s+20\d{2}$/.test(line);
+  const standalone=/^(?:BULLETIN\s+DE\s+PAIE\s*[-:—–]?\s*)?(?:JANVIER|FEVRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AOUT|SEPTEMBRE|OCTOBRE|NOVEMBRE|DECEMBRE)\s+20\d{2}$/.test(line);
   if(period||range||standalone)extract(line);
   if(labelOnly)extract(next);
  }
