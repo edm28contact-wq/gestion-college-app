@@ -635,3 +635,28 @@ test("V56 : téléchargement du scan renommé seulement lorsque les métadonnée
  assert.equal(ctx.name("scan.pdf","2026-02-30","METRO","F-15"),"scan.pdf");
  assert.match(file("lecteur-veryfi/index.html"),/id="manualArchiveDownload"/);
 });
+
+test("V57 : sélection des produits du fournisseur sans masquer le catalogue général",()=>{
+ const ctx=vm.createContext({});
+ vm.runInContext('const norm=x=>String(x??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"");'+functionSource("foodSupplierKey")+functionSource("manualSupplierProducts")+";this.select=manualSupplierProducts",ctx);
+ const dir={supplier_products:[{supplier_key:"passionfroid",product_id:"a"},{supplier_key:"lanormande",product_id:"b"},{supplier_key:"passionfroid",product_id:"c"}]};
+ const products=[{id:"a",name:"Fromage"},{id:"b",name:"Lait"},{id:"c",name:"Inactif",active:false}];
+ assert.deepEqual(Array.from(ctx.select("Passion Froid / Pomona",dir,products),x=>x.id),["a"]);
+ assert.deepEqual(Array.from(ctx.select("La Normande",dir,products),x=>x.id),["b"]);
+ assert.equal(ctx.select("Autre fournisseur",dir,products).length,0);
+ assert.match(source,/API\.secretariat\+"\?action=manual-invoice-options"/);
+ assert.match(source,/API\.secretariat\+"\?action=create-food-product"/);
+ assert.match(source,/queuedManualEntry&&!queueId&&!manualStartRequested/);
+ assert.match(file("college/workspace-layout.js"),/Saisie manuelle des factures/);
+ assert.match(file("lecteur-veryfi/index.html"),/id="manualSupplierOptions"/);
+});
+
+test("V57 : le code interne proposé ne confond pas des références identiques chez deux fournisseurs",()=>{
+ const ctx=vm.createContext({});
+ vm.runInContext(functionSource("suggestManualProductCode")+";this.code=suggestManualProductCode",ctx);
+ assert.equal(ctx.code("123","Henri Julien",[]),"123");
+ assert.equal(ctx.code("123","La Normande",[{code:"123"}]),"LA-NORMANDE-123");
+ assert.equal(ctx.code("123","La Normande",[{code:"123"},{code:"LA-NORMANDE-123"}]),"LA-NORMANDE-123-2");
+ assert.equal(ctx.code("","La Normande",[]),"");
+ assert.match(source,/manualOptionsToken!==authToken/);
+});

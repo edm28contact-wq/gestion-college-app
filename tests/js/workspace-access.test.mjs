@@ -66,3 +66,12 @@ test("Factures Veryfi : accès direct uniquement pour un compte autorisé",()=>{
  assert.equal(check("lecteur-veryfi/?origine=secretariat",orders),false);
  assert.equal(check("lecteur-veryfi/?origine=secretariat",null),false);
 });
+
+test("Le lien de saisie manuelle Secrétariat ne donne aucun accès au profil planning ni au lecteur seul",()=>{
+ const route="lecteur-veryfi/?origine=secretariat&mode=manuel";
+ assert.equal(check(route,context({secretariat:true,veryfi:true},{"secretariat.invoices.write":true})),true);
+ assert.equal(check(route,context({secretariat:true,veryfi:true},{"secretariat.read":true},true)),false);
+ assert.equal(check(route,context({accounting:true,veryfi:true},{"accounting.write":true})),false);
+ assert.equal(check(route,context({secretariat:true,planning:true},{"personnel.planning.read":true})),false);
+ assert.equal(check(route,context({secretariat:true,veryfi:true},{"secretariat.invoices.write":true},true)),false);
+});
