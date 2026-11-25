@@ -127,8 +127,9 @@ function matchEmployee(lines,staff,filename=""){
   return header.some(line=>{
    const normalized=canonicalName(line),padded=" "+normalized+" ";
    if(parts.length===1){
-    return /\b(?:SALARIE|SALARIEE|NOM|PRENOM|MME|MONSIEUR|MADAME|EMPLOYE|PERSONNEL)\b/.test(cleanText(line))&&
-      padded.includes(" "+names+" ");
+    const label=/\b(?:SALARIE|SALARIEE|NOM|PRENOM|MME|MONSIEUR|MADAME|EMPLOYE|PERSONNEL)\b/.test(cleanText(line));
+    const corroborated=basename.split(" ").length>=2&&(" "+basename+" ").includes(" "+names+" ")&&padded.includes(" "+basename+" ");
+    return padded.includes(" "+names+" ")&&(label||corroborated);
    }
    return variants.some(v=>padded.includes(" "+v+" "));
   });
