@@ -71,7 +71,10 @@ test("Cuisine : raccordement Govee identifiable et provenance des relevés prés
  const kitchen=read("cuisine/cuisine.js");
  assert.match(admin,/kitchenGoveeKey/);
  assert.match(admin,/govee-save-key/);
- assert.match(admin,/govee-discover/);
+ assert.match(admin,/api\("govee-test"\)/);
+ assert.match(admin,/goveeCards\(snapshot,goveeDiscovery\)/);
+ assert.match(admin,/e\(d\.device\)/);
+ assert.match(read("supabase/functions/kitchen-api/index.ts"),/devices:checked,discovered/);
  assert.match(admin,/govee-add-sensor/);
  assert.match(admin,/govee-sync/);
  assert.match(admin,/kitchenProbeRegister/);
