@@ -56,3 +56,13 @@ test("la permission factures seule ne donne pas le stock ni le planning",()=>{
  assert.equal(allowedTab("#tOrders",ctx,"secretariat"),false);
  assert.equal(allowedTab("#tPlanning",ctx,"secretariat"),false);
 });
+
+test("Factures Veryfi : accès direct uniquement pour un compte autorisé",()=>{
+ const invoices=context({secretariat:true,veryfi:true},{"secretariat.invoices.write":true});
+ const planning=context({secretariat:true,planning:true},{"personnel.planning.read":true});
+ const orders=context({secretariat:true},{"secretariat.orders.write":true});
+ assert.equal(check("lecteur-veryfi/?origine=secretariat",invoices),true);
+ assert.equal(check("lecteur-veryfi/?origine=secretariat",planning),false);
+ assert.equal(check("lecteur-veryfi/?origine=secretariat",orders),false);
+ assert.equal(check("lecteur-veryfi/?origine=secretariat",null),false);
+});
