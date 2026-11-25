@@ -125,7 +125,7 @@ function createCreditTransfer(input){
    '        <PmtId><EndToEndId>'+esc(endToEndId)+'</EndToEndId></PmtId>',
    '        <Amt><InstdAmt Ccy="EUR">'+euro(row.cents)+'</InstdAmt></Amt>',
    '        <CdtrAgt><FinInstnId><BIC>'+row.bic+'</BIC></FinInstnId></CdtrAgt>',
-   '        <Cdtr><Nm>'+esc(row.name)+'</Nm></Cdtr>'
+   '        <Cdtr><Nm>'+esc(row.name)+'</Nm>'
   );
   if(row.postcode||row.city||row.address){
    lines.push('        <PstlAdr>');
