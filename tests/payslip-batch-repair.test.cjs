@@ -94,7 +94,7 @@ test("la suggestion manuelle ne contourne pas le contrôle du mois et ne transme
  assert.match(importer,/row\.period===state\.opts\.month&&row\.documentOk===true/);
  assert.match(importer,/row\.amountCandidates\?\.length>0/);
  assert.match(importer,/options\.some\(x=>x\.cents===verified\)/);
- assert.match(importer,/confirm\("Après contrôle du bulletin PDF/);
+ assert.match(importer,/confirm\("Bulletin à valider/);
  assert.doesNotMatch(importer,/\bfetch\s*\(/);
  assert.doesNotMatch(importer,/localStorage|sessionStorage/);
 });
