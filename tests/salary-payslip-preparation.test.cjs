@@ -4,17 +4,19 @@ const page=fs.readFileSync("college/admin/salaires.js","utf8");
 const payroll=fs.readFileSync("college/admin/salary-od.js","utf8");
 const html=fs.readFileSync("college/admin/index.html","utf8");
 
-test("Compta salaire : deux fenêtres métiers, préparation puis virements",()=>{
+test("Compta salaire : trois fenêtres métiers, préparation, import PDF puis virements",()=>{
  assert.match(page,/data-salary-accounting-tab="prep"/);
+ assert.match(page,/data-salary-accounting-tab="payslips"/);
  assert.match(page,/data-salary-accounting-tab="pay"/);
  assert.match(page,/1\. Préparation des fiches de paie/);
- assert.match(page,/2\. Virements de salaires/);
+ assert.match(page,/2\. Importer les bulletins PDF/);
+ assert.match(page,/3\. Virements de salaires/);
  assert.match(page,/salaryAccountingView="prep"/);
  assert.match(page,/function salaryAccountingShowTab\(view\)/);
  assert.match(payroll,/activeView="pay";\s*nav\.replaceChildren\(\)/);
  assert.match(payroll,/salaryAccountingActiveTab\(\)!=="pay"/);
- assert.match(html,/salaires\.js\?v=20261126-month20/);
- assert.match(html,/salary-od\.js\?v=20261126-benefits3/);
+ assert.match(html,/salaires\.js\?v=20261126-payslip1/);
+ assert.match(html,/salary-od\.js\?v=20261126-payslip1/);
 });
 
 test("Préparation : heures prévues et événements séparés, bénéfices, Navigo du mois, accès TESE",()=>{
