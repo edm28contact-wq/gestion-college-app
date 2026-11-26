@@ -42,7 +42,7 @@ const ledgerKeys=["salary","benefits","tese","unemployment","apec","retirement",
 const issuerKeys:Record<string,number>={name:70,iban:42,bic:11,number:35,date:10,filename:100,label:140};
 const beneficiaryKeys:Record<string,number>={matricule:35,creditorName:70,rowOrder:4,country:2,postcode:16,city:35,address:70,comment:140};
 const declarationKeys:Record<string,number>={nir:32,contract:100,function:160,status:100,start:10,end:10,hours:40,rate:40,gross:40,transport:40,health:40,adjustments:1000,absence:1000,absencePay:1000,comments:1000,internal:1000};
-const preparationKeys:Record<string,number>={zone:12,ticketCost:16,weeklyHours:12,fullTimeHours:12,employerRate:12,mealsCount:5,employeePaidPerMeal:16,dutyMeal:3};
+const preparationKeys:Record<string,number>={zone:12,ticketCost:16,weeklyHours:12,fullTimeHours:12,employerRate:12,mealsCount:5,employeePaidPerMeal:16,dutyMeal:3,mealMode:12};
 function safeDict(input:any,shape:Record<string,number>){
  if(!input||typeof input!=="object"||Array.isArray(input))throw Error("Champs invalides.");
  const output:Record<string,string>={};
@@ -81,6 +81,7 @@ function safeDraft(raw:any,month:string){
   const values=safeDict(item[1],preparationKeys);
   if(values.zone&&!["none","1-5","2-3","3-4","4-5","custom"].includes(values.zone))throw Error("Abonnement Navigo invalide.");
   if(values.dutyMeal&&!["yes","no"].includes(values.dutyMeal))throw Error("Type de repas invalide.");
+  if(values.mealMode&&!["workplace","canteen"].includes(values.mealMode))throw Error("Lieu de repas invalide.");
   const caps:Record<string,number>={ticketCost:10000,weeklyHours:60,fullTimeHours:60,employerRate:100,mealsCount:100,employeePaidPerMeal:100};
   for(const [key,cap] of Object.entries(caps)){
    const val=values[key];if(val===undefined||val==="")continue;
