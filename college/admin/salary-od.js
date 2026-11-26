@@ -525,7 +525,7 @@ async function workflowLoad(month,force=false){
   state.updated_by=row?.updated_by||"";state.bank_reference=row?.bank_reference||"";state.export_info=row?.export_info||{};
   state.history=reply.history||[];state.loaded=true;
  }catch(e){if(owner===session)state.error=String(e.message||"Chargement indisponible.")}
- finally{state.loading=false;if(owner===session&&context?.month===month&&salaryPageVisible())render()}
+ finally{state.loading=false;if(owner===session&&context?.month===month&&salaryPageVisible()){render();context?.onDraftLoaded?.()}}
 }
 async function workflowSave(d,quiet=false){
  if(!permissionsValid()||!d||getDraft()!==d||!workflowEditable())return false;
@@ -636,7 +636,7 @@ function render(){
  if(!host||!variables||!context)return;
  const workflow=document.getElementById("salaryWorkflowPanel");
  if(workflow){workflow.innerHTML=workflowPanel();workflowWire()}
- variables.hidden=activeView!=="variables";host.hidden=activeView==="variables";
+ variables.hidden=activeView!=="variables";host.hidden=activeView==="variables"||(typeof window.salaryAccountingActiveTab==="function"&&window.salaryAccountingActiveTab()!=="pay");
  const employee=document.getElementById("salaryAccountingEmployee");if(employee)employee.disabled=activeView!=="variables"||!context.ready;
  document.querySelectorAll("[data-salary-od-view]").forEach(b=>{const selected=b.dataset.salaryOdView===activeView;b.classList.toggle("primary",selected);b.classList.toggle("secondary",!selected);b.setAttribute("aria-pressed",String(selected))});
  if(activeView==="variables"){host.replaceChildren();return}
@@ -818,6 +818,10 @@ function mount(config){
   if(!remoteListLoaded&&!remoteListLoading)void workflowList();
  }
 }
+window.salaryOdMonthTransport=(month,id)=>{
+ if(!permissionsValid()||!remoteFor(month).loaded||context?.month!==month||!context.staff.some(person=>person.id===id))return {loaded:false,transport:""};
+ return {loaded:true,transport:String(draftFor(month).declarations.get(id)?.transport??"")};
+};
 window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
 if(typeof module!=="undefined"&&module.exports)module.exports={simpleBankHtml,lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,materializeKnownDeclaration,csv};
