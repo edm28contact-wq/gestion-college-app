@@ -40,7 +40,7 @@
  function mount(root,api){
   if(!root)return;
   if(root.meaterPathRefresh){void root.meaterPathRefresh();return;}
-  root.innerHTML='<section class="card"><h2>Parcours automatiques MEATER</h2><p><strong>Essai technique, hors registre HACCP.</strong> Retirez la sonde, nettoyez-la, puis cliquez sur « Décrocher / réarmer ». Le serveur surveille la première nouvelle mesure sous 10 °C et lance une heure. Aucun résultat ne valide automatiquement un plat.</p><p data-path-service class="muted"></p><p data-path-feedback role="status"></p><div data-path-probes></div><h3>Historique récent</h3><div data-path-history></div><section data-path-detail></section></section>';
+  root.innerHTML='<section class="card"><h2>Parcours automatiques MEATER</h2><p><strong>Essai technique, hors registre HACCP.</strong> Retirez la sonde du socle : le retour d’une nouvelle mesure est détecté automatiquement. Nettoyez et désinfectez la sonde avant de l’utiliser. Le serveur interroge toutes les sondes toutes les 5 secondes, démarre une heure sous 10 °C et conserve les relevés par créneaux de 10 secondes. Aucun résultat ne valide automatiquement un plat.</p><p data-path-service class="muted"></p><p data-path-feedback role="status"></p><div data-path-probes></div><h3>Historique récent</h3><div data-path-history></div><section data-path-detail></section></section>';
   const service=root.querySelector("[data-path-service]"),feedback=root.querySelector("[data-path-feedback]"),probes=root.querySelector("[data-path-probes]"),history=root.querySelector("[data-path-history]"),detail=root.querySelector("[data-path-detail]");
   let state=null,selected=null,samples=[],loadedKey="",pending=false,busy=false,timer=null,clockTimer=null,serverOffset=0,historyError="",revision=0;
   const visible=()=>root.isConnected&&!document.hidden&&!root.closest("[hidden],.hide");
@@ -63,13 +63,16 @@
   function render(){
    if(!state)return;
    const running=state.paths.filter(active);
-   service.textContent=(state.configured?(state.professional?"Collecte professionnelle activée : nouveaux essais bloqués.":"Surveillance serveur : "+(running.some(r=>r.status==="armed")?"5 secondes, tant qu’une sonde attend le seuil.":running.length?"10 secondes en cours de parcours.":"En attente de réarmement.")):"MEATER non connecté.")+" Dernière réponse Cloud : "+time(state.last_ok_at)+(state.last_error?" · "+state.last_error:"");
+   service.textContent=(state.configured?(state.professional?"Collecte professionnelle activée : nouveaux essais bloqués.":"Surveillance serveur : "+"toutes les 5 secondes · détection automatique · relevés par créneaux de 10 secondes."):"MEATER non connecté.")+" Dernière réponse Cloud : "+time(state.last_ok_at)+(state.last_error?" · "+state.last_error:"");
    probes.innerHTML='<div class="meater-grid">'+state.probes.map(p=>{
     const r=running.find(v=>v.device_id===p.device_id),latest=state.paths.find(v=>v.device_id===p.device_id);
     const age=serverNow()-Date.parse(p.measured_at||"");
-    const ok=p.present&&!state.last_error&&age>=-10000&&age<=120000;
+    const cloudAge=serverNow()-Date.parse(state.last_ok_at||"");
+    const cloudOk=!state.last_error&&cloudAge>=-10000&&cloudAge<=30000;
+    const ok=p.present&&cloudOk&&age>=-10000&&age<=120000;
+    const unavailable=state.last_error?"Valeur indisponible — erreur Cloud":!cloudOk?"Valeur indisponible — connexion non confirmée":!p.present?"Valeur indisponible — sonde en charge (présumée)":"Valeur indisponible — mesure ancienne";
     const arm=state.can_write&&state.configured&&!state.professional&&!r;
-    return '<div class="meater-tile"><strong>'+esc(p.label||("Sonde "+p.slot))+'</strong><small>Station '+esc(["A","B","C"][Math.floor((p.slot-1)/4)])+' · emplacement '+esc(p.slot)+'</small><span class="meater-value">'+esc(ok?temp(p.internal_c):"—")+'</span><small>'+esc(time(p.measured_at))+'</small><small>'+esc(r?labels[r.status]:"Disponible pour un essai")+'</small>'+(r?'<strong data-path-timer="'+esc(r.id)+'">'+esc(countdown(r,serverNow()))+'</strong>':'')+(arm?'<button class="btn secondary btn-outline" type="button" data-path-arm="'+esc(p.device_id)+'">Décrocher / réarmer</button>':'')+(r&&state.can_write?'<button class="btn secondary btn-outline" type="button" data-path-cancel="'+esc(r.id)+'">Annuler le parcours</button>':'')+(latest?'<button class="btn secondary btn-outline" type="button" data-path-view="'+esc((r||latest).id)+'">Voir le parcours</button>':'')+'</div>';
+    return '<div class="meater-tile"><strong>'+esc(p.label||("Sonde "+p.slot))+'</strong><small>Station '+esc(["A","B","C"][Math.floor((p.slot-1)/4)])+' · emplacement '+esc(p.slot)+'</small><span class="meater-value">'+esc(ok?temp(p.internal_c):"—")+'</span><small>'+esc(time(p.measured_at))+'</small><small>'+esc(!ok?unavailable:r?labels[r.status]:"Sonde détectée · attente du prochain parcours automatique")+'</small>'+(r?'<strong data-path-timer="'+esc(r.id)+'">'+esc(countdown(r,serverNow()))+'</strong>':'')+(arm?'<button class="btn secondary btn-outline" type="button" data-path-arm="'+esc(p.device_id)+'">Réarmer manuellement (secours)</button>':'')+(r&&state.can_write?'<button class="btn secondary btn-outline" type="button" data-path-cancel="'+esc(r.id)+'">Annuler le parcours</button>':'')+(latest?'<button class="btn secondary btn-outline" type="button" data-path-view="'+esc((r||latest).id)+'">Voir le parcours</button>':'')+'</div>';
    }).join("")+'</div>'+(state.probes.length?"":"<p>Aucune sonde associée.</p>");
    history.innerHTML=state.paths.length?'<div class="meater-actions">'+state.paths.map(r=>'<button type="button" class="btn secondary btn-outline" data-path-view="'+esc(r.id)+'" aria-pressed="'+(r.id===selected)+'">'+esc(r.label)+' · '+esc(labels[r.status]||r.status)+' · '+esc(time(r.started_at||r.armed_at))+'</button>').join("")+'</div>':'<p>Aucun parcours enregistré.</p>';
    drawDetail();
@@ -107,7 +110,7 @@
    try{
     const r=await api(arm?"meater-path-arm":"meater-path-cancel","POST",arm?{device_id:b.dataset.pathArm}:{id:b.dataset.pathCancel});
     if(arm){selected=r.id;samples=[];loadedKey="";}
-    feedback.textContent=arm?"Sonde réarmée. Attente d’une nouvelle mesure sous 10 °C.":"Parcours annulé.";
+    feedback.textContent=arm?"Réarmement manuel effectué. Attente d’une nouvelle mesure sous 10 °C.":"Parcours annulé.";
    }catch(err){feedback.textContent=String(err.message||err);}
    finally{busy=false;b.disabled=false;void refresh();}
   });
