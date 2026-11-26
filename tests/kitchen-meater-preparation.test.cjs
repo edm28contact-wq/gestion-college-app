@@ -31,3 +31,16 @@ test("MEATER : connexion directe, qualification et collecte protégées",()=>{
  assert.match(api,/!visible\?\{present:false,internal_c:null,ambient_c:null,measured_at:null,cook_id:null,cook_state:null\}/);
  assert.match(api,/meaterStatus\(c,u.scope==="admin"\)/);
 });
+
+test("MEATER : toutes les mises à jour de sondes ont un prédicat compatible safeupdate",()=>{
+ const sql=read("supabase/migrations/20261126210903_kitchen_meater_safe_update_where.sql");
+ const updates=[...sql.matchAll(/update public\.kitchen_meater_probes\b([\s\S]*?);/gi)];
+ assert.equal(updates.length,3);
+ for(const update of updates)assert.match(update[1],/\bwhere\b/i);
+ assert.equal((sql.match(/set present=false where present;/g)||[]).length,2);
+ assert.match(sql,/qualification_expires_at=null\s+where present or qualified_at is not null or qualified_by is not null or qualification_expires_at is not null/);
+ assert.match(sql,/update public\.kitchen_meater_links set detached_at=now\(\) where detached_at is null/);
+ assert.match(sql,/vault\.create_secret\(p_token,/);
+ assert.match(sql,/vault\.update_secret\(sid,p_token,/);
+ assert.match(sql,/revoke all on function public\.kitchen_meater_set_token\(text\) from public,anon,authenticated/);
+});
