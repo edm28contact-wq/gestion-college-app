@@ -456,7 +456,7 @@ function restoreDeclarations(raw,staffIds){
  }
  return result;
 }
-const prepFields=["zone","ticketCost","weeklyHours","fullTimeHours","employerRate","mealsCount","employeePaidPerMeal","dutyMeal","mealMode"];
+const prepFields=["zone","ticketCost","weeklyHours","fullTimeHours","employerRate","mealsCount","employeePaidPerMeal","dutyMeal","mealMode","vehicleKind","vehicleEvaluation","vehicleAssignedDate","vehicleAge","vehicleFullMonth","vehicleElectric","vehicleEcoScore","vehicleFuelMode","vehiclePurchasePrice","vehicleRentalAnnual","vehicleLessorPurchasePrice","vehicleFuelPrivateAnnual","vehicleFuelTotalAnnual","vehicleInsuranceAnnual","vehicleMaintenanceAnnual","vehicleKmPrivate","vehicleKmTotal","vehicleEmployeeContribution","housingMode","housingGross","housingRooms","housingWeeks","housingShared","housingServiceNecessity","housingRentalValue","housingExpenses","housingEmployeeContribution"];
 function restorePreparation(raw,staffIds){
  const rows=new Map();
  if(raw===undefined)return rows;
