@@ -373,6 +373,22 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  if(action==="meater-live"&&req.method==="GET")return answer(await meaterLive(c));
  if(action==="meater-graph-live"&&req.method==="GET")return answer(await meaterLive(c,true));
  if(action==="meater-status"&&req.method==="GET")return answer(await meaterStatus(c,u.scope==="admin"));
+ if(action==="meater-paths"&&req.method==="GET"){
+  const fields="id,device_id,label,slot,armed_at,status,started_at,deadline_at,trigger_c,cold_c,cold_at,heating,hot_c,hot_at,reached_c,finished_at,last_measure_at,last_record_at,last_c,last_ambient_c,reason";
+  const [cfg,probes,active,history]=await Promise.all([
+   c.from("kitchen_meater_settings").select("enabled,vault_secret_id,last_ok_at,last_poll_at,last_error").eq("id",1).single(),
+   c.from("kitchen_meater_probes").select("device_id,slot,label,present,internal_c,ambient_c,measured_at").not("slot","is",null).order("slot"),
+   c.from("kitchen_meater_paths").select(fields).in("status",["armed","running"]).order("slot"),
+   c.from("kitchen_meater_paths").select(fields).in("status",["target","expired","cancelled"]).order("finished_at",{ascending:false}).limit(50)
+  ]);
+  for(const q of [cfg,probes,active,history])if(q.error)throw meaterDatabaseError("parcours technique",q.error);
+  return answer({now:new Date().toISOString(),configured:!!cfg.data.vault_secret_id,professional:cfg.data.enabled,last_ok_at:cfg.data.last_ok_at,last_poll_at:cfg.data.last_poll_at,last_error:cfg.data.last_error,can_write:u.scope==="admin"||(u.scope==="staff"&&!u.existingAccount),probes:probes.data,paths:[...active.data,...history.data]});
+ }
+ if(action.startsWith("meater-path-history:")&&req.method==="GET"){
+  const id=action.slice("meater-path-history:".length);if(!uuid(id))return answer({error:"Parcours invalide"},400);
+  const q=await c.from("kitchen_meater_path_samples").select("measured_at,internal_c,ambient_c,event").eq("path_id",id).order("measured_at").limit(500);
+  if(q.error)throw meaterDatabaseError("historique du parcours",q.error);return answer({samples:q.data});
+ }
  if(action==="meater-history"&&req.method==="GET"){
  const id=url.searchParams.get("reheat_id");if(!uuid(id))return answer({error:"Cycle invalide"},400);
  const q=await c.from("kitchen_meater_samples").select("measured_at,internal_c,ambient_c,received_at").eq("reheat_id",id).order("measured_at",{ascending:false}).limit(1000);
@@ -573,6 +589,13 @@ if(action==="task-settings"&&req.method==="GET"){
  if(!uuid(x.id)||!["followup","closed","reopened"].includes(x.operation)||!pmsText(x.note,4000))return answer({error:"Suivi invalide"},400);
  if(x.operation!=="followup"&&u.scope!=="admin")return forbidden();
  const q=await c.rpc("kitchen_pms_followup",{p_id:x.id,p_action:x.operation,p_note:x.note.trim(),p_evidence:pmsText(x.evidence_ref,500),p_actor:u.id,p_name:u.name});if(q.error)throw q.error;return answer(q.data,q.data.error?Number(q.data.status)||400:200);
+ }
+ if(action==="meater-path-arm"||action==="meater-path-cancel"){
+  if(u.scope!=="admin"&&(u.scope!=="staff"||u.existingAccount))return forbidden();
+  if(action==="meater-path-arm"&&(typeof x.device_id!=="string"||!x.device_id||x.device_id.length>160))return answer({error:"Sonde invalide"},400);
+  if(action==="meater-path-cancel"&&!uuid(x.id))return answer({error:"Parcours invalide"},400);
+  const q=action==="meater-path-arm"?await c.rpc("kitchen_meater_path_arm",{p_device:x.device_id,p_actor:u.id}):await c.rpc("kitchen_meater_path_cancel",{p_id:x.id,p_actor:u.id});
+  if(q.error)throw meaterDatabaseError("commande du parcours",q.error);return answer(q.data,q.data?.error?409:200);
  }
  if(action==="meater-attach"){
  if(u.scope!=="staff"||u.existingAccount)return forbidden();

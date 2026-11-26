@@ -7,7 +7,7 @@
  const t=v=>Number(v).toLocaleString("fr-FR",{maximumFractionDigits:2});
  let snapshot=null,busy=false,kitchenTab="overview",selectedColdRoom="",coldHistory=[],coldHistoryTotal=0,coldHistoryOffset=0,coldHistoryError="";
  const kitchenPages={
-  cuisine:[["overview","Vue d’ensemble"],["records","Relevés et alertes"],["cleaning","Tâches et photos"]],
+  cuisine:[["overview","Vue d’ensemble"],["records","Relevés et alertes"],["paths","Parcours remises en température"],["cleaning","Tâches et photos"]],
   cuisineSettings:[["govee","Connexion Govee"],["meater","Connexion MEATER"],["pms","Plan sanitaire · HACCP"],["schedule","Programmation des relevés"],["equipment","Équipements et valeurs"],["staff","Équipe de cuisine"]]
  };
  const selectedTabs={cuisine:"overview",cuisineSettings:"govee"};
@@ -378,7 +378,7 @@ function isRetiredCleaningTask(t){
    css.textContent="#kitchen-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:13px 0 18px}#kitchen-tabs button{border:1px solid #d3dce3;border-radius:9px;padding:11px 15px;font-weight:750;background:#f1f4f6;color:#334657;cursor:pointer}#kitchen-tabs button.active{background:#243447;color:white;border-color:#243447}#content .kitchen-panel[hidden]{display:none!important}#content .kitchen-panel .grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}#content .kitchen-panel form{margin:10px 0 14px}#content .kitchen-panel form label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}#content .kitchen-panel .card{padding:18px}#content .kitchen-panel h2{margin:0 0 9px}#content .kitchen-panel h3{margin:17px 0 9px}#content .kitchen-panel .data-row{padding:11px 0;border-bottom:1px solid #e7edf0}#content .kitchen-panel .data-row:last-child{border:0}#content .kitchen-panel .btn{margin-top:4px}#content .kitchen-section-intro{padding:18px 20px;border:1px solid #dbe4ea;border-radius:12px;background:#f5f8fa;margin-bottom:14px}#content .kitchen-section-intro h2{margin:0 0 5px}#content .kitchen-section-intro p{margin:0;color:#5d6d79;font-size:13px}#content .kitchen-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}#content .kitchen-overview-grid>div{padding:17px;background:#fff;border:1px solid #dce4e9;border-radius:12px}#content .kitchen-overview-grid strong{display:block;font-size:27px;margin:5px 0;color:#243447}#content .kitchen-overview-grid small{color:#607182}#content #kitchen-tabs{position:relative}";
    document.head.append(css);
  }
- const groups={overview:[],govee:[],meater:[],pms:[],schedule:[],records:[],equipment:[],cleaning:[],staff:[]};
+ const groups={overview:[],govee:[],meater:[],pms:[],schedule:[],records:[],paths:[],equipment:[],cleaning:[],staff:[]};
  let sharedHeader=null;
  for(const el of all){
    if(el.id==="kitchen-tabs")continue;
@@ -408,12 +408,13 @@ function isRetiredCleaningTask(t){
  jump.type="button";jump.className="btn secondary";jump.textContent=settings?"Relevés et alertes":"Paramètres cuisine";
  jump.addEventListener("click",()=>settings?openKitchenTab("cuisine","records"):show("cuisineSettings"));
  shortcuts.append(jump);
- const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],meater:["MEATER Pro XL · 3 stations","Paramétrage des douze sondes, connexion Cloud et qualification HACCP."],pms:["Plan de maîtrise sanitaire","Procédures, responsabilités, contrôles et registre des écarts."],schedule:["Programmation des relevés automatiques","Personnalisez la fréquence ou les heures de collecte de chaque chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],cleaning:["Nettoyage et preuves photographiques","Consultez et modifiez les tâches programmées, vérifiez les validations et ouvrez les photos par date."],staff:["Équipe de cuisine","Gérez les accès personnels des agents Cuisine."]};
+ const intros={overview:["Tableau de bord","Vue rapide sur les contrôles et les tâches du jour."],govee:["Connexion des thermomètres Govee","Une seule clé API pour l’ensemble des capteurs compatibles. Testez les appareils puis associez chaque sonde à sa chambre froide."],meater:["MEATER Pro XL · 3 stations","Paramétrage des douze sondes, connexion Cloud et qualification HACCP."],pms:["Plan de maîtrise sanitaire","Procédures, responsabilités, contrôles et registre des écarts."],schedule:["Programmation des relevés automatiques","Personnalisez la fréquence ou les heures de collecte de chaque chambre froide."],records:["Historique et anomalies","Températures réellement enregistrées, résultats des remises en température et actions correctives."],paths:["Parcours remises en température","Suivi technique automatique des sondes et historique des mesures, indépendamment du registre HACCP."],equipment:["Configuration des équipements","Nommez vos chambres, fours, plats et définissez les valeurs utilisées par défaut."],cleaning:["Nettoyage et preuves photographiques","Consultez et modifiez les tâches programmées, vérifiez les validations et ouvrez les photos par date."],staff:["Équipe de cuisine","Gérez les accès personnels des agents Cuisine."]};
  const panels={};
  for(const [key] of tabs){
    const wrapper=document.createElement("section");wrapper.className="kitchen-panel";wrapper.dataset.panel=key;wrapper.setAttribute("role","tabpanel");wrapper.id="kitchen-panel-"+key;
    const intro=document.createElement("div");intro.className="kitchen-section-intro";const h=document.createElement("h2");h.textContent=intros[key][0];const p=document.createElement("p");p.textContent=intros[key][1];intro.append(h,p);wrapper.append(intro);
    if(key==="meater"){const root=document.createElement("div");root.id="meaterAdminPanel";wrapper.append(root);}
+   if(key==="paths"){const root=document.createElement("div");root.id="meaterPathsAdmin";wrapper.append(root);}
    if(key==="pms"){const root=document.createElement("div");root.id="pmsAdminPanel";wrapper.append(root);}
    if(key==="overview"){
      const day=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -445,6 +446,7 @@ function isRetiredCleaningTask(t){
     if(cold){if(!cold.kitchenRefresh)window.KitchenUI.mountLiveCold(cold,api);else void cold.kitchenRefresh();}
     if(root){if(!root.kitchenRefresh)window.KitchenMeater.mountDashboard(root,api,{diagnostic:true,live:true});else void root.kitchenRefresh();}
    }
+   if(kitchenTab==="paths")window.KitchenMeaterPaths.mount(node("meaterPathsAdmin"),api);
    if(kitchenTab==="cleaning")refreshCleaningAdmin();
    if(kitchenTab==="meater")window.KitchenMeater.mountAdmin(node("meaterAdminPanel"),api,snapshot.me.scope==="admin");
    if(kitchenTab==="pms")window.KitchenPMS.mount(node("pmsAdminPanel"),{api,get:async(action,params={})=>{const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";const r=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":token},cache:"no-store"});const j=await r.json();if(!r.ok)throw Error(j.error||"Service indisponible");return j;},role:snapshot.me.scope,canWrite:snapshot.me.scope==="admin"});
