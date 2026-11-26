@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.112.4";
-import { URLS,verificationReport } from "./rates.mjs";
+import { URLS,verificationReport,verifyNavigoDataset } from "./rates.mjs";
 
 const send=(data:unknown,status=200)=>new Response(JSON.stringify(data),{
  status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}
@@ -29,6 +29,15 @@ async function fetchOfficial(url:string){
  const html=await response.text();
  if(html.length<1000||html.length>1200000||!/<(main|table|html)\b/i.test(html))throw Error("Invalid official document");
  return html;
+}
+async function fetchOfficialData(){
+ const response=await fetch(URLS.navigoData,{
+  signal:AbortSignal.timeout(15000),redirect:"follow",headers:{"Accept":"application/json"}
+ });
+ if(!response.ok||new URL(response.url).hostname!=="data.iledefrance-mobilites.fr")throw Error("Open data HTTP "+response.status);
+ const json=await response.json();
+ if(!json||!Array.isArray(json.results))throw Error("Invalid public transport API response");
+ return json;
 }
 function expected2026(kind:string,payload:any){
  if(kind==="navigo")return payload.annualCents===99880&&payload.paidMonthCents===9080;
@@ -64,6 +73,15 @@ Deno.serve(async req=>{
    else errors[name]=String(item.reason?.message||"Source inaccessible").slice(0,180);
   }
   const report=verificationReport(year,html);
+  if(report.categories.navigo.status!=="verified"){
+   try{
+    const openData=verifyNavigoDataset(await fetchOfficialData(),year);
+    if(openData.status==="verified"){
+     report.categories.navigo=openData;
+     delete errors.navigo;
+    }else if(openData.status==="review")report.categories.navigo=openData;
+   }catch(e){errors.navigoDataset=String((e as Error)?.message||e).slice(0,180)}
+  }
   const prior=await db.from("college_payroll_official_rate_snapshots")
    .select("category,payload").eq("year",year);
   if(prior.error)throw Error("Snapshot read failed: "+prior.error.code);
