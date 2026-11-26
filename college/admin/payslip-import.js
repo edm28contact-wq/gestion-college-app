@@ -69,10 +69,11 @@ function render(state){
  if(!root?.isConnected)return;
  const allowed=state.opts.editable();
  root.innerHTML='<div class="salary-od-heading"><div><h3>Importer les bulletins de paie (PDF)</h3><p class="muted">Le net à payer après prélèvement à la source est proposé pour chaque bulletin. Un montant certain est reporté seulement si le mois et le salarié sont confirmés dans le PDF ; sinon, choisissez et confirmez la proposition après lecture du bulletin.</p></div></div>'+
-  '<label class="salary-payslip-file">Déposer plusieurs bulletins PDF <input id="salaryPayslipFiles" type="file" accept=".pdf,application/pdf" multiple></label>'+
-  '<p class="muted">Lecture locale, sans transmission des PDF. Maximum 30 fichiers et 12 Mo par fichier. Le site propose le brut, le prélèvement à la source et le net réellement versé. Rien n’est enregistré avant votre confirmation. Les PDF scannés sans texte ne peuvent pas être lus automatiquement et nécessitent un OCR.</p>'+
+  '<label class="salary-payslip-file" style="display:block;padding:14px;border:2px dashed #547084;border-radius:10px;cursor:pointer">Déposer les bulletins PDF ici ou cliquer pour les sélectionner <input id="salaryPayslipFiles" type="file" accept=".pdf,application/pdf" multiple></label>'+
+  '<p class="muted">Lecture locale et confidentielle : les PDF ne sont pas envoyés au serveur. Maximum 30 bulletins et 12 Mo par fichier. Contrôlez le net après impôt avant de valider. Un PDF scanné sans texte nécessite une saisie manuelle.</p>'+
   '<p id="salaryPayslipStatus" class="salary-od-status" role="status" aria-live="polite"></p>'+
-  '<div class="table" id="salaryPayslipTable" hidden><table class="salary-od-table salary-payslip-table"><thead><tr><th>Bulletin</th><th>Salarié</th><th>Période</th><th>Brut</th><th>Prélèvement à la source</th><th>Net à virer</th><th>Résultat</th><th>Contrôle et enregistrement</th></tr></thead><tbody id="salaryPayslipRows"></tbody></table></div>';
+  '<button id="salaryPayslipApplyAll" type="button" class="btn primary" hidden>Renseigner tous les nets reconnus</button>'+
+  '<div class="table" id="salaryPayslipTable" hidden><table class="salary-od-table salary-payslip-table"><thead><tr><th>Bulletin</th><th>Salarié</th><th>Période</th><th>Net à virer après impôt</th><th>Résultat</th><th>Contrôle</th></tr></thead><tbody id="salaryPayslipRows"></tbody></table></div>';
  const fileInput=root.querySelector("#salaryPayslipFiles");
  fileInput.disabled=!allowed||state.busy;
  fileInput.addEventListener("change",e=>{
@@ -80,17 +81,50 @@ function render(state){
   e.target.value="";
   if(files.length)void processFiles(state,files);
  });
+ const dropZone=root.querySelector(".salary-payslip-file");
+ dropZone.addEventListener("dragover",e=>{e.preventDefault();if(allowed&&!state.busy)e.dataTransfer.dropEffect="copy"});
+ dropZone.addEventListener("drop",e=>{e.preventDefault();if(allowed&&!state.busy){const files=Array.from(e.dataTransfer?.files||[]);if(files.length)void processFiles(state,files)}});
  const status=root.querySelector("#salaryPayslipStatus");
  status.textContent=state.busy?"Lecture des bulletins en cours…":state.message||(!allowed?"Ouvrez un dossier mensuel en brouillon avec les droits de modification.":"Sélectionnez les bulletins du mois "+state.opts.month+".");
  const tbody=root.querySelector("#salaryPayslipRows"),box=root.querySelector("#salaryPayslipTable");
  box.hidden=state.rows.length===0;
+ const eligible=state.rows.filter(row=>row.status==="ready"&&row.ready===true&&
+  row.employeeSource==="document"&&row.periodSource==="document"&&
+  row.documentOk===true&&row.period===state.opts.month&&
+  Number.isSafeInteger(row.amountCents)&&row.amountCents>=0&&
+  ["after-tax","paid"].includes(row.netConfidence));
+ const ids=eligible.map(row=>row.staffId);
+ const unique=ids.length===new Set(ids).size;
+ const bulk=root.querySelector("#salaryPayslipApplyAll");
+ bulk.hidden=!eligible.length||!unique;bulk.disabled=!allowed||state.busy||!eligible.length||!unique;
+ if(eligible.length&&unique){
+  bulk.textContent="Remplir les "+eligible.length+" net(s) reconnus";
+  bulk.addEventListener("click",async()=>{
+   if(!valid(state)||!eligible.every(row=>row.status==="ready"&&state.opts.staff.some(p=>p.id===row.staffId)))return;
+   const total=eligible.reduce((sum,row)=>sum+row.amountCents,0);
+   if(!confirm("Importer les nets de "+eligible.length+" bulletins du mois "+state.opts.month+
+    " pour "+euro(total)+" ?\n\nLes valeurs déjà différentes ne seront pas écrasées : elles resteront à vérifier individuellement. Aucun XML bancaire n'est généré."))return;
+   state.busy=true;
+   render(state);
+   try{
+    const outcome=await state.opts.apply(eligible.map(row=>({staffId:row.staffId,amountCents:row.amountCents})),false);
+    let imported=0,conflict=0;
+    eligible.forEach((row,i)=>{
+     row.status=outcome?.[i]||"review";
+     if(row.status==="imported")imported++;
+     if(row.status==="conflict"){conflict++;row.reason="Montant différent déjà renseigné : validez individuellement si le bulletin fait foi."}
+    });
+    state.message=imported+" net(s) enregistré(s) ; "+conflict+" conflit(s) à vérifier. Aucun paiement déclenché.";
+   }catch(e){state.message="Enregistrement impossible : "+String(e?.message||"réessayez.");}
+   finally{state.busy=false;if(state===current&&state.opts.isCurrent()){state.opts.refresh();render(state)}}
+  });
+ }
  for(let i=0;i<state.rows.length;i++){
   const row=state.rows[i],tr=document.createElement("tr");
   const cells=[
    row.filename,
    row.staffName||"Non identifié",
    row.period?row.period+(row.periodSource==="filename"?" (nom du fichier)":""):"Non reconnue",
-   euro(row.details?.gross?.cents),euro(row.details?.withholding?.cents),
    euro(row.amountCents),
    row.status==="imported"?"Enregistré":row.status==="same"?"Déjà identique":row.status==="conflict"?"Montants déjà renseignés différents":row.status==="duplicate"?"Doublon du même salarié":row.status==="ready"?"Prêt à confirmer":row.status==="review"?"À vérifier":row.status==="error"?"Lecture impossible":"À traiter"
   ];
@@ -118,53 +152,21 @@ function render(state){
     choice.append(option);
    });
    if(options.length){action.append(choice)}
-   const detail=makeEl("details");
-   detail.append(makeEl("summary","Montants complémentaires extraits"));
-   for(const [key,label] of [["beforeTax","Net avant impôt"],["netSocial","Net social"],["taxableNet","Net imposable"]]){
-    const value=row.details?.[key];
-    detail.append(makeEl("p",label+" : "+euro(value?.cents)+(value?.reason?" — à vérifier":"")));
-   }
-   action.append(detail);
-   const fieldChoice=(key,title)=>{
-    const datum=row.details?.[key],choices=[...(datum?.candidates||[])];
-    if(!choices.length)return null;
-    const label=makeEl("label",title);
-    const picker=makeEl("select",null,{"aria-label":title+" pour "+row.filename,"data-payslip-extra":key});
-    picker.append(makeEl("option","Ne pas reporter",{value:""}));
-    for(const cents of choices){
-     const opt=makeEl("option",euro(cents),{value:String(cents)});
-     if(datum?.cents===cents)opt.selected=true;
-     picker.append(opt);
-    }
-    label.append(picker);action.append(label);
-    return picker;
-   };
-   const grossChoice=fieldChoice("gross","Salaire brut vérifié");
-   const withholdingChoice=fieldChoice("withholding","Prélèvement à la source vérifié");
    const button=makeEl("button","Valider et enregistrer le bulletin",{type:"button",class:"btn secondary compact"});
    const check=()=>{button.disabled=!select.value||!choice.value};
    check();
    select.addEventListener("change",check);
    choice.addEventListener("change",check);
    button.addEventListener("click",async()=>{
-    const verified=Number(choice.value),grossCents=grossChoice?.value?Number(grossChoice.value):null;
-    const withholdingCents=withholdingChoice?.value?Number(withholdingChoice.value):null;
+    const verified=Number(choice.value);
     if(!valid(state)||!select.value||!choice.value||!Number.isSafeInteger(verified)||verified<0||
        !state.opts.staff.some(p=>p.id===select.value)||!options.some(x=>x.cents===verified))return;
     const person=state.opts.staff.find(p=>p.id===select.value);
-    const note=Number.isSafeInteger(row.details?.beforeTax?.cents)&&Number.isSafeInteger(withholdingCents)&&
-       row.details.beforeTax.cents-withholdingCents!==verified
-       ?"\\nAttention : le net avant impôt moins le PAS diffère du net à virer (acomptes ou autres retenues possibles)." :"";
     if(!confirm("Bulletin à valider : "+person.name+" — "+euro(verified)+" net à virer — mois "+state.opts.month+
-      (grossCents!==null?"\\nBrut : "+euro(grossCents):"")+
-      (withholdingCents!==null?"\\nPrélèvement à la source : "+euro(withholdingCents):"")+
-      note+"\\n\\nEnregistrer ces données dans le dossier mensuel sécurisé ?"))return;
+      "\\n\\nRemplacer le net de ce salarié dans le dossier mensuel sécurisé ?"))return;
     state.busy=true;button.disabled=true;
     try{
-     const payload={staffId:select.value,amountCents:verified,grossCents,withholdingCents,
-      beforeTaxCents:row.details?.beforeTax?.cents??null,
-      socialNetCents:row.details?.netSocial?.cents??null,
-      taxableNetCents:row.details?.taxableNet?.cents??null};
+     const payload={staffId:select.value,amountCents:verified};
      const outcome=(await state.opts.apply([payload],true))[0];
      row.status=outcome||"review";row.amountCents=verified;
      row.staffId=select.value;row.staffName=person.name;
