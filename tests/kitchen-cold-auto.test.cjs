@@ -170,3 +170,31 @@ test("Consultation Govee : lecture Cloud distincte du registre et alerte indépe
  const migration=read("supabase/migrations/20261126215921_kitchen_live_temperature_cache_without_history.sql");
  assert.match(migration,/interval '60 seconds'/);assert.match(migration,/if s.enabled or s.vault_secret_id is null/);assert.match(migration,/revoke all on function public.kitchen_meater_claim_preview\(\) from public,anon,authenticated/);
 });
+
+test("Govee : les réponses récentes restent visibles avec une horloge navigateur décalée",()=>{
+ const ui=read("cuisine/kitchen-ui.js"),base=Date.parse("2026-11-26T22:05:57Z");
+ class WrongClock extends Date{static now(){return base+3600000;}}
+ const ctx={window:{},Date:WrongClock};
+ vm.runInNewContext(ui,ctx);
+ const payload={now:new Date(base).toISOString(),queried:4,rooms:[{...roomN,sensor:{status:"online",temperature_c:-13.9,checked_at:new Date(base-44000).toISOString(),fresh:true}}]};
+ const out=ctx.window.KitchenUI.liveColdMarkup(payload);
+ assert.match(out,/13,9 °C/);assert.match(out,/Connexion en ligne/);assert.match(out,/il y a 44 s/);
+ assert.doesNotMatch(out,/Valeur ancienne/);
+ const stale=ctx.window.KitchenUI.liveColdMarkup({...payload,now:new Date(base+180000).toISOString()});
+ assert.match(stale,/Valeur ancienne/);assert.match(stale,/class="cold-live-value">— °C/);
+ const rejected=ctx.window.KitchenUI.liveColdMarkup({...payload,rooms:[{...roomN,sensor:{...payload.rooms[0].sensor,fresh:false}}]});
+ assert.match(rejected,/Valeur ancienne/);
+ assert.match(backend,/age_seconds:Number.isFinite\(age\)/);
+ assert.match(backend,/now:new Date\(now\).toISOString\(\),queried:claimed.length/);
+});
+test("Govee : les actualisations simultanées partagent la requête et ne bloquent pas le bouton",async()=>{
+ const ui=read("cuisine/kitchen-ui.js"),ctx={window:{},document:{hidden:false,addEventListener(){},removeEventListener(){}},setInterval:()=>1,clearInterval(){}};
+ vm.runInNewContext(ui,ctx);
+ let resolve,called=0;
+ const root={isConnected:true,innerHTML:"",closest:()=>null,querySelector:()=>({}),addEventListener(){}};
+ const refresh=ctx.window.KitchenUI.mountLiveCold(root,()=>{called++;return new Promise(r=>resolve=r);});
+ const a=refresh(),b=refresh();assert.equal(a,b);
+ await Promise.resolve();assert.equal(called,1);
+ resolve({now:new Date().toISOString(),rooms:[],queried:0});
+ await a;assert.match(root.innerHTML,/Dernière interrogation réutilisée/);
+});

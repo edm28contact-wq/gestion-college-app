@@ -60,38 +60,43 @@
   '<div class="cold-live-grid">'+(tiles||'<div class="empty">Aucune chambre froide active.</div>')+'</div></section>';
 }
  function liveColdMarkup(data){
-  const rooms=data?.rooms||[];
+  const rooms=data?.rooms||[],serverTime=Date.parse(data?.now||""),now=Number.isFinite(serverTime)?serverTime:Date.now();
   const cards=rooms.map(room=>{
-   const s=room.sensor,age=Date.now()-Date.parse(s?.checked_at||"");
-   const valid=!!s&&s.status==="online"&&s.temperature_c!=null&&Number.isFinite(Number(s.temperature_c))&&Number.isFinite(age)&&age>=-10000&&age<=130000;
+   const s=room.sensor,age=now-Date.parse(s?.checked_at||"");
+   const valid=!!s&&s.status==="online"&&s.temperature_c!=null&&Number.isFinite(Number(s.temperature_c))&&Number.isFinite(age)&&age>=-10000&&age<=130000&&s.fresh!==false;
    const alert=valid&&(Number(s.temperature_c)>Number(room.max_c)||(room.min_c!=null&&Number(s.temperature_c)<Number(room.min_c)));
    const status=!s?"Sans capteur":valid?"Connexion en ligne":s.status==="offline"?"Capteur hors ligne":s.status==="error"?"Erreur de connexion":s.status==="online"?"Valeur ancienne":"En attente";
    const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"medium"}):"—";
    return '<article class="cold-live-tile'+(alert?' cold-live-alert':'')+'"><div class="cold-live-top"><h3>'+esc(room.label)+'</h3><span class="tag '+(valid?'tag-ok':s?.status==="error"||s?.status==="offline"?'tag-alert':'tag-warn')+'">'+status+'</span></div>'+
-    '<div class="cold-live-value">'+(valid?number(s.temperature_c)+' °C':'— °C')+'</div><div class="subline">Dernière réponse Cloud : '+time(s?.checked_at)+'</div><div class="subline">Seuil : '+(room.min_c!=null?number(room.min_c)+' à ':'max. ')+number(room.max_c)+' °C</div>'+
+    '<div class="cold-live-value">'+(valid?number(s.temperature_c)+' °C':'— °C')+'</div><div class="subline">Dernière réponse Cloud : '+time(s?.checked_at)+(Number.isFinite(age)&&age>=0?' · il y a '+Math.round(age/1000)+' s':'')+'</div><div class="subline">Seuil : '+(room.min_c!=null?number(room.min_c)+' à ':'max. ')+number(room.max_c)+' °C</div>'+
     (alert?'<p class="cold-live-warning">Température hors seuil : vérification nécessaire.</p>':'')+
     (!valid&&s?.temperature_c!=null?'<p class="subline">Dernière valeur Cloud (ancienne) : '+number(s.temperature_c)+' °C</p>':!valid&&s?.last_temperature_c!=null?'<p class="subline">Dernier relevé enregistré : '+number(s.last_temperature_c)+' °C · '+time(s.last_checked_at)+'</p>':'')+
     (s?.error?'<p class="cold-live-warning">'+esc(s.error)+'</p>':'')+'</article>';
   }).join("");
   return '<section class="card cold-live-section"><div class="section-heading"><div><div class="eyebrow">Consultation en direct · sans enregistrement</div><h2>Températures Govee</h2><p>Interrogation Cloud toutes les 60 secondes lorsque cette page est ouverte. La fréquence de mesure physique dépend des sondes.</p></div><button type="button" class="btn btn-outline btn-small" data-live-govee-refresh>Actualiser Govee</button></div>'+
+   (data&&Number.isFinite(serverTime)?'<p class="subline">Réponse du serveur : '+new Date(serverTime).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"medium"})+' · '+(data.queried===0?"Dernière interrogation réutilisée (limite de 60 s).":Number.isInteger(data.queried)?data.queried+" capteur(s) interrogé(s).":"")+'</p>':'')+
    '<div class="cold-live-grid">'+(cards||'<div class="empty">'+(data?"Aucune chambre froide active.":"Chargement des températures…")+'</div>')+'</div></section>';
  }
  function mountLiveCold(root,api){
   if(!root)return;
   if(root.kitchenRefresh)return root.kitchenRefresh;
-  let pending=false;
+  let pending=null;
   root.innerHTML=liveColdMarkup(null);
-  async function refresh(){
-   if(!root.isConnected||document.hidden||root.closest("[hidden]")||pending)return;
-   pending=true;
+  function refresh(){
+   if(!root.isConnected||document.hidden||root.closest("[hidden]"))return Promise.resolve();
+   if(pending)return pending;
    const b=root.querySelector("[data-live-govee-refresh]");if(b)b.disabled=true;
-   try{const result=await api("govee-live");if(root.isConnected)root.innerHTML=liveColdMarkup(result);}
-   catch{if(root.isConnected)root.innerHTML='<section class="card"><h2>Températures Govee</h2><p class="cold-live-warning">Interrogation indisponible. Contrôlez les températures sur place.</p><button type="button" class="btn btn-outline" data-live-govee-refresh>Réessayer</button></section>';}
-   finally{pending=false;}
+   pending=Promise.resolve().then(()=>api("govee-live")).then(result=>{
+    if(!Array.isArray(result?.rooms)||!Number.isFinite(Date.parse(result.now)))throw Error("Réponse Govee invalide");
+    if(root.isConnected)root.innerHTML=liveColdMarkup(result);
+   }).catch(()=>{if(root.isConnected)root.innerHTML='<section class="card"><h2>Températures Govee</h2><p class="cold-live-warning">Interrogation indisponible. Contrôlez les températures sur place.</p><button type="button" class="btn btn-outline" data-live-govee-refresh>Réessayer</button></section>';}).finally(()=>{pending=null;});
+   return pending;
   }
   root.kitchenRefresh=refresh;
   root.addEventListener("click",evt=>{if(evt.target.closest?.("[data-live-govee-refresh]"))void refresh();});
-  const timer=setInterval(()=>{if(!root.isConnected){clearInterval(timer);return;}void refresh();},60000);
+  const resume=()=>{if(!root.isConnected){clearInterval(timer);document.removeEventListener("visibilitychange",resume);return;}void refresh();};
+  const timer=setInterval(resume,60000);
+  document.addEventListener("visibilitychange",resume);
   void refresh();return refresh;
  }
  function scheduleLabel(t){
