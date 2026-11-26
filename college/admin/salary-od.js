@@ -213,6 +213,10 @@ function simpleBankHtml(d,staff=context?.staff||[],month=context?.month||""){
  }).join("");
  return '<section class="card salary-od-section" id="salaryBankSimple">'+
   '<div class="salary-od-heading"><h2>Virements de salaires</h2><p class="muted">Mois '+esc(month)+' · Montants récupérés du dossier de paie, ajustables après vérification du bulletin</p></div>'+
+  '<details class="salary-payslip-import-panel" style="margin:12px 0 16px;border:1px solid #435767;border-radius:10px;padding:12px">'+
+  '<summary style="cursor:pointer;font-weight:700">Déposer les bulletins de paie (PDF) pour remplir les nets</summary>'+
+  '<section id="salaryPayslipImport" class="salary-payslip-import" aria-label="Import des bulletins de paie"></section>'+
+  '</details>'+
   '<div class="table"><table class="salary-bank-table"><thead><tr><th>Salarié</th><th>Net à virer</th><th>Matricule</th><th>Bénéficiaire bancaire</th><th>IBAN</th><th>BIC</th></tr></thead><tbody>'+
   (rows||'<tr><td colspan="6">Aucun salarié enregistré pour ce mois.</td></tr>')+
   '</tbody><tfoot><tr><th>Total des virements</th><td><strong id="salaryPayTotal">—</strong></td><td colspan="4"></td></tr></tfoot></table></div>'+
