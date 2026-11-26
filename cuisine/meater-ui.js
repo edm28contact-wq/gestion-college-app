@@ -11,11 +11,14 @@
  const links=s=>s.links||[];
  const linked=(p,s)=>links(s).find(l=>l.device_id===p.device_id);
  const valid=(p,s,l)=>s.enabled&&fresh(p,s)&&qualified(p)&&p.cook_id===l.cook_id&&Date.parse(p.measured_at)>=Date.parse(l.attached_at);
- const state=(p,s)=>!p?"En attente d’association":!fresh(p,s)?"Hors ligne / mesure ancienne":!s.enabled?"Connectée · essai":!qualified(p)?"À qualifier":linked(p,s)?(valid(p,s,linked(p,s))?"Cycle associé":"Association à contrôler"):p.cook_state==="Started"?"Disponible pour un cycle":"Connectée";
+ const state=(p,s)=>!p?"En attente d’association":!fresh(p,s)?"Aucune mesure récente":!s.enabled?"Connectée · essai":!qualified(p)?"À qualifier":linked(p,s)?(valid(p,s,linked(p,s))?"Cycle associé":"Association à contrôler"):p.cook_state==="Started"?"Disponible pour un cycle":"Connectée";
+ function lastKnown(p){
+  return p?.internal_c!=null&&Number.isFinite(Number(p.internal_c))&&Number.isFinite(Date.parse(p.measured_at))?'<small class="meater-warn">Dernière valeur connue (non actualisée) : '+format(p.internal_c)+'</small>':'';
+ }
  function tiles(s,testing=false,compact=false){
  return stations.map((name,i)=>compact&&!slots.slice(i*4,i*4+4).some(slot=>(s.probes||[]).some(p=>p.slot===slot))?"":'<section class="meater-station"><h3>Station '+name+'</h3><div class="meater-grid">'+slots.slice(i*4,i*4+4).filter(slot=>!compact||(s.probes||[]).some(p=>p.slot===slot)).map(slot=>{
   const p=(s.probes||[]).find(x=>x.slot===slot),l=p&&linked(p,s),ok=fresh(p,s)&&(testing||(s.enabled&&qualified(p)))&&(!l||valid(p,s,l));
-  return '<article class="meater-tile"><strong>'+esc(p?.label||"Sonde "+((slot-1)%4+1))+'</strong><span class="meater-state '+(ok?'meater-ok':'meater-warn')+'">'+esc(state(p,s))+'</span><small>À cœur'+(testing&&!s.enabled?' · test':'')+'</small><div class="meater-value">'+(ok?format(p.internal_c):"— °C")+'</div><small>Ambiante indiquée : '+(ok?format(p.ambient_c):"—")+'</small><small>Mesure : '+time(p?.measured_at)+'</small></article>';
+  return '<article class="meater-tile"><strong>'+esc(p?.label||"Sonde "+((slot-1)%4+1))+'</strong><span class="meater-state '+(ok?'meater-ok':'meater-warn')+'">'+esc(state(p,s))+'</span><small>À cœur'+(testing&&!s.enabled?' · test':'')+'</small><div class="meater-value">'+(ok?format(p.internal_c):"— °C")+'</div><small>Ambiante indiquée : '+(ok?format(p.ambient_c):"—")+'</small><small>Mesure : '+time(p?.measured_at)+'</small>'+(!ok&&testing?lastKnown(p):"")+'</article>';
  }).join("")+'</div></section>').join("");
  }
  function probeReadingMarkup(p,s){
@@ -103,12 +106,12 @@
   });
  }
  function poll(root,api,render){let pending=false;async function refresh(){if(!root.isConnected||document.hidden||pending)return;pending=true;try{const s=await api("meater-status");if(root.isConnected)render(s);}catch{if(root.isConnected)render(null);}finally{pending=false;}}refresh();const timer=setInterval(()=>{if(!root.isConnected){clearInterval(timer);return;}refresh();},30000);return refresh;}
- function dashboardMarkup(s){
+ function dashboardMarkup(s,diagnostic=false){
   if(!s)return '<section class="card"><h2>Sondes MEATER</h2><p class="meater-error">État indisponible. Contrôles manuels nécessaires.</p></section>';
   const assigned=(s.probes||[]).filter(p=>Number.isInteger(p.slot)&&p.slot>=1&&p.slot<=12).length;
-  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+notice(s)+(assigned?tiles(s,s.test_active===true,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
+  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+notice(s)+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
  }
- function mountDashboard(root,api){if(!root)return;poll(root,api,s=>{root.innerHTML=dashboardMarkup(s);});}
+ function mountDashboard(root,api,{diagnostic=false}={}){if(!root)return;poll(root,api,s=>{root.innerHTML=dashboardMarkup(s,diagnostic);});}
  function mountKitchen(root,api,getData,{showTiles=true}={}){
   if(!root)return;
   root.innerHTML='<section class="card"><h2>MEATER Pro XL · suivi complémentaire</h2><p>La température de départ et la validation finale restent manuelles. Démarrez le cycle avant d’associer une sonde physique qualifiée, avec une cuisson MEATER active.</p><p data-meater-msg role="status"></p><div data-meater-cycle-state></div></section>';
