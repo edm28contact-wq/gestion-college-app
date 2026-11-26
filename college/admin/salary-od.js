@@ -94,8 +94,8 @@ function reconcilePayments(d){
  return {p,account,difference,justified,ok:difference!==null&&(difference===0||justified)};
 }
 const drafts=new Map(),remoteMonths=new Map();
-let session="",activeView="variables",context=null,remoteMonthList=[],remoteListLoading=false,remoteListLoaded=false;
-function clear(){drafts.clear();remoteMonths.clear();session="";context=null;activeView="variables";remoteMonthList=[];remoteListLoading=false;remoteListLoaded=false}
+let session="",activeView="pay",context=null,remoteMonthList=[],remoteListLoading=false,remoteListLoaded=false;
+function clear(){drafts.clear();remoteMonths.clear();session="";context=null;activeView="pay";remoteMonthList=[];remoteListLoading=false;remoteListLoaded=false}
 function remoteFor(month){
  if(!remoteMonths.has(month))remoteMonths.set(month,{tried:false,loaded:false,loading:false,saving:false,version:0,status:"draft",updated_at:"",updated_by:"",bank_reference:"",export_info:{},history:[],error:""});
  return remoteMonths.get(month);
@@ -197,6 +197,28 @@ function bankHtml(d){
   return '<tr><th scope="row">'+esc(staffName(id))+'</th><td data-bank-amount="'+esc(id)+'">'+ (cents(value)===null?"—":esc(money(cents(value))))+'</td>'+beneficiaryFields.map(([key,label,max])=>'<td>'+bankInput(b[key],key,label+" — "+staffName(id),max,id)+'</td>').join("")+'</tr>';
  }).join("");
  return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">IBAN et BIC récupérés depuis les fiches salariés. Modifiez-les dans Liste salariés ; les autres champs du bordereau restent dans le brouillon. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><button type="button" class="btn secondary" id="salaryBankReload">Actualiser les RIB des salariés</button><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><div class="actions"><button id="salaryBankPrint" type="button" class="btn secondary" disabled>Imprimer le bordereau PDF</button><button id="salaryBankXml" type="button" class="btn primary" disabled>Télécharger XML (format exact du classeur)</button></div><p class="muted">XML reproduit selon la macro VBA du classeur original (pain.001.001.03), avec les noms bancaires et l’ordre des lignes saisis. La banque doit confirmer qu’elle accepte encore ce format. Le fichier est généré uniquement dans le navigateur, jamais transmis automatiquement. Le virement nécessite une validation séparée dans la banque.</p></section>';
+}
+/* Vue bancaire unique : les informations complementaires restent dans le dossier securise. */
+function simpleBankHtml(d){
+ const entries=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr"));
+ const rows=entries.map(([id,amount])=>{
+  const b=d.bank.beneficiaries.get(id)||{};
+  const total=cents(amount);
+  return '<tr><th scope="row">'+esc(staffName(id))+'</th>'+
+   '<td class="salary-accounting-num">'+(total===null?'<span class="err">À renseigner</span>':esc(money(total)))+'</td>'+
+   '<td>'+esc(b.matricule||"—")+'</td><td>'+esc(b.creditorName||staffName(id))+'</td>'+
+   '<td style="overflow-wrap:anywhere">'+esc(b.iban||"À vérifier")+'</td>'+
+   '<td>'+esc(b.bic||"À vérifier")+'</td></tr>';
+ }).join("");
+ return '<section class="card salary-od-section" id="salaryBankSimple">'+
+  '<div class="salary-od-heading"><h2>Virements de salaires</h2><p class="muted">Mois '+esc(context.month)+' · Nets à virer provenant du dossier de paie</p></div>'+
+  '<div class="table"><table class="salary-bank-table"><thead><tr><th>Salarié</th><th>Net à virer</th><th>Matricule</th><th>Bénéficiaire bancaire</th><th>IBAN</th><th>BIC</th></tr></thead><tbody>'+
+  (rows||'<tr><td colspan="6">Aucun salarié enregistré pour ce mois.</td></tr>')+
+  '</tbody><tfoot><tr><th>Total des virements</th><td><strong id="salaryPayTotal">—</strong></td><td colspan="4"></td></tr></tfoot></table></div>'+
+  '<div class="actions" style="align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap"><label>Date d’exécution <input type="date" data-bank-issuer="1" data-bank-key="date" value="'+esc(d.bank.issuer.date||"")+'"></label>'+
+  '<button id="salaryBankXml" type="button" class="btn primary" disabled>Exporter le fichier XML</button></div>'+
+  '<p id="salaryBankStatus" role="status" class="salary-od-status"></p>'+
+  '<p class="muted">Le fichier est téléchargé, jamais envoyé automatiquement à la banque. Vérifiez le nom, l’IBAN, le BIC, le montant et la date avant de confirmer.</p></section>';
 }
 function bankSignature(d){
  return JSON.stringify([...d.payments.keys()].sort().map(id=>[id,context.staff.find(s=>s.id===id)?.bank_summary?.version??0]));
@@ -625,7 +647,7 @@ function render(){
   engine.mount(host,{month:context.month,people:context.declarationStaff||[],draft:d});
   workflowReadOnly();return;
  }
- host.innerHTML=(activeView==="pay"?payHtml(d):activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
+ host.innerHTML=activeView==="pay"?simpleBankHtml(d):(activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
  wire(host,d);refresh();
  if(activeView==="pay"){
   const capturedSession=session,capturedMonth=context.month,staff=context.staff.map(p=>({id:p.id,name:p.name}));
@@ -682,11 +704,11 @@ function refresh(){
  if(el("salaryDeclarationConfirm")){el("salaryDeclarationConfirm").checked=d.declarationConfirmed;el("salaryDeclarationConfirm").disabled=!!declarationError}
  for(const id of ["salaryDeclarationCsv","salaryDeclarationPrint"])if(el(id))el(id).disabled=!!declarationError||!d.declarationConfirmed;
  const bankError=d.bankLoading?"Chargement des RIB enregistrés…":d.bankError|| (d.bankSignature!==bankSignature(d)?"Actualisez les RIB enregistrés.":bankProblem(d));
- set("salaryBankStatus",bankError||"Bordereau prêt à contrôler.");
+ set("salaryBankStatus",remoteFor(context.month).status!=="draft"?"XML déjà généré pour ce mois. Vérifiez le suivi bancaire avant toute nouvelle opération.":bankError||"Prêt à exporter après confirmation des bénéficiaires.");
  if(el("salaryBankReload"))el("salaryBankReload").disabled=d.bankLoading;
  if(el("salaryBankConfirm")){el("salaryBankConfirm").checked=d.bankConfirmed;el("salaryBankConfirm").disabled=!!bankError||!d.payConfirmed||unknown}
  if(el("salaryBankPrint"))el("salaryBankPrint").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown;
- if(el("salaryBankXml"))el("salaryBankXml").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown||!payReady||!workflowEditable();
+ if(el("salaryBankXml"))el("salaryBankXml").disabled=!!bankError||d.bankLoading||unknown||!payReady||reconcile!==0||!workflowEditable();
  workflowReadOnly();
 }
 function wire(host,d){
@@ -726,7 +748,7 @@ function wire(host,d){
  el("salaryBankReload")?.addEventListener("click",()=>void loadSavedBanks(d,true));
  el("salaryBankConfirm")?.addEventListener("change",e=>{if(permissionsValid()){d.bankConfirmed=e.target.checked;refresh()}});
  el("salaryBankPrint")?.addEventListener("click",()=>void printBank(d));
- el("salaryBankXml")?.addEventListener("click",()=>void exportSepa(d));
+ el("salaryBankXml")?.addEventListener("click",()=>{if(!workflowEditable()||d.bankLoading||bankProblem(d)||reconcilePayments(d).difference!==0||d.bankSignature!==bankSignature(d))return;d.payConfirmed=true;d.bankConfirmed=true;void exportSepa(d)});
  host.querySelectorAll("[data-declaration-key]").forEach(input=>input.addEventListener("input",()=>{
   if(!permissionsValid())return;
   const id=input.dataset.declarationPerson,key=input.dataset.declarationKey;
@@ -780,8 +802,8 @@ function mount(config){
   if(signature(previous)!==signature(config))getDraft().declarationConfirmed=false;
  }
  const nav=document.getElementById("salaryPayrollNavigation");if(!nav)return;
- const tabs=[["variables","1. Éléments variables"],["declaration","2. Déclaration gérance"],["pay","3. Virements de salaires"],["od","4. OD de salaires"],["calculator","5. Calcul fiche paye (Excel)"]];
- nav.innerHTML='<nav class="card salary-od-nav" aria-label="Étapes de préparation des salaires">'+tabs.map(([key,label])=>'<button type="button" class="btn secondary" data-salary-od-view="'+key+'" aria-pressed="false">'+label+'</button>').join("")+'</nav><section class="card salary-od-section" id="salaryWorkflowPanel" aria-label="Dossier mensuel en ligne"></section>';
+ activeView="pay";
+ nav.replaceChildren();
  if(config.ready&&config.canWrite&&validMonth(config.month)){
   const d=getDraft();
   for(const staff of config.defaultStaff)if(!d.payments.has(staff.id)){d.payments.set(staff.id,"");d.payConfirmed=false;d.bankConfirmed=false;d.odConfirmed=false;d.declarationConfirmed=false;d.reconciliation.difference=null}
@@ -795,5 +817,5 @@ function mount(config){
 }
 window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
-if(typeof module!=="undefined"&&module.exports)module.exports={lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,materializeKnownDeclaration,csv};
+if(typeof module!=="undefined"&&module.exports)module.exports={simpleBankHtml,lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,materializeKnownDeclaration,csv};
 })();
