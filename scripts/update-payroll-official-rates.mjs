@@ -28,23 +28,29 @@ if(report.categories.navigo.status!=="verified"){
   if(fallback.status==="verified")report.categories.navigo=fallback;
  }catch(e){errors.navigoDataset=String(e.message||e)}
 }
+const now=new Date().toISOString();
 const safe=Object.fromEntries(Object.entries(report.categories).map(([name,item])=>[name,{
  status:item.status,source:item.source,message:item.message,
- ...(item.status==="verified"&&item.payload?{payload:item.payload}:{})
+ ...(item.status==="verified"&&item.payload?{payload:item.payload,lastVerifiedAt:now}:{})
 }]));
-const count=Object.values(safe).filter(x=>x.status==="verified").length;
-console.log("Barèmes officiels vérifiés :",count,"sur",Object.keys(safe).length);
 const path="college/admin/official-rates-cache.json";
-if(count===0)throw new Error("Aucun taux officiel vérifié : aucune cache publique mise à jour.");
-const data={year,checkedAt:new Date().toISOString(),status:count===5?"verified":"incomplete",categories:safe,errors};
 const existing=fs.existsSync(path)?JSON.parse(fs.readFileSync(path,"utf8")):null;
 if(existing&&existing.year===year){
  for(const [name,item] of Object.entries(existing.categories||{})){
-  const next=data.categories[name];
-  if(item.status==="verified"&&next?.status!=="verified")data.categories[name]=item;
-  if(item.status==="verified"&&next?.status==="verified"&&JSON.stringify(item.payload)!==JSON.stringify(next.payload)){
-   data.categories[name]={status:"review",source:next.source,message:"Changement officiel détecté : contrôle réglementaire requis.",payload:item.payload};
+  const next=safe[name];
+  if(item.status==="verified"||item.status==="previously_verified"){
+   if(next?.status!=="verified"){
+    safe[name]={...item,status:"previously_verified",lastVerifiedAt:item.lastVerifiedAt||existing.checkedAt,
+     message:"Dernier barème officiellement vérifié conservé ; contrôle du "+now.slice(0,10)+" non concluant."};
+   }else if(JSON.stringify(item.payload)!==JSON.stringify(next.payload)){
+    safe[name]={...item,status:"review",lastVerifiedAt:item.lastVerifiedAt||existing.checkedAt,
+     message:"Modification du barème détectée ; ancien montant archivé sans application automatique."};
+   }
   }
  }
 }
+const count=Object.values(safe).filter(x=>x.status==="verified").length;
+console.log("Barèmes officiels vérifiés à cette exécution :",count,"sur",Object.keys(safe).length);
+const data={year,checkedAt:now,status:count===5?"verified":Object.values(safe).some(x=>x.status==="review")?"review":"incomplete",categories:safe,errors};
+if(count===0&&!existing)throw new Error("Aucun taux officiel vérifié et aucune dernière valeur archivée.");
 fs.writeFileSync(path,JSON.stringify(data,null,2)+"\n");
