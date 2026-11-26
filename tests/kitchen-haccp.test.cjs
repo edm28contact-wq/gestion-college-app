@@ -321,7 +321,7 @@ test("Cuisine : pages de suivi et de paramètres distinctes avec droits identiqu
  assert.ok(start>=0&&end>start);
  const ctx=vm.createContext({});
  vm.runInContext(admin.slice(start,end)+";this.kitchenPages=kitchenPages;",ctx);
- assert.deepEqual(Array.from(ctx.kitchenPages.cuisine,x=>x[0]),["overview","records","cleaning"]);
+ assert.deepEqual(Array.from(ctx.kitchenPages.cuisine,x=>x[0]),["overview","records","paths","cleaning"]);
  assert.deepEqual(Array.from(ctx.kitchenPages.cuisineSettings,x=>x[0]),["govee","meater","pms","schedule","equipment","staff"]);
  assert.match(html,/cuisineSettings:'Paramètres cuisine'/);
  assert.match(html,/\['cuisineSettings','Paramètres cuisine'\]/);
