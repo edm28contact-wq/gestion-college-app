@@ -100,6 +100,7 @@ function housing(month,input={}){
  if(!yearVerified(month))return missing("Barème logement non vérifié pour ce mois.");
  if(!["forfait","real"].includes(mode))return missing("Choisir l'évaluation au barème forfaitaire ou à la valeur réelle.");
  if(select(input.housingLeaseHolder)==="employee")return missing("Bail au nom du salarié : avantage en espèces, non calculable au barème logement.");
+ if(select(input.housingLeaseHolder)!=="employer")return missing("Titulaire du bail non renseigné : la valorisation du logement dépend du bail.");
  if(select(input.housingShared)==="yes"||select(input.housingServiceNecessity)==="yes")
   return missing("Logement partagé ou nécessité absolue de service : situation particulière à qualifier avant calcul.");
  const contribution=optionalMoney(input.housingEmployeeContribution);
