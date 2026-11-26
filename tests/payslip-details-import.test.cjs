@@ -42,7 +42,7 @@ test("le site montre l'import PDF depuis Compta salaire sans transmettre les doc
  assert.match(importer,/window\.ChambertinPayslipDetails\?\.inspect/);
  assert.match(importer,/Valider et enregistrer le bulletin/);
  assert.match(importer,/Aucun montant n'a été enregistré automatiquement/);
- assert.match(importer,/PDF scannés sans texte/);
+ assert.match(importer,/PDF scanné sans texte/);
  assert.doesNotMatch(importer,/\bfetch\s*\(|localStorage|sessionStorage/);
  assert.match(index,/payslip-details-parser\.js/);
 });
