@@ -12,7 +12,8 @@
  const links=s=>s.links||[];
  const linked=(p,s)=>links(s).find(l=>l.device_id===p.device_id);
  const valid=(p,s,l)=>s.enabled&&fresh(p,s)&&qualified(p)&&p.cook_id===l.cook_id&&Date.parse(p.measured_at)>=Date.parse(l.attached_at);
- const state=(p,s)=>!p?"En attente d’association":!fresh(p,s)?"Aucune mesure récente":!s.enabled?"Connectée · essai":!qualified(p)?"À qualifier":linked(p,s)?(valid(p,s,linked(p,s))?"Cycle associé":"Association à contrôler"):p.cook_state==="Started"?"Disponible pour un cycle":"Connectée";
+ const unavailable=(p,s)=>{const age=serverNow(s)-Date.parse(s?.last_ok_at||"");return s?.last_error?"Valeur indisponible — erreur Cloud":p?.present===false&&s?.configured&&age>=-10000&&age<=30000?"Valeur indisponible — sonde en charge (présumée)":"Valeur indisponible — mesure ancienne ou connexion non confirmée";};
+ const state=(p,s)=>!p?"En attente d’association":!fresh(p,s)?unavailable(p,s):!s.enabled?"Connectée · essai":!qualified(p)?"À qualifier":linked(p,s)?(valid(p,s,linked(p,s))?"Cycle associé":"Association à contrôler"):p.cook_state==="Started"?"Disponible pour un cycle":"Connectée";
  function lastKnown(p){
   return p?.internal_c!=null&&Number.isFinite(Number(p.internal_c))&&Number.isFinite(Date.parse(p.measured_at))?'<small class="meater-warn">Dernière valeur connue (non actualisée) : '+format(p.internal_c)+'</small>':'';
  }
@@ -28,9 +29,9 @@
  }
  function probeReadingMarkup(p,s){
   const ok=fresh(p,s),suffix=p.device_id.slice(-8);
-  return '<div class="meater-tile"><strong>Identifiant : …'+esc(suffix)+'</strong><span class="meater-state '+(ok?'meater-ok':'meater-warn')+'">'+(ok?'Mesure récente':'Mesure indisponible ou ancienne')+'</span><small>À cœur · '+(p.slot?esc(physical(p.slot)):'Non associée')+'</small><div class="meater-value">'+(ok?format(p.internal_c):"— °C")+'</div><small>Ambiante : '+(ok?format(p.ambient_c):"—")+'</small><small>Dernière mesure : '+time(p.measured_at)+'</small></div>';
+  return '<div class="meater-tile"><strong>Identifiant : …'+esc(suffix)+'</strong><span class="meater-state '+(ok?'meater-ok':'meater-warn')+'">'+(ok?'Mesure récente':esc(unavailable(p,s)))+'</span><small>À cœur · '+(p.slot?esc(physical(p.slot)):'Non associée')+'</small><div class="meater-value">'+(ok?format(p.internal_c):"— °C")+'</div><small>Ambiante : '+(ok?format(p.ambient_c):"—")+'</small><small>Dernière mesure : '+time(p.measured_at)+'</small></div>';
  }
- function notice(s){return (s.test_active?'<p class="meater-warn"><strong>MODE ESSAI · mesures indicatives, hors registre HACCP</strong> · Jusqu’au '+time(s.test_until)+'</p>':'<p class="muted">'+(s.enabled?"Collecte automatique de production active":s.configured?"Compte enregistré · collecte automatique suspendue":"En attente de configuration")+'</p>')+(s.last_error?'<p class="meater-error">'+esc(s.last_error)+'</p>':'');}
+ function notice(s){return (s.test_active?'<p class="meater-warn"><strong>MODE ESSAI · mesures indicatives, hors registre HACCP</strong> · Jusqu’au '+time(s.test_until)+'</p>':'<p class="muted">'+(s.enabled?"Collecte automatique de production active":s.configured?"Surveillance technique automatique active · hors registre HACCP":"En attente de configuration")+'</p>')+(s.last_error?'<p class="meater-error">'+esc(s.last_error)+'</p>':'');}
  function mountAdmin(root,api,manage){
   if(!root||root.dataset.meaterMounted)return;root.dataset.meaterMounted="1";
   root.innerHTML='<section class="card"><h2>Configuration MEATER · 3 stations / 12 sondes</h2><p>Utilisez le même compte MEATER Cloud pour les trois stations. La station et son numéro de sonde sont attribués après identification physique, jamais déduits du nom Cloud.</p><p>1. Connectez le compte MEATER Cloud. 2. Retirez les sondes du socle et vérifiez qu’elles remontent une température dans MEATER Cloud, puis testez la détection. 3. Attribuez les sondes reçues aux emplacements de la station A.</p><p class="muted">Connectez votre compte, détectez les sondes puis attribuez-les à leur emplacement physique. Les mesures de test restent hors du registre HACCP. La qualification des sondes et la validation manuelle des températures restent nécessaires pour le suivi des plats.</p>'+
@@ -44,7 +45,7 @@
    const list=s.probes||[];
    return notice(s)+'<p><strong>Station A : '+list.filter(p=>p.slot>=1&&p.slot<=4).length+' / 4 associées</strong> · Total : '+list.filter(p=>p.slot).length+' / 12 associées · '+list.filter(qualified).length+' / 12 qualifiées · '+list.filter(p=>fresh(p,s)).length+' sondes détectées récemment.</p><p class="muted">Dernier test réussi : '+time(s.last_ok_at)+'</p>'+
    (manage?'<div class="meater-actions"><button type="button" data-meater-test class="btn secondary" '+(!s.configured?'disabled':'')+'>Tester / détecter les sondes</button><button type="button" data-meater-refresh class="btn secondary">Actualiser les températures</button><button type="button" data-meater-test-mode="'+(!s.test_active)+'" class="btn secondary" '+(!s.configured||s.enabled?'disabled':'')+'>'+(s.test_active?"Arrêter le mode essai":"Démarrer un essai de 2 h")+'</button><button type="button" data-meater-enable="'+(!s.enabled)+'" class="btn primary" '+(!s.enabled&&(!s.configured||!list.some(p=>qualified(p)&&fresh(p,s)))?'disabled':'')+'>'+(s.enabled?"Suspendre":"Activer")+' la collecte de production</button>'+'</div>':'')+
-   (!s.enabled&&s.configured&&!list.some(p=>qualified(p)&&fresh(p,s))?'<p class="muted">La collecte de production nécessite une qualification réelle. Le mode essai permet de suivre les quatre sondes toutes les 30 secondes sans remplir le dossier.</p>':'')+
+   (!s.enabled&&s.configured&&!list.some(p=>qualified(p)&&fresh(p,s))?'<p class="muted">La collecte de production nécessite une qualification réelle. La surveillance technique interroge les sondes toutes les 5 secondes, même hors mode essai. Les données restent hors registre HACCP.</p>':'')+
    (list.some(p=>!p.slot)?'<h3>Sondes détectées non associées · '+list.filter(p=>!p.slot).length+'</h3><p>Les températures sont visibles sans affectation ni qualification. Identifiez chaque sonde physiquement avant de choisir son emplacement.</p><div class="meater-grid">'+list.filter(p=>!p.slot).map(p=>probeReadingMarkup(p,s)).join("")+'</div>':'')+
    tiles(s,true);
   }
@@ -91,7 +92,7 @@
      }
     }
     s=await api("meater-status");render();
-    msg.textContent=r?.skipped?"Test récent : réessayez dans 30 secondes.":action==="meater-login"?(Number(r?.received)>0?"Compte connecté · "+r.received+" sonde(s) détectée(s). Enregistrez leur affectation.":"Compte connecté. Aucune mesure récente : vérifiez MEATER Cloud et relancez le test."):action==="meater-test"?(Number(r?.received)>0?r.received+" sonde(s) avec mesure récente détectée(s). Identifiez-les et enregistrez leur affectation.":"Connexion réussie, aucune mesure récente. Vérifiez MEATER Cloud et relancez le test."):r?.recorded?(r.qualified?"Qualification enregistrée : critères internes satisfaits.":"Qualification enregistrée : non validée. Sonde bloquée."):action==="meater-probe-config"?"Affectation enregistrée.":action==="meater-test-mode"?(s.test_active?"Essai automatique actif pour 2 h. Aucune mesure ajoutée au registre HACCP.":"Mode essai arrêté."):"État actualisé.";
+    msg.textContent=r?.skipped?"Collecte récente : la prochaine mesure sera actualisée automatiquement.":action==="meater-login"?(Number(r?.received)>0?"Compte connecté · "+r.received+" sonde(s) détectée(s). Enregistrez leur affectation.":"Compte connecté. Aucune mesure récente : vérifiez MEATER Cloud et relancez le test."):action==="meater-test"?(Number(r?.received)>0?r.received+" sonde(s) avec mesure récente détectée(s). Identifiez-les et enregistrez leur affectation.":"Connexion réussie, aucune mesure récente. Vérifiez MEATER Cloud et relancez le test."):r?.recorded?(r.qualified?"Qualification enregistrée : critères internes satisfaits.":"Qualification enregistrée : non validée. Sonde bloquée."):action==="meater-probe-config"?"Affectation enregistrée.":action==="meater-test-mode"?(s.test_active?"Essai automatique actif pour 2 h. Aucune mesure ajoutée au registre HACCP.":"Mode essai arrêté."):"État actualisé.";
    }catch(err){
     const step=({"meater-login":"Connexion MEATER","meater-test":"Détection des sondes","meater-probe-config":"Affectation de la sonde","meater-qualification":"Qualification","meater-enable":"Collecte automatique","meater-test-mode":"Mode essai"})[action]||"Chargement MEATER";
     const message=step+" : "+(err.message||"Opération impossible.");
@@ -105,7 +106,7 @@
    else {for(const k of ["cold_ref","cold_probe","hot_ref","hot_probe","reference_uncertainty"])v[k]=Number(v[k]);v.transmission_verified=fd.has("transmission_verified");v.hygiene_verified=fd.has("hygiene_verified");run("meater-qualification",{device_id:f.dataset.meaterQualification,evidence:v});}
   });
   root.addEventListener("click",ev=>{if(!manage||busy)return;const b=ev.target.closest("button");if(!b)return;if(b.hasAttribute("data-meater-test"))run("meater-test",{});else if(b.hasAttribute("data-meater-refresh")){if(s?.configured)run("meater-test",{});else run(null,null);}else if(b.hasAttribute("data-meater-test-mode"))run("meater-test-mode",{enabled:b.dataset.meaterTestMode==="true"});else if(b.hasAttribute("data-meater-enable"))run("meater-enable",{enabled:b.dataset.meaterEnable==="true"});});
-  const liveTimer=setInterval(()=>{if(!root.isConnected){clearInterval(liveTimer);return;}void refreshLive();},30000);
+  const liveTimer=setInterval(()=>{if(!root.isConnected){clearInterval(liveTimer);return;}void refreshLive();},5000);
   run(null,null).then(()=>{
    if(root.isConnected&&manage&&s?.configured&&!(s.probes||[]).some(p=>fresh(p,s)))void run("meater-test",{});
   });
@@ -120,7 +121,7 @@
    if(!root.isConnected){document.removeEventListener("visibilitychange",resume);return;}
    const rapid=visible()&&fastMode();
    if(!rapid)reset();
-   const delay=rapid?Math.max(100,(backoff||steps[step])-(Date.now()-lastStarted)):30000;
+   const delay=rapid?Math.max(100,(backoff||steps[step])-(Date.now()-lastStarted)):visible()&&action==="meater-live"?5000:30000;
    timer=setTimeout(()=>{timer=null;void refresh();},delay);
   }
   function refresh(){
@@ -149,7 +150,7 @@
   if(!s)return '<section class="card"><h2>Sondes MEATER</h2><p class="meater-error">État indisponible. Contrôles manuels nécessaires.</p><button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Réessayer</button></section>';
   const assigned=(s.probes||[]).filter(p=>Number.isInteger(p.slot)&&p.slot>=1&&p.slot<=12).length;
   const cloud=s.preview?(s.last_error?"Erreur de communication Cloud":s.cloud_device_count===0?"Cloud connecté : 0 sonde transmise dans la dernière réponse.":Number.isInteger(s.cloud_device_count)?"Cloud connecté : "+s.cloud_device_count+" sonde(s) transmise(s), "+s.cloud_fresh_count+" mesure(s) récente(s) acceptée(s).":s.last_ok_at?"Dernière réponse Cloud valide · "+(s.probes||[]).filter(p=>fresh(p,s)).length+" mesure(s) récente(s).":"En attente d’une réponse Cloud."):"";
-  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+(s.preview?'<button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Actualiser MEATER</button>':'')+notice(s)+(s.preview?'<p class="muted">Consultation indicative · '+(s.graph_requested?'graphique ouvert : interrogation rapide (limite globale MEATER Cloud : 60/min)':'interrogation toutes les 30 secondes')+', sans enregistrement supplémentaire dans le registre. Dernière réponse Cloud : '+time(s.last_ok_at)+'</p><p class="muted">'+esc(cloud)+(s.cached?' · Dernière interrogation réutilisée (limite de 30 s).':'')+'</p>':'')+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
+  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+(s.preview?'<button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Actualiser MEATER</button>':'')+notice(s)+(s.preview?'<p class="muted">Consultation indicative · '+(s.graph_requested?'graphique ouvert : interrogation rapide (limite globale MEATER Cloud : 60/min)':(s.enabled?'consultation toutes les 5 s · collecte HACCP toutes les 30 s':'surveillance automatique toutes les 5 secondes'))+', sans enregistrement supplémentaire dans le registre. Dernière réponse Cloud : '+time(s.last_ok_at)+'</p><p class="muted">'+esc(cloud)+(s.cached?' · Dernière interrogation réutilisée (limite globale).':'')+'</p>':'')+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
  }
  const graphPeriods=[15,60,180],graphMaxAge=180*60000,graphMaxPoints=10801;
  function collectGraphSamples(history,s,diagnostic){
@@ -176,8 +177,8 @@
   const now=serverNow(s),points=(entry?.points||[]).filter(q=>q.at>=now-minutes*60000);
   const current=!!s&&!!p&&displayable(p,s,s.test_active===true||diagnostic);
   const fast=!!s&&s.graph_requested===true&&s.configured&&!s.enabled;
-  const cadence=fast?"Mode adaptatif · interrogation de 5 à 1,2 s, selon les réponses MEATER Cloud":s?.enabled?"Suivi de production · interrogation toutes les 30 s":s?.last_error?"Erreur Cloud · reprise au rythme normal":"Interrogation toutes les 30 s";
-  const status=cadence+' · '+(current?"Mesure récente":"Aucune nouvelle mesure confirmée · courbe interrompue si la transmission est coupée");
+  const cadence=fast?"Mode adaptatif · interrogation de 5 à 1,2 s, selon les réponses MEATER Cloud":s?.enabled?"Suivi de production · interrogation toutes les 30 s":s?.last_error?"Erreur Cloud · reprise au rythme normal":"Surveillance technique toutes les 5 s";
+  const status=cadence+' · '+(current?"Mesure récente":"Aucune nouvelle mesure confirmée · "+(p&&s?unavailable(p,s)+" · ":"")+"courbe interrompue si la transmission est coupée");
   const note='<p class="muted meater-graph-note">Historique temporaire depuis l’ouverture du tableau de bord. Une mesure réelle par horodatage, sans enregistrement HACCP. Les coupures de transmission ne sont pas interpolées.</p>';
   if(!points.length)return '<p class="'+(current?'muted':'meater-warn')+'">'+status+'</p><p>Aucune mesure récente dans cette période. Le graphique se remplira au fil des réponses MEATER.</p>'+note;
   const W=760,H=310,L=60,R=22,T=22,B=46;
