@@ -741,7 +741,36 @@ function salaryWireStaff(){
  }));
 }
 
-let salaryView="staff",salaryAccountingEmployeeId="all";
+let salaryView="staff",salaryAccountingEmployeeId="all",salaryAccountingView="prep";
+window.salaryAccountingActiveTab=()=>salaryAccountingView;
+window.salaryAccountingOnDraftLoaded=month=>salaryAccountingUpdateNavigo(month);
+function salaryAccountingUpdateNavigo(month){
+ if((salaryMonth||salaryCurrentMonth())!==month)return;
+ const elements=document.querySelectorAll("#salaryPrepPanel [data-salary-prep-navigo]");
+ for(const cell of elements){
+  const result=window.salaryOdMonthTransport?.(month,cell.dataset.salaryPrepNavigo);
+  if(!result?.loaded){cell.textContent="Chargement…";continue}
+  const raw=String(result.transport||"").trim().replace(/[\\u00a0\\u202f ]/g,"").replace(",",".");
+  if(!raw){cell.textContent="—";cell.title="Aucun forfait saisi pour ce mois";continue}
+  const amount=Number(raw);
+  cell.textContent=/^\\d{1,8}(?:\\.\\d{1,2})?$/.test(raw)&&Number.isFinite(amount)?salaryAccountingMoney(amount):"À vérifier";
+  cell.title="Forfait Navigo déclaré pour "+month;
+ }
+}
+function salaryAccountingShowTab(view){
+ if(!["prep","pay"].includes(view))return;
+ salaryAccountingView=view;
+ const prep=document.getElementById("salaryPrepPanel"),bank=document.getElementById("salaryPayrollWorkArea");
+ if(prep)prep.hidden=view!=="prep";
+ if(bank)bank.hidden=view!=="pay";
+ document.querySelectorAll("[data-salary-accounting-tab]").forEach(button=>{
+  const selected=button.dataset.salaryAccountingTab===view;
+  button.setAttribute("aria-pressed",String(selected));
+  button.classList.toggle("primary",selected);
+  button.classList.toggle("secondary",!selected);
+ });
+ if(view==="pay")window.salaryOdRefresh?.();
+}
 function salaryPageVisible(){return page==="salaires"||page==="comptaSalaires"}
 function salarySwitchView(view){if(["staff","events","settings"].includes(view)){salaryView=view;salaryPage()}}
 function salarySettingsPanel(){
@@ -1002,7 +1031,37 @@ function salaryAccountingPage(){
   '<div class="table"><table><thead><tr><th>Date</th><th>Salarié</th><th>Type</th><th>Durée renseignée</th><th>Prise en compte</th><th>Statut</th><th>Justificatif</th></tr></thead>'+
   (eventsHtml||'<tbody><tr><td colspan="7">Aucun événement enregistré pour la sélection.</td></tr></tbody>')+
   '</table></div></details>';
- $('content').innerHTML='<div class="actions" style="margin-bottom:12px"><label for="salaryAccountingMonth">Mois <input id="salaryAccountingMonth" type="month" value="'+esc(month)+'"></label></div><div id="salaryPayrollNavigation"></div><div id="salaryPayrollWorkArea"></div><div id="salaryVariableSection" hidden></div>';
+ const durationCell=part=>part.missing?"À vérifier"+(part.count?" ("+part.count+")":""):salaryFormatLate(part.minutes);
+ const prepRows=rows.map(r=>{
+  const planned=r.plannedDays===null||r.plannedMinutes===null?"À vérifier":
+   salaryAccountingMetricFormat(r.plannedDays)+" j · "+salaryFormatLate(r.plannedMinutes);
+  const state=r.missingHours||r.unmatchedDays||r.overbookedDays?"Durées à vérifier":
+   r.plannedMinutes===null?"Planning incomplet":
+   r.benefits.total===null?"Avantages à vérifier":
+   r.pending?"Événements provisoires":"Prêt à contrôler";
+  return '<tr><th scope="row">'+esc(r.staff.name)+'</th>'+
+   '<td>'+esc(planned)+'</td>'+
+   '<td>'+esc(durationCell(r.byType.retard))+'</td>'+
+   '<td>'+esc(durationCell(r.byType.absence))+'</td>'+
+   '<td>'+esc(durationCell(r.byType.depart_anticipe))+'</td>'+
+   '<td class="salary-accounting-benefits"><b>'+(r.benefits.total===null?"À vérifier":esc(salaryAccountingMoney(r.benefits.total)))+'</b>'+salaryAccountingBenefitsDetail(r.benefits)+'</td>'+
+   '<td data-salary-prep-navigo="'+esc(r.staff.id)+'">Chargement…</td>'+
+   '<td>'+esc(state)+'</td>'+
+   '<td><button class="btn secondary compact" type="button" data-accounting-staff="'+esc(r.staff.id)+'">Voir la fiche</button></td></tr>';
+ }).join("");
+ const preparation='<section class="card salary-od-section" id="salaryPrepPanel" '+(salaryAccountingView==="pay"?"hidden":"")+'>'+
+  '<div class="salary-od-heading"><div><h2>Préparation des fiches de paie</h2><p class="muted">Mois '+esc(salaryMonthLabel(month))+' · Données issues du planning, des événements et des fiches salariés</p></div>'+
+  '<div class="actions"><button type="button" class="btn secondary" id="salaryAccountingRefresh">Actualiser</button>'+
+  '<a class="btn primary" href="https://www.letese.urssaf.fr/" target="_blank" rel="noopener noreferrer">Accéder au TESE</a></div></div>'+
+  '<div class="table"><table class="salary-accounting-table salary-prep-table"><thead><tr><th>Salarié</th><th>Temps prévu (planning)</th><th>Retards</th><th>Absences</th><th>Départs anticipés</th><th>Avantages en nature / mois</th><th>Forfait Navigo</th><th>Contrôle</th><th>Fiche</th></tr></thead><tbody>'+
+  (ready?prepRows||'<tr><td colspan="9">Aucun salarié disponible.</td></tr>':'<tr><td colspan="9">Chargement des salariés et événements…</td></tr>')+
+  '</tbody></table></div><div role="status">'+status+'</div>'+
+  '<p class="muted">Le temps prévu n’est pas une base contractuelle ni un pointage réel. Les retards et absences non validés restent provisoires. Les avantages en nature proviennent de la fiche salarié et doivent être contrôlés pour chaque paie. Le Navigo provient de la déclaration du mois. Aucune retenue automatique n’est créée ici.</p></section>';
+ $('content').innerHTML='<div class="actions" style="margin-bottom:12px"><label for="salaryAccountingMonth">Mois <input id="salaryAccountingMonth" type="month" value="'+esc(month)+'"></label></div>'+
+ '<nav class="card salary-od-nav" aria-label="Étapes de paie" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">'+
+ '<button type="button" class="btn '+(salaryAccountingView==="prep"?"primary":"secondary")+'" data-salary-accounting-tab="prep" aria-pressed="'+(salaryAccountingView==="prep")+'">1. Préparation des fiches de paie</button>'+
+ '<button type="button" class="btn '+(salaryAccountingView==="pay"?"primary":"secondary")+'" data-salary-accounting-tab="pay" aria-pressed="'+(salaryAccountingView==="pay")+'">2. Virements de salaires</button></nav>'+
+ preparation+'<div id="salaryPayrollNavigation" hidden></div><div id="salaryPayrollWorkArea" '+(salaryAccountingView==="prep"?"hidden":"")+'></div><div id="salaryVariableSection" hidden></div>';
  if(typeof salaryOdMount==="function"){
   const declarationStaff=ready?staffList.map(staff=>{
    const r=salaryAccountingMetrics(staff,month),role=salaryRoleLabel(staff.professional_role_id);
@@ -1018,6 +1077,8 @@ function salaryAccountingPage(){
   }):[];
   salaryOdMount({month,staff:staffAvailable?salaryStaff:[],defaultStaff:staffList,ready,canWrite:ready&&salaryCanWrite,session:token,declarationStaff});
  }
+ document.querySelectorAll("[data-salary-accounting-tab]").forEach(button=>button.addEventListener("click",()=>salaryAccountingShowTab(button.dataset.salaryAccountingTab)));
+ salaryAccountingUpdateNavigo(month);
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
  $('salaryAccountingEmployee')?.addEventListener('change',e=>{salaryAccountingEmployeeId=e.target.value;salaryAccountingPage()});
  $('salaryAccountingRefresh')?.addEventListener('click',()=>{
