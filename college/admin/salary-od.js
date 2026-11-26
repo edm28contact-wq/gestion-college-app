@@ -456,7 +456,7 @@ function restoreDeclarations(raw,staffIds){
  }
  return result;
 }
-const prepFields=["zone","ticketCost","weeklyHours","fullTimeHours","employerRate","mealsCount","employeePaidPerMeal","dutyMeal"];
+const prepFields=["zone","ticketCost","weeklyHours","fullTimeHours","employerRate","mealsCount","employeePaidPerMeal","dutyMeal","mealMode"];
 function restorePreparation(raw,staffIds){
  const rows=new Map();
  if(raw===undefined)return rows;
