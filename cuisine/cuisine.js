@@ -206,8 +206,9 @@ function renderDashboard(){
  '<section id="dailyTasks" class="work-section" aria-label="Tâches à faire">'+renderTasks()+'</section>'+
  '<section id="sensorResults" class="work-section" aria-label="Résultats des sondes"><div class="section-heading work-heading"><div><div class="eyebrow">Mesures automatiques</div><h1>Résultats des sondes</h1><p>Dernières valeurs reçues et état des équipements. Les températures ne sont pas des mesures instantanées.</p></div></div>'+
  (alarms?'<div class="card info-warn"><strong>'+alarms+' écart(s) nécessitant une vérification.</strong> Derniers relevés froids ou anomalies de réchauffage du jour. Prévenez le responsable.</div>':'')+
- renderColdOverview()+'<div id="meaterDashboardPanel"><div class="card"><h2>Sondes MEATER</h2><p class="muted">Chargement des dernières mesures…</p></div></div></section>';
- window.KitchenMeater.mountDashboard($("meaterDashboardPanel"),request);
+ '<div id="kitchenLiveCold"></div><details><summary>Derniers relevés enregistrés</summary>'+renderColdOverview()+'</details><div id="meaterDashboardPanel"><div class="card"><h2>Sondes MEATER</h2><p class="muted">Chargement des dernières mesures…</p></div></div></section>';
+ window.KitchenUI.mountLiveCold($("kitchenLiveCold"),request);
+ window.KitchenMeater.mountDashboard($("meaterDashboardPanel"),request,{live:true});
 }
 function renderCold(){
  const rooms=activeRooms(),last=latestByRoom();

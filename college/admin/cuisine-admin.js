@@ -161,7 +161,7 @@
  }
  async function refreshAllSensors(){
   if(busy||currentKitchenPage()!=="cuisine"||snapshot?.me.scope!=="admin")return;
-  const owner=goveeSession(),button=node("kitchenReload");busy=true;
+  const owner=goveeSession(),button=node("kitchenRecordSensors");busy=true;
   if(button)button.disabled=true;
   node("kitchenSensorReport")?.replaceChildren();
   notify("Interrogation de toutes les sondes Govee et MEATER…");
@@ -172,7 +172,7 @@
    await load();
    if(owner===goveeSession()&&currentKitchenPage()==="cuisine"){notify("");showSensorSyncReport(summary);}
   }catch(err){if(owner===goveeSession()&&currentKitchenPage()==="cuisine")notify("Collecte impossible : "+err.message,true);}
-  finally{busy=false;if(owner===goveeSession()&&currentKitchenPage()==="cuisine"){const current=node("kitchenReload");if(current)current.disabled=false;}}
+  finally{busy=false;if(owner===goveeSession()&&currentKitchenPage()==="cuisine"){const current=node("kitchenRecordSensors");if(current)current.disabled=false;}}
  }
  function notify(text,bad=false){const el=node("kitchenAdminMessage");if(el){el.textContent=text;el.style.color=bad?"#a32929":"#176b3a"}}
  async function action(name,data){
@@ -330,7 +330,7 @@ function isRetiredCleaningTask(t){
  const roomname=id=>s.rooms.find(x=>x.id===id)?.label||"Chambre";
  const rows=(list,columns)=>'<div class="table"><table><thead><tr>'+columns.map(c=>'<th>'+c[0]+'</th>').join("")+'</tr></thead><tbody>'+list.map(x=>'<tr>'+columns.map(c=>'<td>'+c[1](x)+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>';
  node("content").innerHTML='<div class="grid"><div class="card"><div class="muted">Chambres froides</div><div class="kpi">'+s.rooms.length+'</div></div><div class="card"><div class="muted">Cycles en cours</div><div class="kpi">'+s.reheats.filter(x=>x.status==="en_cours").length+'</div></div><div class="card"><div class="muted">Anomalies actuellement signalées</div><div class="kpi">'+alerts+'</div></div><div class="card"><div class="muted">Tâches du jour</div><div class="kpi">'+s.tasks.filter(x=>done.has(x.id)).length+'/'+s.tasks.length+'</div></div></div>'+
- '<div class="card"><h2>Gestion Cuisine</h2><p class="muted">Suivi HACCP : relevés manuels, remises en température, tâches et actions correctives. Les mesures enregistrées ne sont pas modifiables.</p><div class="actions"><a class="btn primary" href="../../cuisine/" target="_blank" rel="noopener">Ouvrir l’espace Cuisine</a><button class="btn secondary" id="kitchenReload">Actualiser les relevés</button><button class="btn secondary" id="kitchenCsv">Exporter CSV</button></div><p id="kitchenAdminMessage" class="status" role="status"></p><div id="kitchenSensorReport" aria-live="polite"></div></div>'+
+ '<div class="card"><h2>Gestion Cuisine</h2><p class="muted">Suivi HACCP : relevés manuels, remises en température, tâches et actions correctives. Les mesures enregistrées ne sont pas modifiables.</p><div class="actions"><a class="btn primary" href="../../cuisine/" target="_blank" rel="noopener">Ouvrir l’espace Cuisine</a><button class="btn primary" id="kitchenReload">Actualiser les températures</button><button class="btn secondary" id="kitchenRecordSensors">Enregistrer un relevé Govee</button><button class="btn secondary" id="kitchenCsv">Exporter CSV</button></div><p id="kitchenAdminMessage" class="status" role="status"></p><div id="kitchenSensorReport" aria-live="polite"></div></div>'+
  '<div class="card"><h2>Agents de cuisine</h2><p class="muted">Comptes rattachés aux salariés existants. Définissez un PIN individuel de 6 à 8 chiffres pour activer l’accès.</p>'+s.staff.map(x=>'<div class="data-row"><div><strong>'+e(x.name)+'</strong><div class="muted">Salarié : '+(x.personnel_id?"rattaché":"non rattaché")+' · '+(x.active?"Actif":"Inactif")+'</div></div><form data-kitchen-pin="'+attr(x,"id")+'"><label>Définir / renouveler le PIN</label><input name="pin" required type="password" inputmode="numeric" pattern="[0-9]{6,8}" minlength="6" maxlength="8" autocomplete="new-password"><button class="btn primary" type="submit">Enregistrer le PIN</button></form><button class="btn secondary" type="button" data-kitchen-active="'+attr(x,"id")+'" data-next="'+(!x.active)+'">'+(x.active?"Désactiver":"Activer")+'</button></div>').join("")+'</div>'+
  '<div class="card"><h2>Chambres froides — noms et seuils</h2><p class="muted">Le renommage ne change pas les mesures déjà enregistrées.</p>'+
  s.rooms.filter(x=>!x.deleted_at&&!x.archived_at).map(x=>'<form data-room-edit="'+attr(x,"id")+'" class="grid"><div><label>Chambre '+x.room_number+' · '+e(x.room_type)+'</label><input name="label" required maxlength="80" value="'+attr(x,"label")+'"></div><div><label>Minimum °C (facultatif)</label><input type="number" step="0.1" name="min_c" value="'+(x.min_c===null?"":e(x.min_c))+'"></div><div><label>Maximum °C</label><input type="number" step="0.1" name="max_c" required value="'+e(x.max_c)+'"></div><div><button type="submit" class="btn primary">Renommer / enregistrer</button></div><div><button type="button" class="btn secondary" data-archive-room="'+attr(x,"id")+'">Archiver cette chambre</button></div></form>').join("")+
@@ -401,7 +401,7 @@ function isRetiredCleaningTask(t){
  if(settings){
   sharedHeader.querySelector("h2").textContent="Paramètres cuisine";
   sharedHeader.querySelector("p").textContent="Configuration des sondes, de la collecte, du plan sanitaire, des équipements et des accès.";
-  node("kitchenReload").textContent="Actualiser les paramètres";
+  node("kitchenReload").textContent="Actualiser les paramètres";node("kitchenRecordSensors").remove();
   node("kitchenCsv").remove();
  }
  const shortcuts=sharedHeader.querySelector(".actions"),jump=document.createElement("button");
@@ -425,7 +425,7 @@ function isRetiredCleaningTask(t){
        '<div><small>Réchauffages en cours</small><strong>'+active.length+'</strong></div>'+
        '<div><small>Nettoyage terminé aujourd’hui</small><strong>'+s.tasks.filter(x=>done.has(x.id)).length+' / '+s.tasks.length+'</strong></div>'+
        '<div><small>Alertes (historique chargé)</small><strong>'+alerts+'</strong></div>';
-     const monitor=document.createElement("div");monitor.id="adminKitchenColdOverview";monitor.className="kt-admin-cold";monitor.innerHTML=window.KitchenUI.coldOverview(s,{buttonAttributes:'data-kitchen-cold-go'});wrapper.prepend(monitor);
+     const monitor=document.createElement("div");monitor.id="adminKitchenLiveCold";monitor.className="kt-admin-cold";wrapper.prepend(monitor);
      const meaterMonitor=document.createElement("div");meaterMonitor.id="adminKitchenMeaterOverview";wrapper.append(meaterMonitor);
  const daily=document.createElement("div");daily.className="card";daily.innerHTML='<h2>Tâches du jour</h2><div class="kt-day-list">'+(s.tasks.map(x=>'<div class="kt-day-row"><div><strong>'+e(x.label)+'</strong><div class="muted">'+(x.assigned_to?e(staff(x.assigned_to)):"Commune")+' · '+e(window.KitchenUI.scheduleLabel(x))+'</div></div><div class="kt-task-actions"><span>'+(done.has(x.id)?"Réalisée":"À réaliser")+'</span>'+(s.me.scope==="admin"?'<button class="btn secondary" type="button" data-edit-admin-task="'+e(x.id)+'">Modifier</button>':'')+'</div></div>').join("")||'<p class="muted">Aucune tâche prévue aujourd’hui.</p>')+'</div><button type="button" class="btn secondary" data-kitchen-task-go>Gérer les tâches</button>';wrapper.append(daily,summary);
      const tip=document.createElement("div");tip.className="card";tip.style.marginTop="16px";tip.innerHTML='<h3>Utilisation quotidienne</h3><p>Les agents travaillent dans l’espace Cuisine. Ici, vous consultez les températures, les relevés, les anomalies et les validations du nettoyage. Les réglages des sondes et équipements se trouvent dans Paramètres cuisine.</p>';wrapper.append(tip);
@@ -441,19 +441,26 @@ function isRetiredCleaningTask(t){
     if(snapshot.me.scope==="admin"&&snapshot.account?.govee_key_configured&&!goveeDiscovery&&!goveeLoading)void testGoveeConnection();
    }
    if(kitchenTab==="overview"){
-    const root=node("adminKitchenMeaterOverview");
-    if(root&&!root.dataset.meaterMounted&&window.KitchenMeater?.mountDashboard){root.dataset.meaterMounted="1";window.KitchenMeater.mountDashboard(root,api,{diagnostic:true});}
+    const cold=node("adminKitchenLiveCold"),root=node("adminKitchenMeaterOverview");
+    if(cold&&!cold.kitchenRefresh)window.KitchenUI.mountLiveCold(cold,api);
+    if(root&&!root.kitchenRefresh)window.KitchenMeater.mountDashboard(root,api,{diagnostic:true,live:true});
    }
    if(kitchenTab==="cleaning")refreshCleaningAdmin();
    if(kitchenTab==="meater")window.KitchenMeater.mountAdmin(node("meaterAdminPanel"),api,snapshot.me.scope==="admin");
    if(kitchenTab==="pms")window.KitchenPMS.mount(node("pmsAdminPanel"),{api,get:async(action,params={})=>{const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";const r=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":token},cache:"no-store"});const j=await r.json();if(!r.ok)throw Error(j.error||"Service indisponible");return j;},role:snapshot.me.scope,canWrite:snapshot.me.scope==="admin"});
  }
  selectTab();
- const refresh=node("kitchenReload");
+ const refresh=node("kitchenReload"),record=node("kitchenRecordSensors");
  const collect=!settings&&s.me.scope==="admin";
- if(!settings&&!collect)refresh.textContent="Actualiser l’affichage";
- if(collect&&busy)refresh.disabled=true;
- refresh.addEventListener("click",collect?refreshAllSensors:load);node("kitchenCsv")?.addEventListener("click",downloadCsv);
+ if(record){record.hidden=!collect;record.disabled=busy;record.addEventListener("click",refreshAllSensors);}
+ refresh.addEventListener("click",settings?load:async()=>{
+  if(busy)return;
+  if(kitchenTab!=="overview"){chooseKitchenTab("cuisine","overview");kitchenTab="overview";selectTab();return;}
+  refresh.disabled=true;
+  try{await Promise.all([node("adminKitchenLiveCold")?.kitchenRefresh?.(),node("adminKitchenMeaterOverview")?.kitchenRefresh?.()]);}
+  finally{if(refresh.isConnected)refresh.disabled=false;}
+ });
+ node("kitchenCsv")?.addEventListener("click",downloadCsv);
  }
  function downloadCsv(){if(!snapshot)return;const lines=[["Type","Date et heure","Équipement","Début °C","Fin °C","Statut","Agent"]];
  for(const x of snapshot.cold)lines.push(["Chambre froide",x.measured_at,snapshot.rooms.find(r=>r.id===x.room_id)?.label||"",x.temperature_c,"",x.is_alert?"Alerte":"Conforme",x.source==="govee_cloud"?"Capteur Govee":staff(x.taken_by)]);
@@ -672,15 +679,6 @@ function isRetiredCleaningTask(t){
  window.KitchenUI.open({task,staff:snapshot.staff,initialDate:date,completed:!!task&&snapshot.checks.some(c=>c.task_id===id&&c.performed_on===window.KitchenUI.today()),fetchTasks:fetchTaskSettings,save:(name,body)=>api(name,"POST",body),onSaved:async()=>{chooseKitchenTab("cuisine","cleaning");if(currentKitchenPage()!=="cuisine")return;kitchenTab="cleaning";cleaningDate=date;await load();const msg=node("kitchenTaskFeedback");if(msg)msg.textContent="Tâche enregistrée."}});
  }
  document.addEventListener("click",evt=>{const btn=evt.target.closest?.("[data-edit-admin-task],[data-add-admin-task]");if(btn&&node("kitchen-tabs"))editAdminTask(btn.dataset.editAdminTask||null);if(evt.target.closest?.("[data-kitchen-cold-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="records"]')?.click();if(evt.target.closest?.("[data-kitchen-task-go]"))node("kitchen-tabs")?.querySelector('[data-kitchen-tab="cleaning"]')?.click()});
- let adminColdRefreshing=false;
- async function refreshAdminColdOverview(){
- const target=node("adminKitchenColdOverview");if(!target||target.closest("[hidden]")||document.hidden||busy||adminColdRefreshing||node("kitchenTaskEditor"))return;
- const epoch=loadEpoch,owner=goveeSession();
- adminColdRefreshing=true;try{const fresh=await api("list");if(target===node("adminKitchenColdOverview")&&epoch===loadEpoch&&owner===goveeSession()&&!busy&&!node("kitchenTaskEditor"))target.innerHTML=window.KitchenUI.coldOverview(fresh,{buttonAttributes:'data-kitchen-cold-go'});}
- catch(err){if(target===node("adminKitchenColdOverview")){let warning=target.querySelector(".kt-refresh-warning");if(!warning){warning=document.createElement("p");warning.className="kt-refresh-warning";target.prepend(warning);}warning.textContent="Actualisation indisponible. Vérifiez la date des températures affichées.";}}
- finally{adminColdRefreshing=false;}
- }
- setInterval(refreshAdminColdOverview,60000);
  window.kitchenAdminOpenGovee=function(){openKitchenTab("cuisineSettings","govee")};
  window.kitchenAdminPage=function(){node("content").innerHTML='<div class="card">Chargement des relevés Cuisine…</div>';return load()};
  window.kitchenAdminSettingsPage=function(){node("content").innerHTML='<div class="card">Chargement des paramètres cuisine…</div>';return load()};

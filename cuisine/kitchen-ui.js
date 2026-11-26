@@ -59,6 +59,41 @@
   (dashboardRefreshError?'<p class="info info-warn">'+esc(dashboardRefreshError)+'</p>':'')+
   '<div class="cold-live-grid">'+(tiles||'<div class="empty">Aucune chambre froide active.</div>')+'</div></section>';
 }
+ function liveColdMarkup(data){
+  const rooms=data?.rooms||[];
+  const cards=rooms.map(room=>{
+   const s=room.sensor,age=Date.now()-Date.parse(s?.checked_at||"");
+   const valid=!!s&&s.status==="online"&&s.temperature_c!=null&&Number.isFinite(Number(s.temperature_c))&&Number.isFinite(age)&&age>=-10000&&age<=130000;
+   const alert=valid&&(Number(s.temperature_c)>Number(room.max_c)||(room.min_c!=null&&Number(s.temperature_c)<Number(room.min_c)));
+   const status=!s?"Sans capteur":valid?"Connexion en ligne":s.status==="offline"?"Capteur hors ligne":s.status==="error"?"Erreur de connexion":s.status==="online"?"Valeur ancienne":"En attente";
+   const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"medium"}):"—";
+   return '<article class="cold-live-tile'+(alert?' cold-live-alert':'')+'"><div class="cold-live-top"><h3>'+esc(room.label)+'</h3><span class="tag '+(valid?'tag-ok':s?.status==="error"||s?.status==="offline"?'tag-alert':'tag-warn')+'">'+status+'</span></div>'+
+    '<div class="cold-live-value">'+(valid?number(s.temperature_c)+' °C':'— °C')+'</div><div class="subline">Dernière réponse Cloud : '+time(s?.checked_at)+'</div><div class="subline">Seuil : '+(room.min_c!=null?number(room.min_c)+' à ':'max. ')+number(room.max_c)+' °C</div>'+
+    (alert?'<p class="cold-live-warning">Température hors seuil : vérification nécessaire.</p>':'')+
+    (!valid&&s?.temperature_c!=null?'<p class="subline">Dernière valeur Cloud (ancienne) : '+number(s.temperature_c)+' °C</p>':!valid&&s?.last_temperature_c!=null?'<p class="subline">Dernier relevé enregistré : '+number(s.last_temperature_c)+' °C · '+time(s.last_checked_at)+'</p>':'')+
+    (s?.error?'<p class="cold-live-warning">'+esc(s.error)+'</p>':'')+'</article>';
+  }).join("");
+  return '<section class="card cold-live-section"><div class="section-heading"><div><div class="eyebrow">Consultation en direct · sans enregistrement</div><h2>Températures Govee</h2><p>Interrogation Cloud toutes les 60 secondes lorsque cette page est ouverte. La fréquence de mesure physique dépend des sondes.</p></div><button type="button" class="btn btn-outline btn-small" data-live-govee-refresh>Actualiser Govee</button></div>'+
+   '<div class="cold-live-grid">'+(cards||'<div class="empty">'+(data?"Aucune chambre froide active.":"Chargement des températures…")+'</div>')+'</div></section>';
+ }
+ function mountLiveCold(root,api){
+  if(!root)return;
+  if(root.kitchenRefresh)return root.kitchenRefresh;
+  let pending=false;
+  root.innerHTML=liveColdMarkup(null);
+  async function refresh(){
+   if(!root.isConnected||document.hidden||root.closest("[hidden]")||pending)return;
+   pending=true;
+   const b=root.querySelector("[data-live-govee-refresh]");if(b)b.disabled=true;
+   try{const result=await api("govee-live");if(root.isConnected)root.innerHTML=liveColdMarkup(result);}
+   catch{if(root.isConnected)root.innerHTML='<section class="card"><h2>Températures Govee</h2><p class="cold-live-warning">Interrogation indisponible. Contrôlez les températures sur place.</p><button type="button" class="btn btn-outline" data-live-govee-refresh>Réessayer</button></section>';}
+   finally{pending=false;}
+  }
+  root.kitchenRefresh=refresh;
+  root.addEventListener("click",evt=>{if(evt.target.closest?.("[data-live-govee-refresh]"))void refresh();});
+  const timer=setInterval(()=>{if(!root.isConnected){clearInterval(timer);return;}void refresh();},60000);
+  void refresh();return refresh;
+ }
  function scheduleLabel(t){
   const freq=frequencies[t.recurrence]||frequencies.daily;
   return (t.scheduled_time?String(t.scheduled_time).slice(0,5)+" · ":"")+freq+(["weekly","monthly"].includes(t.recurrence)?" : "+(t.recurrence==="monthly"?"1er ":"")+(t.weekdays||[]).map(d=>days[d-1]).filter(Boolean).join(", "):"")+" · Priorité "+(priorities[t.priority]||priorities.normal).toLowerCase();
@@ -125,5 +160,5 @@
   });
   dialog.showModal();if(task)reloadDate();
  }
- window.KitchenUI={coldOverview,scheduleLabel,open,today};
+ window.KitchenUI={coldOverview,scheduleLabel,open,today,liveColdMarkup,mountLiveCold};
 })();
