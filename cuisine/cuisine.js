@@ -102,7 +102,7 @@ async function load(){
  }catch(e){if(token!==currentToken||epoch!==loadEpoch)return false;if(/Session|accès non autorisé/i.test(e.message))logout();status(e.message,true,token?"message":"loginStatus");return false;}
 }
 function switchPage(next){
- if(!data||!["dashboard","reheat","cold"].includes(next))return;
+ if(!data||!["dashboard","reheat","cold","paths"].includes(next))return;
  if(next==="cold"&&!canRecordReheat())return;
  page=next;render();if(page==="dashboard"&&Date.now()-dashboardRefreshAt>=60000)refreshDashboardReadings();
  $("workNav")?.scrollIntoView?.({block:"start",behavior:"smooth"});
@@ -113,6 +113,7 @@ function render(){
  $("kitchenAdminLink").hidden=data.me.scope!=="admin";
  if(page==="reheat"){renderReheat();updateReheatControls();}
  else if(page==="cold")renderCold();
+ else if(page==="paths"){$("content").innerHTML='<div id="meaterPathsStaff"></div>';window.KitchenMeaterPaths.mount($("meaterPathsStaff"),request);}
  else renderDashboard();
  updateCriticalAlert();
  $("readonlyNotice").hidden=canCheckTasks();
@@ -207,7 +208,7 @@ function renderDashboard(){
  '<section id="dailyTasks" class="work-section" aria-label="Tâches à faire">'+renderTasks()+'</section>'+
  '<section id="sensorResults" class="work-section" aria-label="Résultats des sondes"><div class="section-heading work-heading"><div><div class="eyebrow">Mesures automatiques</div><h1>Résultats des sondes</h1><p>Dernières valeurs reçues et état des équipements. Les températures ne sont pas des mesures instantanées.</p></div></div>'+
  (alarms?'<div class="card info-warn"><strong>'+alarms+' écart(s) nécessitant une vérification.</strong> Derniers relevés froids ou anomalies de réchauffage du jour. Prévenez le responsable.</div>':'')+
- '<div id="kitchenLiveCold"></div><details><summary>Derniers relevés enregistrés</summary>'+renderColdOverview()+'</details><div id="meaterDashboardPanel"><div class="card"><h2>Sondes MEATER</h2><p class="muted">Chargement des dernières mesures…</p></div></div></section>';
+ '<div class="card"><h2>Parcours remises en température</h2><p>Réarmement des sondes et suivi des essais automatiques.</p><button type="button" class="btn btn-outline" data-go="paths">Ouvrir les parcours MEATER</button></div><div id="kitchenLiveCold"></div><details><summary>Derniers relevés enregistrés</summary>'+renderColdOverview()+'</details><div id="meaterDashboardPanel"><div class="card"><h2>Sondes MEATER</h2><p class="muted">Chargement des dernières mesures…</p></div></div></section>';
  if(previousMeater?.kitchenRefresh)$("meaterDashboardPanel").replaceWith(previousMeater);
  window.KitchenUI.mountLiveCold($("kitchenLiveCold"),request);
  window.KitchenMeater.mountDashboard($("meaterDashboardPanel"),request,{live:true});
@@ -240,7 +241,7 @@ function renderReheat(){
  '<div class="field"><label>Four utilisé</label><select name="oven_id" required><option value="">Choisir un four</option>'+ovenOptions+'</select></div>'+
  '<div class="field"><label>Température mesurée du plat avant réchauffage (°C)</label><input name="temperature_c" required type="number" step="0.1" min="-10" max="90" inputmode="decimal" placeholder="Ex. 2"></div></div>'+
  '<div class="row between"><div class="help">Référence de départ : '+number(d.target_start_c??2)+' °C. Ne saisissez pas une valeur non mesurée.</div><button type="submit" class="btn btn-primary">Démarrer le chronomètre</button></div></form></div>':'')+
- '<div id="meaterReheatPanel"></div>'+
+ '<div class="card"><h3>Suivi automatique MEATER</h3><button type="button" class="btn btn-outline" data-go="paths">Parcours remises en température</button></div><div id="meaterReheatPanel"></div>'+
  '<div class="card"><div class="section-heading"><div><h2>2. Fours en cours</h2><p>Mesurez dès que le plat est prêt. Le rappel est un contrôle attendu, pas une autorisation de servir.</p></div><span class="tag">'+open.length+' cycle(s)</span></div>'+
  (open.length?open.map(r=>{
  const allow=canRecordReheat(),reminder=canFinish(r.due_at),ms=remainingMs(r.due_at),duration=(r.reminder_minutes||55)*60000,progress=Math.min(100,Math.max(0,(duration-ms)/duration*100));
