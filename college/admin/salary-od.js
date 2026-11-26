@@ -677,24 +677,50 @@ function render(){
    month:capturedMonth,session:capturedSession,staff,
    editable:()=>workflowEditable()&&!d.bankLoading,
    isCurrent:()=>permissionsValid()&&session===capturedSession&&context.month===capturedMonth&&getDraft()===d&&activeView==="pay",
-   apply:(amounts,overwrite)=>{
-    const output=[];let changed=false;
+   apply:async(amounts,overwrite)=>{
     if(!permissionsValid()||!workflowEditable()||session!==capturedSession||context.month!==capturedMonth||getDraft()!==d)
-     return amounts.map(()=>"review");
+     throw Error("Le dossier de paie est non modifiable : rechargez les salaires.");
+    const before=new Map(),outcomes=[],extracted=[["grossCents","gross"],["withholdingCents","withholding"],
+     ["beforeTaxCents","netBeforeTax"],["socialNetCents","netSocial"],["taxableNetCents","netTaxable"]];
+    const flags={dirty:d.dirty,payConfirmed:d.payConfirmed,bankConfirmed:d.bankConfirmed,odConfirmed:d.odConfirmed,
+     declarationConfirmed:d.declarationConfirmed,difference:d.reconciliation.difference};
+    let changed=false;
     for(const entry of amounts){
      if(!staff.some(p=>p.id===entry.staffId)||!Number.isSafeInteger(entry.amountCents)||entry.amountCents<0||entry.amountCents>999999999){
-      output.push("review");continue;
+      outcomes.push("review");continue;
      }
-     const previous=d.payments.get(entry.staffId),existing=String(previous??"").trim();
-     const next=(entry.amountCents/100).toFixed(2).replace(".",",");
-     if(existing&&cents(previous)===entry.amountCents){output.push("same");continue}
-     if(existing&&!overwrite){output.push("conflict");continue}
-     d.payments.set(entry.staffId,next);changed=true;output.push("imported");
+     const id=entry.staffId,previous=d.payments.get(id),current=String(previous??"").trim();
+     const prior=d.declarations.get(id),target={...(prior||{})};
+     before.set(id,{previous,prior,hadDeclaration:d.declarations.has(id)});
+     const next=(entry.amountCents/100).toFixed(2);
+     let diff=cents(previous??"")!==entry.amountCents,conflict=!!current&&cents(previous)!==entry.amountCents;
+     for(const [key,fieldName] of extracted){
+      const value=entry[key];
+      if(value===null||value===undefined)continue;
+      if(!Number.isSafeInteger(value)||value<0||value>999999999)throw Error("Montant du bulletin invalide.");
+      const formatted=(value/100).toFixed(2);
+      if(String(target[fieldName]||"").trim()&&cents(target[fieldName])!==value)conflict=true;
+      if(target[fieldName]!==formatted){target[fieldName]=formatted;diff=true}
+     }
+     if(conflict&&!overwrite){outcomes.push("conflict");continue}
+     if(!diff){outcomes.push("same");continue}
+     d.payments.set(id,next);d.declarations.set(id,target);changed=true;outcomes.push("imported");
     }
-    if(changed)updateDraft(d);
-    return output;
+    if(!changed)return outcomes;
+    updateDraft(d);
+    if(!await workflowSave(d,true)){
+     for(const [id,item] of before){
+      if(item.previous===undefined)d.payments.delete(id);else d.payments.set(id,item.previous);
+      if(item.hadDeclaration)d.declarations.set(id,item.prior);else d.declarations.delete(id);
+     }
+     d.dirty=flags.dirty;d.payConfirmed=flags.payConfirmed;d.bankConfirmed=flags.bankConfirmed;
+     d.odConfirmed=flags.odConfirmed;d.declarationConfirmed=flags.declarationConfirmed;
+     d.reconciliation.difference=flags.difference;
+     throw Error(remoteFor(capturedMonth).error||"Enregistrement non confirmé.");
+    }
+    return outcomes;
    },
-   refresh:()=>render()
+   refresh:()=>refresh()
   });
   void loadSavedBanks(d);
  }
