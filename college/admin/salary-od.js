@@ -704,8 +704,10 @@ function refresh(){
  set("salaryDeclarationStatus",declarationError||"Déclaration prête à vérifier.");
  if(el("salaryDeclarationConfirm")){el("salaryDeclarationConfirm").checked=d.declarationConfirmed;el("salaryDeclarationConfirm").disabled=!!declarationError}
  for(const id of ["salaryDeclarationCsv","salaryDeclarationPrint"])if(el(id))el(id).disabled=!!declarationError||!d.declarationConfirmed;
- const bankError=d.bankLoading?"Chargement des RIB enregistrés…":d.bankError|| (d.bankSignature!==bankSignature(d)?"Actualisez les RIB enregistrés.":bankProblem(d));
- set("salaryBankStatus",remoteFor(context.month).status!=="draft"?"XML déjà généré pour ce mois. Vérifiez le suivi bancaire avant toute nouvelle opération.":bankError||"Prêt à exporter après confirmation des bénéficiaires.");
+ const server=remoteFor(context.month),today=window.ChambertinSEPA?.parisDate?.(new Date());
+ const expired=!!today&&!!d.bank.issuer.date&&d.bank.issuer.date<today;
+ const bankError=server.error||(server.loading||!server.loaded?"Chargement du dossier de salaires…":d.bankLoading?"Chargement des RIB enregistrés…":d.bankError||(d.bankSignature!==bankSignature(d)?"Vérification des RIB en cours…":bankProblem(d)|| (expired?"Date d’exécution passée : sélectionnez une date future.":"")));
+ set("salaryBankStatus",server.status!=="draft"?"XML déjà généré pour ce mois. Vérifiez le suivi bancaire avant toute nouvelle opération.":bankError||"Prêt à exporter après confirmation des bénéficiaires.");
  if(el("salaryBankReload"))el("salaryBankReload").disabled=d.bankLoading;
  if(el("salaryBankConfirm")){el("salaryBankConfirm").checked=d.bankConfirmed;el("salaryBankConfirm").disabled=!!bankError||!d.payConfirmed||unknown}
  if(el("salaryBankPrint"))el("salaryBankPrint").disabled=!!bankError||!d.payConfirmed||!d.bankConfirmed||unknown;
