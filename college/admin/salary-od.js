@@ -525,7 +525,7 @@ async function workflowLoad(month,force=false){
   state.updated_by=row?.updated_by||"";state.bank_reference=row?.bank_reference||"";state.export_info=row?.export_info||{};
   state.history=reply.history||[];state.loaded=true;
  }catch(e){if(owner===session)state.error=String(e.message||"Chargement indisponible.")}
- finally{state.loading=false;if(owner===session&&context?.month===month&&salaryPageVisible()){render();context?.onDraftLoaded?.()}}
+ finally{state.loading=false;if(owner===session&&context?.month===month&&salaryPageVisible()){render();window.salaryAccountingOnDraftLoaded?.(month)}}
 }
 async function workflowSave(d,quiet=false){
  if(!permissionsValid()||!d||getDraft()!==d||!workflowEditable())return false;
@@ -822,6 +822,7 @@ window.salaryOdMonthTransport=(month,id)=>{
  if(!permissionsValid()||!remoteFor(month).loaded||context?.month!==month||!context.staff.some(person=>person.id===id))return {loaded:false,transport:""};
  return {loaded:true,transport:String(draftFor(month).declarations.get(id)?.transport??"")};
 };
+window.salaryOdRefresh=()=>{if(context&&document.getElementById('salaryPayrollWorkArea'))render()};
 window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
 window.addEventListener("beforeunload",e=>{if([...drafts.values()].some(d=>d.dirty)){e.preventDefault();e.returnValue=""}});
 if(typeof module!=="undefined"&&module.exports)module.exports={simpleBankHtml,lines,cents,monthEnd,journal,paymentTotals,journalCsv,journalText,windows1252,reconcilePayments,validIban,validBic,validExecutionDate,bankProblem,bankPrintHtml,mergeSavedBanks,bankDraftEntries,declarationData,declarationProblem,declarationPrintHtml,restoreDraft,materializeKnownDeclaration,csv};
