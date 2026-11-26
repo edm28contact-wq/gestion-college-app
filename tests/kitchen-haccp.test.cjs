@@ -314,3 +314,25 @@ test("Retrait des anciennes tâches : archives photo accessibles, deux nouvelles
  const future=markup(rows([newTask,retired],{tasks:[newTask],checks:[]},tomorrow,day),{...params,day:tomorrow});
  assert.match(future,/Lave-vaisselle/);assert.match(future,/data-edit-admin-task="reuse"/);assert.doesNotMatch(future,/Nettoyage de la plonge|data-edit-admin-task="retired"/);
 });
+
+test("Cuisine : pages de suivi et de paramètres distinctes avec droits identiques",()=>{
+ const html=read("college/admin/index.html"),admin=read("college/admin/cuisine-admin.js"),designer=read("college/admin/site-designer.js");
+ const start=admin.indexOf(" const kitchenPages="),end=admin.indexOf(" let loadEpoch",start);
+ assert.ok(start>=0&&end>start);
+ const ctx=vm.createContext({});
+ vm.runInContext(admin.slice(start,end)+";this.kitchenPages=kitchenPages;",ctx);
+ assert.deepEqual(Array.from(ctx.kitchenPages.cuisine,x=>x[0]),["overview","records","cleaning"]);
+ assert.deepEqual(Array.from(ctx.kitchenPages.cuisineSettings,x=>x[0]),["govee","meater","pms","schedule","equipment","staff"]);
+ assert.match(html,/cuisineSettings:'Paramètres cuisine'/);
+ assert.match(html,/\['cuisineSettings','Paramètres cuisine'\]/);
+ assert.match(html,/cuisine:\["cuisine.manage"\],cuisineSettings:\["cuisine.manage"\]/);
+ assert.match(html,/cuisineSettings:window.kitchenAdminSettingsPage/);
+ assert.match(designer,/\["Paramètres cuisine","tab:#cuisineSettings"\]/);
+ assert.match(admin,/content.replaceChildren\(sharedHeader,header\)/);
+ assert.match(admin,/for\(const \[key\] of tabs\)/);
+ assert.match(admin,/settings\?openKitchenTab\("cuisine","records"\):show\("cuisineSettings"\)/);
+ assert.match(admin,/window.kitchenAdminOpenGovee=function\(\)\{openKitchenTab\("cuisineSettings","govee"\)\}/);
+ assert.match(admin,/window.KitchenMeater.mountDashboard\(root,api\)/);
+ assert.match(admin,/if\(section==="cuisine"\)await refreshColdHistory/);
+ assert.match(admin,/epoch===loadEpoch&&owner===goveeSession\(\)&&currentKitchenPage\(\)===section/);
+});
