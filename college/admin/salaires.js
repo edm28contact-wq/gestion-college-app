@@ -783,6 +783,17 @@ if(typeof window!=="undefined"){
 }
 const salaryRateStatusCache=new Map();
 const salaryRateCategories={navigo:"Navigo Annuel",repas:"Repas",logement:"Logement",vehicule:"Véhicule",ntic:"Outils numériques"};
+function salaryInstallArchivedOfficialRates(month,archived){
+ if(!archived||typeof archived!=="object")return;
+ const year=Number(month.slice(0,4)),legal=window.ChambertinLegalPayroll,benefits=window.ChambertinVehicleHousing;
+ for(const [category,rate] of Object.entries(archived)){
+  if(rate?.year!==year||!rate?.payload||typeof rate.source!=="string"||!rate.source.startsWith("https://"))continue;
+  const payload={...rate.payload,year,source:rate.source};
+  if(category==="navigo")legal?.setAnnualRate?.({...payload,status:"verified"});
+  else if(category==="repas")legal?.setMealRate?.(payload);
+  else benefits?.setOfficialRate?.(category,{year,payload,source:rate.source});
+ }
+}
 function salaryRenderOfficialRateCheck(month){
  const target=document.getElementById("salaryRateVerification");
  if(!target||!(salaryMonth===month||salaryCurrentMonth()===month))return;
@@ -792,15 +803,21 @@ function salaryRenderOfficialRateCheck(month){
  if(item.loading){target.textContent="Chargement du contrôle officiel des barèmes…";return;}
  if(item.error){target.textContent="Contrôle des taux indisponible : "+item.error+" — vérification nécessaire avant la paie.";return}
  const rate=item.value;
+ const archived=Object.entries(rate?.archived||{});
+ const last=archived.length?archived.reduce((acc,[,record])=>record.checkedAt&&(!acc||record.checkedAt>acc)?record.checkedAt:acc,null):null;
+ const previous=archived.length?" Derniers barèmes officiels archivés : "+archived.length+"/5"+
+  (last?" (validation au "+new Date(last).toLocaleDateString("fr-FR",{timeZone:"Europe/Paris"})+")":"")+
+  ". Ils ne prouvent pas une vérification réussie ce mois-ci.":" Aucun barème validé archivé pour cette année.";
  if(!rate||rate.status==="not_checked"){
-  target.textContent="Aucun contrôle archivé pour "+month+". Vérification automatique chaque 20 du mois (06:00 UTC). Contrôlez les taux avant la paie.";
+  target.textContent="Aucun contrôle mensuel pour "+month+". Lancement les 20 du mois (05:00 UTC), nouvelles tentatives les 21 et 22."+previous;
   return;
  }
  const validated=Object.entries(rate.categories||{}).filter(([,value])=>value?.status==="verified");
  const pending=Object.entries(rate.categories||{}).filter(([,value])=>value?.status!=="verified").map(([name])=>salaryRateCategories[name]||name);
  const date=rate.checked_at?new Date(rate.checked_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short",timeZone:"Europe/Paris"}):"inconnue";
- target.textContent="Barèmes officiels contrôlés le "+date+" : "+validated.length+"/5 catégories confirmées."+
-  (pending.length?" À vérifier : "+pending.join(", ")+". Aucun taux incertain ne doit être appliqué automatiquement.":" Contrôle complet.");
+ target.textContent="Contrôle automatique du "+date+" : "+validated.length+"/5 sources du mois vérifiées."+
+  (pending.length?" Source(s) indisponible(s) ou à contrôler : "+pending.join(", ")+".":" Contrôle complet.")+previous+
+  (pending.length?" Aucun barème non vérifié ne doit être appliqué à une nouvelle année.":"");
 }
 async function salaryEnsureOfficialRateCheck(month,force=false){
  const current=salaryRateStatusCache.get(month);
@@ -809,7 +826,9 @@ async function salaryEnsureOfficialRateCheck(month,force=false){
  salaryRenderOfficialRateCheck(month);
  try{
   const value=await call(ROOT+"/personnel-planning","payroll-official-rates","GET",undefined,{month});
+  salaryInstallArchivedOfficialRates(month,value.archived);
   salaryRateStatusCache.set(month,{value,loading:false,at:Date.now()});
+  if(salaryPageVisible())salaryAccountingUpdateNavigo(month);
  }catch(e){salaryRateStatusCache.set(month,{error:frError(String(e?.message||e)),loading:false,at:Date.now()})}
  salaryRenderOfficialRateCheck(month);
 }
