@@ -164,21 +164,21 @@ test("MEATER graphique : mode rapide à l'ouverture, retour à 30 s et arrêt au
  const calls=[];const base=Date.parse("2026-11-26T22:21:00Z");let production=false,problem=null;
  const api=async action=>{
   calls.push(action);const at=base+1000*calls.length;
-  return {now:new Date(at).toISOString(),configured:true,enabled:production,preview:true,graph_available:!production,last_error:problem,probes:[{device_id:"p",slot:1,label:"Viande",fresh:true,internal_c:25+calls.length/10,ambient_c:25,measured_at:new Date(at).toISOString()}],links:[]};
+  return {now:new Date(at).toISOString(),configured:true,enabled:production,preview:true,graph_available:!production,cloud_fresh_count:1,last_error:problem,probes:[{device_id:"p",slot:1,label:"Viande",fresh:true,internal_c:25+calls.length/10,ambient_c:25,measured_at:new Date(at).toISOString()}],links:[]};
  };
  const delay=()=>{assert.equal(timers.size,1);return [...timers.values()][0].ms;};
  const refresh=ctx.window.KitchenMeater.mountDashboard(root,api,{live:true});
  await refresh();assert.deepEqual(calls,["meater-live"]);assert.equal(delay(),30000);
  assert.match(dest.innerHTML,/Voir le graphique/);
  listeners.click({target:{closest:k=>k==="[data-meater-graph]"?{dataset:{meaterGraph:"p"}}:null}});
- await refresh();assert.equal(calls[1],"meater-graph-live");assert.ok(delay()>=100&&delay()<=1200);assert.equal(panel.hidden,false);assert.match(content.innerHTML,/2 mesure\(s\)/);
+ await refresh();assert.equal(calls[1],"meater-graph-live");assert.ok(delay()>=4900&&delay()<=5000);assert.equal(panel.hidden,false);assert.match(content.innerHTML,/2 mesure\(s\)/);
  const next=[...timers.entries()][0];timers.delete(next[0]);next[1].f();await refresh();
- assert.equal(calls[2],"meater-graph-live");assert.ok(delay()>=100&&delay()<=1200);
+ assert.equal(calls[2],"meater-graph-live");assert.ok(delay()>=4900&&delay()<=5000);
  listeners.change({target:{matches:()=>true,value:"60"}});
  assert.equal(calls.length,3);assert.match(content.innerHTML,/3 mesure\(s\)/);
  assert.equal(ctx.window.KitchenMeater.mountDashboard(root,api,{live:true}),refresh);
- problem="Limite de requêtes MEATER atteinte";await refresh();assert.equal(delay(),5000);
- problem=null;await refresh();assert.equal(calls[4],"meater-graph-live");assert.ok(delay()>=100&&delay()<=1200);
+ problem="Limite de requêtes MEATER atteinte";await refresh();assert.ok(delay()>=59900&&delay()<=60000);
+ problem=null;await refresh();assert.equal(calls[4],"meater-graph-live");assert.ok(delay()>=4900&&delay()<=5000);
  listeners.click({target:{closest:k=>k==="[data-meater-graph-close]"?{}:null}});
  assert.equal(panel.hidden,true);assert.equal(delay(),30000);
  await refresh();assert.equal(calls[5],"meater-live");
@@ -201,7 +201,7 @@ test("MEATER graphique : limitation globale, échec et exclusion des écritures 
  assert.match(sql,/s.generation is distinct from p_generation/);
  assert.match(sql,/revoke all on function public.kitchen_meater_claim_graph\(\) from public,anon,authenticated/);
  assert.match(ui,/graphMaxPoints=10801/);
- assert.match(ui,/Math.max\(100,1200-\(Date.now\(\)-lastStarted\)\)/);
-  assert.match(ui,/failed\?5000/);
+ assert.match(ui,/steps=\[5000,4000,3000,2000,1500,1200\]/);
+  assert.match(ui,/\+\+successes>=10/);
   assert.match(ui,/fastAllowed=!!s.configured/);
 });
