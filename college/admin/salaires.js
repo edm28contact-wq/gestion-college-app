@@ -793,7 +793,7 @@ function salaryAccountingUpdateNavigo(month){
     const info=window.salaryOdLegalData?.(month,id);
     if(!info?.loaded){cell.textContent="Chargement…";continue}
     const calc=benefits[kind](month,{...(info.inputs||{}),housingGross:info.inputs?.housingGross||info.gross||""});
-    cell.textContent=calc.amountCents===null?"À renseigner":legal.centsToString(calc.amountCents);
+    cell.textContent=calc.amountCents===null?"À renseigner":legal.centsToString(calc.amountCents)+(calc.status==="review"?" · à vérifier":"");
     cell.title=calc.message;
    }
   }
