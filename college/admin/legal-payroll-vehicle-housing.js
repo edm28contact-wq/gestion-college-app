@@ -69,9 +69,10 @@ function vehicle(month,input={}){
    annual=Math.min(annual,cap);
   }
  }else{
-  const insurance=money(input.vehicleInsuranceAnnual),maintenance=money(input.vehicleMaintenanceAnnual);
+  const insurance=mode==="purchased"?money(input.vehicleInsuranceAnnual):0;
+  const maintenance=mode==="purchased"?money(input.vehicleMaintenanceAnnual):0;
   const totalKm=Number(select(input.vehicleKmTotal)),privateKm=Number(select(input.vehicleKmPrivate));
-  if(!select(input.vehicleInsuranceAnnual)||!select(input.vehicleMaintenanceAnnual)||insurance===null||maintenance===null)
+  if(mode==="purchased"&&(!select(input.vehicleInsuranceAnnual)||!select(input.vehicleMaintenanceAnnual)||insurance===null||maintenance===null))
    return missing("Assurance et entretien TTC annuels nécessaires (indiquer 0 si aucun).");
   if(!Number.isFinite(totalKm)||!Number.isFinite(privateKm)||totalKm<=0||privateKm<0||
    privateKm>totalKm||!select(input.vehicleKmTotal)||!select(input.vehicleKmPrivate))
