@@ -92,3 +92,22 @@ test("MEATER : diagnostic administrateur indépendant du mode production et dern
  assert.match(html,/hors registre HACCP/);
  assert.doesNotMatch(ctx.window.KitchenMeater.dashboardMarkup(s),/29,3 °C/);
 });
+
+test("MEATER : horloge serveur et distinction entre réponse vide et erreur Cloud",()=>{
+ const ui=read("cuisine/meater-ui.js"),base=Date.parse("2026-11-26T22:05:57Z");
+ class WrongClock extends Date{static now(){return base+3600000;}}
+ const ctx={window:{},Date:WrongClock};
+ vm.runInNewContext(ui.replace("window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen};","window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen,dashboardMarkup};"),ctx);
+ const p={device_id:"test",slot:1,label:"Féculents",fresh:true,internal_c:29.2,ambient_c:29.4,measured_at:new Date(base-15000).toISOString()};
+ const s={now:new Date(base).toISOString(),enabled:false,configured:true,preview:true,cloud_device_count:1,cloud_fresh_count:1,probes:[p],links:[]};
+ const html=ctx.window.KitchenMeater.dashboardMarkup(s,true);
+ assert.match(html,/class="meater-value">29,2 °C/);
+ assert.match(html,/1 sonde\(s\) transmise\(s\)/);
+ const empty=ctx.window.KitchenMeater.dashboardMarkup({...s,cloud_device_count:0,cloud_fresh_count:0,probes:[{...p,fresh:false}]},true);
+ assert.match(empty,/Cloud connecté : 0 sonde transmise/);
+ assert.match(empty,/class="meater-value">— °C/);
+ const stale=ctx.window.KitchenMeater.dashboardMarkup({...s,now:new Date(base+180000).toISOString()},true);
+ assert.match(stale,/class="meater-value">— °C/);
+ const error=ctx.window.KitchenMeater.dashboardMarkup({...s,last_error:"Erreur API"},true);
+ assert.match(error,/Erreur de communication Cloud/);
+});

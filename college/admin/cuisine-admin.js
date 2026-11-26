@@ -442,8 +442,8 @@ function isRetiredCleaningTask(t){
    }
    if(kitchenTab==="overview"){
     const cold=node("adminKitchenLiveCold"),root=node("adminKitchenMeaterOverview");
-    if(cold&&!cold.kitchenRefresh)window.KitchenUI.mountLiveCold(cold,api);
-    if(root&&!root.kitchenRefresh)window.KitchenMeater.mountDashboard(root,api,{diagnostic:true,live:true});
+    if(cold){if(!cold.kitchenRefresh)window.KitchenUI.mountLiveCold(cold,api);else void cold.kitchenRefresh();}
+    if(root){if(!root.kitchenRefresh)window.KitchenMeater.mountDashboard(root,api,{diagnostic:true,live:true});else void root.kitchenRefresh();}
    }
    if(kitchenTab==="cleaning")refreshCleaningAdmin();
    if(kitchenTab==="meater")window.KitchenMeater.mountAdmin(node("meaterAdminPanel"),api,snapshot.me.scope==="admin");
