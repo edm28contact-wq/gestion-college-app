@@ -82,6 +82,32 @@ Deno.serve(async req=>{
     }else if(openData.status==="review")report.categories.navigo=openData;
    }catch(e){errors.navigoDataset=String((e as Error)?.message||e).slice(0,180)}
   }
+  // A second, independent collector runs on GitHub-hosted runners ahead of
+  // the Supabase cron. Use its sanitized, fresh official-source snapshots only.
+  try{
+   const url="https://raw.githubusercontent.com/edm28contact-wq/gestion-college-app/main/college/admin/official-rates-cache.json";
+   const fetched=await fetch(url,{signal:AbortSignal.timeout(10000),headers:{"Accept":"application/json"}});
+   if(fetched.ok&&new URL(fetched.url).hostname==="raw.githubusercontent.com"){
+    const cache=await fetched.json(),at=Date.parse(String(cache.checkedAt||""));
+    const age=Date.now()-at;
+    if(cache.year===year&&Number.isFinite(at)&&age>=0&&age<=72*3600000&&cache.categories&&typeof cache.categories==="object"){
+     for(const [name,val] of Object.entries(cache.categories)){
+      if(!Object.hasOwn(report.categories,name)||report.categories[name as keyof typeof report.categories].status==="verified")continue;
+      const rate=val as any;
+      if(rate?.status!=="verified"||!rate.payload||typeof rate.source!=="string")continue;
+      const expected=name==="navigo"?[URLS.navigo,URLS.navigoData]:
+       name==="ntic"?[URLS.urssafDetails]:[URLS.urssaf];
+      if(!expected.includes(rate.source))continue;
+      if(year===2026&&!expected2026(name,rate.payload))continue;
+      if(year>2026&&(rate.payload.year!==year&&name!=="vehicule"&&name!=="ntic"))continue;
+      report.categories[name as keyof typeof report.categories]={
+       status:"verified",source:rate.source,payload:rate.payload,
+       message:"Barème officiel daté confirmé par la collecte indépendante du 20."
+      };
+     }
+    }
+   }
+  }catch(e){errors.repositoryCache=String((e as Error)?.message||e).slice(0,180)}
   const prior=await db.from("college_payroll_official_rate_snapshots")
    .select("category,payload").eq("year",year);
   if(prior.error)throw Error("Snapshot read failed: "+prior.error.code);
