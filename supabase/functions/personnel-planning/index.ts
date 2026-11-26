@@ -202,12 +202,19 @@ Deno.serve(async(req:Request)=>{
   if(!user.admin)return reply({error:"Accès Salaires non autorisé"},403);
   const month=new URL(req.url).searchParams.get("month")||"";
   if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))return reply({error:"Mois invalide"},400);
-  const q=await db.from("college_payroll_rate_checks").select("month,checked_at,status,categories,messages").eq("month",month).maybeSingle();
-  if(q.error)throw q.error;
-  if(!q.data)return reply({ok:true,month,status:"not_checked",checked_at:null,categories:{}});
+  const [q,snapshots]=await Promise.all([
+   db.from("college_payroll_rate_checks").select("month,checked_at,status,categories,messages").eq("month",month).maybeSingle(),
+   db.from("college_payroll_official_rate_snapshots")
+    .select("year,category,payload,source_url,effective_from,checked_at").eq("year",Number(month.slice(0,4))).limit(5)
+  ]);
+  if(q.error||snapshots.error)throw Error("Historique des taux officiels indisponible.");
+  const archived=Object.fromEntries((snapshots.data||[]).map((row:any)=>[row.category,{
+   year:row.year,payload:row.payload,source:row.source_url,effectiveFrom:row.effective_from,checkedAt:row.checked_at
+  }]));
+  if(!q.data)return reply({ok:true,month,status:"not_checked",checked_at:null,categories:{},archived});
   const categories=Object.fromEntries(Object.entries(q.data.categories||{}).map(([key,value]:[string,any])=>
    [key,{status:String(value?.status||"unavailable"),message:String(value?.message||""),source:String(value?.source||"")}]));
-  return reply({ok:true,month,checked_at:q.data.checked_at,status:q.data.status,categories,messages:q.data.messages||{}});
+  return reply({ok:true,month,checked_at:q.data.checked_at,status:q.data.status,categories,archived,messages:q.data.messages||{}});
  }
  if(action==="legal-navigo-annuel"&&req.method==="GET"){
   if(!user.admin)return reply({error:"Lecture des barèmes de paie non autorisée"},403);
