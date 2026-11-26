@@ -1,6 +1,7 @@
 // Extracts official, year-labeled rate tables. Never guesses missing figures.
 export const URLS=Object.freeze({
  navigo:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel",
+ navigoData:"https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/titres-et-tarifs/records?limit=50",
  transport2026:"https://www.iledefrance-mobilites.fr/tarifs-titre-de-transport-en-commun-2026",
  urssaf:"https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html",
  urssafDetails:"https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html"
@@ -39,6 +40,21 @@ export function verifyNavigo(html,year){
  if(!monthly||monthly<3000||monthly>30000)return bad(source,"Tarif mensuel toutes zones invalide.");
  return verified(source,{year,annualCents:monthly*11,paidMonthCents:monthly,payments:11,months:12,
   effectiveFrom:year+"-01-01",tariffVersion:"navigo-annuel-"+year});
+}
+export function verifyNavigoDataset(data,year){
+ const source=URLS.navigoData;
+ if(!data||!Array.isArray(data.results)||data.results.length>100)return bad(source,"Flux open data Île-de-France Mobilités illisible.");
+ const rows=data.results.filter(row=>row?.product_name==="Forfait Navigo Annuel"&&
+  row?.url===URLS.navigo&&row?.price_period==="par mois");
+ if(rows.length!==1)return bad(source,"Abonnement annuel toutes zones absent ou non unique dans l'open data.");
+ const value=toCents(String(rows[0].price||"").replace("€",""));
+ if(value===null||value<3000||value>30000)return bad(source,"Prix annuel dans le jeu officiel non exploitable.");
+ // Official dataset does not carry a year of application. The 2026 price is independently
+ // qualified against the explicit 2026 tariff page. Do not roll it forward to a new year.
+ if(year!==2026)return bad(source,"Le flux officiel indique un prix mais pas son année d'application. Vérification de la publication annuelle nécessaire.","pending");
+ if(value!==9080)return bad(source,"Le prix du jeu officiel diverge du tarif annuel 2026 archivé : validation nécessaire.","review");
+ return verified(source,{year,annualCents:value*11,paidMonthCents:value,payments:11,months:12,
+  effectiveFrom:"2026-01-01",tariffVersion:"navigo-annuel-2026-open-data"});
 }
 export function verifyMeal(html,year){
  const source=URLS.urssaf;
