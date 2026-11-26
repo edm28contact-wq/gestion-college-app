@@ -111,13 +111,16 @@
   });
  }
  function poll(root,api,render,action="meater-status",fastMode=()=>false){
-  let pending=null,timer=null,lastStarted=0,failed=false;
+  const steps=[5000,4000,3000,2000,1500,1200];
+  let pending=null,timer=null,lastStarted=0,step=0,successes=0,backoff=0;
+  const reset=()=>{step=0;successes=0;backoff=0;};
   const visible=()=>root.isConnected&&!document.hidden&&!root.closest("[hidden]");
   function schedule(){
    if(timer!==null){clearTimeout(timer);timer=null;}
    if(!root.isConnected){document.removeEventListener("visibilitychange",resume);return;}
    const rapid=visible()&&fastMode();
-   const delay=rapid?(failed?5000:Math.max(100,1200-(Date.now()-lastStarted))):30000;
+   if(!rapid)reset();
+   const delay=rapid?Math.max(100,(backoff||steps[step])-(Date.now()-lastStarted)):30000;
    timer=setTimeout(()=>{timer=null;void refresh();},delay);
   }
   function refresh(){
@@ -128,13 +131,17 @@
    lastStarted=Date.now();
    pending=Promise.resolve().then(()=>api(route)).then(s=>{
     if(!Array.isArray(s?.probes))throw Error("Réponse MEATER invalide");
-    failed=!!s.last_error;
+    if(route==='meater-graph-live'&&fastMode()){
+     if(s.last_error){successes=0;step=Math.max(0,step-1);backoff=/limite de requêtes/i.test(s.last_error)?60000:Math.min(30000,Math.max(10000,backoff*2));}
+     else if(!s.cached&&Number(s.cloud_fresh_count)>0){backoff=0;if(++successes>=10){step=Math.min(step+1,steps.length-1);successes=0;}}
+    }
     if(root.isConnected)render(s);
-   }).catch(()=>{failed=true;if(root.isConnected)render(null);}).finally(()=>{pending=null;schedule();});
+   }).catch(()=>{if(route==='meater-graph-live'){successes=0;step=Math.max(0,step-1);backoff=Math.min(30000,Math.max(10000,backoff*2));}if(root.isConnected)render(null);}).finally(()=>{pending=null;schedule();});
    return pending;
   }
   function resume(){if(visible())void refresh();else schedule();}
   refresh.reschedule=schedule;
+  refresh.cadence=()=>backoff||steps[step];
   document.addEventListener("visibilitychange",resume);
   void refresh();return refresh;
  }
@@ -169,7 +176,7 @@
   const now=serverNow(s),points=(entry?.points||[]).filter(q=>q.at>=now-minutes*60000);
   const current=!!s&&!!p&&displayable(p,s,s.test_active===true||diagnostic);
   const fast=!!s&&s.graph_requested===true&&s.configured&&!s.enabled;
-  const cadence=fast?"Mode rapide · interrogation toutes les 1,2 s au maximum, mesures selon MEATER Cloud":s?.enabled?"Suivi de production · interrogation toutes les 30 s":s?.last_error?"Erreur Cloud · reprise au rythme normal":"Interrogation toutes les 30 s";
+  const cadence=fast?"Mode adaptatif · interrogation de 5 à 1,2 s, selon les réponses MEATER Cloud":s?.enabled?"Suivi de production · interrogation toutes les 30 s":s?.last_error?"Erreur Cloud · reprise au rythme normal":"Interrogation toutes les 30 s";
   const status=cadence+' · '+(current?"Mesure récente":"Aucune nouvelle mesure confirmée · courbe interrompue si la transmission est coupée");
   const note='<p class="muted meater-graph-note">Historique temporaire depuis l’ouverture du tableau de bord. Une mesure réelle par horodatage, sans enregistrement HACCP. Les coupures de transmission ne sont pas interpolées.</p>';
   if(!points.length)return '<p class="'+(current?'muted':'meater-warn')+'">'+status+'</p><p>Aucune mesure récente dans cette période. Le graphique se remplira au fil des réponses MEATER.</p>'+note;
@@ -216,7 +223,7 @@
    if(state&&!probe){selected=null;panel.hidden=true;return;}
    panel.hidden=false;
    if(probe)title.textContent=label(probe)+" · Graphique en direct";
-   content.innerHTML=graphMarkup(history.get(selected),state,probe,minutes,showDiagnostics);
+   content.innerHTML=graphMarkup(history.get(selected),state,probe,minutes,showDiagnostics)+(fastMode()&&root.kitchenRefresh?.cadence?'<p class="muted">Intervalle cible : '+(root.kitchenRefresh.cadence()/1000).toLocaleString('fr-FR')+' s</p>':'');
   }
   root.kitchenRefresh=poll(root,api,s=>{
    if(s)fastAllowed=!!s.configured&&!s.enabled&&s.graph_available!==false;
