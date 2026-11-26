@@ -62,12 +62,14 @@ function meal(month,settings={}){
  const paid=parseDecimal(settings.employeePaidPerMeal||"0");
  if(paid===null)return {status:"invalid",amountCents:null,message:"Participation du salarié par repas invalide."};
  const service=settings.dutyMeal==="yes";
- // Une consommation réalisée par nécessité de service avec les élèves peut être exonérée ;
- // ce caractère doit être confirmé par l'employeur.
- const perMeal=service||paid>r.mealGeneralCents/2?0:Math.max(0,r.mealGeneralCents-paid);
+ const canteen=settings.mealMode==="canteen";
+ // Le seuil de 50 % est specifique aux cantines et restaurants d'entreprise :
+ // il ne s'applique pas a tout repas pris dans les locaux.
+ const disregarded=canteen&&paid>=Math.ceil(r.mealGeneralCents/2);
+ const perMeal=service||disregarded?0:Math.max(0,r.mealGeneralCents-paid);
  return {status:"ok",amountCents:count*perMeal,unitCents:perMeal,meals:count,ruleVersion:r.version,
   message:service?"Repas pris avec les élèves par nécessité de service déclarée : avantage non retenu.":
-  paid>r.mealGeneralCents/2?"Participation supérieure à 50 % du forfait : avantage négligé selon l’Urssaf.":
+  disregarded?"Cantine : participation égale ou supérieure à 50 % du forfait, avantage négligé selon l’Urssaf.":
   "Nombre de repas × (forfait Urssaf − participation du salarié)."};
 }
 const API=Object.freeze({RULES,rulesFor,navigo,meal,parseDecimal,centsToString});
