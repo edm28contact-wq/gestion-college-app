@@ -198,6 +198,17 @@ Deno.serve(async(req:Request)=>{
   if(q.data===null)return reply({error:"Coordonnées modifiées entre-temps. Fermez la fenêtre et rechargez la fiche."},409);
   return reply({ok:true,bank:staffBankSummary({...bank,version:q.data})});
  }
+ if(action==="payroll-official-rates"&&req.method==="GET"){
+  if(!user.admin)return reply({error:"Accès Salaires non autorisé"},403);
+  const month=new URL(req.url).searchParams.get("month")||"";
+  if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))return reply({error:"Mois invalide"},400);
+  const q=await db.from("college_payroll_rate_checks").select("month,checked_at,status,categories,messages").eq("month",month).maybeSingle();
+  if(q.error)throw q.error;
+  if(!q.data)return reply({ok:true,month,status:"not_checked",checked_at:null,categories:{}});
+  const categories=Object.fromEntries(Object.entries(q.data.categories||{}).map(([key,value]:[string,any])=>
+   [key,{status:String(value?.status||"unavailable"),message:String(value?.message||""),source:String(value?.source||"")}]));
+  return reply({ok:true,month,checked_at:q.data.checked_at,status:q.data.status,categories,messages:q.data.messages||{}});
+ }
  if(action==="legal-navigo-annuel"&&req.method==="GET"){
   if(!user.admin)return reply({error:"Lecture des barèmes de paie non autorisée"},403);
   const rawYear=new URL(req.url).searchParams.get("year")||"";
