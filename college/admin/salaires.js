@@ -271,7 +271,16 @@ function salaryRefreshPayrollTotals(){
  const count=$("salaryPayrollWorkingCount"),hours=$("salaryPayrollHoursCount"),total=$("salaryBenefitTotal");
  if(count)count.innerHTML=salaryCalendarResultHtml(staff,month,draft);
  if(hours)hours.innerHTML=salaryHoursResultHtml(staff,month,draft);
- if(total)total.textContent=draft.benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"});
+ if(total){
+ const pending=draft.benefits.filter(b=>b.status&&!["ok","excluded","manual"].includes(b.status));
+ total.textContent=pending.length?pending.length+" avantage(s) à compléter":draft.benefits.reduce((n,b)=>n+(Number(b.amount)||0),0).toLocaleString("fr-FR",{style:"currency",currency:"EUR"});
+ }
+ for(const [i,b] of draft.benefits.entries()){
+  const status=document.querySelector('[data-benefit-status="'+i+'"]');
+  if(!status)continue;
+  const result=window.ChambertinBenefitQuestionnaire?.evaluate(salaryProfileMonth||salaryCurrentMonth(),b);
+  if(result)status.textContent=result.message+(result.amountCents===null?" · Montant non calculable":" · "+(result.amountCents/100).toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+" / mois");
+ }
  const stats=salaryWorkSlotSummary(draft.days,draft.slots);
  document.querySelectorAll("[data-work-day-total]").forEach(el=>{
   const day=Number(el.dataset.workDayTotal);
@@ -368,7 +377,7 @@ function salaryPayrollPanel(staff,month){
   '<p><label><input type="checkbox" id="salaryExcludeSchool" style="width:auto" '+(excludeSchool?'checked':'')+lock+'> Déduire les vacances scolaires (uniquement si non travaillées selon le contrat)</label></p>'+
   '<p id="salaryPayrollWorkingCount">'+salaryCalendarResultHtml(staff,month,{days,excludePublic,excludeSchool})+'</p>'+
   '<button type="button" class="btn secondary compact" id="salaryCalendarRetry">Actualiser le calendrier officiel</button>'+
-  '<h4>Avantages en nature</h4><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>'<div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input data-benefit-label="'+i+'" aria-label="Désignation de l’avantage '+(i+1)+'" maxlength="100" value="'+esc(b.label)+'" placeholder="Repas, logement, véhicule…" style="flex:2;min-width:150px"'+lock+'><input data-benefit-amount="'+i+'" aria-label="Montant mensuel en euros" type="number" min="0" max="100000" step="0.01" value="'+esc(b.amount)+'" style="flex:1;min-width:100px"'+lock+'><button type="button" class="btn secondary" data-benefit-remove="'+i+'"'+lock+'>Supprimer</button></div>').join("")+'</div>'+
+  '<h4>Avantages en nature</h4><p class="muted">Sélectionnez le type d’avantage : seules les questions utiles seront affichées. Les calculs sont des propositions pour la paie et sont datés.</p><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>window.ChambertinBenefitQuestionnaire?.display(i,b,month,readOnly)||'<p class="err">Questionnaire des avantages indisponible.</p>').join("")+'</div>'+
   '<button type="button" class="btn secondary" id="salaryBenefitAdd"'+lock+'>+ Ajouter un avantage</button>'+
   '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
   '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer les horaires, le planning et les avantages</button>'+
@@ -401,7 +410,18 @@ function salaryPayrollReadDraft(){
  const staff=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
  if(!staff||!$("salaryPayrollSave"))return;
  const days=[...document.querySelectorAll("[data-payroll-day]:checked")].map(x=>Number(x.dataset.payrollDay));
- const benefits=[...document.querySelectorAll("[data-benefit-label]")].map(x=>({label:x.value,amount:Number(document.querySelector('[data-benefit-amount="'+x.dataset.benefitLabel+'"]')?.value)}));
+ const engine=window.ChambertinBenefitQuestionnaire;
+ const previous=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.benefits:Array.isArray(staff.benefits_in_kind)?staff.benefits_in_kind:[];
+ const month=salaryProfileMonth||salaryCurrentMonth();
+ const benefits=[...document.querySelectorAll("[data-benefit-row]")].map(node=>{
+  const i=Number(node.dataset.benefitRow),earlier=previous[i]||{},kind=node.querySelector("[data-benefit-kind]")?.value||earlier.kind||"manual";
+  const details=Object.fromEntries([...node.querySelectorAll("[data-benefit-input]")].map(el=>[el.dataset.benefitKey,String(el.value||"")]));
+  const label=node.querySelector("[data-benefit-label]")?.value||"";
+  const amount=Number(node.querySelector("[data-benefit-amount]")?.value);
+  const checkbox=node.querySelector("[data-benefit-confirm]");
+  const b={kind,label,amount:Number.isFinite(amount)?amount:0,details,confirmed:kind==="manual"?(checkbox?.checked??(earlier.confirmed!==false)):false};
+  return engine?.normalize(b,month)||b;
+ });
  const slots=[...document.querySelectorAll("[data-work-slot]")].map(row=>({day:Number(row.dataset.workSlot),start:row.querySelector("[data-work-start]")?.value||"",end:row.querySelector("[data-work-end]")?.value||""}));
  salaryPayrollDraft={id:staff.id,updated_at:salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.updated_at:staff.updated_at,days,slots,benefits,excludePublic:document.getElementById("salaryExcludePublic")?.checked??staff.exclude_public_holidays??true,excludeSchool:document.getElementById("salaryExcludeSchool")?.checked??staff.exclude_school_holidays??false};
 }
@@ -414,7 +434,9 @@ async function salaryPayrollSave(){
  const {id,updated_at,days,slots,benefits,excludePublic,excludeSchool}=salaryPayrollDraft;
  const schedule=salaryWorkSlotSummary(days,slots);
  if(schedule.error){salaryPayrollMessage=schedule.error;salaryPage();return}
- if(benefits.some(b=>!b.label.trim()||!Number.isFinite(b.amount)||b.amount<0||Math.abs(Math.round(b.amount*100)-b.amount*100)>1e-7)){salaryPayrollMessage="Vérifiez les désignations et montants des avantages.";salaryPage();return}
+ if(benefits.some(b=>!b.label.trim()||!Number.isFinite(b.amount)||b.amount<0||Math.abs(Math.round(b.amount*100)-b.amount*100)>1e-7||b.status&&!["ok","excluded","manual"].includes(b.status))){
+  salaryPayrollMessage="Complétez toutes les questions essentielles des avantages et vérifiez les montants avant enregistrement.";salaryPage();return
+ }
  salaryStaffSaving=true;salaryPayrollMessage="";salaryPage();
  try{
   const saved=await call(ROOT+'/personnel-planning','staff-payroll-update','POST',{id,updated_at,working_weekdays:days,weekly_work_slots:schedule.slots,benefits_in_kind:benefits,exclude_public_holidays:excludePublic,exclude_school_holidays:excludeSchool});
@@ -721,8 +743,18 @@ function salaryWireStaff(){
  }));
  $("salaryCalendarRetry")?.addEventListener("click",()=>void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth(),true));
  $("salaryScheduleCopy")?.addEventListener("click",salaryCopyDaySchedule);
- document.querySelectorAll("[data-benefit-label],[data-benefit-amount]").forEach(x=>x.addEventListener("input",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
- $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push({label:"",amount:0});salaryPage()});
+ document.querySelectorAll("[data-benefit-label],[data-benefit-amount],[data-benefit-input]").forEach(x=>x.addEventListener("input",()=>{
+  salaryPayrollReadDraft();salaryRefreshPayrollTotals();
+  if(x.tagName==="SELECT")salaryPage();
+ }));
+ document.querySelectorAll("[data-benefit-confirm]").forEach(x=>x.addEventListener("change",()=>{salaryPayrollReadDraft();salaryRefreshPayrollTotals()}));
+ document.querySelectorAll("[data-benefit-kind]").forEach(x=>x.addEventListener("change",()=>{
+  salaryPayrollReadDraft();
+  const i=Number(x.dataset.benefitKind),kind=x.value,q=window.ChambertinBenefitQuestionnaire;
+  if(salaryPayrollDraft?.benefits[i])salaryPayrollDraft.benefits[i]={kind,label:q?.NAMES[kind]||"",amount:0,details:{},status:"missing",confirmed:false};
+  salaryPage();
+ }));
+ $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push(window.ChambertinBenefitQuestionnaire?.newBenefit()||{kind:"choose",label:"",amount:0,details:{},status:"missing"});salaryPage()});
  document.querySelectorAll("[data-benefit-remove]").forEach(x=>x.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.splice(Number(x.dataset.benefitRemove),1);salaryPage()}));
  $("salaryPayrollSave")?.addEventListener("click",()=>{salaryPayrollReadDraft();void salaryPayrollSave()});
  const close=$('salaryProfileClose');if(close)close.addEventListener('click',salaryCloseStaffProfile);
