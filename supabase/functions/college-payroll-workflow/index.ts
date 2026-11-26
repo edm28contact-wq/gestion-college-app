@@ -42,6 +42,7 @@ const ledgerKeys=["salary","benefits","tese","unemployment","apec","retirement",
 const issuerKeys:Record<string,number>={name:70,iban:42,bic:11,number:35,date:10,filename:100,label:140};
 const beneficiaryKeys:Record<string,number>={matricule:35,creditorName:70,rowOrder:4,country:2,postcode:16,city:35,address:70,comment:140};
 const declarationKeys:Record<string,number>={nir:32,contract:100,function:160,status:100,start:10,end:10,hours:40,rate:40,gross:40,transport:40,health:40,adjustments:1000,absence:1000,absencePay:1000,comments:1000,internal:1000};
+const preparationKeys:Record<string,number>={zone:12,ticketCost:16,weeklyHours:12,fullTimeHours:12,employerRate:12,mealsCount:5,employeePaidPerMeal:16,dutyMeal:3};
 function safeDict(input:any,shape:Record<string,number>){
  if(!input||typeof input!=="object"||Array.isArray(input))throw Error("Champs invalides.");
  const output:Record<string,string>={};
@@ -56,7 +57,7 @@ function safeDraft(raw:any,month:string){
   if(!amount(raw.values[k]))throw Error("Montant comptable invalide.");
   values[k]=raw.values[k];
  }
- if(!Array.isArray(raw.payments)||raw.payments.length>500||!Array.isArray(raw.bank?.beneficiaries)||raw.bank.beneficiaries.length>500||!Array.isArray(raw.declarations)||raw.declarations.length>500)throw Error("Liste de salariés invalide.");
+ if(!Array.isArray(raw.payments)||raw.payments.length>500||!Array.isArray(raw.bank?.beneficiaries)||raw.bank.beneficiaries.length>500||!Array.isArray(raw.declarations)||raw.declarations.length>500||(raw.preparation!==undefined&&(!Array.isArray(raw.preparation)||raw.preparation.length>500)))throw Error("Liste de salariés invalide.");
  const ids=new Set<string>(),payments:[string,string][]=[];
  for(const row of raw.payments){
   if(!Array.isArray(row)||row.length!==2||!validUuid(row[0])||ids.has(row[0])||!amount(row[1]))throw Error("Salarié ou net à payer invalide.");
@@ -72,16 +73,31 @@ function safeDraft(raw:any,month:string){
   if(!Array.isArray(row)||row.length!==2||!validUuid(row[0])||declarationIds.has(row[0]))throw Error("Déclaration de salarié invalide.");
   declarationIds.add(row[0]);declarations.push([row[0],safeDict(row[1],declarationKeys)]);
  }
+ const preparation:[string,Record<string,string>][]=[];
+ const pids=new Set<string>();
+ for(const item of raw.preparation||[]){
+  if(!Array.isArray(item)||item.length!==2||!validUuid(item[0])||pids.has(item[0]))throw Error("Détails du mois invalides.");
+  pids.add(item[0]);
+  const values=safeDict(item[1],preparationKeys);
+  if(values.zone&&!["none","1-5","2-3","3-4","4-5","custom"].includes(values.zone))throw Error("Abonnement Navigo invalide.");
+  if(values.dutyMeal&&!["yes","no"].includes(values.dutyMeal))throw Error("Type de repas invalide.");
+  const caps:Record<string,number>={ticketCost:10000,weeklyHours:60,fullTimeHours:60,employerRate:100,mealsCount:100,employeePaidPerMeal:100};
+  for(const [key,cap] of Object.entries(caps)){
+   const val=values[key];if(val===undefined||val==="")continue;
+   if(!/^\d{1,6}(?:[.,]\d{1,2})?$/.test(val)||Number(val.replace(",","."))>cap)throw Error("Valeur de calcul invalide : "+key);
+  }
+  preparation.push([item[0],values]);
+ }
  const reason=field(raw.reconciliation||{},"reason",1000);
  const data={version:2,month,values,payments,
   reconciliation:{reason},
   bank:{issuer:safeDict(raw.bank.issuer||{},issuerKeys),beneficiaries},
-  declarations};
+  declarations,preparation};
  if(enc.encode(JSON.stringify(data)).length>180000)throw Error("Dossier trop volumineux.");
  return data;
 }
 async function validStaff(db:any,draft:any){
- const ids=[...new Set([...draft.payments.map((p:[string,string])=>p[0]),...draft.declarations.map((p:[string,unknown])=>p[0])])];
+ const ids=[...new Set([...draft.payments.map((p:[string,string])=>p[0]),...draft.declarations.map((p:[string,unknown])=>p[0]),...draft.preparation.map((p:[string,unknown])=>p[0])])];
  for(let offset=0;offset<ids.length;offset+=100){
   const subset=ids.slice(offset,offset+100);
   const result=await db.from("college_personnel").select("id").in("id",subset);
