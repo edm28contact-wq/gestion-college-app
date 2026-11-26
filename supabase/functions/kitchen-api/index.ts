@@ -71,8 +71,8 @@ function normalizeMeaterDevices(value:any,now=Date.now()){
  }
  return [...found.values()];
 }
-async function pollMeater(c:any,manual:boolean,preview=false){
- const claim=preview?await c.rpc("kitchen_meater_claim_preview"):await c.rpc("kitchen_meater_claim",{p_manual:manual});
+async function pollMeater(c:any,manual:boolean,preview=false,graph=false){
+ const claim=graph?await c.rpc("kitchen_meater_claim_graph"):preview?await c.rpc("kitchen_meater_claim_preview"):await c.rpc("kitchen_meater_claim",{p_manual:manual});
  if(claim.error)throw meaterDatabaseError("accès au jeton",claim.error);
  const slot=claim.data;if(slot?.error)return {error:slot.error};if(slot?.skipped)return {skipped:true};
  if(!slot?.token||!slot?.generation)throw new MeaterError("MEATER : compte non configuré ou jeton indisponible.");
@@ -83,7 +83,8 @@ async function pollMeater(c:any,manual:boolean,preview=false){
   upstreamCount=raw.devices.length;
  }
  catch(err){problem=err instanceof MeaterError?err.message:"Connexion MEATER indisponible";}
- const result=await c.rpc("kitchen_meater_apply",{p_generation:slot.generation,p_devices:devices,p_error:problem});
+ const data={p_generation:slot.generation,p_devices:devices,p_error:problem};
+ const result=graph?await c.rpc("kitchen_meater_apply_graph",{...data,p_request_id:slot.request_id}):await c.rpc("kitchen_meater_apply",data);
  if(result.error)throw meaterDatabaseError("enregistrement des sondes",result.error);
  return {...result.data,upstream_count:upstreamCount,accepted_count:problem?null:devices.length};
 }
@@ -214,10 +215,10 @@ async function goveeLive(c:any){
   return {...room,sensor:sensor?{model:sensor.model,status:state?.status||"pending",temperature_c:state?.temperature_c??null,checked_at:state?.checked_at??null,age_seconds:Number.isFinite(age)?Math.round(age/1000):null,fresh:state?.status==="online"&&state.temperature_c!=null&&Number.isFinite(Number(state.temperature_c))&&Number.isFinite(age)&&age>=-10000&&age<=130000,error:state?.error??null,last_temperature_c:sensor.last_temperature_c,last_checked_at:sensor.last_checked_at}:null};
  }),now:new Date(now).toISOString(),queried:claimed.length};
 }
-async function meaterLive(c:any){
- const result=await pollMeater(c,true,true);
+async function meaterLive(c:any,graph=false){
+ const result=await pollMeater(c,true,true,graph);
  const s=await meaterStatus(c,true);
- return {...s,preview:true,cached:result?.skipped===true,cloud_device_count:result?.upstream_count??null,cloud_fresh_count:result?.accepted_count??null,last_error:result?.error||s.last_error};
+ return {...s,preview:true,graph_requested:graph,graph_available:!s.enabled&&s.configured,cached:result?.skipped===true,cloud_device_count:result?.upstream_count??null,cloud_fresh_count:result?.accepted_count??null,last_error:result?.error||s.last_error};
 }
 
 async function syncGoveeDevice(c:any,sensor:any,key:string,slotAt?:string){
@@ -370,6 +371,7 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
   if(u.scope==="viewer"&&req.method!=="GET")return answer({error:"Ce pouvoir autorise uniquement la consultation de la cuisine."},403);
  if(action==="govee-live"&&req.method==="GET")return answer(await goveeLive(c));
  if(action==="meater-live"&&req.method==="GET")return answer(await meaterLive(c));
+ if(action==="meater-graph-live"&&req.method==="GET")return answer(await meaterLive(c,true));
  if(action==="meater-status"&&req.method==="GET")return answer(await meaterStatus(c,u.scope==="admin"));
  if(action==="meater-history"&&req.method==="GET"){
  const id=url.searchParams.get("reheat_id");if(!uuid(id))return answer({error:"Cycle invalide"},400);
