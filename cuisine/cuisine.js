@@ -200,6 +200,7 @@ function isRetiredCleaningTask(t){
 }
 
 function renderDashboard(){
+ const previousMeater=$("meaterDashboardPanel");
  const day=today(),rooms=activeRooms();
  const alarms=[...latestByRoom().values()].filter(r=>r.is_alert&&rooms.some(room=>room.id===r.room_id)).length+data.reheats.filter(r=>dayOf(r.started_at)===day&&r.status==="alerte").length;
  $("content").innerHTML=
@@ -207,6 +208,7 @@ function renderDashboard(){
  '<section id="sensorResults" class="work-section" aria-label="Résultats des sondes"><div class="section-heading work-heading"><div><div class="eyebrow">Mesures automatiques</div><h1>Résultats des sondes</h1><p>Dernières valeurs reçues et état des équipements. Les températures ne sont pas des mesures instantanées.</p></div></div>'+
  (alarms?'<div class="card info-warn"><strong>'+alarms+' écart(s) nécessitant une vérification.</strong> Derniers relevés froids ou anomalies de réchauffage du jour. Prévenez le responsable.</div>':'')+
  '<div id="kitchenLiveCold"></div><details><summary>Derniers relevés enregistrés</summary>'+renderColdOverview()+'</details><div id="meaterDashboardPanel"><div class="card"><h2>Sondes MEATER</h2><p class="muted">Chargement des dernières mesures…</p></div></div></section>';
+ if(previousMeater?.kitchenRefresh)$("meaterDashboardPanel").replaceWith(previousMeater);
  window.KitchenUI.mountLiveCold($("kitchenLiveCold"),request);
  window.KitchenMeater.mountDashboard($("meaterDashboardPanel"),request,{live:true});
 }
