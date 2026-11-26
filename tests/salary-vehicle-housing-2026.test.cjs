@@ -32,7 +32,7 @@ test("location : référence loueur obligatoire, forfait plafonné",()=>{
 });
 test("logement au forfait 2026 : tranches, pièces, retenues et semaines",()=>{
  assert.equal(HOUSING_2026.thresholds.length,7);
- const one={housingMode:"forfait",housingGross:"3000",housingRooms:"1",housingWeeks:"4"};
+ const one={housingMode:"forfait",housingLeaseHolder:"employer",housingGross:"3000",housingRooms:"1",housingWeeks:"4"};
  assert.equal(housing("2026-11",one).amountCents,11940);
  assert.equal(housing("2026-11",{...one,housingRooms:"3"}).amountCents,29850);
  assert.equal(housing("2026-11",{...one,housingRooms:"3",housingEmployeeContribution:"50"}).amountCents,24850);
@@ -41,9 +41,10 @@ test("logement au forfait 2026 : tranches, pièces, retenues et semaines",()=>{
  assert.equal(housing("2026-11",{...one,housingGross:"6007.50"}).amountCents,22560);
 });
 test("logement au réel et cas spéciaux : pas de valorisation imaginaire",()=>{
- assert.equal(housing("2026-11",{housingMode:"real",housingWeeks:"4",housingRentalValue:"900",housingExpenses:"100",housingEmployeeContribution:"250"}).amountCents,75000);
+ assert.equal(housing("2026-11",{housingMode:"real",housingLeaseHolder:"employer",housingWeeks:"4",housingRentalValue:"900",housingExpenses:"100",housingEmployeeContribution:"250"}).amountCents,75000);
  assert.equal(housing("2026-11",{housingMode:"forfait",housingGross:"3000"}).status,"missing");
- assert.equal(housing("2026-11",{housingMode:"forfait",housingGross:"3000",housingRooms:"2",housingWeeks:"4",housingShared:"yes"}).amountCents,null);
+ assert.equal(housing("2026-11",{housingMode:"forfait",housingGross:"3000",housingRooms:"1",housingWeeks:"4",housingLeaseHolder:"employee"}).status,"missing");
+ assert.equal(housing("2026-11",{housingMode:"forfait",housingLeaseHolder:"employer",housingGross:"3000",housingRooms:"2",housingWeeks:"4",housingShared:"yes"}).amountCents,null);
  assert.equal(housing("2027-01",{housingMode:"forfait",housingGross:"3000",housingRooms:"2",housingWeeks:"4"}).status,"missing");
 });
 test("tarif Navigo Annuel : douze mensualités correctes, pas de 12e virement brut",()=>{
