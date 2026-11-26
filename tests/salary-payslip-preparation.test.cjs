@@ -6,11 +6,11 @@ const html=fs.readFileSync("college/admin/index.html","utf8");
 
 test("Compta salaire : deux fenêtres, avec dépôt PDF dans les virements",()=>{
  assert.match(page,/data-salary-accounting-tab="prep"/);
- assert.match(page,/data-salary-accounting-tab="payslips"/);
+ assert.doesNotMatch(page,/data-salary-accounting-tab="payslips"/);
  assert.match(page,/data-salary-accounting-tab="pay"/);
  assert.match(page,/1\. Préparation des fiches de paie/);
- assert.match(page,/2\. Importer les bulletins PDF/);
- assert.match(page,/3\. Virements de salaires/);
+ assert.match(payroll,/Déposer les bulletins de paie \\(PDF\\)/);
+ assert.match(page,/2\. Virements de salaires/);
  assert.match(page,/salaryAccountingView="prep"/);
  assert.match(page,/function salaryAccountingShowTab\(view\)/);
  assert.match(payroll,/activeView="pay";\s*nav\.replaceChildren\(\)/);
