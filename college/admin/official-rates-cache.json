@@ -1,0 +1,46 @@
+{
+  "year": 2026,
+  "checkedAt": "2026-11-26T09:41:47.602Z",
+  "status": "incomplete",
+  "categories": {
+    "navigo": {
+      "status": "verified",
+      "source": "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/titres-et-tarifs/records?limit=50",
+      "message": "Barème daté vérifié sur la source officielle.",
+      "payload": {
+        "year": 2026,
+        "annualCents": 99880,
+        "paidMonthCents": 9080,
+        "payments": 11,
+        "months": 12,
+        "effectiveFrom": "2026-01-01",
+        "tariffVersion": "navigo-annuel-2026-open-data"
+      }
+    },
+    "repas": {
+      "status": "pending",
+      "source": "https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html",
+      "message": "Tableau repas du cas général absent pour 2026."
+    },
+    "logement": {
+      "status": "pending",
+      "source": "https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html",
+      "message": "Tableau complet du logement 2026 absent pour l'année 2026."
+    },
+    "vehicule": {
+      "status": "unavailable",
+      "source": "https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html",
+      "message": "Tableau des véhicules mis à disposition depuis février 2025 introuvable."
+    },
+    "ntic": {
+      "status": "pending",
+      "source": "https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html",
+      "message": "La règle NTIC officielle n'a pas été retrouvée."
+    }
+  },
+  "errors": {
+    "urssafDetails": "fetch failed",
+    "urssaf": "fetch failed",
+    "navigo": "HTTP 403"
+  }
+}
