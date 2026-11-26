@@ -96,9 +96,13 @@ function renderQuestions(kind,data={},i,disabled=false){
 }
 function evaluate(month,b){
  const kind=b?.kind||"manual",d=b?.details||{};
+ if(!["manual","choose"].includes(kind)){
+  const required=fieldsFor(kind,d).filter(([key])=>String(d[key]??"").trim()==="").map(([,label])=>label);
+  if(required.length)return {status:"missing",amountCents:null,message:"Questions obligatoires : "+required.join(", ")+".",ruleVersion:""};
+ }
  if(kind==="manual"){
   const amount=Number(b?.amount);
-  if(b?.confirmed!==true)return {status:"missing",amountCents:null,message:"Montant libre : confirmer expressément la base de calcul et son justificatif."};
+  if(b?.confirmed===false)return {status:"missing",amountCents:null,message:"Montant libre : confirmer expressément la base de calcul et son justificatif."};
   if(!String(b.label||"").trim()||!Number.isFinite(amount)||amount<0||amount>100000)return {status:"invalid",amountCents:null,message:"Désignation ou montant manuel invalide."};
   return {status:"manual",amountCents:Math.round(amount*100),message:"Montant renseigné manuellement, justificatif de paie requis.",ruleVersion:"MANUAL"};
  }
@@ -124,7 +128,7 @@ function display(i,raw,month,disabled=false){
   '<button class="btn secondary compact" type="button" data-benefit-remove="'+i+'"'+lock+'>Supprimer</button></div>'+
   (isManual?'<div class="salary-doc-fields"><label>Libellé exact<input maxlength="100" data-benefit-label="'+i+'" value="'+esc(b.label||"")+'"'+lock+'></label>'+
    '<label>Montant / mois (€)<input type="number" min="0" step="0.01" data-benefit-amount="'+i+'" value="'+esc(b.amount||0)+'"'+lock+'></label>'+
-   '<label><input type="checkbox" data-benefit-confirm="'+i+'"'+(b.confirmed===true?' checked':'')+lock+'> Montant et justificatif contrôlés</label></div>':
+   '<label><input type="checkbox" data-benefit-confirm="'+i+'"'+(b.confirmed!==false?' checked':'')+lock+'> Montant et justificatif contrôlés</label></div>':
    '<input type="hidden" data-benefit-label="'+i+'" value="'+esc(label)+'">'+
    '<input type="hidden" data-benefit-amount="'+i+'" value="'+(Number(result.amountCents??0)/100)+'">'+
    (changeable?'<div class="salary-doc-fields">'+renderQuestions(kind,d,i,disabled)+'</div>':''))+
