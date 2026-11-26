@@ -5,7 +5,7 @@
  const temp=v=>num(v)===null?"—":num(v).toLocaleString("fr-FR",{maximumFractionDigits:2})+" °C";
  const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"medium"}):"—";
  const active=r=>["armed","running"].includes(r?.status);
- const labels={armed:"Surveillance rapide · attente sous 7 °C",running:"Chronomètre en cours",target:"Cible technique atteinte",expired:"Délai dépassé",cancelled:"Annulé"};
+ const labels={armed:"Surveillance rapide · attente sous 10 °C",running:"Chronomètre en cours",target:"Cible technique atteinte",expired:"Délai dépassé",cancelled:"Annulé"};
  function countdown(r,now){
   if(r.status==="armed")return "En attente";
   if(!r.deadline_at)return "—";
@@ -15,7 +15,7 @@
  }
  function chart(r,rows){
   const start=Date.parse(r.started_at||"");
-  if(!Number.isFinite(start)||!rows.length)return '<p class="muted">Le graphique démarre avec la première mesure sous 7 °C.</p>';
+  if(!Number.isFinite(start)||!rows.length)return '<p class="muted">Le graphique démarre avec la première mesure sous 10 °C.</p>';
   const points=rows.map(v=>({t:Date.parse(v.measured_at),c:num(v.internal_c),a:num(v.ambient_c),event:v.event})).filter(v=>Number.isFinite(v.t)&&v.c!==null&&v.t>=start&&v.t<=start+3600000).sort((a,b)=>a.t-b.t);
   if(!points.length)return '<p class="muted">Aucune mesure enregistrée.</p>';
   const values=[...points.flatMap(v=>[v.c,v.a].filter(x=>x!==null)),...[r.trigger_c,r.cold_c,r.hot_c].map(num).filter(v=>v!==null)];
@@ -26,7 +26,7 @@
    for(const p of points){
     if(p[key]===null){last=null;continue;}
     const x=X(p.t).toFixed(1),y=Y(p[key]).toFixed(1);
-    d+=(last!==null&&p.t-last<=90000?" L":" M")+x+" "+y;last=p.t;
+    d+=(last!==null&&p.t-last<=30000?" L":" M")+x+" "+y;last=p.t;
     dots.push('<circle class="meater-graph-dot '+kind+'" cx="'+x+'" cy="'+y+'" r="2.5"><title>'+esc(time(new Date(p.t).toISOString())+" · "+temp(p[key]))+'</title></circle>');
    }
    return '<path class="meater-graph-line '+kind+'" d="'+d+'"/>'+dots.join("");
@@ -35,12 +35,12 @@
   for(let i=0;i<=5;i++){const v=lo+(hi-lo)*i/5,y=Y(v);grid+='<path class="meater-graph-gridline" d="M50 '+y+' H770"/><text class="meater-graph-axis" x="43" y="'+(y+4)+'" text-anchor="end">'+Math.round(v)+'</text>';}
   for(let i=0;i<=4;i++){const x=50+180*i;grid+='<path class="meater-graph-gridline" d="M'+x+' 30 V220"/><text class="meater-graph-axis" x="'+x+'" y="241" text-anchor="middle">'+(15*i)+' min</text>';}
   const marker=(v,at,label)=>num(v)===null||!at||!Number.isFinite(Date.parse(at))?"":'<circle cx="'+X(Date.parse(at))+'" cy="'+Y(num(v))+'" r="6" fill="none" stroke="#243447" stroke-width="1.7"><title>'+esc(label+" : "+temp(v)+" · "+time(at))+'</title></circle>';
-  return '<div class="meater-graph-legend"><span class="meater-graph-key meater-graph-core">À cœur</span><span class="meater-graph-key meater-graph-ambient">Ambiante</span></div><svg class="meater-graph-svg" viewBox="0 0 795 255" role="img" aria-label="Parcours mesuré, de zéro à soixante minutes">'+grid+'<path stroke="#a06313" stroke-dasharray="6 4" d="M50 '+Y(65)+' H770"/><text class="meater-graph-axis" x="765" y="'+(Y(65)-5)+'" text-anchor="end">65 °C</text>'+series("c","meater-graph-core")+series("a","meater-graph-ambient")+marker(r.trigger_c,r.started_at,"Déclenchement")+marker(r.cold_c,r.cold_at,"Proche de 3 °C")+marker(r.hot_c,r.hot_at,"Proche de 65 °C")+'</svg><p class="muted">Points réels uniquement ; les interruptions de plus de 90 s ne sont pas reliées.</p>';
+  return '<div class="meater-graph-legend"><span class="meater-graph-key meater-graph-core">À cœur</span><span class="meater-graph-key meater-graph-ambient">Ambiante</span></div><svg class="meater-graph-svg" viewBox="0 0 795 255" role="img" aria-label="Parcours mesuré, de zéro à soixante minutes">'+grid+'<path stroke="#a06313" stroke-dasharray="6 4" d="M50 '+Y(65)+' H770"/><text class="meater-graph-axis" x="765" y="'+(Y(65)-5)+'" text-anchor="end">65 °C</text>'+series("c","meater-graph-core")+series("a","meater-graph-ambient")+marker(r.trigger_c,r.started_at,"Déclenchement")+marker(r.cold_c,r.cold_at,"Proche de 3 °C")+marker(r.hot_c,r.hot_at,"Proche de 65 °C")+'</svg><p class="muted">Points réels uniquement ; les interruptions de plus de 30 s ne sont pas reliées.</p>';
  }
  function mount(root,api){
   if(!root)return;
   if(root.meaterPathRefresh){void root.meaterPathRefresh();return;}
-  root.innerHTML='<section class="card"><h2>Parcours automatiques MEATER</h2><p><strong>Essai technique, hors registre HACCP.</strong> Retirez la sonde, nettoyez-la, puis cliquez sur « Décrocher / réarmer ». Le serveur surveille la première nouvelle mesure sous 7 °C et lance une heure. Aucun résultat ne valide automatiquement un plat.</p><p data-path-service class="muted"></p><p data-path-feedback role="status"></p><div data-path-probes></div><h3>Historique récent</h3><div data-path-history></div><section data-path-detail></section></section>';
+  root.innerHTML='<section class="card"><h2>Parcours automatiques MEATER</h2><p><strong>Essai technique, hors registre HACCP.</strong> Retirez la sonde, nettoyez-la, puis cliquez sur « Décrocher / réarmer ». Le serveur surveille la première nouvelle mesure sous 10 °C et lance une heure. Aucun résultat ne valide automatiquement un plat.</p><p data-path-service class="muted"></p><p data-path-feedback role="status"></p><div data-path-probes></div><h3>Historique récent</h3><div data-path-history></div><section data-path-detail></section></section>';
   const service=root.querySelector("[data-path-service]"),feedback=root.querySelector("[data-path-feedback]"),probes=root.querySelector("[data-path-probes]"),history=root.querySelector("[data-path-history]"),detail=root.querySelector("[data-path-detail]");
   let state=null,selected=null,samples=[],loadedKey="",pending=false,busy=false,timer=null,clockTimer=null,serverOffset=0,historyError="",revision=0;
   const visible=()=>root.isConnected&&!document.hidden&&!root.closest("[hidden],.hide");
@@ -57,13 +57,13 @@
    const r=state?.paths.find(v=>v.id===selected);
    if(!r){detail.innerHTML='<p class="muted">Sélectionnez un parcours pour afficher le chronomètre, les températures et le graphique.</p>';return;}
    const last=r.last_measure_at&&serverNow()-Date.parse(r.last_measure_at)<=120000&&!state.last_error;
-   const metrics=[["Déclenchement < 7 °C",temp(r.trigger_c),time(r.started_at)],["Mesure la plus proche de 3 °C",temp(r.cold_c),time(r.cold_at)],["Mesure la plus proche de 65 °C",temp(r.hot_c),time(r.hot_at)],["Franchissement réel de 65 °C",temp(r.reached_c),r.status==="target"?time(r.finished_at):"Non confirmé"]];
-   detail.innerHTML='<div class="meater-device"><h3>'+esc(r.label)+' · '+esc(labels[r.status]||r.status)+'</h3><div class="meater-graph-summary"><span>Temps restant <strong data-path-countdown>'+esc(countdown(r,serverNow()))+'</strong></span><span>Dernière mesure <strong>'+esc(temp(r.last_c))+'</strong></span><span>'+esc(time(r.last_measure_at))+(last?"":" · fraîcheur non confirmée")+'</span></div><p class="meater-error" role="alert" data-path-deadline></p>'+(r.reason?'<p class="meater-error">'+esc(r.reason)+'</p>':'')+'<div class="meater-grid">'+metrics.map(m=>'<div class="meater-tile"><small>'+esc(m[0])+'</small><strong>'+esc(m[1])+'</strong><small>'+esc(m[2])+'</small></div>').join("")+'</div>'+(historyError?'<p class="meater-error">'+esc(historyError)+'</p>':chart(r,samples))+'<h4>Relevés enregistrés · '+samples.length+'</h4><div style="max-height:340px;overflow:auto"><table style="width:100%;text-align:left"><thead><tr><th>Horodatage</th><th>À cœur</th><th>Ambiante</th><th>Événement</th></tr></thead><tbody>'+samples.slice().reverse().map(p=>'<tr><td>'+esc(time(p.measured_at))+'</td><td>'+esc(temp(p.internal_c))+'</td><td>'+esc(temp(p.ambient_c))+'</td><td>'+esc(({trigger:"Départ",periodic:"Relevé 30 s",target:"Cible"})[p.event]||p.event)+'</td></tr>').join("")+'</tbody></table></div></div>';clock();
+   const metrics=[["Température de déclenchement",temp(r.trigger_c),time(r.started_at)],["Mesure la plus proche de 3 °C",temp(r.cold_c),time(r.cold_at)],["Mesure la plus proche de 65 °C",temp(r.hot_c),time(r.hot_at)],["Franchissement réel de 65 °C",temp(r.reached_c),r.status==="target"?time(r.finished_at):"Non confirmé"]];
+   detail.innerHTML='<div class="meater-device"><h3>'+esc(r.label)+' · '+esc(labels[r.status]||r.status)+'</h3><div class="meater-graph-summary"><span>Temps restant <strong data-path-countdown>'+esc(countdown(r,serverNow()))+'</strong></span><span>Dernière mesure <strong>'+esc(temp(r.last_c))+'</strong></span><span>'+esc(time(r.last_measure_at))+(last?"":" · fraîcheur non confirmée")+'</span></div><p class="meater-error" role="alert" data-path-deadline></p>'+(r.reason?'<p class="meater-error">'+esc(r.reason)+'</p>':'')+'<div class="meater-grid">'+metrics.map(m=>'<div class="meater-tile"><small>'+esc(m[0])+'</small><strong>'+esc(m[1])+'</strong><small>'+esc(m[2])+'</small></div>').join("")+'</div>'+(historyError?'<p class="meater-error">'+esc(historyError)+'</p>':chart(r,samples))+'<h4>Relevés enregistrés · '+samples.length+'</h4><div style="max-height:340px;overflow:auto"><table style="width:100%;text-align:left"><thead><tr><th>Horodatage</th><th>À cœur</th><th>Ambiante</th><th>Événement</th></tr></thead><tbody>'+samples.slice().reverse().map(p=>'<tr><td>'+esc(time(p.measured_at))+'</td><td>'+esc(temp(p.internal_c))+'</td><td>'+esc(temp(p.ambient_c))+'</td><td>'+esc(({trigger:"Départ",periodic:"Relevé périodique",target:"Cible"})[p.event]||p.event)+'</td></tr>').join("")+'</tbody></table></div></div>';clock();
   }
   function render(){
    if(!state)return;
    const running=state.paths.filter(active);
-   service.textContent=(state.configured?(state.professional?"Collecte professionnelle activée : nouveaux essais bloqués.":"Surveillance serveur : "+(running.some(r=>r.status==="armed")?"5 secondes, tant qu’une sonde attend le seuil.":running.length?"30 secondes en cours de parcours.":"En attente de réarmement.")):"MEATER non connecté.")+" Dernière réponse Cloud : "+time(state.last_ok_at)+(state.last_error?" · "+state.last_error:"");
+   service.textContent=(state.configured?(state.professional?"Collecte professionnelle activée : nouveaux essais bloqués.":"Surveillance serveur : "+(running.some(r=>r.status==="armed")?"5 secondes, tant qu’une sonde attend le seuil.":running.length?"10 secondes en cours de parcours.":"En attente de réarmement.")):"MEATER non connecté.")+" Dernière réponse Cloud : "+time(state.last_ok_at)+(state.last_error?" · "+state.last_error:"");
    probes.innerHTML='<div class="meater-grid">'+state.probes.map(p=>{
     const r=running.find(v=>v.device_id===p.device_id),latest=state.paths.find(v=>v.device_id===p.device_id);
     const age=serverNow()-Date.parse(p.measured_at||"");
@@ -107,7 +107,7 @@
    try{
     const r=await api(arm?"meater-path-arm":"meater-path-cancel","POST",arm?{device_id:b.dataset.pathArm}:{id:b.dataset.pathCancel});
     if(arm){selected=r.id;samples=[];loadedKey="";}
-    feedback.textContent=arm?"Sonde réarmée. Attente d’une nouvelle mesure sous 7 °C.":"Parcours annulé.";
+    feedback.textContent=arm?"Sonde réarmée. Attente d’une nouvelle mesure sous 10 °C.":"Parcours annulé.";
    }catch(err){feedback.textContent=String(err.message||err);}
    finally{busy=false;b.disabled=false;void refresh();}
   });
