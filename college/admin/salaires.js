@@ -750,10 +750,10 @@ function salaryAccountingUpdateNavigo(month){
  for(const cell of elements){
   const result=window.salaryOdMonthTransport?.(month,cell.dataset.salaryPrepNavigo);
   if(!result?.loaded){cell.textContent="Chargement…";continue}
-  const raw=String(result.transport||"").trim().replace(/[\\u00a0\\u202f ]/g,"").replace(",",".");
+  const raw=String(result.transport||"").trim().replace(/[\u00a0\u202f ]/g,"").replace(",",".");
   if(!raw){cell.textContent="—";cell.title="Aucun forfait saisi pour ce mois";continue}
   const amount=Number(raw);
-  cell.textContent=/^\\d{1,8}(?:\\.\\d{1,2})?$/.test(raw)&&Number.isFinite(amount)?salaryAccountingMoney(amount):"À vérifier";
+  cell.textContent=/^\d{1,8}(?:\.\d{1,2})?$/.test(raw)&&Number.isFinite(amount)?salaryAccountingMoney(amount):"À vérifier";
   cell.title="Forfait Navigo déclaré pour "+month;
  }
 }
