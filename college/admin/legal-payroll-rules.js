@@ -92,7 +92,7 @@ function meal(month,settings={}){
  // il ne s'applique pas a tout repas pris dans les locaux.
  const disregarded=canteen&&paid>=Math.ceil(r.mealGeneralCents/2);
  const perMeal=service||disregarded?0:Math.max(0,r.mealGeneralCents-paid);
- return {status:"ok",amountCents:count*perMeal,unitCents:perMeal,meals:count,ruleVersion:r.version,
+ return {status:"ok",amountCents:count*perMeal,unitCents:perMeal,meals:count,ruleVersion:r.version,source:r.sources.meal,
   message:service?"Repas pris avec les élèves par nécessité de service déclarée : avantage non retenu.":
   disregarded?"Cantine : participation égale ou supérieure à 50 % du forfait, avantage négligé selon l’Urssaf.":
   "Nombre de repas × (forfait Urssaf − participation du salarié)."};
