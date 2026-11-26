@@ -4,6 +4,7 @@
    Les champs nécessaires non documentés bloquent le résultat. */
 (()=>{
 const SOURCE="https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html";
+const VERIFIED_2026={vehicleElectricOldCapCents:202630,vehicleElectricNewCapCents:464160,vehicleElectricOldDiscount:0.50,vehicleElectricNewForfaitDiscount:0.70,technologyAnnualRate:0.10,sourceChecked:"2026-11-26"};
 const HOUSING_2026=Object.freeze({
  thresholds:[200250,240300,280350,360450,440550,520650,600750],
  one:[7970,9300,10620,11940,14640,17260,19940,22560],
@@ -34,14 +35,14 @@ function vehicle(month,input={}){
  const allocation=select(input.vehicleAssignedDate);
  const date=new Date(allocation+"T00:00:00Z");
  if(!/^\d{4}-\d{2}-\d{2}$/.test(allocation)||!Number.isFinite(date.getTime())||
-  date.toISOString().slice(0,10)!==allocation||allocation>month+"-31"||allocation>"2026-12-31")
+  date.toISOString().slice(0,10)!==allocation||allocation.slice(0,7)>month||allocation>"2026-12-31")
   return missing("Date de première mise à disposition invalide ou postérieure au mois étudié.");
  const recent=allocation>="2025-02-01",young=input.vehicleAge==="lte5";
  const electric=select(input.vehicleElectric);
  if(!["yes","no"].includes(electric))return missing("Préciser si le véhicule est exclusivement électrique.");
  if(electric==="yes"&&recent&&!["yes","no"].includes(select(input.vehicleEcoScore)))
   return missing("Éligibilité au score environnemental à confirmer pour le véhicule électrique.");
- if(select(input.vehicleFullMonth)!=="yes"||(allocation.slice(0,7)===month&&allocation.slice(8)!=="01"))return missing("Mise à disposition pendant une partie du mois : prorata de présence à vérifier.");
+ if(!["yes","no"].includes(select(input.vehicleFullMonth)))return missing("Préciser si le véhicule a été à disposition durant tout le mois. Un mois entamé compte pour un mois entier.");
  const contribution=optionalMoney(input.vehicleEmployeeContribution);
  if(contribution===null)return invalid("Participation mensuelle du salarié invalide.");
  let annual=0,base=0,cap=null;
@@ -84,8 +85,8 @@ function vehicle(month,input={}){
  }
  let discount=0;
  if(electric==="yes"&&(!recent||input.vehicleEcoScore==="yes")){
-  const rate=recent&&forfait?0.70:0.50;
-  const max=recent&&forfait?464160:202630;
+  const rate=recent&&forfait?VERIFIED_2026.vehicleElectricNewForfaitDiscount:VERIFIED_2026.vehicleElectricOldDiscount;
+  const max=recent&&forfait?VERIFIED_2026.vehicleElectricNewCapCents:VERIFIED_2026.vehicleElectricOldCapCents;
   discount=Math.min(Math.round(annual*rate),max);
  }
  const monthly=Math.max(0,annualMonth(Math.max(0,annual-discount))-contribution);
@@ -129,7 +130,33 @@ function housing(month,input={}){
   message:mode==="forfait"?"Barème 2026 selon brut hors logement, nombre de pièces privées et semaines d'occupation.":
    "Valeur locative et frais réels à justifier, moins participation du salarié."};
 }
-const API=Object.freeze({SOURCE,HOUSING_2026,vehicle,housing,money});
+function technology(month,input={}){
+ const mode=select(input.techMode);
+ if(mode==="none")return notApplicable("Aucun matériel ou abonnement à usage privé.");
+ if(!yearVerified(month))return missing("Barème NTIC à vérifier pour "+month+".");
+ if(!["forfait","real"].includes(mode))return missing("Choisir l'évaluation de l'outil numérique (forfait ou usage privé réel).");
+ if(!["yes","no"].includes(select(input.techPrivateUse)))return missing("Préciser si un usage privé est autorisé et constaté.");
+ if(input.techPrivateUse==="no")return notApplicable("Aucun usage privé déclaré.");
+ if(!["yes","no"].includes(select(input.techIncidentalUse)))return missing("Préciser si l'usage privé est seulement raisonnable et accessoire.");
+ if(input.techIncidentalUse==="yes")return {status:"review",amountCents:null,message:"Usage personnel raisonnable pouvant être négligé : vérification de la politique d'entreprise nécessaire.",source:SOURCE};
+ const contribution=optionalMoney(input.techEmployeeContribution);
+ if(contribution===null)return invalid("Participation du salarié invalide.");
+ const device=money(input.techDeviceCost);
+ const subscription=money(input.techSubscriptionAnnual);
+ let annual=0;
+ if(mode==="forfait"){
+  if(device===null||subscription===null)return missing("Renseigner le prix d'achat TTC et le coût annuel TTC de l'abonnement (0 si absent).");
+  annual=Math.round((device+subscription)*VERIFIED_2026.technologyAnnualRate);
+ }else{
+  const real=money(input.techPrivateAnnual);
+  if(real===null)return missing("Renseigner les dépenses annuelles justifiées correspondant à l'usage privé.");
+  annual=real;
+ }
+ return {status:"ok",amountCents:Math.max(0,Math.round(annual/12)-contribution),
+  annualAmountCents:annual,ruleVersion:"URSSAF-NTIC-2026-10PCT",source:SOURCE,
+  message:mode==="forfait"?"10 % du prix TTC de l'appareil et de l'abonnement annuel, répartis sur 12 mois, moins la participation.":"Dépenses annuelles d'usage privé réparties sur 12 mois, moins la participation."};
+}
+const API=Object.freeze({SOURCE,HOUSING_2026,VERIFIED_2026,vehicle,housing,technology,money});
 if(typeof window!=="undefined")window.ChambertinVehicleHousing=API;
 if(typeof module!=="undefined"&&module.exports)module.exports=API;
 })();
