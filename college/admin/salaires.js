@@ -362,7 +362,9 @@ function salaryCalendarResultHtml(staff,month,overrides){
 function salaryPayrollPanel(staff,month){
  const days=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.days:(Array.isArray(staff.working_weekdays)?staff.working_weekdays:[1,2,3,4,5]);
  const benefits=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft.benefits:(Array.isArray(staff.benefits_in_kind)?staff.benefits_in_kind:[]);
- const total=benefits.reduce((n,b)=>n+(Number(b.amount)||0),0);
+ const valuations=benefits.map(b=>window.ChambertinBenefitQuestionnaire?.evaluate(month,b));
+ const pendingCount=valuations.filter(v=>!v||!["ok","excluded","manual"].includes(v.status)).length;
+ const total=valuations.reduce((sum,v)=>sum+(v?.amountCents||0),0)/100;
  const activeDraft=salaryPayrollDraft?.id===staff.id?salaryPayrollDraft:null;
  const excludePublic=activeDraft?.excludePublic??staff.exclude_public_holidays??true;
  const excludeSchool=activeDraft?.excludeSchool??staff.exclude_school_holidays??false;
@@ -379,7 +381,8 @@ function salaryPayrollPanel(staff,month){
   '<button type="button" class="btn secondary compact" id="salaryCalendarRetry">Actualiser le calendrier officiel</button>'+
   '<h4>Avantages en nature</h4><p class="muted">Sélectionnez le type d’avantage : seules les questions utiles seront affichées. Les calculs sont des propositions pour la paie et sont datés.</p><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>window.ChambertinBenefitQuestionnaire?.display(i,b,month,readOnly)||'<p class="err">Questionnaire des avantages indisponible.</p>').join("")+'</div>'+
   '<button type="button" class="btn secondary" id="salaryBenefitAdd"'+lock+'>+ Ajouter un avantage</button>'+
-  '<p><b id="salaryBenefitTotal">'+total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})+'</b> / mois (valorisation indicative, à vérifier pour la paie)</p>'+
+  '<p><b id="salaryBenefitTotal">'+(pendingCount?pendingCount+' avantage(s) à compléter':total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"}))+'</b> / mois (estimation du mois sélectionné, jamais un net à virer)</p>'+
+  '<p class="muted">Sources 2026 : <a href="https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html" target="_blank" rel="noopener noreferrer">barèmes Urssaf</a> · <a href="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel" target="_blank" rel="noopener noreferrer">Navigo Annuel</a>. Si le barème de l’année est absent, la valorisation est bloquée. Les anciens bulletins restent inchangés.</p>'+
   '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer les horaires, le planning et les avantages</button>'+
   (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
 }
@@ -754,7 +757,7 @@ function salaryWireStaff(){
   if(salaryPayrollDraft?.benefits[i])salaryPayrollDraft.benefits[i]={kind,label:q?.NAMES[kind]||"",amount:0,details:{},status:"missing",confirmed:false};
   salaryPage();
  }));
- $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push(window.ChambertinBenefitQuestionnaire?.newBenefit()||{kind:"choose",label:"",amount:0,details:{},status:"missing"});salaryPage()});
+ $("salaryBenefitAdd")?.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.push(window.ChambertinBenefitQuestionnaire?.newBenefit()||{kind:"choose",label:"",amount:0,details:{},status:"missing"});const i=salaryPayrollDraft.benefits.length-1;salaryPage();document.querySelector('[data-benefit-row="'+i+'"]')?.scrollIntoView?.({block:"nearest"})});
  document.querySelectorAll("[data-benefit-remove]").forEach(x=>x.addEventListener("click",()=>{salaryPayrollReadDraft();salaryPayrollDraft.benefits.splice(Number(x.dataset.benefitRemove),1);salaryPage()}));
  $("salaryPayrollSave")?.addEventListener("click",()=>{salaryPayrollReadDraft();void salaryPayrollSave()});
  const close=$('salaryProfileClose');if(close)close.addEventListener('click',salaryCloseStaffProfile);
