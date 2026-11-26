@@ -111,22 +111,26 @@
   });
  }
  function poll(root,api,render,action="meater-status",fastMode=()=>false){
-  let pending=null,timer=null;
+  let pending=null,timer=null,lastStarted=0,failed=false;
   const visible=()=>root.isConnected&&!document.hidden&&!root.closest("[hidden]");
   function schedule(){
    if(timer!==null){clearTimeout(timer);timer=null;}
    if(!root.isConnected){document.removeEventListener("visibilitychange",resume);return;}
-   timer=setTimeout(()=>{timer=null;void refresh();},visible()&&fastMode()?1000:30000);
+   const rapid=visible()&&fastMode();
+   const delay=rapid?(failed?5000:Math.max(100,1200-(Date.now()-lastStarted))):30000;
+   timer=setTimeout(()=>{timer=null;void refresh();},delay);
   }
   function refresh(){
    if(!visible()){schedule();return Promise.resolve();}
    if(pending)return pending;
    if(timer!==null){clearTimeout(timer);timer=null;}
    const route=fastMode()?"meater-graph-live":action;
+   lastStarted=Date.now();
    pending=Promise.resolve().then(()=>api(route)).then(s=>{
     if(!Array.isArray(s?.probes))throw Error("Réponse MEATER invalide");
+    failed=!!s.last_error;
     if(root.isConnected)render(s);
-   }).catch(()=>{if(root.isConnected)render(null);}).finally(()=>{pending=null;schedule();});
+   }).catch(()=>{failed=true;if(root.isConnected)render(null);}).finally(()=>{pending=null;schedule();});
    return pending;
   }
   function resume(){if(visible())void refresh();else schedule();}
@@ -138,7 +142,7 @@
   if(!s)return '<section class="card"><h2>Sondes MEATER</h2><p class="meater-error">État indisponible. Contrôles manuels nécessaires.</p><button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Réessayer</button></section>';
   const assigned=(s.probes||[]).filter(p=>Number.isInteger(p.slot)&&p.slot>=1&&p.slot<=12).length;
   const cloud=s.preview?(s.last_error?"Erreur de communication Cloud":s.cloud_device_count===0?"Cloud connecté : 0 sonde transmise dans la dernière réponse.":Number.isInteger(s.cloud_device_count)?"Cloud connecté : "+s.cloud_device_count+" sonde(s) transmise(s), "+s.cloud_fresh_count+" mesure(s) récente(s) acceptée(s).":s.last_ok_at?"Dernière réponse Cloud valide · "+(s.probes||[]).filter(p=>fresh(p,s)).length+" mesure(s) récente(s).":"En attente d’une réponse Cloud."):"";
-  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+(s.preview?'<button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Actualiser MEATER</button>':'')+notice(s)+(s.preview?'<p class="muted">Consultation indicative · interrogation toutes les 30 secondes, sans enregistrement supplémentaire dans le registre. Dernière réponse Cloud : '+time(s.last_ok_at)+'</p><p class="muted">'+esc(cloud)+(s.cached?' · Dernière interrogation réutilisée (limite de 30 s).':'')+'</p>':'')+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
+  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+(s.preview?'<button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Actualiser MEATER</button>':'')+notice(s)+(s.preview?'<p class="muted">Consultation indicative · '+(s.graph_requested?'graphique ouvert : interrogation rapide (limite globale MEATER Cloud : 60/min)':'interrogation toutes les 30 secondes')+', sans enregistrement supplémentaire dans le registre. Dernière réponse Cloud : '+time(s.last_ok_at)+'</p><p class="muted">'+esc(cloud)+(s.cached?' · Dernière interrogation réutilisée (limite de 30 s).':'')+'</p>':'')+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
  }
  const graphPeriods=[15,60,180],graphMaxAge=180*60000,graphMaxPoints=10801;
  function collectGraphSamples(history,s,diagnostic){
@@ -164,8 +168,8 @@
  function graphMarkup(entry,s,p,minutes,diagnostic){
   const now=serverNow(s),points=(entry?.points||[]).filter(q=>q.at>=now-minutes*60000);
   const current=!!s&&!!p&&displayable(p,s,s.test_active===true||diagnostic);
-  const fast=!!s&&s.preview===true&&s.configured&&!s.enabled&&!s.last_error;
-  const cadence=fast?"Mode rapide · interrogation environ chaque seconde, selon la réponse Cloud":s?.enabled?"Suivi de production · interrogation toutes les 30 s":s?.last_error?"Erreur Cloud · reprise au rythme normal":"Interrogation toutes les 30 s";
+  const fast=!!s&&s.graph_requested===true&&s.configured&&!s.enabled;
+  const cadence=fast?"Mode rapide · interrogation toutes les 1,2 s au maximum, mesures selon MEATER Cloud":s?.enabled?"Suivi de production · interrogation toutes les 30 s":s?.last_error?"Erreur Cloud · reprise au rythme normal":"Interrogation toutes les 30 s";
   const status=cadence+' · '+(current?"Mesure récente":"Aucune nouvelle mesure confirmée · courbe interrompue si la transmission est coupée");
   const note='<p class="muted meater-graph-note">Historique temporaire depuis l’ouverture du tableau de bord. Une mesure réelle par horodatage, sans enregistrement HACCP. Les coupures de transmission ne sont pas interpolées.</p>';
   if(!points.length)return '<p class="'+(current?'muted':'meater-warn')+'">'+status+'</p><p>Aucune mesure récente dans cette période. Le graphique se remplira au fil des réponses MEATER.</p>'+note;
@@ -204,8 +208,8 @@
   if(!root)return;if(root.kitchenRefresh)return root.kitchenRefresh;
   root.innerHTML='<div data-meater-dashboard></div><section class="card meater-graph-panel" data-meater-graph-panel hidden><div class="meater-graph-header"><h3 data-meater-graph-title tabindex="-1">Graphique MEATER</h3><button type="button" class="btn secondary" data-meater-graph-close>Fermer le graphique</button></div><label class="meater-graph-period">Période <select data-meater-graph-period><option value="15">15 minutes</option><option value="60">1 heure</option><option value="180">3 heures</option></select></label><div data-meater-graph-content></div></section>';
   const dest=root.querySelector("[data-meater-dashboard]"),panel=root.querySelector("[data-meater-graph-panel]"),title=root.querySelector("[data-meater-graph-title]"),content=root.querySelector("[data-meater-graph-content]");
-  const history=new Map(),showDiagnostics=diagnostic||live;let state=null,selected=null,minutes=15;
-  const fastMode=()=>live&&!!selected&&!!state?.configured&&!state.enabled&&!state.last_error&&state.graph_available!==false;
+  const history=new Map(),showDiagnostics=diagnostic||live;let state=null,selected=null,minutes=15,fastAllowed=false;
+  const fastMode=()=>live&&!!selected&&fastAllowed;
   function drawGraph(){
    if(!selected){panel.hidden=true;return;}
    const probe=(state?.probes||[]).find(p=>p.device_id===selected);
@@ -215,6 +219,7 @@
    content.innerHTML=graphMarkup(history.get(selected),state,probe,minutes,showDiagnostics);
   }
   root.kitchenRefresh=poll(root,api,s=>{
+   if(s)fastAllowed=!!s.configured&&!s.enabled&&s.graph_available!==false;
    state=s;collectGraphSamples(history,s,showDiagnostics);
    dest.innerHTML=dashboardMarkup(s,showDiagnostics);
    drawGraph();
