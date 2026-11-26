@@ -153,7 +153,7 @@ function renderColdOverview(){
    else if(alert){label="Hors seuil";tagClass="tag-alert"}
    else {label=mode==="times"?"À jour selon programmation":"À jour";tagClass="tag-ok"}
   }else if(measured){label="Dernier relevé manuel";tagClass="tag-warn"}
-  const received=stamp?new Date(stamp).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"short"}):"Aucune mesure";
+  const received=stamp?new Date(stamp).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"medium"}):"Aucune mesure";
   const origin=sensor?"Capteur "+esc(sensor.model):"Saisie manuelle";
   const schedule=!enabled?"Collecte automatique suspendue":mode==="times"
    ?"Heures fixes : "+esc((room.auto_collection_times||[]).join(", "))
@@ -163,7 +163,9 @@ function renderColdOverview(){
   return '<article class="cold-live-tile'+(recent&&alert?' cold-live-alert':'')+'">'+
    '<div class="cold-live-top"><h3>'+esc(room.label)+'</h3><span class="tag '+tagClass+'">'+label+'</span></div>'+
    '<div class="cold-live-value">'+(measured?number(reading.temperature_c)+' °C':'—')+'</div>'+
-   '<div class="subline">'+origin+' · '+(sensor?'Reçue le ':'Relevée le ')+received+'</div>'+
+   '<div class="subline">'+origin+' · '+(sensor?'Valeur Cloud reçue le ':'Relevée le ')+received+'</div>'+
+   (sensor?'<div class="subline"><span class="tag '+(sensor.status==="online"?"tag-ok":sensor.status==="offline"||sensor.status==="error"?"tag-alert":"tag-warn")+'">'+(sensor.status==="online"?"Connexion en ligne":sensor.status==="offline"?"Connexion hors ligne":sensor.status==="error"?"Erreur de connexion":"Connexion non confirmée")+'</span></div>':'')+
+   '<div class="subline">Seuil : '+(room.min_c!=null?number(room.min_c)+' à ':'max. ')+number(room.max_c)+' °C</div>'+
    '<div class="subline">'+schedule+nextLabel+'</div>'+
    (problem?'<p class="cold-live-warning">'+problem+'</p>':'')+
    (!sensor?'<p class="help">Associez un thermomètre dans Administration → Gestion Cuisine.</p>':'')+
