@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   qualification:
-    if: github.ref == 'refs/heads/main' && vars.CHAMBERTIN_PAGES_CI == 'true'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
