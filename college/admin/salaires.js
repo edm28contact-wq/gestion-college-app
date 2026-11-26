@@ -781,6 +781,38 @@ if(typeof window!=="undefined"){
  window.salaryAccountingActiveTab=()=>salaryAccountingView;
  window.salaryAccountingOnDraftLoaded=month=>salaryAccountingUpdateNavigo(month);
 }
+const salaryRateStatusCache=new Map();
+const salaryRateCategories={navigo:"Navigo Annuel",repas:"Repas",logement:"Logement",vehicule:"Véhicule",ntic:"Outils numériques"};
+function salaryRenderOfficialRateCheck(month){
+ const target=document.getElementById("salaryRateVerification");
+ if(!target||!(salaryMonth===month||salaryCurrentMonth()===month))return;
+ const item=salaryRateStatusCache.get(month);
+ target.classList.toggle("err",!!item?.error||item?.value?.status==="review"||item?.value?.status==="incomplete");
+ if(!item){target.textContent="Vérification des barèmes officiels programmée le 20 de chaque mois.";return;}
+ if(item.loading){target.textContent="Chargement du contrôle officiel des barèmes…";return;}
+ if(item.error){target.textContent="Contrôle des taux indisponible : "+item.error+" — vérification nécessaire avant la paie.";return}
+ const rate=item.value;
+ if(!rate||rate.status==="not_checked"){
+  target.textContent="Aucun contrôle archivé pour "+month+". Vérification automatique chaque 20 du mois (06:00 UTC). Contrôlez les taux avant la paie.";
+  return;
+ }
+ const validated=Object.entries(rate.categories||{}).filter(([,value])=>value?.status==="verified");
+ const pending=Object.entries(rate.categories||{}).filter(([,value])=>value?.status!=="verified").map(([name])=>salaryRateCategories[name]||name);
+ const date=rate.checked_at?new Date(rate.checked_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short",timeZone:"Europe/Paris"}):"inconnue";
+ target.textContent="Barèmes officiels contrôlés le "+date+" : "+validated.length+"/5 catégories confirmées."+
+  (pending.length?" À vérifier : "+pending.join(", ")+". Aucun taux incertain ne doit être appliqué automatiquement.":" Contrôle complet.");
+}
+async function salaryEnsureOfficialRateCheck(month,force=false){
+ const current=salaryRateStatusCache.get(month);
+ if(current?.loading||!force&&current&&Date.now()-current.at<300000){salaryRenderOfficialRateCheck(month);return}
+ salaryRateStatusCache.set(month,{loading:true,at:Date.now()});
+ salaryRenderOfficialRateCheck(month);
+ try{
+  const value=await call(ROOT+"/personnel-planning","payroll-official-rates","GET",undefined,{month});
+  salaryRateStatusCache.set(month,{value,loading:false,at:Date.now()});
+ }catch(e){salaryRateStatusCache.set(month,{error:frError(String(e?.message||e)),loading:false,at:Date.now()})}
+ salaryRenderOfficialRateCheck(month);
+}
 const salaryAnnualChecks=new Map();
 async function salaryAccountingLoadAnnualRate(month){
  const year=month?.slice(0,4);
@@ -1184,6 +1216,7 @@ function salaryAccountingPage(){
   '<div class="salary-od-heading"><div><h2>Préparation des fiches de paie</h2><p class="muted">Mois '+esc(salaryMonthLabel(month))+' · Données issues du planning, des événements et des fiches salariés</p></div>'+
   '<div class="actions"><button type="button" class="btn secondary" id="salaryAccountingRefresh">Actualiser</button>'+
   '<a class="btn primary" href="https://www.letese.urssaf.fr/" target="_blank" rel="noopener noreferrer">Accéder au TESE</a></div></div>'+
+  '<p id="salaryRateVerification" role="status" class="muted" style="margin:12px 0">Chargement du contrôle des barèmes officiels…</p>'+
   '<div class="table"><table class="salary-accounting-table salary-prep-table"><thead><tr><th>Salarié</th><th>Temps prévu (planning)</th><th>Retards</th><th>Absences</th><th>Départs anticipés</th><th>Avantages en nature / mois</th><th>Navigo calculé (1–5)</th><th>Repas calculés</th><th>Véhicule</th><th>Logement</th><th>Contrôle</th><th>Action</th></tr></thead><tbody>'+
   (ready?prepRows||'<tr><td colspan="12">Aucun salarié disponible.</td></tr>':'<tr><td colspan="12">Chargement des salariés et événements…</td></tr>')+
   '</tbody></table></div><div id="salaryPrepDetails" class="card" hidden></div><div role="status">'+status+'</div>'+
@@ -1211,11 +1244,13 @@ function salaryAccountingPage(){
  document.querySelectorAll("[data-salary-accounting-tab]").forEach(button=>button.addEventListener("click",()=>salaryAccountingShowTab(button.dataset.salaryAccountingTab)));
  salaryAccountingUpdateNavigo(month);
  void salaryAccountingLoadAnnualRate(month);
+ void salaryEnsureOfficialRateCheck(month);
  document.querySelectorAll("[data-salary-legal-open]").forEach(button=>button.addEventListener("click",()=>salaryAccountingOpenRulesEditor(month,button.dataset.salaryLegalOpen)));
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
  $('salaryAccountingEmployee')?.addEventListener('change',e=>{salaryAccountingEmployeeId=e.target.value;salaryAccountingPage()});
  $('salaryAccountingRefresh')?.addEventListener('click',()=>{
   salaryStaffLoaded=false;salaryScheduleHistoryLoaded=false;salaryCalendars.delete(month);
+   void salaryEnsureOfficialRateCheck(month,true);
   void salaryLoadStaff();void salaryCalendarEnsure(month,true);void salaryLoad();
  });
  $('salaryAccountingOpenList')?.addEventListener('click',()=>show('salaires'));
