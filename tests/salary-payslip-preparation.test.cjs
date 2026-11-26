@@ -15,8 +15,8 @@ test("Compta salaire : deux fenêtres, avec dépôt PDF dans les virements",()=>
  assert.match(page,/function salaryAccountingShowTab\(view\)/);
  assert.match(payroll,/activeView="pay";\s*nav\.replaceChildren\(\)/);
  assert.match(payroll,/salaryAccountingActiveTab\(\)!=="pay"/);
- assert.match(html,/salaires\.js\?v=20261126-payslip1/);
- assert.match(html,/salary-od\.js\?v=20261126-payslip1/);
+ assert.match(html,/salaires\.js\?v=20261126-netpdf2/);
+ assert.match(html,/salary-od\.js\?v=20261126-netpdf2/);
 });
 
 test("Préparation : heures prévues et événements séparés, bénéfices, Navigo du mois, accès TESE",()=>{
