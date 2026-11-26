@@ -42,7 +42,7 @@ const ledgerKeys=["salary","benefits","tese","unemployment","apec","retirement",
 const issuerKeys:Record<string,number>={name:70,iban:42,bic:11,number:35,date:10,filename:100,label:140};
 const beneficiaryKeys:Record<string,number>={matricule:35,creditorName:70,rowOrder:4,country:2,postcode:16,city:35,address:70,comment:140};
 const declarationKeys:Record<string,number>={nir:32,contract:100,function:160,status:100,start:10,end:10,hours:40,rate:40,gross:40,transport:40,health:40,adjustments:1000,absence:1000,absencePay:1000,comments:1000,internal:1000};
-const preparationKeys:Record<string,number>={zone:12,ticketCost:16,weeklyHours:12,fullTimeHours:12,employerRate:12,mealsCount:5,employeePaidPerMeal:16,dutyMeal:3,mealMode:12};
+const preparationKeys:Record<string,number>={zone:12,ticketCost:16,weeklyHours:12,fullTimeHours:12,employerRate:12,mealsCount:5,employeePaidPerMeal:16,dutyMeal:3,mealMode:12,vehicleKind:12,vehicleEvaluation:8,vehicleAssignedDate:10,vehicleAge:8,vehicleFullMonth:3,vehicleElectric:3,vehicleEcoScore:3,vehicleFuelMode:8,vehiclePurchasePrice:16,vehicleRentalAnnual:16,vehicleLessorPurchasePrice:16,vehicleFuelPrivateAnnual:16,vehicleFuelTotalAnnual:16,vehicleInsuranceAnnual:16,vehicleMaintenanceAnnual:16,vehicleKmPrivate:16,vehicleKmTotal:16,vehicleEmployeeContribution:16,housingMode:8,housingGross:16,housingRooms:3,housingWeeks:2,housingShared:3,housingServiceNecessity:3,housingRentalValue:16,housingExpenses:16,housingEmployeeContribution:16};
 function safeDict(input:any,shape:Record<string,number>){
  if(!input||typeof input!=="object"||Array.isArray(input))throw Error("Champs invalides.");
  const output:Record<string,string>={};
@@ -82,7 +82,10 @@ function safeDraft(raw:any,month:string){
   if(values.zone&&!["none","1-5","2-3","3-4","4-5","custom"].includes(values.zone))throw Error("Abonnement Navigo invalide.");
   if(values.dutyMeal&&!["yes","no"].includes(values.dutyMeal))throw Error("Type de repas invalide.");
   if(values.mealMode&&!["workplace","canteen"].includes(values.mealMode))throw Error("Lieu de repas invalide.");
-  const caps:Record<string,number>={ticketCost:10000,weeklyHours:60,fullTimeHours:60,employerRate:100,mealsCount:100,employeePaidPerMeal:100};
+  const allowed:Record<string,string[]>={vehicleKind:["none","purchased","leased"],vehicleEvaluation:["forfait","real"],vehicleAge:["lte5","gt5"],vehicleFullMonth:["yes","no"],vehicleElectric:["yes","no"],vehicleEcoScore:["yes","no"],vehicleFuelMode:["none","actual","forfait"],housingMode:["none","forfait","real"],housingShared:["yes","no"],housingServiceNecessity:["yes","no"],housingWeeks:["1","2","3","4"]};
+  for(const [key,opts] of Object.entries(allowed))if(values[key]&&!opts.includes(values[key]))throw Error("Choix réglementaire invalide : "+key);
+  if(values.vehicleAssignedDate&&!/^\d{4}-\d{2}-\d{2}$/.test(values.vehicleAssignedDate))throw Error("Date de véhicule invalide.");
+  const caps:Record<string,number>={ticketCost:10000,weeklyHours:60,fullTimeHours:60,employerRate:100,mealsCount:100,employeePaidPerMeal:100,vehiclePurchasePrice:10000000,vehicleRentalAnnual:10000000,vehicleLessorPurchasePrice:10000000,vehicleFuelPrivateAnnual:10000000,vehicleFuelTotalAnnual:10000000,vehicleInsuranceAnnual:10000000,vehicleMaintenanceAnnual:10000000,vehicleKmPrivate:9999999,vehicleKmTotal:9999999,vehicleEmployeeContribution:10000000,housingGross:10000000,housingRentalValue:10000000,housingExpenses:10000000,housingEmployeeContribution:10000000};
   for(const [key,cap] of Object.entries(caps)){
    const val=values[key];if(val===undefined||val==="")continue;
    if(!/^\d{1,6}(?:[.,]\d{1,2})?$/.test(val)||Number(val.replace(",","."))>cap)throw Error("Valeur de calcul invalide : "+key);
