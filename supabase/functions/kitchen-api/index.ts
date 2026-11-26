@@ -228,6 +228,46 @@ async function syncGoveeDevice(c:any,sensor:any,key:string,slotAt?:string){
  }
 }
 
+async function syncManualGovee(c:any,sensor:any,key:string){
+ if(sensor.last_checked_at&&Date.now()-Date.parse(sensor.last_checked_at)<60000)
+  return {error:"Actualisation limitée à une fois par minute et par capteur",statusCode:429,skipped:true};
+ return await syncGoveeDevice(c,sensor,key);
+}
+async function syncAllGovee(c:any){
+ const [rooms,sensors]=await Promise.all([
+  query(await c.from("kitchen_cold_rooms").select("id,label").is("archived_at",null).is("deleted_at",null)),
+  query(await c.from("kitchen_connected_devices").select("*").eq("provider","govee").eq("kind","cold_room"))
+ ]);
+ const names=new Map(rooms.map((r:any)=>[r.id,r.label]));
+ const active=sensors.filter((s:any)=>names.has(s.room_id));
+ if(!active.length)return {total:0,received:0,skipped:0,failed:0,devices:[]};
+ const key=await goveeKey(c),devices:any[]=[];
+ for(let offset=0;offset<active.length;offset+=4){
+  const batch=await Promise.all(active.slice(offset,offset+4).map(async(sensor:any)=>{
+   const label=names.get(sensor.room_id);
+   try{
+    const result=await syncManualGovee(c,sensor,key);
+    if("reading" in result&&result.reading)return {label,status:"received",temperature_c:result.reading.temperature_c,measured_at:result.reading.measured_at,alert:result.alert};
+    return {label,status:"skipped" in result&&result.skipped?"skipped":"failed",error:result.error||"Lecture non confirmée"};
+   }catch{return {label,status:"failed",error:"Lecture du capteur impossible"};}
+  }));
+  devices.push(...batch);
+ }
+ return {total:active.length,received:devices.filter(d=>d.status==="received").length,skipped:devices.filter(d=>d.status==="skipped").length,failed:devices.filter(d=>d.status==="failed").length,devices};
+}
+async function syncAllMeater(c:any){
+ const result=await pollMeater(c,true),s=await meaterStatus(c,true);
+ const devices=s.probes.map((p:any)=>({label:p.label||("Sonde …"+p.device_id.slice(-8)),fresh:p.fresh,measured_at:p.measured_at}));
+ return {total:devices.length,received:result?.received??0,fresh:devices.filter((p:any)=>p.fresh).length,skipped:result?.skipped===true,error:result?.error||s.last_error||null,devices};
+}
+async function syncAllSensors(c:any){
+ const [govee,meater]=await Promise.allSettled([syncAllGovee(c),syncAllMeater(c)]);
+ return {
+  govee:govee.status==="fulfilled"?govee.value:{error:"Collecte Govee indisponible"},
+  meater:meater.status==="fulfilled"?meater.value:{error:"Collecte MEATER indisponible"}
+ };
+}
+
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  if(!["GET","POST"].includes(req.method))return answer({error:"Méthode non autorisée"},405);
@@ -538,6 +578,7 @@ if(action==="task-settings"&&req.method==="GET"){
  return answer({reheat:changed.data,delta_c:Math.round((t-start)*100)/100,alert:!good,after_reminder:afterReminder,elapsed_minutes:Math.round(elapsedMs/600)/100,conservative_duration_ok:withinConservativeDuration});
  }
  if(!allowed(u,true))return forbidden();
+ if(action==="sync-all-sensors")return answer(await syncAllSensors(c));
  if(action==="archive-room"){
  const id=String(x.id||"");if(!uuid(id))return answer({error:"Chambre invalide"},400);
  const room=await c.from("kitchen_cold_rooms").select("id,archived_at,deleted_at").eq("id",id).maybeSingle();
@@ -688,9 +729,7 @@ if(action==="govee-sync"){
  const id=String(x.id||"");if(!uuid(id))return answer({error:"Capteur invalide"},400);
  const q=await c.from("kitchen_connected_devices").select("*").eq("id",id).eq("provider","govee").eq("kind","cold_room").maybeSingle();
  if(q.error)throw q.error;if(!q.data)return answer({error:"Capteur introuvable"},404);
- if(q.data.last_checked_at&&Date.now()-Date.parse(q.data.last_checked_at)<60000)
-  return answer({error:"Actualisation limitée à une fois par minute et par capteur"},429);
- const result=await syncGoveeDevice(c,q.data,await goveeKey(c));
+ const result=await syncManualGovee(c,q.data,await goveeKey(c));
  if("error" in result)return answer({error:result.error},result.statusCode);
  return answer(result);
 }

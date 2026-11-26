@@ -134,6 +134,27 @@
   finally{busyButtons.forEach(b=>b.disabled=false)}
  }
 
+ function sensorSyncSummary(result){
+  const g=result?.govee||{},m=result?.meater||{};
+  const gText=g.error?"Govee : "+g.error:"Govee : "+g.received+"/"+g.total+" relevés enregistrés"+(g.skipped?" · "+g.skipped+" récemment actualisés":"")+(g.failed?" · "+g.failed+" échec(s)":"");
+  const mText=m.error?"MEATER : "+m.error:"MEATER : "+m.fresh+"/"+m.total+" mesures récentes"+(m.skipped?" · interrogation récente, données disponibles réutilisées":"")+(m.total>m.fresh?" · "+(m.total-m.fresh)+" sans nouvelle mesure":"");
+  const details=[...(g.devices||[]).filter(d=>d.status==="failed").map(d=>d.label+" : "+d.error),...(m.devices||[]).filter(d=>!d.fresh).map(d=>d.label+" : dernière mesure "+when(d.measured_at))];
+  return {message:[gText,mText,...details].join(" | "),bad:!!(g.error||m.error||g.failed||m.total>m.fresh)};
+ }
+ async function refreshAllSensors(){
+  if(busy||currentKitchenPage()!=="cuisine"||snapshot?.me.scope!=="admin")return;
+  const owner=goveeSession(),button=node("kitchenReload");busy=true;
+  if(button)button.disabled=true;
+  notify("Interrogation de toutes les sondes Govee et MEATER…");
+  try{
+   const result=await api("sync-all-sensors","POST",{});
+   if(owner!==goveeSession()||currentKitchenPage()!=="cuisine")return;
+   const summary=sensorSyncSummary(result);
+   await load();
+   if(owner===goveeSession()&&currentKitchenPage()==="cuisine")notify(summary.message,summary.bad);
+  }catch(err){if(owner===goveeSession()&&currentKitchenPage()==="cuisine")notify("Collecte impossible : "+err.message,true);}
+  finally{busy=false;if(owner===goveeSession()&&currentKitchenPage()==="cuisine"){const current=node("kitchenReload");if(current)current.disabled=false;}}
+ }
  function notify(text,bad=false){const el=node("kitchenAdminMessage");if(el){el.textContent=text;el.style.color=bad?"#a32929":"#176b3a"}}
  async function action(name,data){
   if(busy)return;busy=true;try{const res=await api(name,"POST",data);await load();notify("Enregistré.");return res}
@@ -402,14 +423,18 @@ function isRetiredCleaningTask(t){
    }
    if(kitchenTab==="overview"){
     const root=node("adminKitchenMeaterOverview");
-    if(root&&!root.dataset.meaterMounted&&window.KitchenMeater?.mountDashboard){root.dataset.meaterMounted="1";window.KitchenMeater.mountDashboard(root,api);}
+    if(root&&!root.dataset.meaterMounted&&window.KitchenMeater?.mountDashboard){root.dataset.meaterMounted="1";window.KitchenMeater.mountDashboard(root,api,{diagnostic:true});}
    }
    if(kitchenTab==="cleaning")refreshCleaningAdmin();
    if(kitchenTab==="meater")window.KitchenMeater.mountAdmin(node("meaterAdminPanel"),api,snapshot.me.scope==="admin");
    if(kitchenTab==="pms")window.KitchenPMS.mount(node("pmsAdminPanel"),{api,get:async(action,params={})=>{const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";const r=await fetch(API+"?"+new URLSearchParams({action,...params}),{headers:{"x-admin-session":token},cache:"no-store"});const j=await r.json();if(!r.ok)throw Error(j.error||"Service indisponible");return j;},role:snapshot.me.scope,canWrite:snapshot.me.scope==="admin"});
  }
  selectTab();
- node("kitchenReload").addEventListener("click",load);node("kitchenCsv")?.addEventListener("click",downloadCsv);
+ const refresh=node("kitchenReload");
+ const collect=!settings&&s.me.scope==="admin";
+ if(!settings&&!collect)refresh.textContent="Actualiser l’affichage";
+ if(collect&&busy)refresh.disabled=true;
+ refresh.addEventListener("click",collect?refreshAllSensors:load);node("kitchenCsv")?.addEventListener("click",downloadCsv);
  }
  function downloadCsv(){if(!snapshot)return;const lines=[["Type","Date et heure","Équipement","Début °C","Fin °C","Statut","Agent"]];
  for(const x of snapshot.cold)lines.push(["Chambre froide",x.measured_at,snapshot.rooms.find(r=>r.id===x.room_id)?.label||"",x.temperature_c,"",x.is_alert?"Alerte":"Conforme",x.source==="govee_cloud"?"Capteur Govee":staff(x.taken_by)]);

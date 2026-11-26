@@ -101,3 +101,28 @@ test("Govee : les chambres occupées ne sont jamais proposées à un autre capte
  assert.match(backend,/sensor:existing\.data,unchanged:true/);
  assert.match(backend,/if\(occupant\.data\)return answer/);
 });
+
+test("Collecte globale : isolation des échecs des capteurs et des deux fournisseurs",async()=>{
+ const start=backend.indexOf("async function syncManualGovee("),end=backend.indexOf("Deno.serve(",start);
+ assert.ok(start>=0&&end>start);
+ const rooms=[roomN,roomP,{id:"room3",label:"Chambre 3"},{id:"room4",label:"Chambre 4"}];
+ const sensors=[sensor,{...sensor,id:"g2",room_id:"positive",last_checked_at:new Date().toISOString()},{...sensor,id:"g3",room_id:"room3"},{...sensor,id:"g4",room_id:"room4"},{...sensor,id:"archived",room_id:"archived"}];
+ const invoked=[];
+ const c={from(table){const q={select(){return q},is(){return q},eq(){return q},then(resolve){resolve({data:table==="kitchen_cold_rooms"?rooms:sensors})}};return q}};
+ const ctx={Date,query:q=>q.data,goveeKey:async()=>"fake",syncGoveeDevice:async(c,s)=>{
+  invoked.push(s.id);if(s.id==="g3")throw Error("failure");if(s.id==="g4")return {error:"Hors ligne",statusCode:409};return {reading:{temperature_c:-20,measured_at:new Date().toISOString()},alert:false};
+ },pollMeater:async()=>({received:0}),meaterStatus:async()=>({probes:[{label:"A1",fresh:false,measured_at:null}]} )};
+ const source=backend.slice(start,end).replace(/:any\[\]/g,"").replace(/:any\b|:string\b/g,"");
+ vm.runInNewContext(source+";this.syncAllSensors=syncAllSensors",ctx);
+ const result=await ctx.syncAllSensors(c);
+ assert.equal(result.govee.total,4);assert.equal(result.govee.received,1);assert.equal(result.govee.skipped,1);assert.equal(result.govee.failed,2);
+ assert.deepEqual(invoked,["govee1","g3","g4"]);
+ assert.equal(result.meater.total,1);assert.equal(result.meater.fresh,0);
+ ctx.pollMeater=async()=>{throw Error("MEATER unavailable")};
+ const partial=await ctx.syncAllSensors(c);
+ assert.equal(partial.govee.received,1);assert.match(partial.meater.error,/indisponible/);
+ const admin=read("college/admin/cuisine-admin.js");
+ assert.match(backend,/if\(!allowed\(u,true\)\)return forbidden\(\);\s*if\(action==="sync-all-sensors"\)/);
+ assert.match(admin,/api\("sync-all-sensors","POST",\{\}\)/);
+ assert.match(admin,/collect\?refreshAllSensors:load/);
+});

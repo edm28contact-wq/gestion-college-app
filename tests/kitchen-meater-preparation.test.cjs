@@ -80,3 +80,15 @@ test("MEATER : essai temporaire sans qualification fictive ni écriture HACCP",(
  assert.match(ctx.window.KitchenMeater.dashboardMarkup(s),/28,1 °C/);
  assert.doesNotMatch(ctx.window.KitchenMeater.dashboardMarkup({...s,test_active:false}),/28,1 °C/);
 });
+
+test("MEATER : diagnostic administrateur indépendant du mode production et dernière valeur clairement signalée",()=>{
+ const ui=read("cuisine/meater-ui.js"),ctx={window:{}};
+ vm.runInNewContext(ui.replace("window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen};","window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen,dashboardMarkup};"),ctx);
+ const p={device_id:"test",slot:1,label:"Viande",fresh:false,internal_c:29.3,ambient_c:26.1,measured_at:new Date(Date.now()-900000).toISOString()};
+ const s={enabled:false,test_active:false,configured:true,probes:[p],links:[]};
+ const html=ctx.window.KitchenMeater.dashboardMarkup(s,true);
+ assert.match(html,/Dernière valeur connue \(non actualisée\) : 29,3 °C/);
+ assert.match(html,/class="meater-value">— °C/);
+ assert.match(html,/hors registre HACCP/);
+ assert.doesNotMatch(ctx.window.KitchenMeater.dashboardMarkup(s),/29,3 °C/);
+});
