@@ -1,6 +1,6 @@
 {
   "year": 2026,
-  "checkedAt": "2026-11-26T09:41:47.602Z",
+  "checkedAt": "2026-11-26T11:57:49.827Z",
   "status": "incomplete",
   "categories": {
     "navigo": {
@@ -28,9 +28,9 @@
       "message": "Tableau complet du logement 2026 absent pour l'année 2026."
     },
     "vehicule": {
-      "status": "unavailable",
+      "status": "pending",
       "source": "https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html",
-      "message": "Tableau des véhicules mis à disposition depuis février 2025 introuvable."
+      "message": "Règles véhicule avant et depuis février 2025 non confirmées sur les tableaux officiels."
     },
     "ntic": {
       "status": "pending",
@@ -39,8 +39,8 @@
     }
   },
   "errors": {
-    "urssafDetails": "fetch failed",
     "urssaf": "fetch failed",
-    "navigo": "HTTP 403"
+    "navigo": "HTTP 403",
+    "urssafDetails": "fetch failed"
   }
 }
