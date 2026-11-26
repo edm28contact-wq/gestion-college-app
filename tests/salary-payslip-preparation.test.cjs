@@ -13,7 +13,7 @@ test("Compta salaire : deux fenêtres métiers, préparation puis virements",()=
  assert.match(page,/function salaryAccountingShowTab\(view\)/);
  assert.match(payroll,/activeView="pay";\s*nav\.replaceChildren\(\)/);
  assert.match(payroll,/salaryAccountingActiveTab\(\)!=="pay"/);
- assert.match(html,/salaires\.js\?v=20261126-official-rates20/);
+ assert.match(html,/salaires\.js\?v=20261126-month20/);
  assert.match(html,/salary-od\.js\?v=20261126-benefits3/);
 });
 
