@@ -199,19 +199,20 @@ function bankHtml(d){
  return '<section class="card salary-od-section"><h3>Bordereau de virements</h3><p class="muted">IBAN et BIC récupérés depuis les fiches salariés. Modifiez-les dans Liste salariés ; les autres champs du bordereau restent dans le brouillon. Vérifiez les RIB sur un justificatif indépendant. Le numéro émetteur reprend le champ de votre modèle ; il ne constitue pas une validation bancaire.</p><button type="button" class="btn secondary" id="salaryBankReload">Actualiser les RIB des salariés</button><div class="salary-doc-fields">'+fields+'</div><div class="table"><table class="salary-bank-table"><thead><tr><th>Bénéficiaire</th><th>Montant</th>'+beneficiaryFields.map(([,label])=>'<th>'+esc(label)+'</th>').join("")+'</tr></thead><tbody>'+rows+'</tbody></table></div><p id="salaryBankStatus" class="salary-od-status" role="status"></p><label class="salary-od-confirm"><input id="salaryBankConfirm" type="checkbox"> J’ai vérifié les coordonnées bancaires, les montants et la date d’exécution.</label><div class="actions"><button id="salaryBankPrint" type="button" class="btn secondary" disabled>Imprimer le bordereau PDF</button><button id="salaryBankXml" type="button" class="btn primary" disabled>Télécharger XML (format exact du classeur)</button></div><p class="muted">XML reproduit selon la macro VBA du classeur original (pain.001.001.03), avec les noms bancaires et l’ordre des lignes saisis. La banque doit confirmer qu’elle accepte encore ce format. Le fichier est généré uniquement dans le navigateur, jamais transmis automatiquement. Le virement nécessite une validation séparée dans la banque.</p></section>';
 }
 /* Vue bancaire unique : les informations complementaires restent dans le dossier securise. */
-function simpleBankHtml(d){
- const entries=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr"));
+function simpleBankHtml(d,staff=context?.staff||[],month=context?.month||""){
+ const nameFor=id=>staff.find(p=>p.id===id)?.name||"Salarié introuvable";
+ const entries=[...d.payments].sort((a,b)=>nameFor(a[0]).localeCompare(nameFor(b[0]),"fr"));
  const rows=entries.map(([id,amount])=>{
   const b=d.bank.beneficiaries.get(id)||{};
   const total=cents(amount);
-  return '<tr><th scope="row">'+esc(staffName(id))+'</th>'+
-   '<td class="salary-accounting-num">'+(total===null?'<span class="err">À renseigner</span>':esc(money(total)))+'</td>'+
-   '<td>'+esc(b.matricule||"—")+'</td><td>'+esc(b.creditorName||staffName(id))+'</td>'+
+  return '<tr><th scope="row">'+esc(nameFor(id))+'</th>'+
+   '<td>'+field(amount,'data-pay-id="'+esc(id)+'"',"Net à virer : "+nameFor(id))+'</td>'+
+   '<td>'+esc(b.matricule||"—")+'</td><td>'+esc(b.creditorName||nameFor(id))+'</td>'+
    '<td style="overflow-wrap:anywhere">'+esc(b.iban||"À vérifier")+'</td>'+
    '<td>'+esc(b.bic||"À vérifier")+'</td></tr>';
  }).join("");
  return '<section class="card salary-od-section" id="salaryBankSimple">'+
-  '<div class="salary-od-heading"><h2>Virements de salaires</h2><p class="muted">Mois '+esc(context.month)+' · Nets à virer provenant du dossier de paie</p></div>'+
+  '<div class="salary-od-heading"><h2>Virements de salaires</h2><p class="muted">Mois '+esc(month)+' · Montants récupérés du dossier de paie, ajustables après vérification du bulletin</p></div>'+
   '<div class="table"><table class="salary-bank-table"><thead><tr><th>Salarié</th><th>Net à virer</th><th>Matricule</th><th>Bénéficiaire bancaire</th><th>IBAN</th><th>BIC</th></tr></thead><tbody>'+
   (rows||'<tr><td colspan="6">Aucun salarié enregistré pour ce mois.</td></tr>')+
   '</tbody><tfoot><tr><th>Total des virements</th><td><strong id="salaryPayTotal">—</strong></td><td colspan="4"></td></tr></tfoot></table></div>'+
