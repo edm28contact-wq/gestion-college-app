@@ -29,6 +29,9 @@ test("location : référence loueur obligatoire, forfait plafonné",()=>{
  assert.equal(vehicle("2026-11",leased).amountCents,50000);
  assert.equal(vehicle("2026-11",{...leased,vehicleFuelMode:"forfait",vehicleFuelTotalAnnual:"2000"}).amountCents,66667);
  assert.equal(vehicle("2026-11",{...leased,vehicleLessorPurchasePrice:""}).status,"missing");
+ const leasedReal=vehicle("2026-11",{...leased,vehicleEvaluation:"real",vehicleKmTotal:"10000",vehicleKmPrivate:"5000"});
+ assert.equal(leasedReal.status,"review");
+ assert.equal(leasedReal.amountCents,50000);
 });
 test("logement au forfait 2026 : tranches, pièces, retenues et semaines",()=>{
  assert.equal(HOUSING_2026.thresholds.length,7);
