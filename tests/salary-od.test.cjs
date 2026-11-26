@@ -93,7 +93,7 @@ test("Déclaration gérance : champs du modèle, contrôle explicite et exclusio
  d.declarations.set("a",{contract:"CDI",status:"Employé",start:"2020-09-01",hours:"151,67",rate:"15",gross:"2275,05",transport:"0",health:"0",comments:"Note sociale",internal:"NE PAS EXPORTER"});
  assert.equal(api.declarationProblem(d,staff),"");
  const data=api.declarationData(d,staff);
- assert.equal(data[0].length,16);
+ assert.equal(data[0].length,20);
  assert.ok(data[0].includes("N° SS"));assert.ok(data[1].includes("Cuisine"));
  assert.ok(data[1].includes("Note sociale"));assert.doesNotMatch(api.csv(data),/NE PAS EXPORTER/);
  assert.doesNotMatch(api.declarationPrintHtml("2026-10",data),/NE PAS EXPORTER/);
