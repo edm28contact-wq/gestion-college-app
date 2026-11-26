@@ -31,7 +31,7 @@ function vehicle(month,input={}){
  if(!["purchased","leased"].includes(mode))return missing("Préciser véhicule acheté ou loué / LOA.");
  if(!["forfait","real"].includes(select(input.vehicleEvaluation)))return missing("Choisir l'évaluation au forfait ou aux frais réels.");
  if(!["lte5","gt5"].includes(select(input.vehicleAge)))return missing("Préciser l'âge du véhicule (5 ans ou moins / plus de 5 ans).");
- if(!["none","actual","forfait"].includes(select(input.vehicleFuelMode)))return missing("Préciser la prise en charge du carburant.");
+ if(!["none","actual","forfait"].includes(select(input.vehicleFuelMode))&&input.vehicleElectric!=="yes")return missing("Préciser la prise en charge du carburant.");
  const allocation=select(input.vehicleAssignedDate);
  const date=new Date(allocation+"T00:00:00Z");
  if(!/^\d{4}-\d{2}-\d{2}$/.test(allocation)||!Number.isFinite(date.getTime())||
@@ -46,7 +46,7 @@ function vehicle(month,input={}){
  const contribution=optionalMoney(input.vehicleEmployeeContribution);
  if(contribution===null)return invalid("Participation mensuelle du salarié invalide.");
  let annual=0,base=0,cap=null;
- const fuel=select(input.vehicleFuelMode),forfait=input.vehicleEvaluation==="forfait";
+ const fuel=electric==="yes"?"none":select(input.vehicleFuelMode),forfait=input.vehicleEvaluation==="forfait";
  const purchase=money(input.vehiclePurchasePrice),lease=money(input.vehicleRentalAnnual);
  const fuelPrivate=optionalMoney(input.vehicleFuelPrivateAnnual),fuelTotal=optionalMoney(input.vehicleFuelTotalAnnual);
  if(fuelPrivate===null||fuelTotal===null)return invalid("Coûts de carburant annuels invalides.");
