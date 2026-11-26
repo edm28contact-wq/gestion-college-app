@@ -41,7 +41,7 @@ function vehicle(month,input={}){
  if(!["yes","no"].includes(electric))return missing("Préciser si le véhicule est exclusivement électrique.");
  if(electric==="yes"&&recent&&!["yes","no"].includes(select(input.vehicleEcoScore)))
   return missing("Éligibilité au score environnemental à confirmer pour le véhicule électrique.");
- if(select(input.vehicleFullMonth)!=="yes")return missing("Confirmer la mise à disposition pendant tout le mois (prorata partiel à vérifier).");
+ if(select(input.vehicleFullMonth)!=="yes"||(allocation.slice(0,7)===month&&allocation.slice(8)!=="01"))return missing("Mise à disposition pendant une partie du mois : prorata de présence à vérifier.");
  const contribution=optionalMoney(input.vehicleEmployeeContribution);
  if(contribution===null)return invalid("Participation mensuelle du salarié invalide.");
  let annual=0,base=0,cap=null;
@@ -88,17 +88,18 @@ function vehicle(month,input={}){
   discount=Math.min(Math.round(annual*rate),max);
  }
  const monthly=Math.max(0,annualMonth(Math.max(0,annual-discount))-contribution);
- return {status:"ok",amountCents:monthly,annualBeforeDiscountCents:annual,annualDiscountCents:discount,
+ return {status:mode==="leased"&&!forfait?"review":"ok",amountCents:monthly,annualBeforeDiscountCents:annual,annualDiscountCents:discount,
   monthlyContributionCents:contribution,capCents:cap,ruleVersion:"URSSAF-2026-2025-02",source:SOURCE,
   message:"Barème "+(recent?"depuis février 2025":"avant février 2025")+
    " · "+(forfait?"forfait":"frais réels")+" · "+(electric==="yes"?"électrique":"non électrique")+
-   ". Montant indicatif sur mois complet, à contrôler avant TESE."};
+   ". Montant indicatif sur mois complet, à contrôler avant TESE."+(mode==="leased"&&!forfait?" Plafonnement en location aux frais réels à contrôler manuellement.":"")};
 }
 function housing(month,input={}){
  const mode=select(input.housingMode);
  if(mode==="none")return notApplicable("Aucun logement fourni au salarié.");
  if(!yearVerified(month))return missing("Barème logement non vérifié pour ce mois.");
  if(!["forfait","real"].includes(mode))return missing("Choisir l'évaluation au barème forfaitaire ou à la valeur réelle.");
+ if(select(input.housingLeaseHolder)==="employee")return missing("Bail au nom du salarié : avantage en espèces, non calculable au barème logement.");
  if(select(input.housingShared)==="yes"||select(input.housingServiceNecessity)==="yes")
   return missing("Logement partagé ou nécessité absolue de service : situation particulière à qualifier avant calcul.");
  const contribution=optionalMoney(input.housingEmployeeContribution);
