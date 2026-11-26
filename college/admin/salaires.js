@@ -828,7 +828,7 @@ async function salaryEnsureOfficialRateCheck(month,force=false){
   const value=await call(ROOT+"/personnel-planning","payroll-official-rates","GET",undefined,{month});
   salaryInstallArchivedOfficialRates(month,value.archived);
   salaryRateStatusCache.set(month,{value,loading:false,at:Date.now()});
-  if(salaryPageVisible())salaryAccountingUpdateNavigo(month);
+  if(salaryPageVisible()){salaryAccountingUpdateNavigo(month);if(salaryProfileEmployeeId&&salaryProfileMonth===month)salaryRefreshPayrollTotals()}
  }catch(e){salaryRateStatusCache.set(month,{error:frError(String(e?.message||e)),loading:false,at:Date.now()})}
  salaryRenderOfficialRateCheck(month);
 }
@@ -1310,6 +1310,7 @@ function salaryPage(){
  if(salaryView==="settings"||salaryView==="events"||salaryProfileEmployeeId){
   void salaryCalendarEnsure(salaryMonth);
   if(salaryProfileEmployeeId)void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth());
+  if(salaryProfileEmployeeId)void salaryEnsureOfficialRateCheck(salaryProfileMonth||salaryCurrentMonth());
  }
 
 }
