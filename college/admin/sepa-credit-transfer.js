@@ -148,7 +148,120 @@ function createCreditTransfer(input){
  if(!safeName)throw Error("Nom du fichier SEPA invalide.");
  return {xml:lines.join("\r\n")+"\r\n",filename:(safeName.toLowerCase().endsWith(".xml")?safeName:safeName+".xml"),count,totalCents:total,format:"pain.001.001.03",messageId:msgId};
 }
-const api=Object.freeze({createCreditTransfer,validIban,validDate,parisDate});
+
+/* Reproduction du XML produit par Module2.Create_SEPA_2_XML (classeur d'origine).
+   La validation bancaire reste celle du generateur SEPA deja qualifie. */
+const workbookMonthShort=["janv","fevr","mars","avr","mai","juin","juil","aout","sept","oct","nov","dec"];
+function workbookLabel(date){
+ const year=date.slice(0,4),month=Number(date.slice(5,7));
+ return "Salaire "+workbookMonthShort[month-1]+" "+year;
+}
+function createWorkbookCreditTransfer(input){
+ const issuer={...(input?.issuer||{})};
+ issuer.label=issuer.label||workbookLabel(String(issuer.date||""));
+ const checked=createCreditTransfer({...input,issuer});
+ const now=input.now===undefined?new Date():new Date(input.now);
+ const dateParts=new Intl.DateTimeFormat("en-GB",{
+  timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit",
+  hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"
+ }).formatToParts(now);
+ const part=type=>dateParts.find(x=>x.type===type)?.value;
+ const created=part("year")+"-"+part("month")+"-"+part("day")+"T"+part("hour")+":"+part("minute")+":"+part("second");
+ const executionDate=String(issuer.date).trim(),month=executionDate.slice(5,7),year=executionDate.slice(0,4);
+ const msgId="Salaires "+month+"-"+year;
+ const name=clean(issuer.name,70,"Nom emetteur");
+ const label=clean(issuer.label,140,"Libelle du virement");
+ const issuerIban=requiredIban(issuer.iban,"emetteur"),issuerBic=requiredBic(issuer.bic,"emetteur");
+ const active=input.beneficiaries.filter(item=>item.amountCents>0).slice().sort((a,b)=>{
+  const x=Number(a.rowOrder),y=Number(b.rowOrder);
+  if(Number.isInteger(x)&&x>0&&Number.isInteger(y)&&y>0)return x-y;
+  if(Number.isInteger(x)&&x>0)return -1;
+  if(Number.isInteger(y)&&y>0)return 1;
+  return 0;
+ });
+ const lines=[
+  '<?xml version="1.0" encoding="utf-8"?>',
+  '<Document xmlns="'+NAMESPACE+'"',
+  'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+  '  <CstmrCdtTrfInitn>',
+  '    <GrpHdr>',
+  '      <MsgId>'+esc(msgId)+'</MsgId>',
+  '      <CreDtTm>'+created+'</CreDtTm>',
+  '      <NbOfTxs>'+checked.count+'</NbOfTxs>',
+  '      <CtrlSum>'+euro(checked.totalCents)+'</CtrlSum>',
+  '      <InitgPty>',
+  '        <Nm>'+esc(name)+'</Nm>',
+  '        <Id>',
+  '          <OrgId>',
+  '            <Othr>',
+  '              <Id>'+esc(msgId)+'</Id>',
+  '            </Othr>',
+  '          </OrgId>',
+  '        </Id>',
+  '      </InitgPty>',
+  '    </GrpHdr>',
+  '    <PmtInf>',
+  '      <PmtInfId>VIRMT '+esc(msgId)+'</PmtInfId>',
+  '      <PmtMtd>TRF</PmtMtd>',
+  '      <NbOfTxs>'+checked.count+'</NbOfTxs>',
+  '      <CtrlSum>'+euro(checked.totalCents)+'</CtrlSum>',
+  '      <PmtTpInf>',
+  '        <SvcLvl>',
+  '          <Cd>SEPA</Cd>',
+  '        </SvcLvl>',
+  '      </PmtTpInf>',
+  '            <ReqdExctnDt>'+executionDate+'</ReqdExctnDt>',
+  '      <Dbtr>',
+  '        <Nm>'+esc(name)+'</Nm>',
+  '      </Dbtr>',
+  '      <DbtrAcct>',
+  '        <Id>',
+  '          <IBAN>'+issuerIban+'</IBAN>',
+  '        </Id>',
+  '      </DbtrAcct>',
+  '      <DbtrAgt>',
+  '        <FinInstnId>',
+  '          <BIC>'+issuerBic+'</BIC>',
+  '        </FinInstnId>',
+  '      </DbtrAgt>',
+  '      <ChrgBr>SLEV</ChrgBr>'
+ ];
+ for(const item of active){
+  const payee=clean(item.creditorName||item.name,70,"Nom bancaire du beneficiaire");
+  const iban=requiredIban(item.iban,payee),bic=requiredBic(item.bic,payee);
+  const country=clean(item.country||iban.slice(0,2),2,"Pays du beneficiaire").toUpperCase();
+  lines.push(
+   '      <CdtTrfTxInf>',
+   '         <PmtId>',
+   '           <EndToEndId>'+esc(label)+'</EndToEndId>',
+   '         </PmtId>',
+   '         <Amt>',
+   '           <InstdAmt Ccy="EUR">'+euro(item.amountCents)+'</InstdAmt>',
+   '         </Amt>',
+   '         <CdtrAgt>',
+   '           <FinInstnId>',
+   '             <BIC>'+bic+'</BIC>',
+   '           </FinInstnId>',
+   '         </CdtrAgt>',
+   '         <Cdtr>',
+   '           <Nm>'+esc(payee)+'</Nm>',
+   '           <PstlAdr>',
+   '             <Ctry>'+country+'</Ctry>',
+   '           </PstlAdr>',
+   '         </Cdtr>',
+   '         <CdtrAcct>',
+   '           <Id>',
+   '             <IBAN>'+iban+'</IBAN>',
+   '           </Id>',
+   '         </CdtrAcct>',
+   '      </CdtTrfTxInf>'
+  );
+ }
+ lines.push('    </PmtInf>','  </CstmrCdtTrfInitn>','</Document>');
+ return {...checked,xml:lines.join("\r\n")+"\r\n",messageId:msgId,filename:msgId+".xml",layout:"workbook"};
+}
+
+const api=Object.freeze({createCreditTransfer,createWorkbookCreditTransfer,workbookLabel,validIban,validDate,parisDate});
 if(typeof window!=="undefined")window.ChambertinSEPA=api;
 if(typeof module!=="undefined"&&module.exports)module.exports=api;
 })();
