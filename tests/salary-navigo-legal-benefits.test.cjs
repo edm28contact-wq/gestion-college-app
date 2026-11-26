@@ -11,18 +11,19 @@ const html=fs.readFileSync("college/admin/index.html","utf8");
 test("navigo toutes zones 2026 : prix et remboursement employeur 50 %",()=>{
  const result=navigo("2026-11",{weeklyHours:"35",fullTimeHours:"35"});
  assert.equal(result.status,"ok");
- assert.equal(result.monthlyPassCents,9080);
- assert.equal(result.amountCents,4540);
+ assert.equal(result.annualPriceCents,99880);
+ assert.equal(result.paidMonthPriceCents,9080);
+ assert.equal(result.amountCents,4161);
  assert.equal(result.partTimeFactor,1);
  const reduced=navigo("2026-11",{weeklyHours:"7",fullTimeHours:"35"});
- assert.equal(reduced.status,"ok"); assert.equal(reduced.amountCents,1816);
+ assert.equal(reduced.status,"ok"); assert.equal(reduced.amountCents,1664);
 });
 test("exceptions et contrats incomplets : pas de déduction inventée",()=>{
  assert.equal(navigo("2026-11",{zone:"none"}).amountCents,0);
  const missing=navigo("2026-11",{});
  assert.equal(missing.status,"missing");
  assert.equal(missing.amountCents,null);
- assert.equal(missing.referenceAmountCents,4540);
+ assert.equal(missing.referenceAmountCents,4161);
  assert.equal(rulesFor("2027-01"),null);
  assert.equal(navigo("2027-01",{weeklyHours:"35",fullTimeHours:"35"}).status,"unknown");
 });
