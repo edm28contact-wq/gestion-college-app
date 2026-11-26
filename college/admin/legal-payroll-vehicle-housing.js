@@ -28,7 +28,7 @@ function setOfficialRate(category,{year,payload,source}={}){
  if(category==="logement"){
   const values=[payload.thresholds,payload.one,payload.perRoom];
   if(!values.every((arr,i)=>Array.isArray(arr)&&arr.length===(i?8:7)&&
-   arr.every((value,j)=>Number.isSafeInteger(value)&&value>0&&value<300000&&(!j||value>arr[j-1])))||
+   arr.every((value,j)=>Number.isSafeInteger(value)&&value>0&&value<(i===0?5000000:300000)&&(!j||value>arr[j-1])))||
    payload.effectiveFrom!==year+"-01-01")return false;
  }else if(category==="vehicule"){
   if(!Object.keys(VEHICLE_2026).every(key=>{
