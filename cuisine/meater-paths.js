@@ -18,7 +18,7 @@
   if(!Number.isFinite(start)||!rows.length)return '<p class="muted">Le graphique démarre avec la première mesure sous 7 °C.</p>';
   const points=rows.map(v=>({t:Date.parse(v.measured_at),c:num(v.internal_c),a:num(v.ambient_c),event:v.event})).filter(v=>Number.isFinite(v.t)&&v.c!==null&&v.t>=start&&v.t<=start+3600000).sort((a,b)=>a.t-b.t);
   if(!points.length)return '<p class="muted">Aucune mesure enregistrée.</p>';
-  const values=points.flatMap(v=>[v.c,v.a].filter(x=>x!==null));
+  const values=[...points.flatMap(v=>[v.c,v.a].filter(x=>x!==null)),...[r.trigger_c,r.cold_c,r.hot_c].map(num).filter(v=>v!==null)];
   const lo=Math.min(0,Math.floor(Math.min(...values)/10)*10),hi=Math.max(75,Math.ceil(Math.max(...values)/10)*10);
   const X=v=>50+720*Math.max(0,Math.min(1,(v-start)/3600000)),Y=v=>220-190*(v-lo)/(hi-lo);
   const series=(key,kind)=>{
@@ -42,11 +42,12 @@
   if(root.meaterPathRefresh){void root.meaterPathRefresh();return;}
   root.innerHTML='<section class="card"><h2>Parcours automatiques MEATER</h2><p><strong>Essai technique, hors registre HACCP.</strong> Retirez la sonde, nettoyez-la, puis cliquez sur « Décrocher / réarmer ». Le serveur surveille la première nouvelle mesure sous 7 °C et lance une heure. Aucun résultat ne valide automatiquement un plat.</p><p data-path-service class="muted"></p><p data-path-feedback role="status"></p><div data-path-probes></div><h3>Historique récent</h3><div data-path-history></div><section data-path-detail></section></section>';
   const service=root.querySelector("[data-path-service]"),feedback=root.querySelector("[data-path-feedback]"),probes=root.querySelector("[data-path-probes]"),history=root.querySelector("[data-path-history]"),detail=root.querySelector("[data-path-detail]");
-  let state=null,selected=null,samples=[],loadedKey="",pending=false,busy=false,timer=null,clockTimer=null,serverOffset=0,historyError="";
+  let state=null,selected=null,samples=[],loadedKey="",pending=false,busy=false,timer=null,clockTimer=null,serverOffset=0,historyError="",revision=0;
   const visible=()=>root.isConnected&&!document.hidden&&!root.closest("[hidden],.hide");
   const serverNow=()=>Date.now()+serverOffset;
   function clock(){
    if(!root.isConnected){clearInterval(clockTimer);return;}
+   for(const tile of probes.querySelectorAll("[data-path-timer]")){const p=state?.paths.find(v=>v.id===tile.dataset.pathTimer);if(p)tile.textContent=countdown(p,serverNow());}
    const r=state?.paths.find(v=>v.id===selected);
    if(!r)return;
    const el=detail.querySelector("[data-path-countdown]");if(el)el.textContent=countdown(r,serverNow());
@@ -65,20 +66,21 @@
    service.textContent=(state.configured?(state.professional?"Collecte professionnelle activée : nouveaux essais bloqués.":"Surveillance serveur : "+(running.some(r=>r.status==="armed")?"5 secondes, tant qu’une sonde attend le seuil.":running.length?"30 secondes en cours de parcours.":"En attente de réarmement.")):"MEATER non connecté.")+" Dernière réponse Cloud : "+time(state.last_ok_at)+(state.last_error?" · "+state.last_error:"");
    probes.innerHTML='<div class="meater-grid">'+state.probes.map(p=>{
     const r=running.find(v=>v.device_id===p.device_id),latest=state.paths.find(v=>v.device_id===p.device_id);
-    const ok=p.present&&!state.last_error&&p.measured_at&&serverNow()-Date.parse(p.measured_at)<=120000;
+    const age=serverNow()-Date.parse(p.measured_at||"");
+    const ok=p.present&&!state.last_error&&age>=-10000&&age<=120000;
     const arm=state.can_write&&state.configured&&!state.professional&&!r;
-    return '<div class="meater-tile"><strong>'+esc(p.label||("Sonde "+p.slot))+'</strong><small>Station '+esc(["A","B","C"][Math.floor((p.slot-1)/4)])+' · emplacement '+esc(p.slot)+'</small><span class="meater-value">'+esc(ok?temp(p.internal_c):"—")+'</span><small>'+esc(time(p.measured_at))+'</small><small>'+esc(r?labels[r.status]:"Disponible pour un essai")+'</small>'+(arm?'<button class="btn secondary btn-outline" type="button" data-path-arm="'+esc(p.device_id)+'">Décrocher / réarmer</button>':'')+(r&&state.can_write?'<button class="btn secondary btn-outline" type="button" data-path-cancel="'+esc(r.id)+'">Annuler le parcours</button>':'')+(latest?'<button class="btn secondary btn-outline" type="button" data-path-view="'+esc((r||latest).id)+'">Voir le parcours</button>':'')+'</div>';
+    return '<div class="meater-tile"><strong>'+esc(p.label||("Sonde "+p.slot))+'</strong><small>Station '+esc(["A","B","C"][Math.floor((p.slot-1)/4)])+' · emplacement '+esc(p.slot)+'</small><span class="meater-value">'+esc(ok?temp(p.internal_c):"—")+'</span><small>'+esc(time(p.measured_at))+'</small><small>'+esc(r?labels[r.status]:"Disponible pour un essai")+'</small>'+(r?'<strong data-path-timer="'+esc(r.id)+'">'+esc(countdown(r,serverNow()))+'</strong>':'')+(arm?'<button class="btn secondary btn-outline" type="button" data-path-arm="'+esc(p.device_id)+'">Décrocher / réarmer</button>':'')+(r&&state.can_write?'<button class="btn secondary btn-outline" type="button" data-path-cancel="'+esc(r.id)+'">Annuler le parcours</button>':'')+(latest?'<button class="btn secondary btn-outline" type="button" data-path-view="'+esc((r||latest).id)+'">Voir le parcours</button>':'')+'</div>';
    }).join("")+'</div>'+(state.probes.length?"":"<p>Aucune sonde associée.</p>");
    history.innerHTML=state.paths.length?'<div class="meater-actions">'+state.paths.map(r=>'<button type="button" class="btn secondary btn-outline" data-path-view="'+esc(r.id)+'" aria-pressed="'+(r.id===selected)+'">'+esc(r.label)+' · '+esc(labels[r.status]||r.status)+' · '+esc(time(r.started_at||r.armed_at))+'</button>').join("")+'</div>':'<p>Aucun parcours enregistré.</p>';
    drawDetail();
   }
   async function refresh(){
-   if(!visible()||pending)return;
-   pending=true;
+   if(!visible()||pending||busy)return;
+   pending=true;const version=revision;
    try{
     const s=await api("meater-paths");
     if(!Array.isArray(s?.paths)||!Array.isArray(s?.probes))throw Error("Réponse de suivi invalide");
-    if(!root.isConnected)return;
+    if(!root.isConnected||version!==revision)return;
     state=s;serverOffset=Date.parse(s.now)-Date.now();if(!Number.isFinite(serverOffset))serverOffset=0;
     if(!selected||!s.paths.some(r=>r.id===selected)){selected=(s.paths.find(active)||s.paths[0])?.id||null;samples=[];loadedKey="";}
     const r=s.paths.find(v=>v.id===selected);
@@ -88,10 +90,10 @@
      try{
       const h=await api("meater-path-history:"+id);
       if(!Array.isArray(h?.samples))throw Error("Historique invalide");
-      if(selected===id&&root.isConnected){samples=h.samples;loadedKey=key;historyError="";}
+      if(selected===id&&root.isConnected&&version===revision){samples=h.samples;loadedKey=key;historyError="";}
      }catch(err){if(selected===id){historyError=String(err.message||err);}}
     }
-    if(root.isConnected)render();
+    if(root.isConnected&&version===revision)render();
    }catch(err){if(root.isConnected){service.textContent="Suivi indisponible : "+String(err.message||err)+". Les dernières mesures ne sont pas confirmées.";}}
    finally{pending=false;}
   }
@@ -101,7 +103,7 @@
    if(!state?.can_write)return;
    const arm=b.hasAttribute("data-path-arm");
    if(!arm&&!window.confirm("Annuler ce parcours technique ? L’historique sera conservé."))return;
-   busy=true;b.disabled=true;feedback.textContent="Commande en cours…";
+   busy=true;revision++;b.disabled=true;feedback.textContent="Commande en cours…";
    try{
     const r=await api(arm?"meater-path-arm":"meater-path-cancel","POST",arm?{device_id:b.dataset.pathArm}:{id:b.dataset.pathCancel});
     if(arm){selected=r.id;samples=[];loadedKey="";}
