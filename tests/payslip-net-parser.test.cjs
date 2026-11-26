@@ -85,7 +85,7 @@ test("le module est intégré à Compta salaire et la lecture n'envoie pas les P
  const importer=fs.readFileSync("college/admin/payslip-import.js","utf8");
  assert.ok(page.indexOf('payslip-net-parser.js')<page.indexOf('salary-od.js'));
  assert.ok(page.indexOf('payslip-import.js')<page.indexOf('salary-od.js'));
- assert.match(fs.readFileSync("college/admin/salaires.js","utf8"),/id="salaryPayslipImport"/);
+ assert.match(salary,/id="salaryPayslipImport"/);
  assert.match(salary,/window.ChambertinPayslipImporter\?\.mount/);
  assert.match(salary,/updateDraft\(d\)/);
  assert.match(salary,/workflowEditable\(\)/);
