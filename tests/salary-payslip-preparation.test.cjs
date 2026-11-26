@@ -13,19 +13,19 @@ test("Compta salaire : deux fenêtres métiers, préparation puis virements",()=
  assert.match(page,/function salaryAccountingShowTab\(view\)/);
  assert.match(payroll,/activeView="pay";\s*nav\.replaceChildren\(\)/);
  assert.match(payroll,/salaryAccountingActiveTab\(\)!=="pay"/);
- assert.match(html,/salaires\.js\?v=20261126-payslip-prep1/);
- assert.match(html,/salary-od\.js\?v=20261126-payslip-prep1/);
+ assert.match(html,/salaires\.js\?v=20261126-allzones1/);
+ assert.match(html,/salary-od\.js\?v=20261126-allzones1/);
 });
 
 test("Préparation : heures prévues et événements séparés, bénéfices, Navigo du mois, accès TESE",()=>{
- for(const key of ["Temps prévu (planning)","Retards","Absences","Départs anticipés","Avantages en nature / mois","Forfait Navigo"])
+ for(const key of ["Temps prévu (planning)","Retards","Absences","Départs anticipés","Avantages en nature / mois","Navigo calculé (1–5)"])
   assert.ok(page.includes(key),key);
  assert.match(page,/salaryAccountingMetrics\(staff,month\)/);
  assert.match(page,/durationCell\(r\.byType\.retard\)/);
  assert.match(page,/durationCell\(r\.byType\.absence\)/);
  assert.match(page,/salaryAccountingBenefitsDetail\(r\.benefits\)/);
  assert.match(page,/data-salary-prep-navigo/);
- assert.match(page,/window\.salaryOdMonthTransport\?\.\(month,cell\.dataset\.salaryPrepNavigo\)/);
+ assert.match(page,/window\.salaryOdLegalData\?\.\(month,id\)/);
  assert.match(page,/https:\/\/www\.letese\.urssaf\.fr\//);
  assert.match(payroll,/draftFor\(month\)\.declarations\.get\(id\)\?\.transport/);
  assert.match(payroll,/window\.salaryAccountingOnDraftLoaded\?\.\(month\)/);
