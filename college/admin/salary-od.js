@@ -101,7 +101,7 @@ function remoteFor(month){
  return remoteMonths.get(month);
 }
 
-function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,bankSignature:"",bankLoading:false,bankError:"",dirty:false}}
+function blankDraft(){return {values:Object.create(null),payments:new Map(),reconciliation:{reason:"",difference:null},bank:{issuer:{},beneficiaries:new Map()},declarations:new Map(),preparation:new Map(),declarationConfirmed:false,odConfirmed:false,payConfirmed:false,bankConfirmed:false,bankSignature:"",bankLoading:false,bankError:"",dirty:false}}
 function draftFor(month){
  if(!drafts.has(month)){
   const draft=blankDraft();
@@ -456,6 +456,25 @@ function restoreDeclarations(raw,staffIds){
  }
  return result;
 }
+const prepFields=["zone","ticketCost","weeklyHours","fullTimeHours","employerRate","mealsCount","employeePaidPerMeal","dutyMeal"];
+function restorePreparation(raw,staffIds){
+ const rows=new Map();
+ if(raw===undefined)return rows;
+ if(!Array.isArray(raw)||raw.length>500)throw Error("Paramètres de préparation invalides.");
+ for(const item of raw){
+  if(!Array.isArray(item)||item.length!==2||!staffIds.has(item[0])||rows.has(item[0])||!item[1]||typeof item[1]!=="object")throw Error("Préparation invalide.");
+  const input={};
+  for(const key of prepFields){
+   const value=item[1][key];
+   if(value!==undefined){
+    if(typeof value!=="string"||value.length>16)throw Error("Paramètre de calcul invalide.");
+    input[key]=value;
+   }
+  }
+  rows.set(item[0],input);
+ }
+ return rows;
+}
 function restoreDraft(raw,month,staffIds,defaultIds){
  if(!raw||![1,2].includes(raw.version)||raw.month!==month||!raw.values||typeof raw.values!=="object"||!Array.isArray(raw.payments)||raw.payments.length>1000)throw Error("Brouillon invalide ou mois différent.");
  const d=blankDraft();
@@ -471,6 +490,7 @@ function restoreDraft(raw,month,staffIds,defaultIds){
  for(const id of defaultIds)if(!d.payments.has(id))d.payments.set(id,"");
  d.bank=restoreBank(raw.bank,staffIds);
  d.declarations=restoreDeclarations(raw.declarations,staffIds);
+ d.preparation=restorePreparation(raw.preparation,staffIds);
  if(raw.reconciliation&&typeof raw.reconciliation.reason==="string"&&raw.reconciliation.reason.length<=1000)d.reconciliation.reason=raw.reconciliation.reason;
  // A restored draft must be checked again, including any previously justified discrepancy.
  d.dirty=true;
@@ -482,7 +502,7 @@ function workflowEditable(){return permissionsValid()&&remoteFor(context.month).
 function workflowDraft(d){
  if(context?.ready&&remoteFor(context.month).status==="draft")materializeKnownDeclaration(d,context.declarationStaff||[]);
  return {version:2,month:context.month,values:d.values,payments:[...d.payments],reconciliation:d.reconciliation,
-  bank:{issuer:d.bank.issuer,beneficiaries:bankDraftEntries(d)},declarations:[...d.declarations]};
+  bank:{issuer:d.bank.issuer,beneficiaries:bankDraftEntries(d)},declarations:[...d.declarations],preparation:[...d.preparation]};
 }
 async function workflowList(force=false){
  if(!window.ChambertinPayroll||!session||remoteListLoading||remoteListLoaded&&!force)return;
@@ -821,6 +841,30 @@ function mount(config){
 window.salaryOdMonthTransport=(month,id)=>{
  if(!permissionsValid()||!remoteFor(month).loaded||context?.month!==month||!context.staff.some(person=>person.id===id))return {loaded:false,transport:""};
  return {loaded:true,transport:String(draftFor(month).declarations.get(id)?.transport??"")};
+};
+window.salaryOdLegalData=(month,id)=>{
+ if(!context||context.month!==month||!permissionsValid()||!context.staff.some(s=>s.id===id))return {loaded:false};
+ const state=remoteFor(month);
+ return {loaded:state.loaded,status:state.status,editable:workflowEditable(),error:state.error||"",
+  inputs:{...(draftFor(month).preparation.get(id)||{})},
+  declaredTransport:String(draftFor(month).declarations.get(id)?.transport??""),
+  gross:String(draftFor(month).declarations.get(id)?.gross??"")};
+};
+window.salaryOdSaveLegalData=async(month,id,raw)=>{
+ if(!context||context.month!==month||!permissionsValid()||!context.staff.some(s=>s.id===id)||!workflowEditable())
+  throw Error("Le dossier mensuel n’est pas accessible en modification.");
+ const values={};
+ for(const key of prepFields){
+  const value=String(raw?.[key]??"").trim();
+  if(value.length>16)throw Error("Paramètre trop long : "+key);
+  values[key]=value;
+ }
+ const d=draftFor(month),before=d.preparation.get(id),priorDirty=d.dirty;
+ d.preparation.set(id,values);updateDraft(d);
+ const ok=await workflowSave(d,true);
+ if(!ok){d.preparation.set(id,before||{});d.dirty=priorDirty;throw Error(remoteFor(month).error||"Enregistrement du calcul non confirmé.")}
+ window.salaryAccountingOnDraftLoaded?.(month);
+ return true;
 };
 window.salaryOdRefresh=()=>{if(context&&document.getElementById('salaryPayrollWorkArea'))render()};
 window.salaryOdMount=mount;window.salaryOdClear=clear;window.salaryOdInvalidateBank=invalidateBank;
