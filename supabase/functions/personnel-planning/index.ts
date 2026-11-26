@@ -330,9 +330,31 @@ Deno.serve(async(req:Request)=>{
   if(!Array.isArray(days)||days.length>7||!days.every((d:any)=>Number.isInteger(d)&&d>=0&&d<=6)||new Set(days).size!==days.length)
    return reply({error:"Jours travaillés invalides"},400);
   const benefits=x?.benefits_in_kind;
-  if(!Array.isArray(benefits)||benefits.length>30||!benefits.every((b:any)=>b&&typeof b.label==="string"&&b.label.trim().length>=1&&b.label.trim().length<=100&&typeof b.amount==="number"&&Number.isFinite(b.amount)&&b.amount>=0&&b.amount<=100000&&Math.abs(Math.round(b.amount*100)-b.amount*100)<1e-7))
-   return reply({error:"Avantages en nature invalides"},400);
-  const clean=benefits.map((b:any)=>({label:b.label.trim(),amount:b.amount}));
+  const benefitTypes=new Set(["manual","meal","vehicle","housing","technology"]);
+  const detailFields=new Set(["mealsCount","mealMode","employeePaidPerMeal","dutyMeal",
+   "vehicleKind","vehicleEvaluation","vehicleAssignedDate","vehicleAge","vehicleFullMonth","vehicleElectric","vehicleEcoScore","vehicleFuelMode",
+   "vehiclePurchasePrice","vehicleRentalAnnual","vehicleLessorPurchasePrice","vehicleFuelPrivateAnnual","vehicleFuelTotalAnnual","vehicleInsuranceAnnual",
+   "vehicleMaintenanceAnnual","vehicleKmPrivate","vehicleKmTotal","vehicleEmployeeContribution",
+   "housingMode","housingLeaseHolder","housingShared","housingServiceNecessity","housingWeeks","housingGross","housingRooms","housingRentalValue","housingExpenses","housingEmployeeContribution",
+   "techMode","techPrivateUse","techIncidentalUse","techDeviceCost","techSubscriptionAnnual","techPrivateAnnual","techEmployeeContribution"]);
+  if(!Array.isArray(benefits)||benefits.length>30||!benefits.every((b:any)=>{
+   if(!b||typeof b.label!=="string"||!b.label.trim()||b.label.trim().length>100||
+    typeof b.amount!=="number"||!Number.isFinite(b.amount)||b.amount<0||b.amount>100000||
+    Math.abs(Math.round(b.amount*100)-b.amount*100)>=1e-7)return false;
+   if(b.kind===undefined)return true; // Compatibilité des fiches historiques.
+   if(!benefitTypes.has(b.kind)||!["ok","excluded","manual"].includes(b.status)||
+    typeof b.confirmed!=="boolean"||b.kind==="manual"&&b.confirmed!==true||
+    b.kind!=="manual"&&b.status==="manual")return false;
+   if(typeof b.details!=="object"||!b.details||Array.isArray(b.details))return false;
+   const fields=Object.entries(b.details);
+   if(fields.length>45||!fields.every(([key,value])=>detailFields.has(key)&&typeof value==="string"&&value.length<=40&&
+     !/[\u0000-\u001f]/.test(value)))return false;
+   if(b.ruleVersion!==undefined&&(typeof b.ruleVersion!=="string"||b.ruleVersion.length>90))return false;
+   return true;
+  }))return reply({error:"Avantage incomplet : répondez aux questions obligatoires et vérifiez les calculs."},400);
+  const clean=benefits.map((b:any)=>b.kind===undefined?{label:b.label.trim(),amount:b.amount}:
+   {label:b.label.trim(),amount:b.amount,kind:b.kind,details:b.details,status:b.status,
+    confirmed:b.confirmed,ruleVersion:String(b.ruleVersion||"").slice(0,90)});
   const school=x?.exclude_school_holidays,holidays=x?.exclude_public_holidays;
   if(school!==undefined&&typeof school!=="boolean"||holidays!==undefined&&typeof holidays!=="boolean")return reply({error:"Paramètres de calendrier invalides"},400);
   const current=await db.from("college_personnel").select("id,weekly_work_slots,updated_at").eq("id",x.id).maybeSingle();
