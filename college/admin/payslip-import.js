@@ -213,7 +213,7 @@ async function processFiles(state,files){
  state.rows=results;state.busy=false;
  state.message=results.filter(x=>x.status==="ready").length+" bulletin(s) prêts à valider sur "+results.length+" fichier(s). "+
   results.filter(x=>["review","error","duplicate"].includes(x.status)).length+" document(s) nécessitent une vérification. Aucun montant n'a été enregistré automatiquement.";
- state.opts.refresh();
+ state.opts.refresh();render(state);
 }
 function mount(opts){
  if(!opts||!opts.root||!opts.month||!opts.session)return;
