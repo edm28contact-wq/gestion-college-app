@@ -1002,7 +1002,7 @@ function salaryAccountingPage(){
   '<div class="table"><table><thead><tr><th>Date</th><th>Salarié</th><th>Type</th><th>Durée renseignée</th><th>Prise en compte</th><th>Statut</th><th>Justificatif</th></tr></thead>'+
   (eventsHtml||'<tbody><tr><td colspan="7">Aucun événement enregistré pour la sélection.</td></tr></tbody>')+
   '</table></div></details>';
- $('content').innerHTML=controls+'<div id="salaryPayrollNavigation"></div><div id="salaryPayrollWorkArea" hidden></div><div id="salaryVariableSection">'+cardHtml+'<section class="card" role="status">'+status+'</section>'+table+detail+'</div>';
+ $('content').innerHTML='<div class="actions" style="margin-bottom:12px"><label for="salaryAccountingMonth">Mois <input id="salaryAccountingMonth" type="month" value="'+esc(month)+'"></label></div><div id="salaryPayrollNavigation"></div><div id="salaryPayrollWorkArea"></div><div id="salaryVariableSection" hidden></div>';
  if(typeof salaryOdMount==="function"){
   const declarationStaff=ready?staffList.map(staff=>{
    const r=salaryAccountingMetrics(staff,month),role=salaryRoleLabel(staff.professional_role_id);
