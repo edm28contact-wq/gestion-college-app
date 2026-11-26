@@ -35,8 +35,9 @@ test("une ligne avec plusieurs montants ne sélectionne pas une valeur au hasard
  assert.ok(parsed.withholding.candidates.includes(17512));
 });
 test("le site montre l'import PDF depuis Compta salaire sans transmettre les documents",()=>{
- assert.match(salaries,/id="salaryPayslipImport"/);
- assert.match(salaries,/data-salary-accounting-tab="payslips"/);
+ assert.match(od,/id="salaryPayslipImport"/);
+ assert.match(od,/function simpleBankHtml\(d,/);
+ assert.doesNotMatch(salaries,/data-salary-accounting-tab="payslips"/);
  assert.match(od,/window\.ChambertinPayslipImporter\?\.mount/);
  assert.match(importer,/window\.ChambertinPayslipDetails\?\.inspect/);
  assert.match(importer,/Valider et enregistrer le bulletin/);
