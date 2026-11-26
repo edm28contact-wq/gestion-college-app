@@ -35,9 +35,9 @@ const factor=x=>Number.isFinite(x)&&x>=0?x:null;
 function navigo(month,settings={}){
  const r=rulesFor(month);
  if(!r)return {status:"unknown",amountCents:null,message:"Barème de transport non confirmé pour "+month+"."};
- const zone=String(settings.zone||"");
+ const zone=String(settings.zone||"1-5");
  if(zone==="none")return {status:"excluded",amountCents:0,message:"Aucun remboursement déclaré pour ce mois."};
- if(!zone)return {status:"missing",amountCents:null,message:"Type d’abonnement et justificatif à renseigner."};
+
  const fare=zone==="custom"?parseDecimal(settings.ticketCost):r.navigoCents[zone];
  if(!Number.isSafeInteger(fare)||fare<=0)return {status:"missing",amountCents:null,message:"Tarif du titre non renseigné ou non valide."};
  const hours=Number(settings.weeklyHours);
@@ -46,7 +46,7 @@ function navigo(month,settings={}){
  const employerRate=parseDecimal(rate);
  if(employerRate===null||employerRate<5000||employerRate>10000)return {status:"invalid",amountCents:null,message:"Taux employeur invalide (minimum de 50 %)."};
  if(!String(settings.weeklyHours||"").trim()||!String(settings.fullTimeHours||"").trim()||!Number.isFinite(hours)||!Number.isFinite(full)||hours<=0||full<=0||hours>full||full>60)
-  return {status:"missing",amountCents:null,message:"Heures contractuelles et horaire de référence à confirmer (pas les heures théoriques du planning)."};
+  return {status:"missing",amountCents:null,referenceAmountCents:Math.round(fare*employerRate/10000),monthlyPassCents:fare,message:"Forfait 1–5 connu, mais durée contractuelle et horaire complet à confirmer avant validation du remboursement."};
  const partTimeFactor=hours>=full/2?1:hours/(full/2);
  const total=Math.round(fare*(employerRate/10000)*partTimeFactor);
  return {status:"ok",amountCents:total,monthlyPassCents:fare,employerPercent:employerRate/100,partTimeFactor,ruleVersion:r.version,
