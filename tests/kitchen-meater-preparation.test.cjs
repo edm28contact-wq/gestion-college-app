@@ -179,9 +179,12 @@ test("MEATER graphique : mode rapide à l'ouverture, retour à 30 s et arrêt au
  assert.equal(ctx.window.KitchenMeater.mountDashboard(root,api,{live:true}),refresh);
  problem="Limite de requêtes MEATER atteinte";await refresh();assert.ok(delay()>=59900&&delay()<=60000);
  problem=null;await refresh();assert.equal(calls[4],"meater-graph-live");assert.ok(delay()>=4900&&delay()<=5000);
+ for(let i=0;i<9;i++)await refresh();assert.equal(refresh.cadence(),4000);
+ for(let i=0;i<10;i++)await refresh();assert.equal(refresh.cadence(),3000);
+ for(let i=0;i<30;i++)await refresh();assert.equal(refresh.cadence(),1200);
  listeners.click({target:{closest:k=>k==="[data-meater-graph-close]"?{}:null}});
  assert.equal(panel.hidden,true);assert.equal(delay(),30000);
- await refresh();assert.equal(calls[5],"meater-live");
+ await refresh();assert.equal(calls.at(-1),"meater-live");
  production=true;await refresh();
  listeners.click({target:{closest:k=>k==="[data-meater-graph]"?{dataset:{meaterGraph:"p"}}:null}});
  await refresh();assert.equal(calls.at(-1),"meater-live");assert.equal(delay(),30000);
