@@ -748,16 +748,73 @@ if(typeof window!=="undefined"){
 }
 function salaryAccountingUpdateNavigo(month){
  if((salaryMonth||salaryCurrentMonth())!==month)return;
- const elements=document.querySelectorAll("#salaryPrepPanel [data-salary-prep-navigo]");
- for(const cell of elements){
-  const result=window.salaryOdMonthTransport?.(month,cell.dataset.salaryPrepNavigo);
-  if(!result?.loaded){cell.textContent="Chargement…";continue}
-  const raw=String(result.transport||"").trim().replace(/[\u00a0\u202f ]/g,"").replace(",",".");
-  if(!raw){cell.textContent="—";cell.title="Aucun forfait saisi pour ce mois";continue}
-  const amount=Number(raw);
-  cell.textContent=/^\d{1,8}(?:\.\d{1,2})?$/.test(raw)&&Number.isFinite(amount)?salaryAccountingMoney(amount):"À vérifier";
-  cell.title="Forfait Navigo déclaré pour "+month;
+ const legal=window.ChambertinLegalPayroll;
+ for(const cell of document.querySelectorAll("#salaryPrepPanel [data-salary-prep-navigo]")){
+  const id=cell.dataset.salaryPrepNavigo,staff=salaryStaff.find(s=>s.id===id);
+  const info=window.salaryOdLegalData?.(month,id);
+  if(!info?.loaded||!legal){cell.textContent="Chargement…";continue}
+  if(!staff||typeof staff.navigo_reimbursement!=="boolean"){cell.textContent="À vérifier";continue}
+  const data={...info.inputs,zone:staff.navigo_reimbursement?"1-5":"none"};
+  const result=legal.navigo(month,data),base=result.amountCents??result.referenceAmountCents;
+  cell.textContent=result.status==="excluded"?"0,00 € · non concerné":base==null?"À vérifier":legal.centsToString(base)+(result.status==="missing"?" · base à confirmer":"");
+  const declared=String(info.declaredTransport||"").trim();
+  const declaredCents=declared?legal.parseDecimal(declared):null;
+  cell.title=result.message+(declaredCents!==null?" · Bulletin : "+legal.centsToString(declaredCents)+(result.status==="ok"&&declaredCents!==result.amountCents?" · écart à contrôler":""):"");
  }
+ for(const cell of document.querySelectorAll("#salaryPrepPanel [data-salary-prep-meal]")){
+  const id=cell.dataset.salaryPrepMeal,info=window.salaryOdLegalData?.(month,id);
+  if(!info?.loaded||!legal){cell.textContent="Chargement…";continue}
+  const result=legal.meal(month,info.inputs||{});
+  cell.textContent=result.amountCents===null?"À renseigner":legal.centsToString(result.amountCents);
+  cell.title=result.message;
+ }
+}
+function salaryAccountingOpenRulesEditor(month,id){
+ const panel=document.getElementById("salaryPrepDetails"),staff=salaryStaff.find(p=>p.id===id);
+ const info=window.salaryOdLegalData?.(month,id),legal=window.ChambertinLegalPayroll;
+ if(!panel||!staff||!info?.loaded||!legal)return;
+ const v=info.inputs||{},excluded=staff.navigo_reimbursement===false;
+ const txt=(key,label,value="",detail="")=>'<label>'+esc(label)+'<input type="text" inputmode="decimal" data-salary-legal="'+key+'" value="'+esc(v[key]??value)+'" autocomplete="off">'+(detail?'<small class="muted">'+esc(detail)+'</small>':'')+'</label>';
+ const option=(key,label,choices,value)=>'<label>'+esc(label)+'<select data-salary-legal="'+key+'">'+choices.map(([val,name])=>'<option value="'+esc(val)+'" '+((v[key]??value)===val?'selected':'')+'>'+esc(name)+'</option>').join("")+'</select></label>';
+ panel.hidden=false;
+ panel.innerHTML='<h3>Calculs réglementaires — '+esc(staff.name)+'</h3>'+
+ '<p class="muted">Navigo Mois toutes zones (1–5), tarif automatique du mois. '+(excluded?'Aucun remboursement selon le paramétrage salarié.':'Le remboursement dépend du temps de travail contractuel et du justificatif.')+'</p>'+
+ '<div class="salary-doc-fields">'+
+ txt("weeklyHours","Heures contractuelles par semaine","","Ne pas reprendre le planning théorique comme contrat.")+
+ txt("fullTimeHours","Horaire hebdomadaire de référence","35","35 h par défaut, à confirmer selon la convention.")+
+ txt("employerRate","Part employeur (%)","50","Minimum légal 50 %")+
+ txt("mealsCount","Repas effectivement fournis ce mois")+
+ txt("employeePaidPerMeal","Participation salarié par repas (€)","0")+
+ option("mealMode","Mode de repas",[["workplace","Repas fourni dans les locaux"],["canteen","Cantine / restaurant d’entreprise"]],"workplace")+
+ option("dutyMeal","Repas pris avec les élèves par nécessité de service",[["no","Non"],["yes","Oui — à justifier"]],"no")+
+ '</div><p class="muted" id="salaryLegalPreview" role="status"></p>'+
+ '<div class="actions"><button type="button" class="btn primary" id="salaryLegalSave" '+(!info.editable?'disabled':'')+'>Enregistrer les paramètres du mois</button>'+
+ '<button type="button" class="btn secondary" id="salaryLegalClose">Fermer</button></div>'+
+ '<p class="muted">Les montants calculés préparent le TESE. Ils ne modifient ni les nets déjà validés ni le XML de la banque.</p>';
+ const collect=()=>Object.fromEntries([...panel.querySelectorAll("[data-salary-legal]")].map(el=>[el.dataset.salaryLegal,el.value]));
+ const update=()=>{
+  const input={...collect(),zone:excluded?"none":"1-5"};
+  const n=legal.navigo(month,input),m=legal.meal(month,input);
+  const ntext=n.amountCents!==null?legal.centsToString(n.amountCents):n.referenceAmountCents!==undefined?legal.centsToString(n.referenceAmountCents)+" (base temps plein non validée)":n.message;
+  const mtext=m.amountCents!==null?legal.centsToString(m.amountCents):m.message;
+  const dest=panel.querySelector("#salaryLegalPreview");
+  if(dest)dest.textContent="Navigo calculé : "+ntext+" · Repas calculés : "+mtext+".";
+ };
+ panel.querySelectorAll("[data-salary-legal]").forEach(el=>el.addEventListener("input",update));
+ panel.querySelector("#salaryLegalClose")?.addEventListener("click",()=>{panel.hidden=true;panel.replaceChildren()});
+ panel.querySelector("#salaryLegalSave")?.addEventListener("click",async()=>{
+  const button=panel.querySelector("#salaryLegalSave"),message=panel.querySelector("#salaryLegalPreview");
+  if(!button)return;
+  button.disabled=true;
+  try{
+   await window.salaryOdSaveLegalData(month,id,{...collect(),zone:excluded?"none":"1-5"});
+   salaryAccountingUpdateNavigo(month);
+   if(message)message.textContent="Paramètres mensuels enregistrés. Les bulletins et virements existants restent inchangés.";
+  }catch(error){if(message)message.textContent=String(error.message||"Échec de l’enregistrement.");}
+  finally{if(panel.isConnected)button.disabled=!info.editable}
+ });
+ update();
+ panel.scrollIntoView({block:"nearest",behavior:"smooth"});
 }
 function salaryAccountingShowTab(view){
  if(!["prep","pay"].includes(view))return;
@@ -1048,17 +1105,18 @@ function salaryAccountingPage(){
    '<td>'+esc(durationCell(r.byType.depart_anticipe))+'</td>'+
    '<td class="salary-accounting-benefits"><b>'+(r.benefits.total===null?"À vérifier":esc(salaryAccountingMoney(r.benefits.total)))+'</b>'+salaryAccountingBenefitsDetail(r.benefits)+'</td>'+
    '<td data-salary-prep-navigo="'+esc(r.staff.id)+'">Chargement…</td>'+
+   '<td data-salary-prep-meal="'+esc(r.staff.id)+'">Chargement…</td>'+
    '<td>'+esc(state)+'</td>'+
-   '<td><button class="btn secondary compact" type="button" data-accounting-staff="'+esc(r.staff.id)+'">Voir la fiche</button></td></tr>';
+   '<td><button class="btn secondary compact" type="button" data-salary-legal-open="'+esc(r.staff.id)+'">Détails calculs</button> <button class="btn secondary compact" type="button" data-accounting-staff="'+esc(r.staff.id)+'">Fiche</button></td></tr>';
  }).join("");
  const preparation='<section class="card salary-od-section" id="salaryPrepPanel" '+(salaryAccountingView==="pay"?"hidden":"")+'>'+
   '<div class="salary-od-heading"><div><h2>Préparation des fiches de paie</h2><p class="muted">Mois '+esc(salaryMonthLabel(month))+' · Données issues du planning, des événements et des fiches salariés</p></div>'+
   '<div class="actions"><button type="button" class="btn secondary" id="salaryAccountingRefresh">Actualiser</button>'+
   '<a class="btn primary" href="https://www.letese.urssaf.fr/" target="_blank" rel="noopener noreferrer">Accéder au TESE</a></div></div>'+
-  '<div class="table"><table class="salary-accounting-table salary-prep-table"><thead><tr><th>Salarié</th><th>Temps prévu (planning)</th><th>Retards</th><th>Absences</th><th>Départs anticipés</th><th>Avantages en nature / mois</th><th>Forfait Navigo</th><th>Contrôle</th><th>Fiche</th></tr></thead><tbody>'+
-  (ready?prepRows||'<tr><td colspan="9">Aucun salarié disponible.</td></tr>':'<tr><td colspan="9">Chargement des salariés et événements…</td></tr>')+
-  '</tbody></table></div><div role="status">'+status+'</div>'+
-  '<p class="muted">Le temps prévu n’est pas une base contractuelle ni un pointage réel. Les retards et absences non validés restent provisoires. Les avantages en nature proviennent de la fiche salarié et doivent être contrôlés pour chaque paie. Le Navigo provient de la déclaration du mois. Aucune retenue automatique n’est créée ici.</p></section>';
+  '<div class="table"><table class="salary-accounting-table salary-prep-table"><thead><tr><th>Salarié</th><th>Temps prévu (planning)</th><th>Retards</th><th>Absences</th><th>Départs anticipés</th><th>Avantages en nature / mois</th><th>Navigo calculé (1–5)</th><th>Repas calculés</th><th>Contrôle</th><th>Action</th></tr></thead><tbody>'+
+  (ready?prepRows||'<tr><td colspan="10">Aucun salarié disponible.</td></tr>':'<tr><td colspan="10">Chargement des salariés et événements…</td></tr>')+
+  '</tbody></table></div><div id="salaryPrepDetails" class="card" hidden></div><div role="status">'+status+'</div>'+
+  '<p class="muted">Le temps prévu n’est pas une base contractuelle ni un pointage réel. Les retards et absences non validés restent provisoires. Les avantages en nature proviennent de la fiche salarié et doivent être contrôlés pour chaque paie. Le Navigo toutes zones et les repas sont proposés depuis les barèmes datés. Les écarts avec le bulletin existant sont à vérifier, et aucun net bancaire n’est recalculé automatiquement.</p></section>';
  $('content').innerHTML='<div class="actions" style="margin-bottom:12px"><label for="salaryAccountingMonth">Mois <input id="salaryAccountingMonth" type="month" value="'+esc(month)+'"></label></div>'+
  '<nav class="card salary-od-nav" aria-label="Étapes de paie" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">'+
  '<button type="button" class="btn '+(salaryAccountingView==="prep"?"primary":"secondary")+'" data-salary-accounting-tab="prep" aria-pressed="'+(salaryAccountingView==="prep")+'">1. Préparation des fiches de paie</button>'+
@@ -1081,6 +1139,7 @@ function salaryAccountingPage(){
  }
  document.querySelectorAll("[data-salary-accounting-tab]").forEach(button=>button.addEventListener("click",()=>salaryAccountingShowTab(button.dataset.salaryAccountingTab)));
  salaryAccountingUpdateNavigo(month);
+ document.querySelectorAll("[data-salary-legal-open]").forEach(button=>button.addEventListener("click",()=>salaryAccountingOpenRulesEditor(month,button.dataset.salaryLegalOpen)));
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
  $('salaryAccountingEmployee')?.addEventListener('change',e=>{salaryAccountingEmployeeId=e.target.value;salaryAccountingPage()});
  $('salaryAccountingRefresh')?.addEventListener('click',()=>{
