@@ -171,14 +171,14 @@ test("MEATER graphique : mode rapide à l'ouverture, retour à 30 s et arrêt au
  await refresh();assert.deepEqual(calls,["meater-live"]);assert.equal(delay(),30000);
  assert.match(dest.innerHTML,/Voir le graphique/);
  listeners.click({target:{closest:k=>k==="[data-meater-graph]"?{dataset:{meaterGraph:"p"}}:null}});
- await refresh();assert.equal(calls[1],"meater-graph-live");assert.equal(delay(),1000);assert.equal(panel.hidden,false);assert.match(content.innerHTML,/2 mesure\(s\)/);
+ await refresh();assert.equal(calls[1],"meater-graph-live");assert.ok(delay()>=100&&delay()<=1200);assert.equal(panel.hidden,false);assert.match(content.innerHTML,/2 mesure\(s\)/);
  const next=[...timers.entries()][0];timers.delete(next[0]);next[1].f();await refresh();
- assert.equal(calls[2],"meater-graph-live");assert.equal(delay(),1000);
+ assert.equal(calls[2],"meater-graph-live");assert.ok(delay()>=100&&delay()<=1200);
  listeners.change({target:{matches:()=>true,value:"60"}});
  assert.equal(calls.length,3);assert.match(content.innerHTML,/3 mesure\(s\)/);
  assert.equal(ctx.window.KitchenMeater.mountDashboard(root,api,{live:true}),refresh);
- problem="Limite de requêtes MEATER atteinte";await refresh();assert.equal(delay(),30000);
- problem=null;await refresh();assert.equal(calls[4],"meater-live");assert.equal(delay(),1000);
+ problem="Limite de requêtes MEATER atteinte";await refresh();assert.equal(delay(),5000);
+ problem=null;await refresh();assert.equal(calls[4],"meater-graph-live");assert.ok(delay()>=100&&delay()<=1200);
  listeners.click({target:{closest:k=>k==="[data-meater-graph-close]"?{}:null}});
  assert.equal(panel.hidden,true);assert.equal(delay(),30000);
  await refresh();assert.equal(calls[5],"meater-live");
@@ -201,5 +201,7 @@ test("MEATER graphique : limitation globale, échec et exclusion des écritures 
  assert.match(sql,/s.generation is distinct from p_generation/);
  assert.match(sql,/revoke all on function public.kitchen_meater_claim_graph\(\) from public,anon,authenticated/);
  assert.match(ui,/graphMaxPoints=10801/);
- assert.match(ui,/visible\(\)&&fastMode\(\)\?1000:30000/);
+ assert.match(ui,/Math.max\(100,1200-\(Date.now\(\)-lastStarted\)\)/);
+  assert.match(ui,/failed\?5000/);
+  assert.match(ui,/fastAllowed=!!s.configured/);
 });
