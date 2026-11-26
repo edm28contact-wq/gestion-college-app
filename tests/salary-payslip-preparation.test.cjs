@@ -4,7 +4,7 @@ const page=fs.readFileSync("college/admin/salaires.js","utf8");
 const payroll=fs.readFileSync("college/admin/salary-od.js","utf8");
 const html=fs.readFileSync("college/admin/index.html","utf8");
 
-test("Compta salaire : trois fenêtres métiers, préparation, import PDF puis virements",()=>{
+test("Compta salaire : deux fenêtres, avec dépôt PDF dans les virements",()=>{
  assert.match(page,/data-salary-accounting-tab="prep"/);
  assert.match(page,/data-salary-accounting-tab="payslips"/);
  assert.match(page,/data-salary-accounting-tab="pay"/);
