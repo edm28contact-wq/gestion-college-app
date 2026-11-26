@@ -109,7 +109,7 @@ function draftFor(month){
    draft.bank.issuer.name="COLLEGE PRIVE CHAMBERTIN SAS";
    draft.bank.issuer.filename="Salaires "+month.slice(5)+"-"+month.slice(0,4);
    const [year,m]=month.split("-").map(Number);
-   draft.bank.issuer.label="Salaire "+new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(year,m-1,1)));
+   draft.bank.issuer.label=window.ChambertinSEPA?.workbookLabel?.(month+"-01")||"Salaire "+new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(year,m-1,1)));
   }
   drafts.set(month,draft);
  }
@@ -154,7 +154,7 @@ function payHtml(d){
 }
 
 const issuerFields=Object.freeze([["name","Nom émetteur",70],["iban","IBAN émetteur",42],["bic","BIC émetteur",11],["number","Num émetteur",35],["date","Date d’exécution",10],["filename","Nom du fichier de sortie",100],["label","Libellé écriture",140]]);
-const beneficiaryFields=Object.freeze([["matricule","Matricule",35],["iban","IBAN",42],["bic","BIC",11],["country","Pays",2],["postcode","Code postal",16],["city","Ville",35],["address","Adresse",70],["comment","Commentaire",140]]);
+const beneficiaryFields=Object.freeze([["matricule","Matricule",35],["creditorName","Nom bénéficiaire SEPA",70],["rowOrder","Ordre classeur",4],["iban","IBAN",42],["bic","BIC",11],["country","Pays",2],["postcode","Code postal",16],["city","Ville",35],["address","Adresse",70],["comment","Commentaire",140]]);
 function compactIban(value){return String(value??"").replace(/\s/g,"").toUpperCase()}
 function validIban(value){
  const iban=compactIban(value);
@@ -214,7 +214,7 @@ function mergeSavedBanks(d,banks){
  return changed;
 }
 function bankDraftEntries(d){
- return [...d.bank.beneficiaries].map(([id,b])=>[id,{matricule:b.matricule||"",country:b.country||"",postcode:b.postcode||"",city:b.city||"",address:b.address||"",comment:b.comment||""}]);
+ return [...d.bank.beneficiaries].map(([id,b])=>[id,{matricule:b.matricule||"",creditorName:b.creditorName||"",rowOrder:b.rowOrder||"",country:b.country||"",postcode:b.postcode||"",city:b.city||"",address:b.address||"",comment:b.comment||""}]);
 }
 async function loadSavedBanks(d,force=false){
  if(!permissionsValid()||activeView!=="pay"||d.bankLoading)return;
@@ -245,7 +245,7 @@ function bankPrintHtml(month,d,nameFor){
  const active=[...d.payments].filter(([,v])=>cents(v)>0).sort((a,b)=>nameFor(a[0]).localeCompare(nameFor(b[0]),"fr"));
  const rows=active.map(([id,value])=>{
   const b=d.bank.beneficiaries.get(id);
-  return "<tr>"+["",nameFor(id),decimal(cents(value)),b.comment||i.label,b.matricule,i.date.slice(-2),String(b.bic).toUpperCase(),compactIban(b.iban),String(b.country).toUpperCase(),b.postcode||"",b.city||"",b.address||""].map(v=>"<td>"+esc(v)+"</td>").join("")+"</tr>";
+  return "<tr>"+["",b.creditorName||nameFor(id),decimal(cents(value)),b.comment||i.label,b.matricule,i.date.slice(-2),String(b.bic).toUpperCase(),compactIban(b.iban),String(b.country).toUpperCase(),b.postcode||"",b.city||"",b.address||""].map(v=>"<td>"+esc(v)+"</td>").join("")+"</tr>";
  }).join("");
  return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bordereau salaires '+esc(month)+'</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#172b3d}h1{text-align:center;font-size:19px;margin:0 0 24px}.head{display:grid;grid-template-columns:1fr 1fr;gap:14px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #9babb8;padding:7px 6px;text-align:left;overflow-wrap:anywhere}th{background:#dbe8f4}tbody tr{break-inside:avoid}.summary{font-size:15px;font-weight:bold;margin:15px 0}.money{text-align:right}p{line-height:1.5}</style></head><body><h1>VIREMENT DES SALAIRES — '+esc(month)+'</h1><div class="head"><table><tr><th>IBAN émetteur</th><th>BIC émetteur</th></tr><tr><td>'+esc(compactIban(i.iban))+'</td><td>'+esc(i.bic.toUpperCase())+'</td></tr><tr><th>Nom émetteur</th><th>Num émetteur</th></tr><tr><td>'+esc(i.name)+'</td><td>'+esc(i.number)+'</td></tr></table><table><tr><th>Date d’exécution</th><td>'+esc(i.date.split("-").reverse().join("/"))+'</td></tr><tr><th>Nom du fichier de sortie</th><td>'+esc(i.filename)+'</td></tr><tr><th>Libellé écriture</th><td>'+esc(i.label)+'</td></tr></table></div><p class="summary">Total : '+esc(money(p.total))+' · Nombre de virements : '+active.length+'</p><table><thead><tr>'+["Inactif","Nom","Montant (€)","Commentaires","Matricule","Date","BIC","IBAN","Pays","Code postal","Ville","Adresse"].map(v=>"<th>"+esc(v)+"</th>").join("")+'</tr></thead><tbody>'+rows+'</tbody></table><p>Compte 421 : '+esc(money(rec.account))+' · Écart : '+esc(money(rec.difference))+(rec.justified?" · Justification : "+esc(d.reconciliation.reason):"")+'</p><p>Document confidentiel préparatoire. Ne constitue pas un ordre de virement SEPA.</p></body></html>';
 }
@@ -290,9 +290,9 @@ async function exportSepa(d){
   }
   const problem=bankProblem(d);
   if(problem)throw Error(problem);
-  const generator=window.ChambertinSEPA?.createCreditTransfer;
+  const generator=window.ChambertinSEPA?.createWorkbookCreditTransfer||window.ChambertinSEPA?.createCreditTransfer;
   if(typeof generator!=="function")throw Error("Générateur SEPA indisponible. Actualisez la page.");
-  const beneficiaries=[...d.payments].sort((a,b)=>staffName(a[0]).localeCompare(staffName(b[0]),"fr")).map(([id,value])=>{
+  const beneficiaries=[...d.payments].sort((a,b)=>Number(d.bank.beneficiaries.get(a[0])?.rowOrder||9999)-Number(d.bank.beneficiaries.get(b[0])?.rowOrder||9999)||staffName(a[0]).localeCompare(staffName(b[0]),"fr")).map(([id,value])=>{
    const bank=d.bank.beneficiaries.get(id)||{};
    return {name:staffName(id),amountCents:cents(value),...bank};
   });
@@ -338,7 +338,7 @@ function restoreBank(raw,staffIds){
  bank.issuer=copy(raw.issuer,issuerFields);
  for(const row of raw.beneficiaries){
   if(!Array.isArray(row)||row.length!==2||!staffIds.has(row[0])||bank.beneficiaries.has(row[0]))throw Error("Bénéficiaire du brouillon invalide.");
-  bank.beneficiaries.set(row[0],copy(row[1],beneficiaryFields.filter(([key])=>["matricule","country","postcode","city","address","comment"].includes(key))));
+  bank.beneficiaries.set(row[0],copy(row[1],beneficiaryFields.filter(([key])=>["matricule","creditorName","rowOrder","country","postcode","city","address","comment"].includes(key))));
  }
  return bank;
 }
