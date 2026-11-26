@@ -22,7 +22,7 @@ test("barème antérieur à février 2025 et frais réels avec kilométrage",()=
  const real=vehicle("2026-11",{...baseVehicle,vehicleEvaluation:"real",vehicleInsuranceAnnual:"1200",
   vehicleMaintenanceAnnual:"800",vehicleKmPrivate:"5000",vehicleKmTotal:"10000"});
  assert.equal(real.amountCents,25000);
- assert.equal(vehicle("2026-11",{...baseVehicle,vehicleFullMonth:"no"}).status,"missing");
+ assert.equal(vehicle("2026-11",{...baseVehicle,vehicleFullMonth:"no"}).status,"ok"); // Mois partiel retenu en entier selon Urssaf.
 });
 test("location : référence loueur obligatoire, forfait plafonné",()=>{
  const leased={...baseVehicle,vehicleKind:"leased",vehicleRentalAnnual:"12000",vehicleLessorPurchasePrice:"40000"};
