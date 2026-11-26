@@ -369,7 +369,7 @@ function restoreBank(raw,staffIds){
 const declarationFields=Object.freeze([
  ["nir","N° SS",32],["contract","Contrat",100],["function","Fonction",160],["status","Statut",100],
  ["start","Date d’entrée",10],["end","Date de fin de contrat",10],["hours","Base horaire mensuelle",40],["rate","Taux horaire brut",40],
- ["gross","Salaire brut",40],["transport","Forfait Navigo",40],["health","Mutuelle Swisslife",40],
+ ["gross","Salaire brut",40],["withholding","Prélèvement à la source du bulletin",40],["netBeforeTax","Net à payer avant impôt",40],["netSocial","Montant net social",40],["netTaxable","Net imposable",40],["transport","Forfait Navigo",40],["health","Mutuelle Swisslife",40],
  ["adjustments","Retenue / prime / heures compl. ou sup.",1000],["absence","Absences (maladie sans subrogation, congés payés, JNT)",1000],
  ["absencePay","Absences payées / non payées",1000],["comments","Commentaires pour le social",1000],["internal","Commentaires internes — non transmis",1000]
 ].map(Object.freeze));
