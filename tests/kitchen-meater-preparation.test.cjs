@@ -70,7 +70,7 @@ test("MEATER : essai temporaire sans qualification fictive ni écriture HACCP",(
  assert.match(api,/c.rpc\("kitchen_meater_test_mode",\{p_enabled:x.enabled\}\)/);
  assert.match(ui,/MODE ESSAI · mesures indicatives, hors registre HACCP/);
  assert.match(ui,/data-meater-test-mode/);
- assert.match(ui,/void refreshLive\(\);\},30000\)/);
+ assert.match(ui,/void refreshLive\(\);\},5000\)/);
  assert.match(read("supabase/migrations/20261126210903_kitchen_meater_safe_update_where.sql"),/if s.enabled then/);
  const ctx={window:{}};
  vm.runInNewContext(ui.replace("window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen};","window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen,dashboardMarkup};"),ctx);
@@ -153,7 +153,7 @@ test("MEATER graphique : mesure réelle, déduplication, coupures et période bo
  assert.equal(history.size,0);
  const cook=read("cuisine/cuisine.js");assert.match(cook,/replaceWith\(previousMeater\)/);
 });
-test("MEATER graphique : mode rapide à l'ouverture, retour à 30 s et arrêt au démontage",async()=>{
+test("MEATER graphique : mode rapide à l'ouverture, retour à 5 s et arrêt au démontage",async()=>{
  const ui=read("cuisine/meater-ui.js"),listeners={},docListeners={},timers=new Map();let seq=0;
  const doc={hidden:false,addEventListener(k,f){docListeners[k]=f;},removeEventListener(k){delete docListeners[k];}};
  const ctx={window:{},document:doc,setTimeout:(f,ms)=>{const id=++seq;timers.set(id,{f,ms});return id;},clearTimeout:id=>timers.delete(id)};
@@ -168,7 +168,7 @@ test("MEATER graphique : mode rapide à l'ouverture, retour à 30 s et arrêt au
  };
  const delay=()=>{assert.equal(timers.size,1);return [...timers.values()][0].ms;};
  const refresh=ctx.window.KitchenMeater.mountDashboard(root,api,{live:true});
- await refresh();assert.deepEqual(calls,["meater-live"]);assert.equal(delay(),30000);
+ await refresh();assert.deepEqual(calls,["meater-live"]);assert.equal(delay(),5000);
  assert.match(dest.innerHTML,/Voir le graphique/);
  listeners.click({target:{closest:k=>k==="[data-meater-graph]"?{dataset:{meaterGraph:"p"}}:null}});
  await refresh();assert.equal(calls[1],"meater-graph-live");assert.ok(delay()>=4900&&delay()<=5000);assert.equal(panel.hidden,false);assert.match(content.innerHTML,/2 mesure\(s\)/);
@@ -183,11 +183,11 @@ test("MEATER graphique : mode rapide à l'ouverture, retour à 30 s et arrêt au
  for(let i=0;i<10;i++)await refresh();assert.equal(refresh.cadence(),3000);
  for(let i=0;i<30;i++)await refresh();assert.equal(refresh.cadence(),1200);
  listeners.click({target:{closest:k=>k==="[data-meater-graph-close]"?{}:null}});
- assert.equal(panel.hidden,true);assert.equal(delay(),30000);
+ assert.equal(panel.hidden,true);assert.equal(delay(),5000);
  await refresh();assert.equal(calls.at(-1),"meater-live");
  production=true;await refresh();
  listeners.click({target:{closest:k=>k==="[data-meater-graph]"?{dataset:{meaterGraph:"p"}}:null}});
- await refresh();assert.equal(calls.at(-1),"meater-live");assert.equal(delay(),30000);
+ await refresh();assert.equal(calls.at(-1),"meater-live");assert.equal(delay(),5000);
  doc.hidden=true;const n=calls.length;await refresh();assert.equal(calls.length,n);assert.equal(delay(),30000);
  root.isConnected=false;await refresh();assert.equal(timers.size,0);assert.equal(docListeners.visibilitychange,undefined);
 });
