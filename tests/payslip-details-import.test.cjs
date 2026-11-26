@@ -49,7 +49,7 @@ test("la sauvegarde est dans le dossier mensuel authentifi√©; aucun import ne d√
  for(const field of ["gross","withholding","netBeforeTax","netSocial","netTaxable"])assert.ok(backend.includes(field+":40"));
  assert.match(od,/apply:async\(amounts,overwrite\)/);
  assert.match(od,/await workflowSave\(d,true\)/);
- assert.match(od,/if\(!saved\)/); 
+ assert.match(od,/if\(!await workflowSave\(d,true\)\)/); 
  assert.match(od,/workflowEditable\(\)/);
  assert.match(od,/id="salaryBankXml"/);
  assert.doesNotMatch(importer,/createWorkbookCreditTransfer|staff-bank-payroll/);
