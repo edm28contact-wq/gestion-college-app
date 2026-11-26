@@ -64,8 +64,8 @@ const FIELDS=Object.freeze({
   ["housingEmployeeContribution","Participation mensuelle du salarié (€)", "money"]
  ],
  technology:[
-  ["techMode","Mode d'évaluation des outils numériques", "select"],
   ["techPrivateUse","Un usage privé existe-t-il ?", "yesno"],
+  ["techMode","Mode d'évaluation des outils numériques", "select",d=>d.techPrivateUse==="yes"],
   ["techIncidentalUse","Usage privé uniquement raisonnable et accessoire ?", "yesno",d=>d.techPrivateUse==="yes"],
   ["techDeviceCost","Prix TTC d'achat des appareils (€)", "money",d=>d.techMode==="forfait"&&d.techPrivateUse==="yes"&&d.techIncidentalUse==="no"],
   ["techSubscriptionAnnual","Coût annuel TTC des abonnements (€)", "money",d=>d.techMode==="forfait"&&d.techPrivateUse==="yes"&&d.techIncidentalUse==="no"],
