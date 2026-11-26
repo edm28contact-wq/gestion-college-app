@@ -17,15 +17,24 @@ const housing='<h2>Logement</h2><table><caption>Avantage en nature logement - Mo
  ["Supérieure ou égale à 6 007,50 €","225,60 €","212,30 €"]
  ].map(row=>'<tr><th>'+row[0]+'</th><td>'+row[1]+'</td><td>'+row[2]+'</td></tr>').join("")+'</table>';
 const vehicle='<h2>Véhicule</h2><table><caption>Évaluation forfaitaire : véhicule mis à disposition depuis le 1er février 2025</caption><tr><th>Type de véhicule</th><th>Sans carburant</th><th>Avec prise en charge du carburant</th></tr><tr><th>Véhicule acheté âgé de 5 ans ou moins</th><td>15 % du coût d achat</td><td>15 % plus frais ou 20 % du coût d achat</td></tr><tr><th>Véhicule acheté de plus de 5 ans</th><td>10 %</td><td>10 % plus frais ou 15 %</td></tr><tr><th>Véhicule loué ou en location avec option d achat (LOA)</th><td>50 %</td><td>50 % plus frais ou 67 %</td></tr></table>';
+const vehicleBefore='<h2>Véhicule</h2><table><caption>Évaluation forfaitaire : véhicule mis à disposition avant le 1er février 2025</caption>'+
+ '<tr><th>Type de véhicule</th><th>Sans carburant</th><th>Avec prise en charge du carburant</th></tr>'+
+ '<tr><th>Véhicule acheté âgé de 5 ans ou moins</th><td>9 %</td><td>9 % ou 12 %</td></tr>'+
+ '<tr><th>Véhicule acheté de plus de 5 ans</th><td>6 %</td><td>6 % ou 9 %</td></tr>'+
+ '<tr><th>Véhicule loué (LOA)</th><td>30 %</td><td>30 % ou 40 %</td></tr></table>'+
+ '<p>Particularités pour les véhicules 100 % électriques : Vous appliquez une réduction de 70 % sur le montant de l avantage, dans la limite de 4 641,60 € par an en 2026.</p>'+
+ '<p>Particularités pour les véhicules 100 % électriques : Vous appliquez une réduction de 50 %, dans la limite de 2 026,30 € par an en 2026.</p>';
 const ntic='<main><h2>Avantages en nature : ordinateurs, téléphones</h2><p>L avantage au forfait est évalué à 10 % du coût d achat TTC.</p></main>';
 test("les cinq taux officiels 2026 sont extraits uniquement des rubriques explicitement vérifiables",async()=>{
  const m=await rateImport();
- const r=m.verificationReport(2026,{navigo,urssaf:meal+housing+vehicle,urssafDetails:ntic});
+ const r=m.verificationReport(2026,{navigo,urssaf:meal+housing+vehicle+vehicleBefore,urssafDetails:ntic});
  assert.equal(r.status,"verified");
  assert.equal(r.categories.navigo.payload.annualCents,99880);
  assert.equal(r.categories.repas.payload.mealGeneralCents,550);
  assert.deepEqual(Array.from(r.categories.logement.payload.one),[7970,9300,10620,11940,14640,17260,19940,22560]);
  assert.equal(r.categories.vehicule.payload.leasedPercent,50);
+ assert.equal(r.categories.vehicule.payload.electricNewCapCents,464160);
+ assert.equal(r.categories.vehicule.payload.electricOldCapCents,202630);
  assert.equal(r.categories.ntic.payload.annualRate,0.1);
 });
 test("les chiffres d'une année précédente sont refusés pour l'année recherchée",async()=>{
@@ -36,7 +45,7 @@ test("les chiffres d'une année précédente sont refusés pour l'année recherc
 });
 test("toute source modifiée ou incomplète déclenche une alerte, jamais un nombre supposé",async()=>{
  const m=await rateImport();
- assert.notEqual(m.verifyVehicle(vehicle.replace("67 %","99 %")).status,"verified");
+ assert.notEqual(m.verifyVehicle((vehicle+vehicleBefore).replace("67 %","99 %"),2026).status,"verified");
  assert.notEqual(m.verifyMeal(meal.replace("11,00","12,00"),2026).status,"verified");
  assert.notEqual(m.verifyHousing(housing.replace("225,60","deux cents"),2026).status,"verified");
  assert.notEqual(m.verifyNavigo(navigo.replace("12e mois consécutif est offert",""),2026).status,"verified");
