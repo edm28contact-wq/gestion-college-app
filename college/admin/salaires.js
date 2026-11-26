@@ -742,8 +742,10 @@ function salaryWireStaff(){
 }
 
 let salaryView="staff",salaryAccountingEmployeeId="all",salaryAccountingView="prep";
-window.salaryAccountingActiveTab=()=>salaryAccountingView;
-window.salaryAccountingOnDraftLoaded=month=>salaryAccountingUpdateNavigo(month);
+if(typeof window!=="undefined"){
+ window.salaryAccountingActiveTab=()=>salaryAccountingView;
+ window.salaryAccountingOnDraftLoaded=month=>salaryAccountingUpdateNavigo(month);
+}
 function salaryAccountingUpdateNavigo(month){
  if((salaryMonth||salaryCurrentMonth())!==month)return;
  const elements=document.querySelectorAll("#salaryPrepPanel [data-salary-prep-navigo]");
