@@ -619,6 +619,12 @@ function render(){
  if(activeView==="variables"){host.replaceChildren();return}
  if(!context.ready||!context.canWrite){host.innerHTML='<section class="card"><h3>Préparation des salaires</h3><p class="muted">La saisie des montants nécessite les droits de modification des salaires et le chargement des données.</p></section>';return}
  const d=getDraft();
+ if(activeView==="calculator"){
+  const engine=window.ChambertinExcelPayroll;
+  if(!engine){host.innerHTML='<p class="err">Calculateur Excel indisponible. Rechargez la page.</p>';return}
+  engine.mount(host,{month:context.month,people:context.declarationStaff||[],draft:d});
+  workflowReadOnly();return;
+ }
  host.innerHTML=(activeView==="pay"?payHtml(d):activeView==="declaration"?declarationHtml(d):odHtml(d))+draftTools();
  wire(host,d);refresh();
  if(activeView==="pay"){
@@ -774,7 +780,7 @@ function mount(config){
   if(signature(previous)!==signature(config))getDraft().declarationConfirmed=false;
  }
  const nav=document.getElementById("salaryPayrollNavigation");if(!nav)return;
- const tabs=[["variables","1. Éléments variables"],["declaration","2. Déclaration gérance"],["pay","3. Virements de salaires"],["od","4. OD de salaires"]];
+ const tabs=[["variables","1. Éléments variables"],["declaration","2. Déclaration gérance"],["pay","3. Virements de salaires"],["od","4. OD de salaires"],["calculator","5. Calcul fiche paye (Excel)"]];
  nav.innerHTML='<nav class="card salary-od-nav" aria-label="Étapes de préparation des salaires">'+tabs.map(([key,label])=>'<button type="button" class="btn secondary" data-salary-od-view="'+key+'" aria-pressed="false">'+label+'</button>').join("")+'</nav><section class="card salary-od-section" id="salaryWorkflowPanel" aria-label="Dossier mensuel en ligne"></section>';
  if(config.ready&&config.canWrite&&validMonth(config.month)){
   const d=getDraft();
