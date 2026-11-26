@@ -20,9 +20,20 @@ const RULES=Object.freeze({
   version:"2026-01-01-officiel-2026-11-26"
  })
 });
+const validatedMeals=new Map();
+function setMealRate({year,mealGeneralCents,effectiveFrom,tariffVersion,source}={}){
+ if(!Number.isInteger(year)||year<2027||year>2100||
+  !Number.isInteger(mealGeneralCents)||mealGeneralCents<200||mealGeneralCents>2000||
+  effectiveFrom!==year+"-01-01"||typeof source!=="string"||
+  !source.startsWith("https://www.urssaf.fr/"))return false;
+ validatedMeals.set(year,Object.freeze({year,from:year+"-01",to:year+"-12",
+  mealGeneralCents,version:String(tariffVersion||"urssaf-repas-"+year).slice(0,80),
+  sources:{meal:source},minEmployerRate:50}));
+ return true;
+}
 function rulesFor(month){
  if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month||""))return null;
- const y=RULES[month.slice(0,4)];
+ const y=RULES[month.slice(0,4)]||validatedMeals.get(Number(month.slice(0,4)));
  return y&&month>=y.from&&month<=y.to?y:null;
 }
 const parseDecimal=v=>{
@@ -97,7 +108,7 @@ function meal(month,settings={}){
   disregarded?"Cantine : participation égale ou supérieure à 50 % du forfait, avantage négligé selon l’Urssaf.":
   "Nombre de repas × (forfait Urssaf − participation du salarié)."};
 }
-const API=Object.freeze({RULES,rulesFor,navigo,annualRateFor,setAnnualRate,meal,parseDecimal,centsToString});
+const API=Object.freeze({RULES,rulesFor,setMealRate,navigo,annualRateFor,setAnnualRate,meal,parseDecimal,centsToString});
 if(typeof window!=="undefined")window.ChambertinLegalPayroll=API;
 if(typeof module!=="undefined"&&module.exports)module.exports=API;
 })();
