@@ -126,3 +126,28 @@ test("Collecte globale : isolation des échecs des capteurs et des deux fourniss
  assert.match(admin,/api\("sync-all-sensors","POST",\{\}\)/);
  assert.match(admin,/collect\?refreshAllSensors:load/);
 });
+
+test("Cuisine : une sonde en ligne peut renvoyer une température hors seuil",()=>{
+ const r=reading(-13.8,1,true),out=html({connected:[sensor],cold:[r]});
+ assert.match(out,/Connexion en ligne/);
+ assert.match(out,/Hors seuil/);
+ assert.match(out,/Seuil : max. -18 °C/);
+ assert.match(out,/Valeur Cloud reçue le/);
+ assert.match(out,/13,8 °C/);
+ const adminUI=read("cuisine/kitchen-ui.js"),ctx={window:{}};
+ vm.runInNewContext(adminUI,ctx);
+ const rendered=ctx.window.KitchenUI.coldOverview({rooms:[roomN],connected:[sensor],cold:[r]});
+ assert.match(rendered,/Connexion en ligne/);
+ assert.match(rendered,/Hors seuil/);
+ assert.match(rendered,/Seuil : max. -18 °C/);
+});
+test("Cuisine : une mesure MEATER ancienne ne transforme pas la collecte Govee réussie en erreur",()=>{
+ const admin=read("college/admin/cuisine-admin.js"),start=admin.indexOf(" function sensorSyncSummary("),end=admin.indexOf(" function showSensorSyncReport(",start);
+ const ctx={t:v=>String(v),when:v=>String(v)};
+ vm.runInNewContext(admin.slice(start,end)+";this.summary=sensorSyncSummary;",ctx);
+ const result=ctx.summary({govee:{received:4,total:4,failed:0,skipped:0,devices:[{label:"Négative 1",status:"received",temperature_c:-13.8,measured_at:"2026-11-26T21:50:45Z",alert:true}]},meater:{fresh:0,total:4,devices:[]}});
+ assert.equal(result[0].tone,"ok");assert.equal(result[1].tone,"warning");
+ assert.match(result[0].text,/4\/4/);assert.match(result[0].details[0],/21:50:45Z.*hors seuil/);
+ const limited=ctx.summary({govee:{received:0,total:4,failed:0,skipped:4,devices:[]},meater:{fresh:4,total:4,devices:[]}});
+ assert.equal(limited[0].tone,"warning");assert.match(limited[0].text,/moins d’une minute/);
+});

@@ -136,22 +136,41 @@
 
  function sensorSyncSummary(result){
   const g=result?.govee||{},m=result?.meater||{};
-  const gText=g.error?"Govee : "+g.error:"Govee : "+g.received+"/"+g.total+" relevés enregistrés"+(g.skipped?" · "+g.skipped+" récemment actualisés":"")+(g.failed?" · "+g.failed+" échec(s)":"");
+  const gText=g.error?"Govee : "+g.error:"Govee : "+g.received+"/"+g.total+" relevés reçus et enregistrés"+(g.skipped?" · "+g.skipped+" déjà interrogé(s) depuis moins d’une minute":"")+(g.failed?" · "+g.failed+" échec(s)":"");
   const mText=m.error?"MEATER : "+m.error:"MEATER : "+m.fresh+"/"+m.total+" mesures récentes"+(m.skipped?" · interrogation récente, données disponibles réutilisées":"")+(m.total>m.fresh?" · "+(m.total-m.fresh)+" sans nouvelle mesure":"");
-  const details=[...(g.devices||[]).filter(d=>d.status==="failed").map(d=>d.label+" : "+d.error),...(m.devices||[]).filter(d=>!d.fresh).map(d=>d.label+" : dernière mesure "+when(d.measured_at))];
-  return {message:[gText,mText,...details].join(" | "),bad:!!(g.error||m.error||g.failed||m.total>m.fresh)};
+  const gDetails=(g.devices||[]).map(d=>d.label+" : "+(d.status==="received"?t(d.temperature_c)+" °C · reçue le "+when(d.measured_at)+(d.alert?" · hors seuil":" · dans la plage"):d.status==="skipped"?"Déjà interrogée, délai minimal d’une minute":d.error||"Lecture non confirmée"));
+  const mDetails=(m.devices||[]).filter(d=>!d.fresh).map(d=>d.label+" : dernière mesure "+when(d.measured_at));
+  return [
+   {text:gText,tone:g.error||g.failed?"error":g.skipped||!g.total?"warning":"ok",details:gDetails},
+   {text:mText,tone:m.error?"error":m.total>m.fresh||m.skipped||!m.total?"warning":"ok",details:mDetails}
+  ];
+ }
+ function showSensorSyncReport(report){
+  const dest=node("kitchenSensorReport");if(!dest)return;
+  dest.replaceChildren();
+  for(const item of report){
+   const section=document.createElement("div");section.style.marginTop="10px";
+   const title=document.createElement("strong");
+   title.className="pill "+(item.tone==="ok"?"ok":"warning");
+   if(item.tone==="error")title.classList.add("err");
+   title.textContent=item.text;section.append(title);
+   for(const detail of item.details){const line=document.createElement("div");line.className="muted";line.textContent=detail;section.append(line);}
+   dest.append(section);
+  }
+  const hint=document.createElement("p");hint.className="muted";hint.textContent="Une interrogation récupère la dernière température disponible dans le Cloud. La valeur peut rester identique. Les alertes de température sont indépendantes de la connexion.";dest.append(hint);
  }
  async function refreshAllSensors(){
   if(busy||currentKitchenPage()!=="cuisine"||snapshot?.me.scope!=="admin")return;
   const owner=goveeSession(),button=node("kitchenReload");busy=true;
   if(button)button.disabled=true;
+  node("kitchenSensorReport")?.replaceChildren();
   notify("Interrogation de toutes les sondes Govee et MEATER…");
   try{
    const result=await api("sync-all-sensors","POST",{});
    if(owner!==goveeSession()||currentKitchenPage()!=="cuisine")return;
    const summary=sensorSyncSummary(result);
    await load();
-   if(owner===goveeSession()&&currentKitchenPage()==="cuisine")notify(summary.message,summary.bad);
+   if(owner===goveeSession()&&currentKitchenPage()==="cuisine"){notify("");showSensorSyncReport(summary);}
   }catch(err){if(owner===goveeSession()&&currentKitchenPage()==="cuisine")notify("Collecte impossible : "+err.message,true);}
   finally{busy=false;if(owner===goveeSession()&&currentKitchenPage()==="cuisine"){const current=node("kitchenReload");if(current)current.disabled=false;}}
  }
@@ -311,7 +330,7 @@ function isRetiredCleaningTask(t){
  const roomname=id=>s.rooms.find(x=>x.id===id)?.label||"Chambre";
  const rows=(list,columns)=>'<div class="table"><table><thead><tr>'+columns.map(c=>'<th>'+c[0]+'</th>').join("")+'</tr></thead><tbody>'+list.map(x=>'<tr>'+columns.map(c=>'<td>'+c[1](x)+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>';
  node("content").innerHTML='<div class="grid"><div class="card"><div class="muted">Chambres froides</div><div class="kpi">'+s.rooms.length+'</div></div><div class="card"><div class="muted">Cycles en cours</div><div class="kpi">'+s.reheats.filter(x=>x.status==="en_cours").length+'</div></div><div class="card"><div class="muted">Anomalies actuellement signalées</div><div class="kpi">'+alerts+'</div></div><div class="card"><div class="muted">Tâches du jour</div><div class="kpi">'+s.tasks.filter(x=>done.has(x.id)).length+'/'+s.tasks.length+'</div></div></div>'+
- '<div class="card"><h2>Gestion Cuisine</h2><p class="muted">Suivi HACCP : relevés manuels, remises en température, tâches et actions correctives. Les mesures enregistrées ne sont pas modifiables.</p><div class="actions"><a class="btn primary" href="../../cuisine/" target="_blank" rel="noopener">Ouvrir l’espace Cuisine</a><button class="btn secondary" id="kitchenReload">Actualiser les relevés</button><button class="btn secondary" id="kitchenCsv">Exporter CSV</button></div><p id="kitchenAdminMessage" class="status"></p></div>'+
+ '<div class="card"><h2>Gestion Cuisine</h2><p class="muted">Suivi HACCP : relevés manuels, remises en température, tâches et actions correctives. Les mesures enregistrées ne sont pas modifiables.</p><div class="actions"><a class="btn primary" href="../../cuisine/" target="_blank" rel="noopener">Ouvrir l’espace Cuisine</a><button class="btn secondary" id="kitchenReload">Actualiser les relevés</button><button class="btn secondary" id="kitchenCsv">Exporter CSV</button></div><p id="kitchenAdminMessage" class="status" role="status"></p><div id="kitchenSensorReport" aria-live="polite"></div></div>'+
  '<div class="card"><h2>Agents de cuisine</h2><p class="muted">Comptes rattachés aux salariés existants. Définissez un PIN individuel de 6 à 8 chiffres pour activer l’accès.</p>'+s.staff.map(x=>'<div class="data-row"><div><strong>'+e(x.name)+'</strong><div class="muted">Salarié : '+(x.personnel_id?"rattaché":"non rattaché")+' · '+(x.active?"Actif":"Inactif")+'</div></div><form data-kitchen-pin="'+attr(x,"id")+'"><label>Définir / renouveler le PIN</label><input name="pin" required type="password" inputmode="numeric" pattern="[0-9]{6,8}" minlength="6" maxlength="8" autocomplete="new-password"><button class="btn primary" type="submit">Enregistrer le PIN</button></form><button class="btn secondary" type="button" data-kitchen-active="'+attr(x,"id")+'" data-next="'+(!x.active)+'">'+(x.active?"Désactiver":"Activer")+'</button></div>').join("")+'</div>'+
  '<div class="card"><h2>Chambres froides — noms et seuils</h2><p class="muted">Le renommage ne change pas les mesures déjà enregistrées.</p>'+
  s.rooms.filter(x=>!x.deleted_at&&!x.archived_at).map(x=>'<form data-room-edit="'+attr(x,"id")+'" class="grid"><div><label>Chambre '+x.room_number+' · '+e(x.room_type)+'</label><input name="label" required maxlength="80" value="'+attr(x,"label")+'"></div><div><label>Minimum °C (facultatif)</label><input type="number" step="0.1" name="min_c" value="'+(x.min_c===null?"":e(x.min_c))+'"></div><div><label>Maximum °C</label><input type="number" step="0.1" name="max_c" required value="'+e(x.max_c)+'"></div><div><button type="submit" class="btn primary">Renommer / enregistrer</button></div><div><button type="button" class="btn secondary" data-archive-room="'+attr(x,"id")+'">Archiver cette chambre</button></div></form>').join("")+
@@ -656,7 +675,8 @@ function isRetiredCleaningTask(t){
  let adminColdRefreshing=false;
  async function refreshAdminColdOverview(){
  const target=node("adminKitchenColdOverview");if(!target||target.closest("[hidden]")||document.hidden||busy||adminColdRefreshing||node("kitchenTaskEditor"))return;
- adminColdRefreshing=true;try{const fresh=await api("list");if(target===node("adminKitchenColdOverview")&&!node("kitchenTaskEditor"))target.innerHTML=window.KitchenUI.coldOverview(fresh,{buttonAttributes:'data-kitchen-cold-go'});}
+ const epoch=loadEpoch,owner=goveeSession();
+ adminColdRefreshing=true;try{const fresh=await api("list");if(target===node("adminKitchenColdOverview")&&epoch===loadEpoch&&owner===goveeSession()&&!busy&&!node("kitchenTaskEditor"))target.innerHTML=window.KitchenUI.coldOverview(fresh,{buttonAttributes:'data-kitchen-cold-go'});}
  catch(err){if(target===node("adminKitchenColdOverview")){let warning=target.querySelector(".kt-refresh-warning");if(!warning){warning=document.createElement("p");warning.className="kt-refresh-warning";target.prepend(warning);}warning.textContent="Actualisation indisponible. Vérifiez la date des températures affichées.";}}
  finally{adminColdRefreshing=false;}
  }
