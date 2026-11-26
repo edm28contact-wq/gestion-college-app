@@ -1,0 +1,132 @@
+"use strict";
+/* Simulateurs d'avantages en nature pour la préparation TESE, sans effet sur les bulletins.
+   Montants et taux 2026 : Urssaf 01/06/2026.
+   Les champs nécessaires non documentés bloquent le résultat. */
+(()=>{
+const SOURCE="https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html";
+const HOUSING_2026=Object.freeze({
+ thresholds:[200250,240300,280350,360450,440550,520650,600750],
+ one:[7970,9300,10620,11940,14640,17260,19940,22560],
+ perRoom:[4260,5970,7970,9950,12610,15240,18570,21230]
+});
+const missing=message=>({status:"missing",amountCents:null,message,source:SOURCE});
+const invalid=message=>({status:"invalid",amountCents:null,message,source:SOURCE});
+const notApplicable=message=>({status:"excluded",amountCents:0,message,source:SOURCE});
+const yearVerified=month=>/^20\d{2}-(0[1-9]|1[0-2])$/.test(String(month))&&month.startsWith("2026-");
+const money=value=>{
+ const str=String(value??"").trim().replace(/[\u00a0\u202f ]/g,"").replace(",",".");
+ if(!/^\d{1,8}(?:\.\d{1,2})?$/.test(str))return null;
+ const [whole,fraction=""]=str.split(".");
+ const n=Number(whole)*100+Number(fraction.padEnd(2,"0"));
+ return Number.isSafeInteger(n)?n:null;
+};
+const optionalMoney=(value,defaultCents=0)=>String(value??"").trim()===""?defaultCents:money(value);
+const select=value=>String(value??"").trim();
+const annualMonth=amount=>Math.round(amount/12);
+function vehicle(month,input={}){
+ const mode=select(input.vehicleKind);
+ if(mode==="none")return notApplicable("Aucun véhicule mis à disposition à titre privé.");
+ if(!yearVerified(month))return missing("Barèmes véhicule non vérifiés pour ce mois : actualisation réglementaire nécessaire.");
+ if(!["purchased","leased"].includes(mode))return missing("Préciser véhicule acheté ou loué / LOA.");
+ if(!["forfait","real"].includes(select(input.vehicleEvaluation)))return missing("Choisir l'évaluation au forfait ou aux frais réels.");
+ if(!["lte5","gt5"].includes(select(input.vehicleAge)))return missing("Préciser l'âge du véhicule (5 ans ou moins / plus de 5 ans).");
+ if(!["none","actual","forfait"].includes(select(input.vehicleFuelMode)))return missing("Préciser la prise en charge du carburant.");
+ const allocation=select(input.vehicleAssignedDate);
+ const date=new Date(allocation+"T00:00:00Z");
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(allocation)||!Number.isFinite(date.getTime())||
+  date.toISOString().slice(0,10)!==allocation||allocation>month+"-31"||allocation>"2026-12-31")
+  return missing("Date de première mise à disposition invalide ou postérieure au mois étudié.");
+ const recent=allocation>="2025-02-01",young=input.vehicleAge==="lte5";
+ const electric=select(input.vehicleElectric);
+ if(!["yes","no"].includes(electric))return missing("Préciser si le véhicule est exclusivement électrique.");
+ if(electric==="yes"&&recent&&!["yes","no"].includes(select(input.vehicleEcoScore)))
+  return missing("Éligibilité au score environnemental à confirmer pour le véhicule électrique.");
+ if(select(input.vehicleFullMonth)!=="yes")return missing("Confirmer la mise à disposition pendant tout le mois (prorata partiel à vérifier).");
+ const contribution=optionalMoney(input.vehicleEmployeeContribution);
+ if(contribution===null)return invalid("Participation mensuelle du salarié invalide.");
+ let annual=0,base=0,cap=null;
+ const fuel=select(input.vehicleFuelMode),forfait=input.vehicleEvaluation==="forfait";
+ const purchase=money(input.vehiclePurchasePrice),lease=money(input.vehicleRentalAnnual);
+ const fuelPrivate=optionalMoney(input.vehicleFuelPrivateAnnual),fuelTotal=optionalMoney(input.vehicleFuelTotalAnnual);
+ if(fuelPrivate===null||fuelTotal===null)return invalid("Coûts de carburant annuels invalides.");
+ const low=recent?(young?0.15:0.10):(young?0.09:0.06);
+ const withFuel=recent?(young?0.20:0.15):(young?0.12:0.09);
+ if(mode==="purchased"&&(purchase===null||purchase===0))return missing("Prix d'achat TTC du véhicule nécessaire.");
+ if(mode==="leased"&&(lease===null||lease===0))return missing("Coût annuel TTC complet de location, entretien et assurance nécessaire.");
+ if(forfait){
+  if(mode==="purchased"){
+   base=Math.round(purchase*(fuel==="forfait"&&electric==="no"?withFuel:low));
+   annual=base+(fuel==="actual"&&electric==="no"?fuelPrivate:0);
+  }else{
+   if(fuel==="forfait"&&electric==="no"&&fuelTotal===0)return missing("Pour le forfait carburant en location, renseigner le coût annuel de tous les carburants.");
+   annual=Math.round((lease+(fuel==="forfait"&&electric==="no"?fuelTotal:0))*
+    (fuel==="forfait"&&electric==="no"?(recent?0.67:0.40):(recent?0.50:0.30)));
+   if(fuel==="actual"&&electric==="no")annual+=fuelPrivate;
+   const ref=money(input.vehicleLessorPurchasePrice);
+   if(ref===null||ref===0)return missing("Le prix de référence TTC payé par le loueur est requis pour plafonner le forfait.");
+   cap=Math.round(ref*(fuel==="forfait"&&electric==="no"?withFuel:low))+
+    (fuel==="actual"&&electric==="no"?fuelPrivate:0);
+   annual=Math.min(annual,cap);
+  }
+ }else{
+  const insurance=money(input.vehicleInsuranceAnnual),maintenance=money(input.vehicleMaintenanceAnnual);
+  const totalKm=Number(select(input.vehicleKmTotal)),privateKm=Number(select(input.vehicleKmPrivate));
+  if(!select(input.vehicleInsuranceAnnual)||!select(input.vehicleMaintenanceAnnual)||insurance===null||maintenance===null)
+   return missing("Assurance et entretien TTC annuels nécessaires (indiquer 0 si aucun).");
+  if(!Number.isFinite(totalKm)||!Number.isFinite(privateKm)||totalKm<=0||privateKm<0||
+   privateKm>totalKm||!select(input.vehicleKmTotal)||!select(input.vehicleKmPrivate))
+   return missing("Kilométrages total et privé annuels nécessaires.");
+  const expenses=mode==="purchased"?Math.round(purchase*(young?0.20:0.10))+insurance+maintenance:lease;
+  annual=Math.round(expenses*privateKm/totalKm)+(fuel==="none"||electric==="yes"?0:fuelPrivate);
+  if(mode==="leased"&&!input.vehicleLessorPurchasePrice)
+   return missing("Calcul réel en location : prix de référence loueur requis pour vérifier le plafonnement.");
+ }
+ let discount=0;
+ if(electric==="yes"&&(!recent||input.vehicleEcoScore==="yes")){
+  const rate=recent&&forfait?0.70:0.50;
+  const max=recent&&forfait?464160:202630;
+  discount=Math.min(Math.round(annual*rate),max);
+ }
+ const monthly=Math.max(0,annualMonth(Math.max(0,annual-discount))-contribution);
+ return {status:"ok",amountCents:monthly,annualBeforeDiscountCents:annual,annualDiscountCents:discount,
+  monthlyContributionCents:contribution,capCents:cap,ruleVersion:"URSSAF-2026-2025-02",source:SOURCE,
+  message:"Barème "+(recent?"depuis février 2025":"avant février 2025")+
+   " · "+(forfait?"forfait":"frais réels")+" · "+(electric==="yes"?"électrique":"non électrique")+
+   ". Montant indicatif sur mois complet, à contrôler avant TESE."};
+}
+function housing(month,input={}){
+ const mode=select(input.housingMode);
+ if(mode==="none")return notApplicable("Aucun logement fourni au salarié.");
+ if(!yearVerified(month))return missing("Barème logement non vérifié pour ce mois.");
+ if(!["forfait","real"].includes(mode))return missing("Choisir l'évaluation au barème forfaitaire ou à la valeur réelle.");
+ if(select(input.housingShared)==="yes"||select(input.housingServiceNecessity)==="yes")
+  return missing("Logement partagé ou nécessité absolue de service : situation particulière à qualifier avant calcul.");
+ const contribution=optionalMoney(input.housingEmployeeContribution);
+ if(contribution===null)return invalid("Participation du salarié au logement invalide.");
+ const weeks=select(input.housingWeeks);
+ if(!/^[1-4]$/.test(weeks))return missing("Nombre de semaines d'occupation entre 1 et 4 à confirmer.");
+ let base,bracket=null,rooms=null;
+ if(mode==="forfait"){
+  const gross=money(input.housingGross);
+  rooms=Number(select(input.housingRooms));
+  if(gross===null)return missing("Salaire brut mensuel hors avantage logement nécessaire.");
+  if(!/^\d{1,2}$/.test(select(input.housingRooms))||rooms<1||rooms>30)
+   return missing("Nombre de pièces principales à usage privé invalide ou manquant.");
+  bracket=HOUSING_2026.thresholds.findIndex(limit=>gross<limit);
+  if(bracket<0)bracket=7;
+  base=rooms===1?HOUSING_2026.one[bracket]:HOUSING_2026.perRoom[bracket]*rooms;
+ }else{
+  const rentalValue=money(input.housingRentalValue),expenses=optionalMoney(input.housingExpenses);
+  if(rentalValue===null||expenses===null)return missing("Valeur locative et frais accessoires au réel nécessaires.");
+  base=rentalValue+expenses;
+ }
+ const monthBase=Math.round(base*Number(weeks)/4);
+ return {status:"ok",amountCents:Math.max(0,monthBase-contribution),monthlyBaseCents:base,
+  employeeContributionCents:contribution,bracket,rooms,weeks:Number(weeks),source:SOURCE,ruleVersion:"URSSAF-LOGEMENT-2026",
+  message:mode==="forfait"?"Barème 2026 selon brut hors logement, nombre de pièces privées et semaines d'occupation.":
+   "Valeur locative et frais réels à justifier, moins participation du salarié."};
+}
+const API=Object.freeze({SOURCE,HOUSING_2026,vehicle,housing,money});
+if(typeof window!=="undefined")window.ChambertinVehicleHousing=API;
+if(typeof module!=="undefined"&&module.exports)module.exports=API;
+})();
