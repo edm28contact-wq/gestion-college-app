@@ -132,11 +132,10 @@ function housing(month,input={}){
 }
 function technology(month,input={}){
  const mode=select(input.techMode);
- if(mode==="none")return notApplicable("Aucun matériel ou abonnement à usage privé.");
- if(!yearVerified(month))return missing("Barème NTIC à vérifier pour "+month+".");
- if(!["forfait","real"].includes(mode))return missing("Choisir l'évaluation de l'outil numérique (forfait ou usage privé réel).");
  if(!["yes","no"].includes(select(input.techPrivateUse)))return missing("Préciser si un usage privé est autorisé et constaté.");
  if(input.techPrivateUse==="no")return notApplicable("Aucun usage privé déclaré.");
+ if(!yearVerified(month))return missing("Barème NTIC à vérifier pour "+month+".");
+ if(!["forfait","real"].includes(mode))return missing("Choisir l'évaluation de l'outil numérique (forfait ou usage privé réel).");
  if(!["yes","no"].includes(select(input.techIncidentalUse)))return missing("Préciser si l'usage privé est seulement raisonnable et accessoire.");
  if(input.techIncidentalUse==="yes")return {status:"review",amountCents:null,message:"Usage personnel raisonnable pouvant être négligé : vérification de la politique d'entreprise nécessaire.",source:SOURCE};
  const contribution=optionalMoney(input.techEmployeeContribution);
