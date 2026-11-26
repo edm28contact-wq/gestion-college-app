@@ -332,7 +332,7 @@ test("Cuisine : pages de suivi et de paramètres distinctes avec droits identiqu
  assert.match(admin,/for\(const \[key\] of tabs\)/);
  assert.match(admin,/settings\?openKitchenTab\("cuisine","records"\):show\("cuisineSettings"\)/);
  assert.match(admin,/window.kitchenAdminOpenGovee=function\(\)\{openKitchenTab\("cuisineSettings","govee"\)\}/);
- assert.match(admin,/window.KitchenMeater.mountDashboard\(root,api,\{diagnostic:true\}\)/);
+ assert.match(admin,/window.KitchenMeater.mountDashboard\(root,api,\{diagnostic:true,live:true\}\)/);
  assert.match(admin,/if\(section==="cuisine"\)await refreshColdHistory/);
  assert.match(admin,/epoch===loadEpoch&&owner===goveeSession\(\)&&currentKitchenPage\(\)===section/);
 });

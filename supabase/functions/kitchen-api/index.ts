@@ -71,8 +71,8 @@ function normalizeMeaterDevices(value:any,now=Date.now()){
  }
  return [...found.values()];
 }
-async function pollMeater(c:any,manual:boolean){
- const claim=await c.rpc("kitchen_meater_claim",{p_manual:manual});
+async function pollMeater(c:any,manual:boolean,preview=false){
+ const claim=preview?await c.rpc("kitchen_meater_claim_preview"):await c.rpc("kitchen_meater_claim",{p_manual:manual});
  if(claim.error)throw meaterDatabaseError("accès au jeton",claim.error);
  const slot=claim.data;if(slot?.error)return {error:slot.error};if(slot?.skipped)return {skipped:true};
  if(!slot?.token||!slot?.generation)throw new MeaterError("MEATER : compte non configuré ou jeton indisponible.");
@@ -167,6 +167,51 @@ function canDeleteRoom(room:any){
  if(!Number.isFinite(threshold.getTime())||threshold.getTime()>now)return false;
  threshold.setUTCFullYear(threshold.getUTCFullYear()+1);
  return now>=threshold.getTime();
+}
+
+async function readGoveeLiveState(sensor:any,key:string){
+ const checked_at=new Date().toISOString();
+ try{
+  if(sensor.raw_unit!=="F"&&sensor.raw_unit!=="C")throw Error("Unité non configurée");
+  const state=await goveeCall(key,"/device/state",{requestId:crypto.randomUUID(),payload:{sku:sensor.model,device:sensor.device_identifier}});
+  const caps=state.payload?.capabilities||[];
+  const online=caps.find((cap:any)=>cap.instance==="online")?.state?.value;
+  const raw=caps.find((cap:any)=>cap.type==="devices.capabilities.property"&&cap.instance==="sensorTemperature")?.state?.value;
+  const numeric=typeof raw==="number"?raw:typeof raw==="string"&&raw.trim()?Number(raw):null;
+  if(online!==true||numeric===null||!Number.isFinite(numeric))return {status:online===false?"offline":"error",temperature_c:null,checked_at:new Date().toISOString(),error:"Capteur hors ligne ou température indisponible"};
+  const temperature_c=temperatureToCelsius(numeric,sensor.raw_unit);
+  if(temperature_c< -60||temperature_c>60)throw Error("Température hors plage : vérifiez l’unité");
+  return {status:"online",temperature_c,checked_at:new Date().toISOString(),error:null};
+ }catch(err){return {status:"error",temperature_c:null,checked_at,error:err instanceof Error?err.message.slice(0,180):"Lecture Govee indisponible"};}
+}
+async function goveeLive(c:any){
+ const claim=await c.rpc("kitchen_claim_govee_live");
+ if(claim.error)throw claim.error;
+ const claimed=Array.isArray(claim.data)?claim.data:[];
+ if(claimed.length){
+  let key="",problem="";
+  try{key=await goveeKey(c);}catch(err){problem=err instanceof Error?err.message:"Connexion Govee indisponible";}
+  for(let offset=0;offset<claimed.length;offset+=4){
+   await Promise.all(claimed.slice(offset,offset+4).map(async(sensor:any)=>{
+    const state=key?await readGoveeLiveState(sensor,key):{status:"error",temperature_c:null,checked_at:new Date().toISOString(),error:problem};
+    const saved=await c.from("kitchen_connected_devices").update({live_state:state}).eq("id",sensor.id).eq("live_request_id",sensor.live_request_id).eq("room_id",sensor.room_id);
+    if(saved.error)throw saved.error;
+   }));
+  }
+ }
+ const [rooms,sensors]=await Promise.all([
+  query(await c.from("kitchen_cold_rooms").select("id,label,min_c,max_c").is("archived_at",null).is("deleted_at",null).order("room_type").order("room_number")),
+  query(await c.from("kitchen_connected_devices").select("id,room_id,model,live_state,last_temperature_c,last_checked_at").eq("provider","govee").eq("kind","cold_room"))
+ ]);
+ return {rooms:rooms.map((room:any)=>{
+  const sensor=sensors.find((d:any)=>d.room_id===room.id),state=sensor?.live_state;
+  return {...room,sensor:sensor?{model:sensor.model,status:state?.status||"pending",temperature_c:state?.temperature_c??null,checked_at:state?.checked_at??null,error:state?.error??null,last_temperature_c:sensor.last_temperature_c,last_checked_at:sensor.last_checked_at}:null};
+ }),now:new Date().toISOString()};
+}
+async function meaterLive(c:any){
+ const result=await pollMeater(c,true,true);
+ const s=await meaterStatus(c,true);
+ return {...s,preview:true,last_error:result?.error||s.last_error};
 }
 
 async function syncGoveeDevice(c:any,sensor:any,key:string,slotAt?:string){
@@ -317,6 +362,8 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  }
  const u=await user(c,req);if(!u)return answer({error:"Session expirée ou accès non autorisé"},401);
   if(u.scope==="viewer"&&req.method!=="GET")return answer({error:"Ce pouvoir autorise uniquement la consultation de la cuisine."},403);
+ if(action==="govee-live"&&req.method==="GET")return answer(await goveeLive(c));
+ if(action==="meater-live"&&req.method==="GET")return answer(await meaterLive(c));
  if(action==="meater-status"&&req.method==="GET")return answer(await meaterStatus(c,u.scope==="admin"));
  if(action==="meater-history"&&req.method==="GET"){
  const id=url.searchParams.get("reheat_id");if(!uuid(id))return answer({error:"Cycle invalide"},400);

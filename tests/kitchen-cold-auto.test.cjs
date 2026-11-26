@@ -124,7 +124,7 @@ test("Collecte globale : isolation des échecs des capteurs et des deux fourniss
  const admin=read("college/admin/cuisine-admin.js");
  assert.match(backend,/if\(!allowed\(u,true\)\)return forbidden\(\);\s*if\(action==="sync-all-sensors"\)/);
  assert.match(admin,/api\("sync-all-sensors","POST",\{\}\)/);
- assert.match(admin,/collect\?refreshAllSensors:load/);
+ assert.match(admin,/record.addEventListener\("click",refreshAllSensors\)/);
 });
 
 test("Cuisine : une sonde en ligne peut renvoyer une température hors seuil",()=>{
@@ -150,4 +150,23 @@ test("Cuisine : une mesure MEATER ancienne ne transforme pas la collecte Govee r
  assert.match(result[0].text,/4\/4/);assert.match(result[0].details[0],/21:50:45Z.*hors seuil/);
  const limited=ctx.summary({govee:{received:0,total:4,failed:0,skipped:4,devices:[]},meater:{fresh:4,total:4,devices:[]}});
  assert.equal(limited[0].tone,"warning");assert.match(limited[0].text,/moins d’une minute/);
+});
+
+test("Consultation Govee : lecture Cloud distincte du registre et alerte indépendante",()=>{
+ const ui=read("cuisine/kitchen-ui.js"),ctx={window:{}};
+ vm.runInNewContext(ui,ctx);
+ const data={rooms:[{...roomN,sensor:{status:"online",temperature_c:-13.8,checked_at:new Date().toISOString()}}]};
+ const out=ctx.window.KitchenUI.liveColdMarkup(data);
+ assert.match(out,/Connexion en ligne/);assert.match(out,/13,8 °C/);assert.match(out,/Température hors seuil/);assert.match(out,/sans enregistrement/);
+ const stale=ctx.window.KitchenUI.liveColdMarkup({rooms:[{...roomN,sensor:{...data.rooms[0].sensor,checked_at:new Date(Date.now()-200000).toISOString()}}]});
+ assert.match(stale,/Valeur ancienne/);assert.match(stale,/Dernière valeur Cloud \(ancienne\)/);assert.match(stale,/class="cold-live-value">— °C/);
+ const start=backend.indexOf("async function readGoveeLiveState("),end=backend.indexOf("async function syncGoveeDevice(",start);
+ const live=backend.slice(start,end);
+ assert.match(live,/kitchen_claim_govee_live/);assert.match(live,/update\(\{live_state:state\}\)/);assert.doesNotMatch(live,/kitchen_cold_readings|\.insert\(/);
+ assert.match(backend,/preview\?await c.rpc\("kitchen_meater_claim_preview"\)/);
+ assert.match(backend,/if\(action==="govee-live"&&req.method==="GET"\)/);
+ assert.match(backend,/if\(action==="meater-live"&&req.method==="GET"\)/);
+ const admin=read("college/admin/cuisine-admin.js");assert.match(admin,/Actualiser les températures/);assert.match(admin,/Enregistrer un relevé Govee/);
+ const migration=read("supabase/migrations/20261126215921_kitchen_live_temperature_cache_without_history.sql");
+ assert.match(migration,/interval '60 seconds'/);assert.match(migration,/if s.enabled or s.vault_secret_id is null/);assert.match(migration,/revoke all on function public.kitchen_meater_claim_preview\(\) from public,anon,authenticated/);
 });
