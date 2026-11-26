@@ -28,7 +28,8 @@ function fields(txt,option,esc,value){
  '<details class="card" style="margin:10px 0"><summary><b>Avantage en nature logement</b> — forfait Urssaf ou valeur réelle</summary>'+
  '<div class="salary-doc-fields" style="margin-top:12px">'+
  option("housingMode","Mode de valorisation",[["","À préciser"],["none","Aucun logement"],["forfait","Barème forfaitaire"],["real","Coût réel"]],"")+
- txt("housingGross","Brut mensuel hors logement (€)","","Proposé depuis le bulletin, à confirmer")+
+ option("housingLeaseHolder","Titulaire du bail",[["","À préciser"],["employer","Employeur (logement de fonction)"],["employee","Salarié : avantage en espèces"]],"")+
+  txt("housingGross","Brut mensuel hors logement (€)","","Proposé depuis le bulletin, à confirmer")+
  txt("housingRooms","Nombre de pièces principales privées","","Exclure les pièces affectées au travail")+
  option("housingWeeks","Semaines d'occupation du mois",[["","À confirmer"],["1","1 semaine"],["2","2 semaines"],["3","3 semaines"],["4","4 semaines (mois complet)"]],"")+
  option("housingShared","Logement partagé entre bénéficiaires",[["","À qualifier"],["no","Non"],["yes","Oui — étude spécifique"]],"")+
