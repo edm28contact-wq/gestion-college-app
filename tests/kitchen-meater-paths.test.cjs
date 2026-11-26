@@ -1,0 +1,32 @@
+const {test}=require("node:test");
+const assert=require("node:assert/strict");
+const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm");
+const read=p=>fs.readFileSync(path.join(__dirname,"..",p),"utf8");
+test("MEATER technical paths: server deadline, real markers, and transmission gaps",()=>{
+ const src=read("cuisine/meater-paths.js");
+ const ctx={window:{}};vm.runInNewContext(src.replace("window.KitchenMeaterPaths={mount};","window.KitchenMeaterPaths={mount,chart,countdown};"),ctx);
+ const {chart,countdown}=ctx.window.KitchenMeaterPaths,base=Date.parse("2026-11-26T22:00:00Z"),iso=n=>new Date(base+n*1000).toISOString();
+ const r={status:"running",started_at:iso(0),deadline_at:iso(3600),trigger_c:6.8,cold_c:3.1,cold_at:iso(10),hot_c:64.9,hot_at:iso(60)};
+ assert.equal(countdown(r,base),"60:00");
+ assert.equal(countdown(r,base+61e3),"58:59");
+ assert.equal(countdown(r,base+3601e3),"00:00");
+ assert.equal(countdown({...r,status:"armed"},base),"En attente");
+ assert.equal(countdown({...r,status:"target",finished_at:iso(120)},base+4000e3),"58:00");
+ const rows=[{measured_at:iso(0),internal_c:6.8,ambient_c:2,event:"trigger"},{measured_at:iso(30),internal_c:20,ambient_c:80},{measured_at:iso(150),internal_c:64.9,ambient_c:90}];
+ const svg=chart(r,rows);
+ assert.match(svg,/65 °C/);assert.match(svg,/Proche de 3 °C/);assert.match(svg,/Déclenchement/);
+ assert.match(svg,/meater-graph-line meater-graph-core" d=" M[\d.]+ [\d.]+ L[\d.]+ [\d.]+ M/);
+ assert.match(chart({status:"armed"},[]),/première mesure sous 7 °C/);
+});
+test("MEATER technical paths: both clients wired; read-only endpoints and bounded history",()=>{
+ const api=read("supabase/functions/kitchen-api/index.ts");
+ assert.match(api,/action==="meater-paths"&&req.method==="GET"/);
+ assert.match(api,/action.startsWith\("meater-path-history:"\)/);
+ assert.match(api,/c.rpc\("kitchen_meater_path_arm"/);
+ assert.match(api,/c.rpc\("kitchen_meater_path_cancel"/);
+ assert.match(api,/u.scope!=="admin"&&\(u.scope!=="staff"\|\|u.existingAccount\)/);
+ assert.match(read("college/admin/cuisine-admin.js"),/\["paths","Parcours remises en température"\]/);
+ assert.match(read("cuisine/cuisine.js"),/window.KitchenMeaterPaths.mount\(\$\("meaterPathsStaff"\),request\)/);
+ assert.match(read("college/admin/index.html"),/meater-paths.js\?v=/);
+ assert.match(read("cuisine/index.html"),/meater-paths.js\?v=/);
+});
