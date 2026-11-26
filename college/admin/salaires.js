@@ -937,10 +937,11 @@ function salaryAccountingOpenRulesEditor(month,id){
  panel.scrollIntoView({block:"nearest",behavior:"smooth"});
 }
 function salaryAccountingShowTab(view){
- if(!["prep","pay"].includes(view))return;
+ if(!["prep","payslips","pay"].includes(view))return;
  salaryAccountingView=view;
- const prep=document.getElementById("salaryPrepPanel"),bank=document.getElementById("salaryPayrollWorkArea");
+ const prep=document.getElementById("salaryPrepPanel"),importer=document.getElementById("salaryPayslipImport"),bank=document.getElementById("salaryPayrollWorkArea");
  if(prep)prep.hidden=view!=="prep";
+ if(importer)importer.hidden=view!=="payslips";
  if(bank)bank.hidden=view!=="pay";
  document.querySelectorAll("[data-salary-accounting-tab]").forEach(button=>{
   const selected=button.dataset.salaryAccountingTab===view;
@@ -1231,7 +1232,7 @@ function salaryAccountingPage(){
    '<td>'+esc(state)+'</td>'+
    '<td><button class="btn secondary compact" type="button" data-salary-legal-open="'+esc(r.staff.id)+'">Détails calculs</button> <button class="btn secondary compact" type="button" data-accounting-staff="'+esc(r.staff.id)+'">Fiche</button></td></tr>';
  }).join("");
- const preparation='<section class="card salary-od-section" id="salaryPrepPanel" '+(salaryAccountingView==="pay"?"hidden":"")+'>'+
+ const preparation='<section class="card salary-od-section" id="salaryPrepPanel" '+(salaryAccountingView!=="prep"?"hidden":"")+'>'+
   '<div class="salary-od-heading"><div><h2>Préparation des fiches de paie</h2><p class="muted">Mois '+esc(salaryMonthLabel(month))+' · Données issues du planning, des événements et des fiches salariés</p></div>'+
   '<div class="actions"><button type="button" class="btn secondary" id="salaryAccountingRefresh">Actualiser</button>'+
   '<a class="btn primary" href="https://www.letese.urssaf.fr/" target="_blank" rel="noopener noreferrer">Accéder au TESE</a></div></div>'+
@@ -1243,8 +1244,10 @@ function salaryAccountingPage(){
  $('content').innerHTML='<div class="actions" style="margin-bottom:12px"><label for="salaryAccountingMonth">Mois <input id="salaryAccountingMonth" type="month" value="'+esc(month)+'"></label></div>'+
  '<nav class="card salary-od-nav" aria-label="Étapes de paie" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">'+
  '<button type="button" class="btn '+(salaryAccountingView==="prep"?"primary":"secondary")+'" data-salary-accounting-tab="prep" aria-pressed="'+(salaryAccountingView==="prep")+'">1. Préparation des fiches de paie</button>'+
- '<button type="button" class="btn '+(salaryAccountingView==="pay"?"primary":"secondary")+'" data-salary-accounting-tab="pay" aria-pressed="'+(salaryAccountingView==="pay")+'">2. Virements de salaires</button></nav>'+
- preparation+'<div id="salaryPayrollNavigation" hidden></div><div id="salaryPayrollWorkArea" '+(salaryAccountingView==="prep"?"hidden":"")+'></div><div id="salaryVariableSection" hidden></div>';
+ '<button type="button" class="btn '+(salaryAccountingView==="payslips"?"primary":"secondary")+'" data-salary-accounting-tab="payslips" aria-pressed="'+(salaryAccountingView==="payslips")+'">2. Importer les bulletins PDF</button>'+
+ '<button type="button" class="btn '+(salaryAccountingView==="pay"?"primary":"secondary")+'" data-salary-accounting-tab="pay" aria-pressed="'+(salaryAccountingView==="pay")+'">3. Virements de salaires (XML)</button></nav>'+
+ preparation+'<section class="card salary-od-section" id="salaryPayslipImport" '+(salaryAccountingView!=="payslips"?"hidden":"")+'><p class="muted">Chargement du lecteur PDF…</p></section>'+
+ '<div id="salaryPayrollNavigation" hidden></div><div id="salaryPayrollWorkArea" '+(salaryAccountingView!=="pay"?"hidden":"")+'></div><div id="salaryVariableSection" hidden></div>';
  if(typeof salaryOdMount==="function"){
   const declarationStaff=ready?staffList.map(staff=>{
    const r=salaryAccountingMetrics(staff,month),role=salaryRoleLabel(staff.professional_role_id);
