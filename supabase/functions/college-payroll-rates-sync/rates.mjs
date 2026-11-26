@@ -83,22 +83,45 @@ export function verifyHousing(html,year){
   return bad(source,"Logement : tranches ou montants non cohérents.");
  return verified(source,{year,thresholds,one,perRoom,effectiveFrom:year+"-01-01",tariffVersion:"urssaf-logement-"+year});
 }
-export function verifyVehicle(html){
+export function verifyVehicle(html,year){
  const source=URLS.urssaf;
- const table=tables(html).find(t=>/Évaluation forfaitaire\s*:\s*véhicule mis à disposition depuis le 1er février 2025/i.test(t.caption)&&
-  t.rows.some(r=>r.some(x=>/Avec prise en charge du carburant/i.test(x))));
- if(!table)return bad(source,"Tableau des véhicules mis à disposition depuis février 2025 introuvable.");
- const r=table.rows.filter(x=>x.length===3&&/Véhicule (acheté|loué)/i.test(x[0]));
- if(r.length!==3)return bad(source,"Tableau véhicule incomplet.");
- const percent=s=>[...String(s).matchAll(/(\d{1,3})\s*%/g)].map(m=>Number(m[1]));
- const values=r.map(x=>[percent(x[1]),percent(x[2])]);
- const expected=[[15,15,20],[10,10,15],[50,50,67]];
- const ok=values.every((line,i)=>line[0][0]===expected[i][0]&&
+ const list=tables(html);
+ const find=when=>list.find(t=>new RegExp("Évaluation forfaitaire\\s*:\\s*véhicule mis à disposition "+when+" le 1er février 2025","i").test(t.caption)&&
+   t.rows.some(r=>r.some(x=>/Avec prise en charge du carburant/i.test(x))));
+ const recent=find("depuis"),prior=find("avant");
+ if(!recent||!prior)return bad(source,"Règles véhicule avant et depuis février 2025 non confirmées sur les tableaux officiels.","pending");
+ const parseRows=table=>{
+  const rows=table.rows.filter(row=>row.length===3&&/Véhicule (acheté|loué)/i.test(row[0]));
+  if(rows.length!==3)return null;
+  const percent=str=>[...String(str).matchAll(/(\d(?:\s*\d)?)\s*%/g)].map(m=>Number(m[1].replace(/\s/g,"")));
+  return rows.map(row=>[percent(row[1]),percent(row[2])]);
+ };
+ const r=parseRows(recent),o=parseRows(prior);
+ if(!r||!o)return bad(source,"Tableaux de valorisation des véhicules incomplets.","pending");
+ const matches=(rows,expected)=>rows.every((line,i)=>line[0][0]===expected[i][0]&&
   line[1].includes(expected[i][1])&&line[1].includes(expected[i][2]));
- if(!ok)return bad(source,"Une règle de valorisation véhicule semble avoir changé : validation humaine nécessaire.","review");
- return verified(source,{effectiveFrom:"2025-02-01",purchasedYoungPercent:15,purchasedOldPercent:10,
-  leasedPercent:50,withFuelPurchasedYoungPercent:20,withFuelPurchasedOldPercent:15,withFuelLeasedPercent:67,
-  tariffVersion:"urssaf-vehicule-regime-2025-02"});
+ if(!matches(r,[[15,15,20],[10,10,15],[50,50,67]])||
+  !matches(o,[[9,9,12],[6,6,9],[30,30,40]]))
+  return bad(source,"Les pourcentages véhicule ont changé : nouvelle qualification réglementaire nécessaire.","review");
+ const doc=plain(html);
+ const electric=(pct)=>{
+  const exp=new RegExp("réduction de\\s*"+pct+"\\s*%[\\s\\S]{0,175}?limite de\\s*([\\d\\s]+[,\\.]\\d{2})\\s*€\\s*par an en\\s*(20\\d{2})","i");
+  const match=doc.match(exp);
+  return match&&Number(match[2])===year?toCents(match[1]):null;
+ };
+ const newCap=electric(70),oldCap=electric(50);
+ if(!newCap||!oldCap||newCap<100000||newCap>1000000||oldCap<50000||oldCap>1000000)
+  return bad(source,"Plafonds électriques du millésime "+year+" absents ou non confirmés.","pending");
+ return verified(source,{
+  year,effectiveFrom:"2025-02-01",
+  purchasedYoungPercent:15,purchasedOldPercent:10,leasedPercent:50,
+  withFuelPurchasedYoungPercent:20,withFuelPurchasedOldPercent:15,withFuelLeasedPercent:67,
+  oldPurchasedYoungPercent:9,oldPurchasedOldPercent:6,oldLeasedPercent:30,
+  oldWithFuelPurchasedYoungPercent:12,oldWithFuelPurchasedOldPercent:9,oldWithFuelLeasedPercent:40,
+  electricNewDiscountPercent:70,electricNewCapCents:newCap,
+  electricOldDiscountPercent:50,electricOldCapCents:oldCap,
+  tariffVersion:"urssaf-vehicule-"+year
+ });
 }
 export function verifyTechnology(html,year){
  const source=URLS.urssafDetails,doc=plain(html);
@@ -106,13 +129,13 @@ export function verifyTechnology(html,year){
  if(start<0)return bad(source,"La règle NTIC officielle n'a pas été retrouvée.","pending");
  const excerpt=doc.slice(start,start+3600);
  if(!/10\s*%/.test(excerpt))return bad(source,"Taux forfaitaire des outils numériques non identifiable.","review");
- return verified(source,{year,annualRate:0.10,tariffVersion:"urssaf-ntic-10-pct"});
+ return verified(source,{year,annualRate:0.10,effectiveFrom:year+"-01-01",tariffVersion:"urssaf-ntic-"+year});
 }
 export function verificationReport(year,html){
  const n=verifyNavigo(html.navigo||"",year),
  m=verifyMeal(html.urssaf||"",year),
  h=verifyHousing(html.urssaf||"",year),
- v=verifyVehicle(html.urssaf||""),
+ v=verifyVehicle(html.urssaf||"",year),
  t=verifyTechnology(html.urssafDetails||"",year);
  const categories={navigo:n,repas:m,logement:h,vehicule:v,ntic:t};
  const statuses=Object.values(categories).map(v=>v.status);
