@@ -142,7 +142,11 @@ test("MEATER graphique : mesure réelle, déduplication, coupures et période bo
  collectGraphSamples(history,stale,true);
  assert.equal(history.get("test-probe").points.length,3);
  assert.match(graphMarkup(history.get("test-probe"),stale,stale.probes[0],15,true),/Aucune nouvelle mesure confirmée/);
- const expired=payload(base+181*60000,probe(base+181*60000,30));
+ const boundary=payload(base+181*60000,probe(base+181*60000,30));
+ collectGraphSamples(history,boundary,true);
+ assert.equal(history.get("test-probe").points.length,2);
+ assert.equal(history.get("test-probe").points[0].at,base+60000);
+ const expired=payload(base+181*60000+1000,boundary.probes[0]);
  collectGraphSamples(history,expired,true);
  assert.equal(history.get("test-probe").points.length,1);
  collectGraphSamples(history,{...expired,probes:[]},true);
