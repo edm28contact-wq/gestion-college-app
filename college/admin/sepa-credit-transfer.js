@@ -181,8 +181,7 @@ function createWorkbookCreditTransfer(input){
  });
  const lines=[
   '<?xml version="1.0" encoding="utf-8"?>',
-  '<Document xmlns="'+NAMESPACE+'"',
-  'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+  '<Document xmlns="'+NAMESPACE+'"\rxmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
   '  <CstmrCdtTrfInitn>',
   '    <GrpHdr>',
   '      <MsgId>'+esc(msgId)+'</MsgId>',
