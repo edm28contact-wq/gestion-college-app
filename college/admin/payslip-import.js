@@ -70,9 +70,9 @@ function render(state){
  const allowed=state.opts.editable();
  root.innerHTML='<div class="salary-od-heading"><div><h3>Importer les bulletins de paie (PDF)</h3><p class="muted">Le net à payer après prélèvement à la source est proposé pour chaque bulletin. Un montant certain est reporté seulement si le mois et le salarié sont confirmés dans le PDF ; sinon, choisissez et confirmez la proposition après lecture du bulletin.</p></div></div>'+
   '<label class="salary-payslip-file">Déposer plusieurs bulletins PDF <input id="salaryPayslipFiles" type="file" accept=".pdf,application/pdf" multiple></label>'+
-  '<p class="muted">Lecture uniquement dans ce navigateur, sans transmission des PDF. Maximum 30 fichiers, 12 Mo chacun. Le nom 2026-11 renseigne le mois provisoirement, mais ne remplace pas une vérification sur le bulletin. Si plusieurs nets sont détectés, sélectionnez celui après prélèvement à la source.</p>'+
+  '<p class="muted">Lecture locale, sans transmission des PDF. Maximum 30 fichiers et 12 Mo par fichier. Le site propose le brut, le prélèvement à la source et le net réellement versé. Rien n’est enregistré avant votre confirmation. Les PDF scannés sans texte ne peuvent pas être lus automatiquement et nécessitent un OCR.</p>'+
   '<p id="salaryPayslipStatus" class="salary-od-status" role="status" aria-live="polite"></p>'+
-  '<div class="table" id="salaryPayslipTable" hidden><table class="salary-od-table salary-payslip-table"><thead><tr><th>Bulletin</th><th>Salarié</th><th>Période</th><th>Net à payer</th><th>Résultat</th><th>Action</th></tr></thead><tbody id="salaryPayslipRows"></tbody></table></div>';
+  '<div class="table" id="salaryPayslipTable" hidden><table class="salary-od-table salary-payslip-table"><thead><tr><th>Bulletin</th><th>Salarié</th><th>Période</th><th>Brut</th><th>Prélèvement à la source</th><th>Net à virer</th><th>Résultat</th><th>Contrôle et enregistrement</th></tr></thead><tbody id="salaryPayslipRows"></tbody></table></div>';
  const fileInput=root.querySelector("#salaryPayslipFiles");
  fileInput.disabled=!allowed||state.busy;
  fileInput.addEventListener("change",e=>{
@@ -90,13 +90,14 @@ function render(state){
    row.filename,
    row.staffName||"Non identifié",
    row.period?row.period+(row.periodSource==="filename"?" (nom du fichier)":""):"Non reconnue",
+   euro(row.details?.gross?.cents),euro(row.details?.withholding?.cents),
    euro(row.amountCents),
-   row.status==="imported"?"Net prérempli":row.status==="same"?"Déjà identique":row.status==="conflict"?"Montant différent déjà saisi":row.status==="duplicate"?"Doublon du même salarié":row.status==="review"?"À vérifier":row.status==="error"?"Lecture impossible":"À traiter"
+   row.status==="imported"?"Enregistré":row.status==="same"?"Déjà identique":row.status==="conflict"?"Montants déjà renseignés différents":row.status==="duplicate"?"Doublon du même salarié":row.status==="ready"?"Prêt à confirmer":row.status==="review"?"À vérifier":row.status==="error"?"Lecture impossible":"À traiter"
   ];
   for(const value of cells)tr.append(makeEl("td",value));
   const action=makeEl("td");
   if(row.reason){const p=makeEl("small",row.reason);action.append(p)}
-  const canManual=allowed&&!state.busy&&(row.amountCents!==null||row.amountCandidates?.length>0)&&row.period===state.opts.month&&row.documentOk===true&&["review","duplicate","conflict"].includes(row.status);
+  const canManual=allowed&&!state.busy&&(row.amountCents!==null||row.amountCandidates?.length>0)&&row.period===state.opts.month&&row.documentOk===true&&["ready","review","duplicate","conflict"].includes(row.status);
   if(canManual){
    const select=makeEl("select",null,{"aria-label":"Salarié pour "+row.filename});
    select.append(makeEl("option","Choisir le salarié",{value:""}));
@@ -117,23 +118,63 @@ function render(state){
     choice.append(option);
    });
    if(options.length){action.append(choice)}
-   const button=makeEl("button","Reporter après vérification",{type:"button",class:"btn secondary compact"});
+   const detail=makeEl("details");
+   detail.append(makeEl("summary","Montants complémentaires extraits"));
+   for(const [key,label] of [["beforeTax","Net avant impôt"],["netSocial","Net social"],["taxableNet","Net imposable"]]){
+    const value=row.details?.[key];
+    detail.append(makeEl("p",label+" : "+euro(value?.cents)+(value?.reason?" — à vérifier":"")));
+   }
+   action.append(detail);
+   const fieldChoice=(key,title)=>{
+    const datum=row.details?.[key],choices=[...(datum?.candidates||[])];
+    if(!choices.length)return null;
+    const label=makeEl("label",title);
+    const picker=makeEl("select",null,{"aria-label":title+" pour "+row.filename,"data-payslip-extra":key});
+    picker.append(makeEl("option","Ne pas reporter",{value:""}));
+    for(const cents of choices){
+     const opt=makeEl("option",euro(cents),{value:String(cents)});
+     if(datum?.cents===cents)opt.selected=true;
+     picker.append(opt);
+    }
+    label.append(picker);action.append(label);
+    return picker;
+   };
+   const grossChoice=fieldChoice("gross","Salaire brut vérifié");
+   const withholdingChoice=fieldChoice("withholding","Prélèvement à la source vérifié");
+   const button=makeEl("button","Valider et enregistrer le bulletin",{type:"button",class:"btn secondary compact"});
    const check=()=>{button.disabled=!select.value||!choice.value};
    check();
    select.addEventListener("change",check);
    choice.addEventListener("change",check);
-   button.addEventListener("click",()=>{
-    const verified=Number(choice.value);
+   button.addEventListener("click",async()=>{
+    const verified=Number(choice.value),grossCents=grossChoice?.value?Number(grossChoice.value):null;
+    const withholdingCents=withholdingChoice?.value?Number(withholdingChoice.value):null;
     if(!valid(state)||!select.value||!choice.value||!Number.isSafeInteger(verified)||verified<0||
        !state.opts.staff.some(p=>p.id===select.value)||!options.some(x=>x.cents===verified))return;
-    if(!confirm("Après contrôle du bulletin PDF, confirmer : "+state.opts.staff.find(p=>p.id===select.value).name+
-      " — "+euro(verified)+" — mois "+state.opts.month+" ?\nCe montant remplacera le net à payer éventuellement présent."))return;
-    const outcome=state.opts.apply([{staffId:select.value,amountCents:verified}],true)[0];
-    row.status=outcome||"review";
-    row.amountCents=verified;
-    row.staffId=select.value;row.staffName=state.opts.staff.find(p=>p.id===select.value)?.name||"";
-    row.reason=outcome==="imported"?"Confirmation manuelle enregistrée.":"Opération non appliquée.";
-    state.opts.refresh();
+    const person=state.opts.staff.find(p=>p.id===select.value);
+    const note=Number.isSafeInteger(row.details?.beforeTax?.cents)&&Number.isSafeInteger(withholdingCents)&&
+       row.details.beforeTax.cents-withholdingCents!==verified
+       ?"\\nAttention : le net avant impôt moins le PAS diffère du net à virer (acomptes ou autres retenues possibles)." :"";
+    if(!confirm("Bulletin à valider : "+person.name+" — "+euro(verified)+" net à virer — mois "+state.opts.month+
+      (grossCents!==null?"\\nBrut : "+euro(grossCents):"")+
+      (withholdingCents!==null?"\\nPrélèvement à la source : "+euro(withholdingCents):"")+
+      note+"\\n\\nEnregistrer ces données dans le dossier mensuel sécurisé ?"))return;
+    state.busy=true;button.disabled=true;
+    try{
+     const payload={staffId:select.value,amountCents:verified,grossCents,withholdingCents,
+      beforeTaxCents:row.details?.beforeTax?.cents??null,
+      socialNetCents:row.details?.netSocial?.cents??null,
+      taxableNetCents:row.details?.taxableNet?.cents??null};
+     const outcome=(await state.opts.apply([payload],true))[0];
+     row.status=outcome||"review";row.amountCents=verified;
+     row.staffId=select.value;row.staffName=person.name;
+     row.reason=outcome==="imported"?"Données enregistrées dans le dossier mensuel.":outcome==="same"?"Dossier déjà identique.":"Aucune modification confirmée : rechargez le dossier.";
+     state.message=outcome==="imported"?"Bulletin de "+person.name+" enregistré.":"Contrôlez le résultat avant de poursuivre.";
+    }catch(e){row.status="review";row.reason=String(e?.message||"Enregistrement impossible.");}
+    finally{
+     state.busy=false;
+     if(state===current&&state.opts.isCurrent()){state.opts.refresh();render(state);}
+    }
    });
    action.append(button);
   }
@@ -153,8 +194,9 @@ async function processFiles(state,files){
   try{
    const lines=await readFile(file);
    const parsed=window.ChambertinPayslipNet.inspectPayslip(lines,state.opts.staff,state.opts.month,file.name);
+   const details=window.ChambertinPayslipDetails?.inspect(lines)||{};
    const reason=parsed.reasons.join(" ");
-   results.push({...parsed,filename:file.name,status:parsed.ready?"ready":"review",reason,
+   results.push({...parsed,details,filename:file.name,status:parsed.ready?"ready":"review",reason,
     documentOk:!parsed.reasons.some(x=>x.includes("Nature « bulletin"))});
   }catch(e){
    results.push({filename:file.name,staffId:null,staffName:"",period:null,amountCents:null,status:"error",reason:String(e.message||"Extraction impossible."),documentOk:false});
@@ -163,24 +205,14 @@ async function processFiles(state,files){
  if(state!==current||serial!==state.serial||!state.opts.isCurrent())return;
  const ids=new Map();
  for(const row of results)if(row.staffId)ids.set(row.staffId,(ids.get(row.staffId)||0)+1);
- const proposals=[];
- for(const row of results){
-  if(row.status!=="ready")continue;
-  if(ids.get(row.staffId)>1){row.status="duplicate";row.reason="Plusieurs bulletins désignent le même salarié : vérification obligatoire.";continue}
-  proposals.push({staffId:row.staffId,amountCents:row.amountCents,row});
+ for(const row of results)if(row.status==="ready"&&ids.get(row.staffId)>1){
+  row.status="duplicate";row.reason="Plusieurs bulletins pour le même salarié : choisissez le bon fichier avant d'enregistrer.";
  }
- // Les fichiers sont lus avant toute modification, afin de détecter les doublons.
- if(state.opts.editable()&&proposals.length){
-  const outcomes=state.opts.apply(proposals.map(({staffId,amountCents})=>({staffId,amountCents})),false);
-  for(let i=0;i<proposals.length;i++){
-   const row=proposals[i].row;
-   row.status=outcomes[i]||"review";
-   row.reason=row.status==="conflict"?"Montant différent déjà saisi : intervention requise.":row.status==="imported"?"À contrôler avant la validation bancaire.":"";
-  }
- }
+ // Aucun net ou salaire brut n'est appliqué sans confirmation humaine.
+
  state.rows=results;state.busy=false;
- state.message=results.filter(x=>x.status==="imported").length+" net(s) prérempli(s) sur "+results.length+" bulletin(s). "+
-  results.filter(x=>["review","error","conflict","duplicate"].includes(x.status)).length+" document(s) nécessitent une vérification.";
+ state.message=results.filter(x=>x.status==="ready").length+" bulletin(s) prêts à valider sur "+results.length+" fichier(s). "+
+  results.filter(x=>["review","error","duplicate"].includes(x.status)).length+" document(s) nécessitent une vérification. Aucun montant n'a été enregistré automatiquement.";
  state.opts.refresh();
 }
 function mount(opts){
