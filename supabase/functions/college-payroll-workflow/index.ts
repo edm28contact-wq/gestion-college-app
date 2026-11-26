@@ -40,7 +40,7 @@ const toCents=(value:string)=>{const s=value.trim().replace(/[\u00a0\u202f ]/g,"
 const field=(o:any,k:string,max:number)=>{const v=o?.[k];if(v===undefined)return "";if(typeof v!=="string"||v.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v))throw Error("Champ invalide : "+k);return v};
 const ledgerKeys=["salary","benefits","tese","unemployment","apec","retirement","health","insurance","training","transport","ppv","termination","advances","withholding","payable","tese_credit","salary_tax_credit","salary_tax_debit"];
 const issuerKeys:Record<string,number>={name:70,iban:42,bic:11,number:35,date:10,filename:100,label:140};
-const beneficiaryKeys:Record<string,number>={matricule:35,country:2,postcode:16,city:35,address:70,comment:140};
+const beneficiaryKeys:Record<string,number>={matricule:35,creditorName:70,rowOrder:4,country:2,postcode:16,city:35,address:70,comment:140};
 const declarationKeys:Record<string,number>={nir:32,contract:100,function:160,status:100,start:10,end:10,hours:40,rate:40,gross:40,transport:40,health:40,adjustments:1000,absence:1000,absencePay:1000,comments:1000,internal:1000};
 function safeDict(input:any,shape:Record<string,number>){
  if(!input||typeof input!=="object"||Array.isArray(input))throw Error("Champs invalides.");
