@@ -16,10 +16,14 @@
  function lastKnown(p){
   return p?.internal_c!=null&&Number.isFinite(Number(p.internal_c))&&Number.isFinite(Date.parse(p.measured_at))?'<small class="meater-warn">Dernière valeur connue (non actualisée) : '+format(p.internal_c)+'</small>':'';
  }
- function tiles(s,testing=false,compact=false){
+ function displayable(p,s,testing){
+  const l=p&&linked(p,s);
+  return fresh(p,s)&&(testing||(s.enabled&&qualified(p)))&&(!l||valid(p,s,l));
+ }
+ function tiles(s,testing=false,compact=false,graphs=false){
  return stations.map((name,i)=>compact&&!slots.slice(i*4,i*4+4).some(slot=>(s.probes||[]).some(p=>p.slot===slot))?"":'<section class="meater-station"><h3>Station '+name+'</h3><div class="meater-grid">'+slots.slice(i*4,i*4+4).filter(slot=>!compact||(s.probes||[]).some(p=>p.slot===slot)).map(slot=>{
-  const p=(s.probes||[]).find(x=>x.slot===slot),l=p&&linked(p,s),ok=fresh(p,s)&&(testing||(s.enabled&&qualified(p)))&&(!l||valid(p,s,l));
-  return '<article class="meater-tile"><strong>'+esc(p?.label||"Sonde "+((slot-1)%4+1))+'</strong><span class="meater-state '+(ok?'meater-ok':'meater-warn')+'">'+esc(state(p,s))+'</span><small>À cœur'+(testing&&!s.enabled?' · test':'')+'</small><div class="meater-value">'+(ok?format(p.internal_c):"— °C")+'</div><small>Ambiante indiquée : '+(ok?format(p.ambient_c):"—")+'</small><small>Mesure : '+time(p?.measured_at)+'</small>'+(!ok&&testing?lastKnown(p):"")+'</article>';
+  const p=(s.probes||[]).find(x=>x.slot===slot),ok=displayable(p,s,testing);
+  return '<article class="meater-tile"><strong>'+esc(p?.label||"Sonde "+((slot-1)%4+1))+'</strong><span class="meater-state '+(ok?'meater-ok':'meater-warn')+'">'+esc(state(p,s))+'</span><small>À cœur'+(testing&&!s.enabled?' · test':'')+'</small><div class="meater-value">'+(ok?format(p.internal_c):"— °C")+'</div><small>Ambiante indiquée : '+(ok?format(p.ambient_c):"—")+'</small><small>Mesure : '+time(p?.measured_at)+'</small>'+(!ok&&testing?lastKnown(p):"")+(graphs&&p?'<button type="button" class="btn secondary meater-graph-open" data-meater-graph="'+esc(p.device_id)+'">Voir le graphique</button>':'')+'</article>';
  }).join("")+'</div></section>').join("");
  }
  function probeReadingMarkup(p,s){
@@ -126,12 +130,97 @@
   if(!s)return '<section class="card"><h2>Sondes MEATER</h2><p class="meater-error">État indisponible. Contrôles manuels nécessaires.</p><button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Réessayer</button></section>';
   const assigned=(s.probes||[]).filter(p=>Number.isInteger(p.slot)&&p.slot>=1&&p.slot<=12).length;
   const cloud=s.preview?(s.last_error?"Erreur de communication Cloud":s.cloud_device_count===0?"Cloud connecté : 0 sonde transmise dans la dernière réponse.":Number.isInteger(s.cloud_device_count)?"Cloud connecté : "+s.cloud_device_count+" sonde(s) transmise(s), "+s.cloud_fresh_count+" mesure(s) récente(s) acceptée(s).":s.last_ok_at?"Dernière réponse Cloud valide · "+(s.probes||[]).filter(p=>fresh(p,s)).length+" mesure(s) récente(s).":"En attente d’une réponse Cloud."):"";
-  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+(s.preview?'<button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Actualiser MEATER</button>':'')+notice(s)+(s.preview?'<p class="muted">Consultation indicative · interrogation toutes les 30 secondes, sans enregistrement supplémentaire dans le registre. Dernière réponse Cloud : '+time(s.last_ok_at)+'</p><p class="muted">'+esc(cloud)+(s.cached?' · Dernière interrogation réutilisée (limite de 30 s).':'')+'</p>':'')+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
+  return '<section class="card"><h2>Sondes MEATER · '+assigned+' / 12 associées</h2>'+(s.preview?'<button type="button" class="btn btn-outline btn-small" data-live-meater-refresh>Actualiser MEATER</button>':'')+notice(s)+(s.preview?'<p class="muted">Consultation indicative · interrogation toutes les 30 secondes, sans enregistrement supplémentaire dans le registre. Dernière réponse Cloud : '+time(s.last_ok_at)+'</p><p class="muted">'+esc(cloud)+(s.cached?' · Dernière interrogation réutilisée (limite de 30 s).':'')+'</p>':'')+(diagnostic&&!s.enabled&&!s.test_active?'<p class="muted">Consultation de diagnostic uniquement · hors registre HACCP.</p>':'')+(assigned&&!(s.probes||[]).some(p=>p.slot&&fresh(p,s))?'<p class="meater-warn">Aucune mesure MEATER récente : vérifiez les sondes hors du socle et la connexion Bluetooth/Wi-Fi de la station à MEATER Cloud. Les anciennes températures ne sont pas des mesures en direct.</p>':'')+(assigned?tiles(s,s.test_active===true||diagnostic,true,true):'<p class="muted">Aucune sonde associée. Aucune mesure disponible.</p>')+'</section>';
+ }
+ const graphPeriods=[15,60,180],graphMaxAge=180*60000,graphMaxPoints=400;
+ function collectGraphSamples(history,s,diagnostic){
+  if(!s){for(const entry of history.values())entry.interrupted=true;return;}
+  const now=serverNow(s),assigned=(s.probes||[]).filter(p=>Number.isInteger(p.slot)&&p.slot>=1&&p.slot<=12&&typeof p.device_id==="string");
+  const ids=new Set(assigned.map(p=>p.device_id));
+  for(const id of history.keys())if(!ids.has(id))history.delete(id);
+  for(const p of assigned){
+   let entry=history.get(p.device_id);
+   if(!entry||entry.slot!==p.slot){entry={slot:p.slot,points:[],interrupted:false};history.set(p.device_id,entry);}
+   entry.points=entry.points.filter(q=>q.at>=now-graphMaxAge).slice(-graphMaxPoints);
+   const at=Date.parse(p.measured_at),internal=p.internal_c==null?NaN:Number(p.internal_c),ambient=p.ambient_c==null?NaN:Number(p.ambient_c);
+   if(!displayable(p,s,s.test_active===true||diagnostic)||!Number.isFinite(at)||!Number.isFinite(internal)){
+    entry.interrupted=true;continue;
+   }
+   const last=entry.points[entry.points.length-1];
+   if(last&&at<=last.at)continue;
+   entry.points.push({at,internal,ambient:Number.isFinite(ambient)?ambient:null,gap:!!last&&(entry.interrupted||at-last.at>90000)});
+   entry.interrupted=false;
+   if(entry.points.length>graphMaxPoints)entry.points.shift();
+  }
+ }
+ function graphMarkup(entry,s,p,minutes,diagnostic){
+  const now=serverNow(s),points=(entry?.points||[]).filter(q=>q.at>=now-minutes*60000);
+  const current=!!s&&!!p&&displayable(p,s,s.test_active===true||diagnostic);
+  const status=current?'Mesure récente · actualisation toutes les 30 s':"Aucune nouvelle mesure confirmée · courbe interrompue si la transmission est coupée";
+  const note='<p class="muted meater-graph-note">Historique temporaire depuis l’ouverture du tableau de bord. Une mesure réelle par horodatage, sans enregistrement HACCP. Les coupures de transmission ne sont pas interpolées.</p>';
+  if(!points.length)return '<p class="'+(current?'muted':'meater-warn')+'">'+status+'</p><p>Aucune mesure récente dans cette période. Le graphique se remplira au fil des réponses MEATER.</p>'+note;
+  const W=760,H=310,L=60,R=22,T=22,B=46;
+  const start=Math.min(points[0].at,now-60000),end=Math.max(now,points[points.length-1].at,start+60000);
+  const values=points.flatMap(q=>q.ambient===null?[q.internal]:[q.internal,q.ambient]);
+  const rawMin=Math.min(...values),rawMax=Math.max(...values),span=Math.max(2,rawMax-rawMin),step=Math.max(0.5,Math.pow(10,Math.floor(Math.log10(span/4)))*Math.ceil(span/4/Math.pow(10,Math.floor(Math.log10(span/4)))));
+  const min=Math.floor((rawMin-step*.5)/step)*step,max=Math.ceil((rawMax+step*.5)/step)*step;
+  const x=at=>L+(at-start)/(end-start)*(W-L-R),y=v=>H-B-(v-min)/(max-min)*(H-T-B);
+  const xy=n=>n.toFixed(2);
+  const shortTime=at=>new Date(at).toLocaleTimeString("fr-FR",{timeZone:"Europe/Paris",hour:"2-digit",minute:"2-digit",second:end-start<5*60000?"2-digit":undefined});
+  let grid="";
+  for(let i=0;i<=4;i++){
+   const v=min+(max-min)*i/4,yy=xy(y(v)),xx=xy(L+(W-L-R)*i/4),at=start+(end-start)*i/4;
+   grid+='<path class="meater-graph-gridline" d="M '+L+' '+yy+' H '+(W-R)+' M '+xx+' '+T+' V '+(H-B)+'"/><text class="meater-graph-axis" x="'+(L-9)+'" y="'+xy(Number(yy)+4)+'" text-anchor="end">'+esc(v.toLocaleString("fr-FR",{maximumFractionDigits:1}))+'</text><text class="meater-graph-axis" x="'+xx+'" y="'+(H-B+24)+'" text-anchor="middle">'+esc(shortTime(at))+'</text>';
+  }
+  function series(key,kind,name){
+   let path="",drawing=false,dots="";
+   for(const q of points){
+    const value=q[key];
+    if(value===null||!Number.isFinite(value)){drawing=false;continue;}
+    const px=xy(x(q.at)),py=xy(y(value));
+    path+=(drawing&&!q.gap?" L ":" M ")+px+" "+py;drawing=true;
+    dots+='<circle class="meater-graph-dot '+kind+'" cx="'+px+'" cy="'+py+'" r="3"><title>'+esc(name+' : '+format(value)+' · '+time(new Date(q.at).toISOString()))+'</title></circle>';
+   }
+   return '<path class="meater-graph-line '+kind+'" d="'+path+'"/>'+dots;
+  }
+  const last=points[points.length-1];
+  return '<p class="'+(current?'muted':'meater-warn')+'">'+status+'</p><div class="meater-graph-summary"><span><strong>'+format(last.internal)+'</strong> à cœur</span><span><strong>'+format(last.ambient)+'</strong> ambiante</span><span>'+points.length+' mesure(s) · dernière : '+time(new Date(last.at).toISOString())+'</span></div>'+
+   '<div class="meater-graph-legend"><span class="meater-graph-key meater-graph-core">À cœur</span><span class="meater-graph-key meater-graph-ambient">Ambiante</span></div>'+
+   '<svg class="meater-graph-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc("Évolution de la température MEATER en degrés Celsius. "+points.length+" mesures. Dernière température à cœur : "+format(last.internal)+".")+'"><text class="meater-graph-axis" x="8" y="14">°C</text>'+grid+series("internal","meater-graph-core","À cœur")+series("ambient","meater-graph-ambient","Ambiante")+'</svg>'+note;
  }
  function mountDashboard(root,api,{diagnostic=false,live=false}={}){
   if(!root)return;if(root.kitchenRefresh)return root.kitchenRefresh;
-  root.kitchenRefresh=poll(root,api,s=>{root.innerHTML=dashboardMarkup(s,diagnostic||live);},live?"meater-live":"meater-status");
-  root.addEventListener("click",evt=>{if(evt.target.closest?.("[data-live-meater-refresh]"))void root.kitchenRefresh();});
+  root.innerHTML='<div data-meater-dashboard></div><section class="card meater-graph-panel" data-meater-graph-panel hidden><div class="meater-graph-header"><h3 data-meater-graph-title tabindex="-1">Graphique MEATER</h3><button type="button" class="btn secondary" data-meater-graph-close>Fermer le graphique</button></div><label class="meater-graph-period">Période <select data-meater-graph-period><option value="15">15 minutes</option><option value="60">1 heure</option><option value="180">3 heures</option></select></label><div data-meater-graph-content></div></section>';
+  const dest=root.querySelector("[data-meater-dashboard]"),panel=root.querySelector("[data-meater-graph-panel]"),title=root.querySelector("[data-meater-graph-title]"),content=root.querySelector("[data-meater-graph-content]");
+  const history=new Map(),showDiagnostics=diagnostic||live;let state=null,selected=null,minutes=15;
+  function drawGraph(){
+   if(!selected){panel.hidden=true;return;}
+   const probe=(state?.probes||[]).find(p=>p.device_id===selected);
+   if(state&&!probe){selected=null;panel.hidden=true;return;}
+   panel.hidden=false;
+   if(probe)title.textContent=label(probe)+" · Graphique en direct";
+   content.innerHTML=graphMarkup(history.get(selected),state,probe,minutes,showDiagnostics);
+  }
+  root.kitchenRefresh=poll(root,api,s=>{
+   state=s;collectGraphSamples(history,s,showDiagnostics);
+   dest.innerHTML=dashboardMarkup(s,showDiagnostics);
+   drawGraph();
+  },live?"meater-live":"meater-status");
+  root.addEventListener("click",evt=>{
+   if(evt.target.closest?.("[data-live-meater-refresh]")){void root.kitchenRefresh();return;}
+   const open=evt.target.closest?.("[data-meater-graph]");
+   if(open&&history.has(open.dataset.meaterGraph)){
+    selected=open.dataset.meaterGraph;drawGraph();title.focus({preventScroll:true});panel.scrollIntoView?.({block:"nearest",behavior:"smooth"});return;
+   }
+   if(evt.target.closest?.("[data-meater-graph-close]")){
+    const id=selected;selected=null;drawGraph();
+    for(const button of dest.querySelectorAll("[data-meater-graph]"))if(button.dataset.meaterGraph===id){button.focus();break;}
+   }
+  });
+  root.addEventListener("change",evt=>{
+   if(!evt.target.matches?.("[data-meater-graph-period]"))return;
+   const value=Number(evt.target.value);if(graphPeriods.includes(value)){minutes=value;drawGraph();}
+  });
   return root.kitchenRefresh;
  }
  function mountKitchen(root,api,getData,{showTiles=true}={}){
