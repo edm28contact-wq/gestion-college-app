@@ -45,7 +45,7 @@ function expected2026(kind:string,payload:any){
  if(kind==="logement")return JSON.stringify(payload.thresholds)==="[200250,240300,280350,360450,440550,520650,600750]"&&
   JSON.stringify(payload.one)==="[7970,9300,10620,11940,14640,17260,19940,22560]"&&
   JSON.stringify(payload.perRoom)==="[4260,5970,7970,9950,12610,15240,18570,21230]";
- if(kind==="vehicule")return payload.purchasedYoungPercent===15&&payload.leasedPercent===50&&payload.withFuelLeasedPercent===67;
+ if(kind==="vehicule")return payload.year===2026&&payload.purchasedYoungPercent===15&&payload.purchasedOldPercent===10&&payload.leasedPercent===50&&payload.withFuelLeasedPercent===67&&payload.oldPurchasedYoungPercent===9&&payload.oldLeasedPercent===30&&payload.oldWithFuelLeasedPercent===40&&payload.electricNewDiscountPercent===70&&payload.electricNewCapCents===464160&&payload.electricOldDiscountPercent===50&&payload.electricOldCapCents===202630;
  if(kind==="ntic")return payload.annualRate===0.1;
  return false;
 }
