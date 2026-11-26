@@ -5,7 +5,7 @@ const importer=fs.readFileSync("college/admin/payslip-import.js","utf8");
 const main=fs.readFileSync("college/admin/salaires.js","utf8");
 const index=fs.readFileSync("college/admin/index.html","utf8");
 const parser=require("../college/admin/payslip-net-parser.js");
-const sandbox={window:{addEventListener(){}},module:{exports:{}}};
+const sandbox={window:{addEventListener(){}},module:{exports:{}},esc:value=>String(value??"").replace(/[&<>"\']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))};
 vm.runInNewContext(source,sandbox);
 const bank=sandbox.module.exports.simpleBankHtml;
 test("l'import des bulletins apparaît dans le seul tableau des virements et son XML reste en place",()=>{
