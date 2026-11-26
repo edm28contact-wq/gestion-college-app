@@ -8,9 +8,10 @@ test("Identité : Cours Chambertin sur les principaux espaces sans casser les ro
  assert.match(read("college/workspace-layout.js"),/college\/admin\//);
  assert.match(read("admin/holding/access-catalog.js"),/college_admin/);
 });
-test("Publication qualifiée : déploiement dépendant des tests et activation explicite",()=>{
+test("Publication qualifiée : publication automatique depuis main après tests",()=>{
  const source=read(".github/workflows/pages-qualified.yml");
- assert.match(source,/vars\.CHAMBERTIN_PAGES_CI == 'true'/);
+ assert.match(source,/if: github\.ref == 'refs\/heads\/main'/);
+ assert.doesNotMatch(source,/vars\.CHAMBERTIN_PAGES_CI/);
  assert.match(source,/node --test tests\/\*\.test\.cjs/);
  assert.match(source,/needs: qualification/);
  assert.match(source,/pages: write/);
