@@ -44,3 +44,15 @@ test("MEATER : toutes les mises à jour de sondes ont un prédicat compatible sa
  assert.match(sql,/vault\.update_secret\(sid,p_token,/);
  assert.match(sql,/revoke all on function public\.kitchen_meater_set_token\(text\) from public,anon,authenticated/);
 });
+
+test("MEATER : mesures récentes visibles avant affectation, mesures anciennes masquées",()=>{
+ const ui=read("cuisine/meater-ui.js"),ctx={window:{}};
+ vm.runInNewContext(ui.replace("window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen};","window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen,probeReadingMarkup};"),ctx);
+ const s={enabled:false,last_error:null},p={device_id:"test-unique-12345678",slot:null,fresh:true,internal_c:26.8,ambient_c:25.1,measured_at:new Date().toISOString()};
+ const html=ctx.window.KitchenMeater.probeReadingMarkup(p,s);
+ assert.match(html,/12345678/);assert.match(html,/26,8 °C/);assert.match(html,/Non associée/);
+ const stale=ctx.window.KitchenMeater.probeReadingMarkup({...p,measured_at:new Date(Date.now()-180000).toISOString()},s);
+ assert.doesNotMatch(stale,/26,8 °C/);assert.match(stale,/Mesure indisponible ou ancienne/);
+ assert.match(ui,/list\.filter\(p=>!p.slot\)\.map\(p=>probeReadingMarkup\(p,s\)\)/);
+ assert.match(ui,/data-meater-refresh"\)\)\{if\(s\?\.configured\)run\("meater-test",\{\}\)/);
+});
