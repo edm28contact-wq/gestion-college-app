@@ -56,3 +56,27 @@ test("MEATER : mesures récentes visibles avant affectation, mesures anciennes m
  assert.match(ui,/list\.filter\(p=>!p.slot\)\.map\(p=>probeReadingMarkup\(p,s\)\)/);
  assert.match(ui,/data-meater-refresh"\)\)\{if\(s\?\.configured\)run\("meater-test",\{\}\)/);
 });
+
+test("MEATER : essai temporaire sans qualification fictive ni écriture HACCP",()=>{
+ const sql=read("supabase/migrations/20261126212856_kitchen_meater_temporary_test_mode.sql"),api=read("supabase/functions/kitchen-api/index.ts"),ui=read("cuisine/meater-ui.js");
+ assert.match(sql,/check \(not enabled or test_until is null\)/);
+ assert.match(sql,/interval '2 hours'/);
+ assert.match(sql,/not p_manual and not s.enabled and coalesce\(s.test_until<=now\(\),true\)/);
+ assert.match(sql,/set enabled=p_enabled,test_until=null,generation=gen_random_uuid\(\)/);
+ assert.match(sql,/where id=1 and \(enabled or test_until>now\(\)\) and vault_secret_id is not null/);
+ assert.match(sql,/revoke all on function public.kitchen_meater_test_mode\(boolean\) from public,anon,authenticated/);
+ assert.match(api,/testActive=!production&&Date.parse\(cfg.data.test_until\)>now/);
+ assert.match(api,/links:production\?links.data\|\|\[\]:\[\]/);
+ assert.match(api,/c.rpc\("kitchen_meater_test_mode",\{p_enabled:x.enabled\}\)/);
+ assert.match(ui,/MODE ESSAI · mesures indicatives, hors registre HACCP/);
+ assert.match(ui,/data-meater-test-mode/);
+ assert.match(ui,/void refreshLive\(\);\},30000\)/);
+ assert.match(read("supabase/migrations/20261126210903_kitchen_meater_safe_update_where.sql"),/if s.enabled then/);
+ const ctx={window:{}};
+ vm.runInNewContext(ui.replace("window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen};","window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen,dashboardMarkup};"),ctx);
+ const probe={device_id:"test",slot:1,label:"Féculents",fresh:true,internal_c:28.1,ambient_c:26.4,measured_at:new Date().toISOString()};
+ const s={enabled:false,test_active:true,configured:true,test_until:new Date(Date.now()+3600000).toISOString(),probes:[probe],links:[]};
+ assert.match(ctx.window.KitchenMeater.dashboardMarkup(s),/MODE ESSAI/);
+ assert.match(ctx.window.KitchenMeater.dashboardMarkup(s),/28,1 °C/);
+ assert.doesNotMatch(ctx.window.KitchenMeater.dashboardMarkup({...s,test_active:false}),/28,1 °C/);
+});
