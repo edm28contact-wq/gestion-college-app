@@ -543,7 +543,7 @@ function salaryStaffProfilePanel(){
   '<div class="salary-profile-head"><div><h2 id="salaryProfileTitle">Fiche salarié — '+esc(staff.name)+'</h2><p class="muted">'+(staff.archived?'Salarié archivé · historique conservé':'Salarié actif')+'</p></div>'+
   '<button class="btn secondary" type="button" id="salaryProfileClose">Fermer la fiche</button></div>'+
   '<div class="actions"><label for="salaryProfileMonth">Mois de référence</label><input id="salaryProfileMonth" type="month" value="'+esc(month)+'"'+(salaryProfileLoading?' disabled':'')+'><button class="btn secondary" type="button" id="salaryProfileRefresh"'+(salaryProfileLoading?' disabled':'')+'>Actualiser l’historique</button></div>'+
-  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+'<section class="card"><h3>Coordonnées bancaires</h3><div class="salary-bank-cell">'+salaryBankCell(staff)+'</div></section>'+salaryPayrollPanel(staff,month)+(window.ChambertinSalaryProfileDeclaration?.html(staff,month)||'')+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
+  '<p class="muted">Le cumul annuel correspond à l’année du mois sélectionné.</p>'+salaryIdentityPanel(staff)+'<section class="card"><h3>Coordonnées bancaires</h3><div class="salary-bank-cell">'+salaryBankCell(staff)+'</div></section>'+(window.ChambertinNavigoProfile?.html(staff,month,salaryCanWrite)||'')+salaryPayrollPanel(staff,month)+(window.ChambertinSalaryProfileDeclaration?.html(staff,month)||'')+('<h3>Plannings annuels (période scolaire et vacances)</h3>'+salaryArchivePanel(staff.id))+content+'</section>';
 }
 async function salaryOpenStaffProfile(id,focusSchedule=false){
  if(salaryView==="events")salaryView="staff";
@@ -719,6 +719,24 @@ async function salaryUpdateStaff(id,archived,visible){
  finally{salaryStaffSaving=false;await salaryLoadStaff()}
 }
 function salaryWireStaff(){
+ if(salaryProfileEmployeeId){
+  const person=salaryStaff.find(p=>p.id===salaryProfileEmployeeId);
+  if(person)window.ChambertinNavigoProfile?.mount({
+   staff:person,month:salaryProfileMonth||salaryCurrentMonth(),
+   editable:salaryCanWrite&&!salaryStaffSaving,
+   onSave:async payload=>{
+    const result=await call(ROOT+"/personnel-planning","staff-navigo-contract-update","POST",payload);
+    if(!result?.staff||result.staff.id!==payload.id)throw Error("Enregistrement des horaires Navigo non confirmé.");
+    const saved=result.staff;
+    salaryStaff=salaryStaff.map(p=>p.id===saved.id?{...p,...saved}:p);
+    if(salaryPayrollDraft?.id===saved.id&&salaryPayrollDraft.updated_at===payload.updated_at)
+     salaryPayrollDraft.updated_at=saved.updated_at;
+    if(salaryProfileEditDraft?.id===saved.id&&salaryProfileEditDraft.updated_at===payload.updated_at)
+     salaryProfileEditDraft.updated_at=saved.updated_at;
+    return saved;
+   }
+  });
+ }
  document.querySelectorAll("[data-salary-bank]").forEach(button=>button.addEventListener("click",()=>void salaryOpenBank(button.dataset.salaryBank)));
  const form=$('salaryStaffAdd');if(form)form.addEventListener('submit',salaryAddStaff);
  $("salaryArchiveRetry")?.addEventListener("click",()=>{salaryScheduleHistoryError="";salaryScheduleHistoryLoaded=false;void salaryLoadScheduleHistory()});
@@ -828,7 +846,13 @@ async function salaryEnsureOfficialRateCheck(month,force=false){
   const value=await call(ROOT+"/personnel-planning","payroll-official-rates","GET",undefined,{month});
   salaryInstallArchivedOfficialRates(month,value.archived);
   salaryRateStatusCache.set(month,{value,loading:false,at:Date.now()});
-  if(salaryPageVisible()){salaryAccountingUpdateNavigo(month);if(salaryProfileEmployeeId&&salaryProfileMonth===month)salaryRefreshPayrollTotals()}
+  if(salaryPageVisible()){
+   salaryAccountingUpdateNavigo(month);
+   if(salaryProfileEmployeeId&&salaryProfileMonth===month){
+    salaryRefreshPayrollTotals();
+    window.ChambertinNavigoProfile?.refresh?.();
+   }
+  }
  }catch(e){salaryRateStatusCache.set(month,{error:frError(String(e?.message||e)),loading:false,at:Date.now()})}
  salaryRenderOfficialRateCheck(month);
 }
@@ -848,6 +872,8 @@ async function salaryAccountingLoadAnnualRate(month){
  }
  if(salaryPageVisible()&&(salaryMonth||salaryCurrentMonth()).slice(0,4)===year)
   salaryAccountingUpdateNavigo(salaryMonth||salaryCurrentMonth());
+ if(salaryProfileEmployeeId&&salaryProfileMonth?.slice(0,4)===year)
+  window.ChambertinNavigoProfile?.refresh?.();
 }
 function salaryAccountingUpdateNavigo(month){
  if((salaryMonth||salaryCurrentMonth())!==month)return;
@@ -1311,6 +1337,7 @@ function salaryPage(){
   void salaryCalendarEnsure(salaryMonth);
   if(salaryProfileEmployeeId)void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth());
   if(salaryProfileEmployeeId)void salaryEnsureOfficialRateCheck(salaryProfileMonth||salaryCurrentMonth());
+  if(salaryProfileEmployeeId)void salaryAccountingLoadAnnualRate(salaryProfileMonth||salaryCurrentMonth());
  }
 
 }
