@@ -257,7 +257,7 @@ Deno.serve(async(req:Request)=>{
   }catch{return pending("Impossible de vérifier automatiquement le tarif officiel ; aucun montant n’est extrapolé.");}
  }
  if(action==="staff-list"&&req.method==="GET"){
-  const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,weekly_work_slots,benefits_in_kind,navigo_reimbursement,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
+  const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,weekly_work_slots,benefits_in_kind,navigo_reimbursement,navigo_contract_weekly_hours,navigo_full_time_weekly_hours,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
   if(q.error)throw q.error;
   if((q.data||[]).length===500)return reply({error:"Liste du personnel trop importante pour être affichée entièrement"},409);
   const roles=user.admin?await db.from("college_personnel_roles").select("id,label,updated_at").order("label"):null;
@@ -290,6 +290,35 @@ Deno.serve(async(req:Request)=>{
   const vacationRows=schoolResult.status==="fulfilled"&&Array.isArray(schoolResult.value?.results)?schoolResult.value.results:null;
   const vacations=vacationRows===null?null:[...new Map(vacationRows.filter((x:any)=>x&&typeof x.start_date==="string"&&typeof x.end_date==="string"&&(!x.population||/élèves|eleves|tous/i.test(x.population))).map((x:any)=>[x.description+"|"+x.start_date+"|"+x.end_date,{name:x.description,start:x.start_date.slice(0,10),end:x.end_date.slice(0,10)}])).values()];
   return reply({month,zone:"C",holidays,vacations,public_holidays_verified:holidays!==null,school_holidays_verified:vacations!==null,source_holidays:"https://calendrier.api.gouv.fr/jours-feries/metropole/"+year+".json",source_school:schoolUrl.toString()});
+ }
+ if(action==="staff-navigo-contract-update"&&req.method==="POST"){
+  if(!user.salaryWrite)return reply({error:"Modification du Navigo réservée aux droits Salaires"},403);
+  const x=await req.json().catch(()=>null);
+  if(!isUuid(x?.id)||typeof x?.updated_at!=="string"||!Number.isFinite(Date.parse(x.updated_at)))
+   return reply({error:"Salarié ou version de fiche invalide"},400);
+  const validate=(value:unknown)=>{
+   if(value===null)return null;
+   const s=String(value??"").trim().replace(",",".");
+   if(!/^(?:[1-9]|[1-5]\d|60)(?:\.\d{1,2})?$/.test(s))throw Error("Horaire contractuel invalide (de 1 à 60 heures, deux décimales maximum).");
+   const n=Number(s);
+   if(!Number.isFinite(n)||n<=0||n>60)throw Error("Horaire contractuel invalide.");
+   return n;
+  };
+  let hours:number|null,full:number|null;
+  try{
+   hours=validate(x.navigo_contract_weekly_hours);
+   full=validate(x.navigo_full_time_weekly_hours);
+  }catch(e){return reply({error:(e as Error).message},400)}
+  if((hours===null)!==(full===null)||hours!==null&&full!==null&&hours>full)
+   return reply({error:"Renseignez les deux horaires (contrat et temps plein), sans dépasser la référence temps plein."},400);
+  const q=await db.from("college_personnel")
+   .update({navigo_contract_weekly_hours:hours,navigo_full_time_weekly_hours:full,
+    updated_at:new Date().toISOString(),updated_by:user.username})
+   .eq("id",x.id).eq("updated_at",x.updated_at)
+   .select("id,updated_at,navigo_reimbursement,navigo_contract_weekly_hours,navigo_full_time_weekly_hours").maybeSingle();
+  if(q.error)throw q.error;
+  if(!q.data)return reply({error:"Fiche modifiée entre-temps : rechargez le salarié."},409);
+  return reply({ok:true,staff:q.data});
  }
  if(action==="staff-profile-update"&&req.method==="POST"){
   if(!user.salaryWrite)return reply({error:"Modification du personnel réservée aux droits Salaires"},403);
