@@ -39,8 +39,8 @@ test("Navigation : toutes les rubriques restent présentes une seule fois, regro
  const groups=Array.from(ctx.groups,x=>({title:x[0],keys:Array.from(x[1],y=>y[0])}));
  assert.deepEqual(groups.map(x=>x.title),["Pilotage","Stocks et achats","Catalogue","Personnel","Cuisine et HACCP","Comptabilité","Applications et réglages"]);
  const keys=groups.flatMap(x=>x.keys);
- assert.equal(keys.length,21);
- assert.equal(new Set(keys).size,21);
+ assert.equal(keys.length,20);
+ assert.equal(new Set(keys).size,20);
  for(const key of ["dashboard","stats","salaires","planningPersonnel","cuisine","cuisineSettings","comptaSalaires","comptaFournisseurs","apps","readerSettings","siteDesigner","manual","advanced","purchases","commandes","products","events","categories","subcategories","historicalStock"])
   assert.ok(keys.includes(key),key);
  assert.match(css,/\.college-nav-external a\[hidden\]\{display:none!important\}/);
