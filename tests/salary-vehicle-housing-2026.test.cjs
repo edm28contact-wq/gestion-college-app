@@ -50,29 +50,32 @@ test("logement au réel et cas spéciaux : pas de valorisation imaginaire",()=>{
  assert.equal(housing("2026-11",{housingMode:"forfait",housingLeaseHolder:"employer",housingGross:"3000",housingRooms:"2",housingWeeks:"4",housingShared:"yes"}).amountCents,null);
  assert.equal(housing("2027-01",{housingMode:"forfait",housingGross:"3000",housingRooms:"2",housingWeeks:"4"}).status,"missing");
 });
-test("tarif Navigo Annuel : douze mensualités correctes, pas de 12e virement brut",()=>{
+test("tarif Navigo Mois : remboursement mensuel sans lissage d'un abonnement annuel",()=>{
  let total=0;
  for(let m=1;m<=12;m++){
   const month="2026-"+String(m).padStart(2,"0");
   const computed=legal.navigo(month,{weeklyHours:"35",fullTimeHours:"35"});
   assert.equal(computed.status,"ok");
-  assert.equal(computed.annualPriceCents,99880);
+  assert.equal(computed.monthlyPriceCents,9080);
+  assert.equal(computed.amountCents,4540);
   total+=computed.amountCents;
  }
- assert.equal(total,49940);
+ assert.equal(total,54480);
  assert.equal(legal.navigo("2027-01",{weeklyHours:"35",fullTimeHours:"35"}).status,"unknown");
- assert.equal(legal.setAnnualRate({year:2027,status:"verified",annualCents:101200,paidMonthCents:9200,effectiveFrom:"2027-01-01",
-  source:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel"}),true);
- assert.equal(legal.navigo("2027-01",{weeklyHours:"35",fullTimeHours:"35"}).status,"ok");
- assert.equal(legal.setAnnualRate({year:2028,status:"verified",annualCents:101200,paidMonthCents:9200,effectiveFrom:"2029-01-01",
-  source:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel"}),false);
+ assert.equal(legal.setMonthlyRate({year:2027,status:"verified",monthlyCents:9200,
+  fareType:"navigo_mois",effectiveFrom:"2027-01-01",
+  source:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois"}),true);
+ assert.equal(legal.navigo("2027-01",{weeklyHours:"35",fullTimeHours:"35"}).amountCents,4600);
+ assert.equal(legal.setMonthlyRate({year:2028,status:"verified",monthlyCents:9200,
+  fareType:"navigo_mois",effectiveFrom:"2029-01-01",
+  source:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois"}),false);
 });
 test("données sensibles isolées du XML bancaire et chargement des barèmes authentifié",()=>{
  for(const key of ["vehicleKind","vehicleAssignedDate","vehicleElectric","vehicleFuelMode","vehicleLessorPurchasePrice","housingMode","housingRooms","housingGross"])
   assert.match(backend,new RegExp(key));
- assert.match(staffBackend,/action==="legal-navigo-annuel"/);
+ assert.match(staffBackend,/action==="legal-navigo-mois"/);
  assert.match(staffBackend,/if\(!user\.admin\)return reply/);
- assert.match(client,/salaryAccountingLoadAnnualRate\(month\)/);
+ assert.match(client,/salaryAccountingLoadMonthlyRate\(month\)/);
  assert.match(client,/salaryOdSaveLegalData\(month,id/);
  assert.match(client,/data-salary-prep-vehicle/);
  assert.match(client,/data-salary-prep-housing/);
