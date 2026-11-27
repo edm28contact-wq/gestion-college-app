@@ -120,7 +120,7 @@ Deno.serve(async req=>{
     const old=previous.get(name);
     if(year===2026&&!expected2026(name,result.payload)){
      result={...result,status:"review",message:"Le tarif officiel diverge des barèmes 2026 qualifiés : validation nécessaire avant remplacement.",payload:null};
-    }else if(old&&JSON.stringify(Object.entries(old).sort())!==JSON.stringify(Object.entries(result.payload).sort())){
+    }else if(old&&!(name==="navigo"&&old.fareType==="navigo_mois"&&result.payload.fareType==="navigo_mois"&&old.year===result.payload.year&&old.monthlyCents===result.payload.monthlyCents&&old.effectiveFrom===result.payload.effectiveFrom)&&JSON.stringify(Object.entries(old).sort())!==JSON.stringify(Object.entries(result.payload).sort())){
      result={...result,status:"review",message:"Une nouvelle valeur diffère du barème déjà archivé : validation nécessaire, ancien taux conservé.",payload:null};
     }else{
      const saved=await db.from("college_payroll_official_rate_snapshots").upsert({
