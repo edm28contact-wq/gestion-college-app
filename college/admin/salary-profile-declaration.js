@@ -4,7 +4,7 @@
 const fields=[
  ["nir","N° SS",32],["contract","Contrat",100],["function","Fonction",160],["status","Statut",100],
  ["start","Date d’entrée",10],["end","Date de fin de contrat",10],["hours","Base horaire mensuelle",40],
- ["rate","Taux horaire brut",40],["gross","Salaire brut",40],["withholding","Prélèvement à la source du bulletin",40],["netBeforeTax","Net avant impôt",40],["netSocial","Montant net social",40],["netTaxable","Net imposable",40],["transport","Forfait Navigo",40],
+ ["rate","Taux horaire brut",40],["gross","Salaire brut",40],["withholding","Prélèvement à la source du bulletin",40],["netBeforeTax","Net avant impôt",40],["netSocial","Montant net social",40],["netTaxable","Net imposable",40],["transport","Navigo remboursé sur le bulletin (montant réel)",40],
  ["health","Mutuelle Swisslife",40],["adjustments","Retenue / prime / heures compl. ou sup.",1000],
  ["absence","Absences (maladie sans subrogation, congés payés, JNT)",1000],
  ["absencePay","Absences payées / non payées",1000],["comments","Commentaires pour le social",1000],
@@ -27,7 +27,7 @@ function summary(state){
  return '<div class="salary-profile-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:12px 0">'+
  stat("Brut déclaré",gross===null?"Non renseigné":euro(gross/100),"Source : déclaration du mois")+
  stat("Net à virer",payment===null?"À vérifier":euro(payment/100),"Source : virements de salaires")+
- stat("Forfait Navigo",nav===null?"Non renseigné":euro(nav/100),"Déjà inclus dans le bulletin : ne pas ajouter au net")+
+ stat("Navigo sur le bulletin",nav===null?"Non renseigné":euro(nav/100),"Montant réellement déclaré, distinct du calcul automatique")+
  stat("Champs renseignés",(fields.length-1-missing.length)+"/"+(fields.length-1),"Champs de déclaration, hors notes internes")+
  '</div><p class="muted">'+(missing.length?'À compléter ou confirmer : '+esc(missing.join(", "))+'.':'Tous les champs sont renseignés ; vérification humaine requise.')+
  '</p><p class="muted">Le net affiché provient du montant renseigné dans les virements : vérifiez-le avec le bulletin de paie. Il ne résulte pas d’une simulation des cotisations. Aucun virement bancaire n’est déclenché ici.</p>';
