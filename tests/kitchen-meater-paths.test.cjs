@@ -30,3 +30,20 @@ test("MEATER technical paths: both clients wired; read-only endpoints and bounde
  assert.match(read("college/admin/index.html"),/meater-paths.js\?v=/);
  assert.match(read("cuisine/index.html"),/meater-paths.js\?v=/);
 });
+
+
+test("MEATER automatic monitoring: distinguish unavailable charging from a Cloud error",()=>{
+ const ui=read("cuisine/meater-ui.js"),ctx={window:{}};
+ vm.runInNewContext(ui.replace("window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen};","window.KitchenMeater={mountAdmin,mountDashboard,mountKitchen,dashboardMarkup};"),ctx);
+ const now=new Date().toISOString(),p={device_id:"test",slot:1,label:"Sonde",present:false,fresh:false,internal_c:24,measured_at:now};
+ const s={now,last_ok_at:now,configured:true,enabled:false,preview:true,probes:[p],links:[]};
+ const html=ctx.window.KitchenMeater.dashboardMarkup(s,true);
+ assert.match(html,/Valeur indisponible — sonde en charge \(présumée\)/);
+ assert.match(html,/class="meater-value">— °C/);
+ assert.doesNotMatch(ctx.window.KitchenMeater.dashboardMarkup({...s,last_error:"Erreur API"},true),/sonde en charge/);
+ assert.match(ctx.window.KitchenMeater.dashboardMarkup({...s,last_error:"Erreur API"},true),/Valeur indisponible — erreur Cloud/);
+ assert.doesNotMatch(ctx.window.KitchenMeater.dashboardMarkup({...s,last_ok_at:new Date(Date.now()-120000).toISOString()},true),/sonde en charge/);
+ assert.match(ctx.window.KitchenMeater.dashboardMarkup({...s,probes:[{...p,present:true,fresh:true}]},true),/class="meater-value">24 °C/);
+ assert.match(read("cuisine/meater-paths.js"),/retour d’une nouvelle mesure est détecté automatiquement/);
+ assert.match(read("cuisine/meater-paths.js"),/Valeur indisponible — sonde en charge/);
+});
