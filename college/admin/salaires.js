@@ -964,6 +964,7 @@ function salaryAccountingOpenRulesEditor(month,id){
  '<div class="salary-prep-detail-grid" id="salaryLegalPreview" role="status"></div>'+
  '<div class="actions"><button type="button" class="btn primary" id="salaryLegalSave" '+(!info.editable?'disabled':'')+'>Enregistrer les paramètres du mois</button>'+
  '<button type="button" class="btn secondary" id="salaryLegalClose">Fermer</button></div>'+
+ '<p id="salaryLegalFeedback" role="status"></p>'+
  '<p class="muted">Les montants calculés préparent le TESE. Ils ne modifient ni les nets déjà validés ni le XML de la banque.</p>';
  const collect=()=>Object.fromEntries([...panel.querySelectorAll("[data-salary-legal]")].map(el=>[el.dataset.salaryLegal,el.value]));
  const update=()=>{
@@ -984,7 +985,7 @@ function salaryAccountingOpenRulesEditor(month,id){
  panel.querySelectorAll("[data-salary-legal]").forEach(el=>el.addEventListener("input",update));
  panel.querySelector("#salaryLegalClose")?.addEventListener("click",()=>{panel.hidden=true;panel.replaceChildren()});
  panel.querySelector("#salaryLegalSave")?.addEventListener("click",async()=>{
-  const button=panel.querySelector("#salaryLegalSave"),message=panel.querySelector("#salaryLegalPreview");
+  const button=panel.querySelector("#salaryLegalSave"),message=panel.querySelector("#salaryLegalFeedback");
   if(!button)return;
   button.disabled=true;
   try{
