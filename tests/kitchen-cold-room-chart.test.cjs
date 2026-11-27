@@ -34,7 +34,7 @@ test("Le graphique utilise toutes les mesures enregistrées, sans compter les po
  assert.match(markup,/Relevés enregistrés/);
  assert.match(markup,/>9<\/strong>/);
  assert.match(markup,/>2<\/strong>/);
- assert.match(markup,/>−?22,5 °C<\/strong>/);
+ assert.match(markup,/>-22,5 °C<\/strong>/);
  assert.match(markup,/Moyenne/);
  assert.match(markup,/Minimum/);
  assert.match(markup,/Maximum/);
