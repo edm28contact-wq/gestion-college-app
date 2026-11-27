@@ -50,7 +50,7 @@ test("Fiche salarié : calculation actualisée sans modifier les virements ni le
  assert.match(declarations,/function navigoState\(id,month\)/);
  assert.match(declarations,/transport:String\(state\.base\.transport\|\|""\)/);
  assert.match(html,/salary-navigo-profile\.js\?v=20261127-navigo2/);
- assert.match(html,/salaires\.js\?v=20261127-navigo3/);
+ assert.match(html,/salaires\.js\?v=20261127-payroll-compact1/);
  assert.match(html,/salary-profile-declaration\.js\?v=20261127-navigo2/);
  const row=calc.html({id:"x",navigo_reimbursement:true},"2026-11",true);
  assert.match(row,/salaryNavigoAmount/);
