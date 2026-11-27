@@ -77,3 +77,35 @@
 .school-nav-section.school-menu-group-filtered,.school-nav-links>.school-menu-filtered{display:none!important}
 @media(max-width:1060px){.school-menu-search{max-width:420px;margin:3px 6px 11px}}
 @media(max-width:650px){.school-menu-search{max-width:none}}
+
+/* Palette commune aux espaces Cours Chambertin : aucun changement de droits ou de navigation. */
+.school-workspace{
+ --school-nav-accent:#72d2c8;
+ --school-nav-background:#1b3648;
+ --school-nav-hover:#2b5061;
+ --school-nav-selected:#245965;
+}
+.school-nav-aside{
+ background:var(--school-nav-background);color:#e4edf2;
+ border:1px solid #29495a;box-shadow:0 4px 18px #112b3c18;
+}
+.school-nav-brand{border-bottom-color:#426073}
+.school-nav-brand strong{color:#f6fafb;letter-spacing:-.012em}
+.school-nav-brand small,.school-nav-aside .school-nav-subtitle{color:#b8d1d8}
+.school-nav-context{color:#e1edef}
+.school-nav-section h2{color:#b8d0da;letter-spacing:.08em}
+.school-nav-links>a,.school-nav-links>button{color:#dfebef}
+.school-nav-links>:is(a,button):hover,
+.school-nav-links>:is(a,button):focus-visible{background:var(--school-nav-hover);color:#fff;outline:2px solid #7ac7c4;outline-offset:1px}
+.school-nav-links>:is(a,button).is-current,
+.school-nav-links>:is(a,button)[aria-current="page"]{
+ background:var(--school-nav-selected);color:#fff;
+ box-shadow:inset 3px 0 var(--school-nav-accent);
+}
+.school-nav-links>.is-current{border-left-color:var(--school-nav-accent)}
+.school-nav-footer{color:#b2c8d0;border-top-color:#426073}
+.school-menu-search{color:#c5dae0}
+.school-menu-search input{background:#f6fafb;color:#193747;border-color:#7898a4}
+.school-menu-search input:focus-visible{outline:3px solid #72d2c8}
+.school-menu-search-status{color:#b6d4d8}
+.school-custom-card{border-color:#dce6ea}
