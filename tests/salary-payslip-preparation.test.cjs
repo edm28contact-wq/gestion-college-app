@@ -15,7 +15,7 @@ test("Compta salaire : deux fenêtres, avec dépôt PDF dans les virements",()=>
  assert.match(page,/function salaryAccountingShowTab\(view\)/);
  assert.match(payroll,/activeView="pay";\s*nav\.replaceChildren\(\)/);
  assert.match(payroll,/salaryAccountingActiveTab\(\)!=="pay"/);
- assert.match(html,/salaires\.js\?v=20261127-navigo2/);
+ assert.match(html,/salaires\.js\?v=20261127-navigo3/);
  assert.match(html,/salary-od\.js\?v=20261126-netpdf2/);
 });
 
