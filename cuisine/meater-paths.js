@@ -72,7 +72,7 @@
     const ok=p.present&&cloudOk&&age>=-10000&&age<=120000;
     const unavailable=state.last_error?"Valeur indisponible — erreur Cloud":!cloudOk?"Valeur indisponible — connexion non confirmée":!p.present?"Valeur indisponible — sonde en charge (présumée)":"Valeur indisponible — mesure ancienne";
     const arm=state.can_write&&state.configured&&!state.professional&&!r;
-    return '<div class="meater-tile"><strong>'+esc(p.label||("Sonde "+p.slot))+'</strong><small>Station '+esc(["A","B","C"][Math.floor((p.slot-1)/4)])+' · emplacement '+esc(p.slot)+'</small><span class="meater-value">'+esc(ok?temp(p.internal_c):"—")+'</span><small>'+esc(time(p.measured_at))+'</small><small>'+esc(!ok?unavailable:r?labels[r.status]:"Sonde détectée · attente du prochain parcours automatique")+'</small>'+(r?'<strong data-path-timer="'+esc(r.id)+'">'+esc(countdown(r,serverNow()))+'</strong>':'')+(arm?'<button class="btn secondary btn-outline" type="button" data-path-arm="'+esc(p.device_id)+'">Réarmer manuellement (secours)</button>':'')+(r&&state.can_write?'<button class="btn secondary btn-outline" type="button" data-path-cancel="'+esc(r.id)+'">Annuler le parcours</button>':'')+(latest?'<button class="btn secondary btn-outline" type="button" data-path-view="'+esc((r||latest).id)+'">Voir le parcours</button>':'')+'</div>';
+    return '<div class="meater-tile"><strong>'+esc(p.label||("Sonde "+p.slot))+'</strong><small>Station '+esc(["A","B","C"][Math.floor((p.slot-1)/4)])+' · emplacement '+esc(p.slot)+'</small><span class="meater-value">'+esc(ok?temp(p.internal_c):"—")+'</span><small>'+esc(time(p.measured_at))+'</small><small>'+esc(!ok?unavailable:r?labels[r.status]:"Sonde détectée · attente du prochain parcours automatique")+'</small>'+(r?'<strong data-path-timer="'+esc(r.id)+'">'+esc(countdown(r,serverNow()))+'</strong>':'')+(arm?'<button class="btn secondary btn-outline" type="button" data-path-arm="'+esc(p.device_id)+'">Réarmer manuellement (secours)</button>':'')+(r&&state.can_write?'<button class="btn secondary btn-outline" type="button" data-path-cancel="'+esc(r.id)+'">Annuler et supprimer</button>':'')+(latest?'<button class="btn secondary btn-outline" type="button" data-path-view="'+esc((r||latest).id)+'">Voir le parcours</button>':'')+'</div>';
    }).join("")+'</div>'+(state.probes.length?"":"<p>Aucune sonde associée.</p>");
    history.innerHTML=state.paths.length?'<div class="meater-actions">'+state.paths.map(r=>'<button type="button" class="btn secondary btn-outline" data-path-view="'+esc(r.id)+'" aria-pressed="'+(r.id===selected)+'">'+esc(r.label)+' · '+esc(labels[r.status]||r.status)+' · '+esc(time(r.started_at||r.armed_at))+'</button>').join("")+'</div>':'<p>Aucun parcours enregistré.</p>';
    drawDetail();
@@ -84,9 +84,9 @@
     const s=await api("meater-paths");
     if(!Array.isArray(s?.paths)||!Array.isArray(s?.probes))throw Error("Réponse de suivi invalide");
     if(!root.isConnected||version!==revision)return;
-    state=s;serverOffset=Date.parse(s.now)-Date.now();if(!Number.isFinite(serverOffset))serverOffset=0;
-    if(!selected||!s.paths.some(r=>r.id===selected)){selected=(s.paths.find(active)||s.paths[0])?.id||null;samples=[];loadedKey="";}
-    const r=s.paths.find(v=>v.id===selected);
+    state={...s,paths:s.paths.filter(r=>r.status!=="cancelled")};serverOffset=Date.parse(s.now)-Date.now();if(!Number.isFinite(serverOffset))serverOffset=0;
+    if(!selected||!state.paths.some(r=>r.id===selected)){selected=(state.paths.find(active)||state.paths[0])?.id||null;samples=[];loadedKey="";}
+    const r=state.paths.find(v=>v.id===selected);
     const key=r?r.id+"|"+(r.last_record_at||"")+"|"+r.status:"";
     if(r&&key!==loadedKey){
      const id=selected;
@@ -105,12 +105,19 @@
    if(b.hasAttribute("data-path-view")){selected=b.dataset.pathView;samples=[];loadedKey="";historyError="";render();void refresh();return;}
    if(!state?.can_write)return;
    const arm=b.hasAttribute("data-path-arm");
-   if(!arm&&!window.confirm("Annuler ce parcours technique ? L’historique sera conservé."))return;
+   if(!arm&&!window.confirm("Annuler et supprimer définitivement ce parcours technique ainsi que ses relevés ?"))return;
    busy=true;revision++;b.disabled=true;feedback.textContent="Commande en cours…";
    try{
     const r=await api(arm?"meater-path-arm":"meater-path-cancel","POST",arm?{device_id:b.dataset.pathArm}:{id:b.dataset.pathCancel});
     if(arm){selected=r.id;samples=[];loadedKey="";}
-    feedback.textContent=arm?"Réarmement manuel effectué. Attente d’une nouvelle mesure sous 10 °C.":"Parcours annulé.";
+    else{
+     if(r?.deleted!==true)throw Error("Suppression non confirmée. Actualisez les parcours.");
+     const id=b.dataset.pathCancel;
+     state.paths=state.paths.filter(p=>p.id!==id);
+     if(selected===id){selected=null;samples=[];loadedKey="";historyError="";}
+     render();
+    }
+    feedback.textContent=arm?"Réarmement manuel effectué. Attente d’une nouvelle mesure sous 10 °C.":"Parcours et relevés supprimés définitivement.";
    }catch(err){feedback.textContent=String(err.message||err);}
    finally{busy=false;b.disabled=false;void refresh();}
   });
