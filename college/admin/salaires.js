@@ -382,7 +382,7 @@ function salaryPayrollPanel(staff,month){
   '<h4>Avantages en nature</h4><p class="muted">Sélectionnez le type d’avantage : seules les questions utiles seront affichées. Les calculs sont des propositions pour la paie et sont datés.</p><div id="salaryPayrollBenefits">'+benefits.map((b,i)=>window.ChambertinBenefitQuestionnaire?.display(i,b,month,readOnly)||'<p class="err">Questionnaire des avantages indisponible.</p>').join("")+'</div>'+
   '<button type="button" class="btn secondary" id="salaryBenefitAdd"'+lock+'>+ Ajouter un avantage</button>'+
   '<p><b id="salaryBenefitTotal">'+(pendingCount?pendingCount+' avantage(s) à compléter':total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"}))+'</b> / mois (estimation du mois sélectionné, jamais un net à virer)</p>'+
-  '<p class="muted">Sources 2026 : <a href="https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html" target="_blank" rel="noopener noreferrer">barèmes Urssaf</a> · <a href="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel" target="_blank" rel="noopener noreferrer">Navigo Annuel</a>. Si le barème de l’année est absent, la valorisation est bloquée. Les anciens bulletins restent inchangés.</p>'+
+  '<p class="muted">Sources 2026 : <a href="https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html" target="_blank" rel="noopener noreferrer">barèmes Urssaf</a> · <a href="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois" target="_blank" rel="noopener noreferrer">Navigo Mois</a>. Si le barème de l’année est absent, la valorisation est bloquée. Les anciens bulletins restent inchangés.</p>'+
   '<button type="button" class="btn primary" id="salaryPayrollSave" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Enregistrer les horaires, le planning et les avantages</button>'+
   (salaryPayrollMessage?'<p role="status">'+esc(salaryPayrollMessage)+'</p>':'')+'</section>';
 }
@@ -800,14 +800,14 @@ if(typeof window!=="undefined"){
  window.salaryAccountingOnDraftLoaded=month=>salaryAccountingUpdateNavigo(month);
 }
 const salaryRateStatusCache=new Map();
-const salaryRateCategories={navigo:"Navigo Annuel",repas:"Repas",logement:"Logement",vehicule:"Véhicule",ntic:"Outils numériques"};
+const salaryRateCategories={navigo:"Navigo Mois",repas:"Repas",logement:"Logement",vehicule:"Véhicule",ntic:"Outils numériques"};
 function salaryInstallArchivedOfficialRates(month,archived){
  if(!archived||typeof archived!=="object")return;
  const year=Number(month.slice(0,4)),legal=window.ChambertinLegalPayroll,benefits=window.ChambertinVehicleHousing;
  for(const [category,rate] of Object.entries(archived)){
   if(rate?.year!==year||!rate?.payload||typeof rate.source!=="string"||!rate.source.startsWith("https://"))continue;
   const payload={...rate.payload,year,source:rate.source};
-  if(category==="navigo")legal?.setAnnualRate?.({...payload,status:"verified"});
+  if(category==="navigo")legal?.setMonthlyRate?.({...payload,status:"verified"});
   else if(category==="repas")legal?.setMealRate?.(payload);
   else benefits?.setOfficialRate?.(category,{year,payload,source:rate.source});
  }
@@ -856,19 +856,19 @@ async function salaryEnsureOfficialRateCheck(month,force=false){
  }catch(e){salaryRateStatusCache.set(month,{error:frError(String(e?.message||e)),loading:false,at:Date.now()})}
  salaryRenderOfficialRateCheck(month);
 }
-const salaryAnnualChecks=new Map();
-async function salaryAccountingLoadAnnualRate(month){
+const salaryMonthlyChecks=new Map();
+async function salaryAccountingLoadMonthlyRate(month){
  const year=month?.slice(0,4);
  if(!/^\d{4}$/.test(year)||year==="2026")return;
- const state=salaryAnnualChecks.get(year);
+ const state=salaryMonthlyChecks.get(year);
  if(state&&(state.loading||Date.now()-state.at<3600000))return;
- salaryAnnualChecks.set(year,{loading:true,at:Date.now()});
+ salaryMonthlyChecks.set(year,{loading:true,at:Date.now()});
  try{
-  const payload=await call(ROOT+"/personnel-planning","legal-navigo-annuel","GET",undefined,{year});
-  if(payload?.rate?.status==="verified")window.ChambertinLegalPayroll?.setAnnualRate(payload.rate);
-  salaryAnnualChecks.set(year,{loading:false,at:Date.now(),error:payload.reason||""});
+  const payload=await call(ROOT+"/personnel-planning","legal-navigo-mois","GET",undefined,{year});
+  if(payload?.rate?.status==="verified")window.ChambertinLegalPayroll?.setMonthlyRate(payload.rate);
+  salaryMonthlyChecks.set(year,{loading:false,at:Date.now(),error:payload.reason||""});
  }catch(err){
-  salaryAnnualChecks.set(year,{loading:false,at:Date.now(),error:"Vérification officielle du tarif indisponible."});
+  salaryMonthlyChecks.set(year,{loading:false,at:Date.now(),error:"Vérification officielle du tarif indisponible."});
  }
  if(salaryPageVisible()&&(salaryMonth||salaryCurrentMonth()).slice(0,4)===year)
   salaryAccountingUpdateNavigo(salaryMonth||salaryCurrentMonth());
@@ -883,7 +883,11 @@ function salaryAccountingUpdateNavigo(month){
   const info=window.salaryOdLegalData?.(month,id);
   if(!info?.loaded||!legal){cell.textContent="Chargement…";continue}
   if(!staff||typeof staff.navigo_reimbursement!=="boolean"){cell.textContent="À vérifier";continue}
-  const data={...info.inputs,zone:staff.navigo_reimbursement?"1-5":"none"};
+  const input=info.inputs||{};
+  const data={...input,weeklyHours:String(input.weeklyHours??"").trim()||staff.navigo_contract_weekly_hours,
+   fullTimeHours:String(input.fullTimeHours??"").trim()||staff.navigo_full_time_weekly_hours,
+   employerRate:String(input.employerRate??"").trim()||"50",
+   zone:staff.navigo_reimbursement?"1-5":"none"};
   const result=legal.navigo(month,data),base=result.amountCents??result.referenceAmountCents;
   cell.textContent=result.status==="excluded"?"0,00 € · non concerné":base==null?"Tarif non confirmé":legal.centsToString(base)+(result.status==="missing"?" · horaires à confirmer":"");
   const declared=String(info.declaredTransport||"").trim();
@@ -916,14 +920,14 @@ function salaryAccountingOpenRulesEditor(month,id){
  const info=window.salaryOdLegalData?.(month,id),legal=window.ChambertinLegalPayroll;
  if(!panel||!staff||!info?.loaded||!legal)return;
  const v=info.inputs||{},excluded=staff.navigo_reimbursement===false;
- const txt=(key,label,value="",detail="")=>'<label>'+esc(label)+'<input type="text" inputmode="decimal" data-salary-legal="'+key+'" value="'+esc(v[key]??value)+'" autocomplete="off">'+(detail?'<small class="muted">'+esc(detail)+'</small>':'')+'</label>';
+ const txt=(key,label,value="",detail="")=>'<label>'+esc(label)+'<input type="text" inputmode="decimal" data-salary-legal="'+key+'" value="'+esc(String(v[key]??"").trim()?v[key]:value)+'" autocomplete="off">'+(detail?'<small class="muted">'+esc(detail)+'</small>':'')+'</label>';
  const option=(key,label,choices,value)=>'<label>'+esc(label)+'<select data-salary-legal="'+key+'">'+choices.map(([val,name])=>'<option value="'+esc(val)+'" '+((v[key]??value)===val?'selected':'')+'>'+esc(name)+'</option>').join("")+'</select></label>';
  panel.hidden=false;
  panel.innerHTML='<h3>Calculs réglementaires — '+esc(staff.name)+'</h3>'+
- '<p class="muted">Navigo Annuel toutes zones (1–5) : tarif vérifié pour l’année et répartition sur 12 mois, justificatif à contrôler. '+(excluded?'Aucun remboursement selon le paramétrage salarié.':'Le remboursement dépend du temps de travail contractuel et du justificatif.')+'</p>'+
+ '<p class="muted">Navigo Mois toutes zones (1–5) : tarif mensuel officiel, justificatif à contrôler. '+(excluded?'Aucun remboursement selon le paramétrage salarié.':'Le remboursement dépend du temps de travail contractuel et du justificatif.')+'</p>'+
  '<div class="salary-doc-fields">'+
- txt("weeklyHours","Heures contractuelles par semaine","","Ne pas reprendre le planning théorique comme contrat.")+
- txt("fullTimeHours","Horaire hebdomadaire de référence","35","35 h par défaut, à confirmer selon la convention.")+
+ txt("weeklyHours","Heures contractuelles par semaine",staff.navigo_contract_weekly_hours??"","Ne pas reprendre le planning théorique comme contrat.")+
+ txt("fullTimeHours","Horaire hebdomadaire de référence",staff.navigo_full_time_weekly_hours??"","Ne pas inventer la référence contractuelle.")+
  txt("employerRate","Part employeur (%)","50","Minimum légal 50 %")+
  txt("mealsCount","Repas effectivement fournis ce mois")+
  txt("employeePaidPerMeal","Participation salarié par repas (€)","0")+
@@ -944,7 +948,7 @@ function salaryAccountingOpenRulesEditor(month,id){
   const extra=window.ChambertinBenefitFields?.evaluate(month,input,info.gross);
   const extraText=extra?" · Véhicule : "+(extra.vehicle.amountCents===null?extra.vehicle.message:legal.centsToString(extra.vehicle.amountCents))+
    " · Logement : "+(extra.housing.amountCents===null?extra.housing.message:legal.centsToString(extra.housing.amountCents)):"";
-  if(dest)dest.textContent="Navigo Annuel remboursable : "+ntext+" · Repas : "+mtext+extraText+".";
+  if(dest)dest.textContent="Navigo Mois remboursable : "+ntext+" · Repas : "+mtext+extraText+".";
  };
  panel.querySelectorAll("[data-salary-legal]").forEach(el=>el.addEventListener("input",update));
  panel.querySelector("#salaryLegalClose")?.addEventListener("click",()=>{panel.hidden=true;panel.replaceChildren()});
@@ -1288,7 +1292,7 @@ function salaryAccountingPage(){
  }
  document.querySelectorAll("[data-salary-accounting-tab]").forEach(button=>button.addEventListener("click",()=>salaryAccountingShowTab(button.dataset.salaryAccountingTab)));
  salaryAccountingUpdateNavigo(month);
- void salaryAccountingLoadAnnualRate(month);
+ void salaryAccountingLoadMonthlyRate(month);
  void salaryEnsureOfficialRateCheck(month);
  document.querySelectorAll("[data-salary-legal-open]").forEach(button=>button.addEventListener("click",()=>salaryAccountingOpenRulesEditor(month,button.dataset.salaryLegalOpen)));
  $('salaryAccountingMonth')?.addEventListener('change',e=>salarySelectMonth(e.target.value));
@@ -1337,7 +1341,7 @@ function salaryPage(){
   void salaryCalendarEnsure(salaryMonth);
   if(salaryProfileEmployeeId)void salaryCalendarEnsure(salaryProfileMonth||salaryCurrentMonth());
   if(salaryProfileEmployeeId)void salaryEnsureOfficialRateCheck(salaryProfileMonth||salaryCurrentMonth());
-  if(salaryProfileEmployeeId)void salaryAccountingLoadAnnualRate(salaryProfileMonth||salaryCurrentMonth());
+  if(salaryProfileEmployeeId)void salaryAccountingLoadMonthlyRate(salaryProfileMonth||salaryCurrentMonth());
  }
 
 }
