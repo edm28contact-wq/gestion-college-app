@@ -95,6 +95,30 @@
 .college-admin-shell .salary-accounting-detail .salary-accounting-event-group span{display:inline-block;margin-left:12px;font-size:12px;font-weight:600;color:#536c83}
 @media(max-width:650px){.college-admin-shell .salary-accounting-detail .salary-accounting-event-group span{display:block;margin:3px 0 0}}
 
+/* Préparation des paies : synthèse lisible et détails conservés hors du tableau. */
+.college-admin-shell .salary-prep-table{min-width:760px;width:100%;table-layout:auto}
+.college-admin-shell .salary-prep-table th,.college-admin-shell .salary-prep-table td{vertical-align:middle;padding:11px 10px}
+.college-admin-shell .salary-prep-table tbody tr:hover{background:#f8fafc}
+.college-admin-shell .salary-prep-table .salary-prep-value strong,
+.college-admin-shell .salary-prep-table [data-salary-prep-navigo] strong{display:block;font-size:13px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+.college-admin-shell .salary-prep-table .salary-prep-value small,
+.college-admin-shell .salary-prep-table [data-salary-prep-navigo] small{display:block;margin-top:4px;font-size:11px;font-weight:500;line-height:1.35;color:#637487}
+.college-admin-shell .salary-prep-status{display:inline-flex;align-items:center;white-space:nowrap;padding:5px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#f1f4f8;color:#33475b;border:1px solid #dce3eb}
+.college-admin-shell .salary-prep-status--ready{background:#eff8f1;color:#24643a;border-color:#d2ead8}
+.college-admin-shell .salary-prep-status--pending{background:#fff8e8;color:#855a17;border-color:#f0dfb6}
+.college-admin-shell .salary-prep-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.college-admin-shell .salary-prep-actions .btn{white-space:nowrap}
+.college-admin-shell .salary-prep-detail-summary{padding:12px 14px;margin:14px 0;border:1px solid #dce5ec;border-radius:10px;background:#f9fbfd}
+.college-admin-shell .salary-prep-detail-summary h4{margin:4px 0 10px;font-size:14px}
+.college-admin-shell .salary-prep-detail-summary h4:not(:first-child){margin-top:18px}
+.college-admin-shell .salary-prep-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr));gap:9px;margin:10px 0 15px}
+.college-admin-shell .salary-prep-detail-stat{min-width:0;padding:10px 12px;border:1px solid #e0e8ef;border-radius:8px;background:#fff}
+.college-admin-shell .salary-prep-detail-stat small{display:block;color:#64758a;font-size:11px;line-height:1.4}
+.college-admin-shell .salary-prep-detail-stat strong{display:block;margin:5px 0;font-size:15px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.college-admin-shell .salary-prep-benefits-detail strong{font-size:15px}
+.college-admin-shell .salary-prep-benefits-detail small{display:block;margin-top:5px;color:#637487}
+@media(max-width:800px){.college-admin-shell .salary-prep-table{min-width:720px}.college-admin-shell .salary-prep-table th,.college-admin-shell .salary-prep-table td{padding:9px 7px}}
+
 /* Le planning est la meme application que dans le Secretariat, affichee dans Admin College. */
 .college-admin-shell .college-personnel-planning-frame{display:block;width:100%;height:1180px;min-height:720px;border:1px solid #d6e2ec;border-radius:12px;background:#fff}
 @media(max-width:850px){.college-admin-shell .college-personnel-planning-frame{height:1380px}}
