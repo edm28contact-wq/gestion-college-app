@@ -1,0 +1,66 @@
+/* Fiche des chambres froides : graphique historique fondé sur les relevés HACCP enregistrés. */
+.kitchen-cold-profile{
+ width:min(1140px,calc(100vw - 26px));
+ max-width:none;max-height:min(92dvh,940px);padding:0;
+ border:1px solid #d4e2e5;border-radius:16px;
+ background:#fff;color:#203948;box-shadow:0 24px 90px #142b4060;
+ overflow:auto;
+}
+.kitchen-cold-profile::backdrop{background:#122837a9}
+.kitchen-cold-profile .cold-profile-layout{padding:22px 25px 27px}
+.kitchen-cold-profile .cold-profile-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding-bottom:16px;border-bottom:1px solid #e0e9ec}
+.kitchen-cold-profile .cold-profile-eyebrow{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:#187477;font-weight:800}
+.kitchen-cold-profile .cold-profile-header h2{font-size:24px;letter-spacing:-.03em;line-height:1.2;margin:6px 0}
+.kitchen-cold-profile .cold-profile-header p{font-size:13px;color:#627584;margin:0}
+.kitchen-cold-profile button{font:inherit;cursor:pointer;border-radius:9px;border:1px solid #d5e1e5;background:#f4f8f9;color:#253f4e;padding:9px 12px;font-size:13px;font-weight:700}
+.kitchen-cold-profile button:hover{background:#e6f2f3}
+.kitchen-cold-profile button:focus-visible,.kitchen-cold-profile input:focus-visible{outline:3px solid #68bdbb;outline-offset:2px}
+.kitchen-cold-profile button:disabled{opacity:.4;cursor:default}
+.kitchen-cold-profile .cold-profile-close{background:#e9f0f2;white-space:nowrap}
+.kitchen-cold-profile .cold-profile-toolbar{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:17px 0}
+.kitchen-cold-profile .cold-profile-periods{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.kitchen-cold-profile .cold-profile-periods button[aria-pressed="true"]{background:#155e69;color:#fff;border-color:#155e69}
+.kitchen-cold-profile .cold-profile-date{display:flex;align-items:center;gap:7px}
+.kitchen-cold-profile .cold-profile-date button{font-size:20px;line-height:1;padding:9px 12px}
+.kitchen-cold-profile .cold-profile-date label{display:grid;gap:4px;font-size:11px;font-weight:700;color:#577082}
+.kitchen-cold-profile .cold-profile-date input{background:#fff;border:1px solid #c8d8df;border-radius:9px;padding:8px;font:inherit;font-size:12px;min-height:35px;width:auto;max-width:200px}
+.kitchen-cold-profile [data-cold-profile-status]{min-height:20px;margin:0 0 14px;color:#536f7e;font-size:12px}
+.kitchen-cold-profile .cold-profile-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-bottom:18px}
+.kitchen-cold-profile .cold-profile-stats>div{padding:13px 14px;border:1px solid #e1e9ed;background:#f8fafb;border-radius:10px;min-width:0}
+.kitchen-cold-profile .cold-profile-stats small{display:block;font-size:11px;color:#627789;margin-bottom:7px}
+.kitchen-cold-profile .cold-profile-stats strong{display:block;font-size:21px;line-height:1.15;font-variant-numeric:tabular-nums;color:#1c3a4b;overflow-wrap:anywhere}
+.kitchen-cold-profile .cold-profile-chart-wrap{padding:12px;border:1px solid #e1e9ed;border-radius:12px;background:#fff}
+.kitchen-cold-profile .cold-profile-chart-wrap svg{display:block;width:100%;max-height:460px;min-height:220px;overflow:visible}
+.kitchen-cold-profile .cold-profile-axis-label{font:12px system-ui,Arial,sans-serif;fill:#607587}
+.kitchen-cold-profile .cold-profile-gridline{stroke:#e7edf0;stroke-width:1}
+.kitchen-cold-profile .cold-profile-tick{stroke:#99adba;stroke-width:1}
+.kitchen-cold-profile .cold-profile-curve{fill:none;stroke-linejoin:round;stroke-linecap:round}
+.kitchen-cold-profile .cold-profile-mean{stroke:#197a7d;stroke-width:3.1}
+.kitchen-cold-profile .cold-profile-min{stroke:#647cb0;stroke-width:1.7}
+.kitchen-cold-profile .cold-profile-max{stroke:#b07548;stroke-width:1.7}
+.kitchen-cold-profile .cold-profile-dot{fill:#197a7d;stroke:white;stroke-width:1.2}
+.kitchen-cold-profile .cold-profile-legend{display:flex;align-items:center;gap:9px 18px;flex-wrap:wrap;font-size:12px;color:#526a7a;margin:13px 0}
+.kitchen-cold-profile .cold-profile-legend span{display:inline-flex;align-items:center;gap:7px}
+.kitchen-cold-profile .cold-profile-legend-mean::before,.kitchen-cold-profile .cold-profile-legend-min::before,.kitchen-cold-profile .cold-profile-legend-max::before{content:"";display:inline-block;width:19px;height:3px;border-radius:10px;background:#197a7d}
+.kitchen-cold-profile .cold-profile-legend-min::before{background:#647cb0}
+.kitchen-cold-profile .cold-profile-legend-max::before{background:#b07548}
+.kitchen-cold-profile .cold-profile-note{font-size:12px;line-height:1.55;color:#5e7484;margin:14px 0 0}
+.kitchen-cold-profile .cold-profile-empty,.kitchen-cold-profile .cold-profile-error{padding:28px 18px;text-align:center;border-radius:10px;background:#f4f8f9;color:#536c79;font-size:14px}
+.kitchen-cold-profile .cold-profile-error{background:#fff0ee;color:#9f3030}
+.kt-admin-cold .cold-room-profile-actions{display:flex;align-items:center;justify-content:flex-start;margin-top:13px;padding-top:12px;border-top:1px solid #dce5e9}
+.kt-admin-cold .cold-room-profile-actions button{background:#e5f3f2;color:#135963;border-color:#b1d9d7;font-size:12px;font-weight:800}
+.kt-admin-cold .cold-room-profile-actions button:hover{background:#d6ece9}
+@media(max-width:800px){
+ .kitchen-cold-profile .cold-profile-layout{padding:16px}
+ .kitchen-cold-profile .cold-profile-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .kitchen-cold-profile .cold-profile-toolbar{align-items:stretch}
+}
+@media(max-width:530px){
+ .kitchen-cold-profile .cold-profile-header h2{font-size:19px}
+ .kitchen-cold-profile .cold-profile-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .kitchen-cold-profile .cold-profile-date{flex-wrap:wrap}
+ .kitchen-cold-profile .cold-profile-date label{flex:1 1 160px}
+ .kitchen-cold-profile .cold-profile-date input{max-width:none;width:100%}
+ .kitchen-cold-profile .cold-profile-periods{width:100%}
+ .kitchen-cold-profile .cold-profile-periods button{flex:1 1 45%}
+}
