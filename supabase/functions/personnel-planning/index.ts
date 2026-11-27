@@ -216,17 +216,17 @@ Deno.serve(async(req:Request)=>{
    [key,{status:String(value?.status||"unavailable"),message:String(value?.message||""),source:String(value?.source||"")}]));
   return reply({ok:true,month,checked_at:q.data.checked_at,status:q.data.status,categories,archived,messages:q.data.messages||{}});
  }
- if(action==="legal-navigo-annuel"&&req.method==="GET"){
+ if(action==="legal-navigo-mois"&&req.method==="GET"){
   if(!user.admin)return reply({error:"Lecture des barèmes de paie non autorisée"},403);
-  const rawYear=new URL(req.url).searchParams.get("year")||"";
-  const year=Number(rawYear);
+  const rawYear=new URL(req.url).searchParams.get("year")||"",year=Number(rawYear);
   const current=Number(new Intl.DateTimeFormat("en",{timeZone:"Europe/Paris",year:"numeric"}).format(new Date()));
-  if(!/^\d{4}$/.test(rawYear)||year<2026||year>current+1)return reply({error:"Année de barème invalide"},400);
-  const source="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel";
-  // Barème 2026 déjà vérifié et figé pour éviter de réécrire les anciens mois.
-  if(year===2026)return reply({ok:true,rate:{year,annualCents:99880,paidMonthCents:9080,payments:11,months:12,
-   status:"verified",effectiveFrom:"2026-01-01",source:"https://www.iledefrance-mobilites.fr/tarifs-titre-de-transport-en-commun-2026",sourceLabel:"Île-de-France Mobilités : tarifs 2026",
-   verifiedAt:"2026-11-26",tariffVersion:"navigo-annuel-2026"}});
+  if(!/^\d{4}$/.test(rawYear)||year<2026||year>current+1)
+   return reply({error:"Année de barème invalide"},400);
+  const source="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois";
+  if(year===2026)return reply({ok:true,rate:{year,monthlyCents:9080,fareType:"navigo_mois",
+   status:"verified",effectiveFrom:"2026-01-01",source,
+   sourceLabel:"Île-de-France Mobilités : Navigo Mois toutes zones",
+   verifiedAt:"2026-11-27",tariffVersion:"navigo-mois-2026"}});
   const pending=(reason:string)=>reply({ok:true,rate:null,year,status:"pending",source,reason});
   try{
    const ctrl=AbortSignal.timeout(8000);
@@ -237,24 +237,27 @@ Deno.serve(async(req:Request)=>{
    ]);
    if(!page.ok||!prices.ok)return pending("Données officielles momentanément indisponibles.");
    const html=await page.text(),payload=await prices.json();
-   const item=Array.isArray(payload?.results)?payload.results.find((x:any)=>x?.product_name==="Forfait Navigo Annuel"&&x?.url===source):null;
+   const item=Array.isArray(payload?.results)?payload.results.find((x:any)=>
+    x?.product_name==="Forfait Navigo Mois"&&x?.url===source&&x?.price_period==="par mois"):null;
    const rawPrice=String(item?.price||"").trim().replace(/[\u00a0\u202f ]/g,"");
-   if(!/^\d{1,4},\d{2}€$/.test(rawPrice)||item?.price_period!=="par mois")return pending("Tarif officiel non lisible.");
-   // Convertit strictement les euros en centimes, sans parseFloat susceptible de tronquer.
+   if(!/^\d{1,4},\d{2}€$/.test(rawPrice))return pending("Tarif mensuel officiel non lisible.");
    const [eur,cts]=rawPrice.slice(0,-1).split(",");
    const cents=Number(eur)*100+Number(cts);
-   const stripped=html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi," ").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi," ")
-    .replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/&#x202f;|&thinsp;/gi," ")
-    .replace(/&euro;/gi,"€").replace(/\s+/g," ");
+   const stripped=html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi," ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi," ")
+    .replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ")
+    .replace(/&#x202f;|&thinsp;/gi," ").replace(/&euro;/gi,"€").replace(/\s+/g," ");
    const confirmed=stripped.match(/Tarifs du forfait applicables au 1er janvier\s+(\d{4})/i);
    const price=stripped.match(/Toutes zones\s+1\s+à\s+5\s+(\d{1,4}[,.]\d{2})\s*€/i);
-   if(!confirmed||Number(confirmed[1])!==year||!price||Math.round(Number(price[1].replace(",","."))*100)!==cents)
-    return pending("Le tarif en vigueur pour cette année n’est pas encore publié et concordant.");
-   if(cents<1000||cents>20000)return pending("Tarif hors plage de contrôle.");
-   return reply({ok:true,rate:{year,annualCents:cents*11,paidMonthCents:cents,payments:11,months:12,
-    status:"verified",effectiveFrom:year+"-01-01",source,sourceLabel:"Île-de-France Mobilités : Navigo Annuel toutes zones",
-    verifiedAt:new Date().toISOString(),tariffVersion:"navigo-annuel-"+year}});
-  }catch{return pending("Impossible de vérifier automatiquement le tarif officiel ; aucun montant n’est extrapolé.");}
+   if(!confirmed||Number(confirmed[1])!==year||!price||
+    Math.round(Number(price[1].replace(",","."))*100)!==cents)
+    return pending("Le tarif Navigo Mois pour cette année n’est pas encore confirmé.");
+   if(cents<3000||cents>30000)return pending("Tarif hors plage de contrôle.");
+   return reply({ok:true,rate:{year,monthlyCents:cents,fareType:"navigo_mois",
+    status:"verified",effectiveFrom:year+"-01-01",source,
+    sourceLabel:"Île-de-France Mobilités : Navigo Mois toutes zones",
+    verifiedAt:new Date().toISOString(),tariffVersion:"navigo-mois-"+year}});
+  }catch{return pending("Impossible de vérifier le tarif officiel ; aucune extrapolation.");}
  }
  if(action==="staff-list"&&req.method==="GET"){
   const q=await db.from("college_personnel").select("id,name,name_key,visible_in_planning,archived,working_weekdays,weekly_work_slots,benefits_in_kind,navigo_reimbursement,navigo_contract_weekly_hours,navigo_full_time_weekly_hours,exclude_school_holidays,exclude_public_holidays,professional_role_id,created_at,updated_at").order("name",{ascending:true}).limit(500);
