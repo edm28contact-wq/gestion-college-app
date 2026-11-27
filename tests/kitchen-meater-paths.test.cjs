@@ -47,3 +47,15 @@ test("MEATER automatic monitoring: distinguish unavailable charging from a Cloud
  assert.match(read("cuisine/meater-paths.js"),/retour d’une nouvelle mesure est détecté automatiquement/);
  assert.match(read("cuisine/meater-paths.js"),/Valeur indisponible — sonde en charge/);
 });
+
+test("Cancelled technical paths: explicit irreversible confirmation and immediate removal",()=>{
+ const ui=read("cuisine/meater-paths.js");
+ assert.match(ui,/supprimer définitivement ce parcours technique ainsi que ses relevés/);
+ assert.match(ui,/r\?\.deleted!==true/);
+ assert.match(ui,/state\.paths=state\.paths\.filter\(p=>p\.id!==id\)/);
+ assert.match(ui,/paths:s\.paths\.filter\(r=>r\.status!=="cancelled"\)/);
+ const sql=read("supabase/migrations/20261127002217_kitchen_meater_delete_cancelled_technical_paths.sql");
+ assert.match(sql,/delete from public\.kitchen_meater_paths where id=p_id and status in \('armed','running','cancelled'\)/);
+ assert.match(sql,/delete from public\.kitchen_meater_paths where status='cancelled'/);
+ assert.match(sql,/'deleted',true/);
+});
