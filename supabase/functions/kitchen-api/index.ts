@@ -437,6 +437,48 @@ if(action==="meater-auto-sync"&&req.method==="POST"){
  return answer({me:u,rooms,ovens,dishes,defaults,task_plan:{date:taskDay,tasks:taskPlan},task_plan_next:JSON.stringify(taskPlan)!==JSON.stringify(nextTaskPlan)?{date:nextTaskDay,tasks:nextTaskPlan}:null,tasks:tasks.filter((t:any)=>t.scheduled),optional_tasks:tasks.filter((t:any)=>!t.scheduled&&t.active&&t.recurrence==="on_demand"&&t.starts_on<=taskDay&&(!t.ends_on||t.ends_on>=taskDay)),task_settings:u.scope==="admin"?tasks:undefined,staff,reheats,cold,checks,notes,connected,account,invalidated,cold_overview:coldOverview,now:new Date().toISOString()});
  }
  
+if(action==="cold-room-chart"&&req.method==="GET"){
+ const roomId=url.searchParams.get("room_id")||"";
+ const period=url.searchParams.get("period")||"day";
+ const day=url.searchParams.get("date")||"";
+ if(!uuid(roomId))return answer({error:"Chambre froide invalide"},400);
+ if(!["day","week","month","year"].includes(period))return answer({error:"Période invalide"},400);
+ if(!/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(day)||
+    !Number.isFinite(Date.parse(day+"T12:00:00Z"))||
+    new Date(day+"T12:00:00Z").toISOString().slice(0,10)!==day)
+  return answer({error:"Date invalide"},400);
+ const roomResult=await c.from("kitchen_cold_rooms")
+  .select("id,label,room_number,room_type,min_c,max_c,archived_at")
+  .eq("id",roomId).is("deleted_at",null).maybeSingle();
+ if(roomResult.error)throw roomResult.error;
+ if(!roomResult.data)return answer({error:"Chambre introuvable"},404);
+ const series=await c.rpc("kitchen_cold_room_history_chart",{
+  p_room_id:roomId,p_period:period,p_anchor:day
+ });
+ if(series.error)throw series.error;
+ const raw=Array.isArray(series.data)?series.data:[];
+ const boundary=raw[0];
+ if(!boundary?.window_start||!boundary?.window_end)
+  return answer({error:"Fenêtre historique indisponible"},503);
+ const points=raw.filter((r:any)=>r.bucket_at&&Number(r.sample_count)>0).map((r:any)=>({
+  at:r.bucket_at,min_c:Number(r.min_c),mean_c:Number(r.mean_c),max_c:Number(r.max_c),
+  count:Number(r.sample_count),alerts:Number(r.alert_count)
+ }));
+ let count=0,alerts=0,totalC=0,lowest:number|null=null,highest:number|null=null;
+ for(const r of raw){
+  const samples=Number(r.sample_count)||0;
+  if(!samples)continue;
+  count+=samples;alerts+=Number(r.alert_count)||0;totalC+=Number(r.sum_c)||0;
+  lowest=lowest===null?Number(r.min_c):Math.min(lowest,Number(r.min_c));
+  highest=highest===null?Number(r.max_c):Math.max(highest,Number(r.max_c));
+ }
+ return answer({room:roomResult.data,period,date:day,
+  start_at:boundary.window_start,end_at:boundary.window_end,
+  points,summary:{readings:count,alerts,
+   min_c:lowest,mean_c:count?Math.round(totalC/count*100)/100:null,max_c:highest},
+  source:"kitchen_cold_readings",time_zone:"Europe/Paris",
+  aggregation:period==="day"?"5min":period==="week"?"hour":period==="month"?"day":"month"});
+}
 if(action==="cold-history"&&req.method==="GET"){
  const roomId=url.searchParams.get("room_id")||"",offsetRaw=url.searchParams.get("offset")||"0",limitRaw=url.searchParams.get("limit")||"100";
  if(roomId&&!uuid(roomId))return answer({error:"Identifiant de chambre invalide"},400);
