@@ -58,6 +58,7 @@ function draw(key){
   if(s.changed&&!confirm("Abandonner les modifications non enregistrées ?"))return;
   states.delete(key);mount(s.id,s.month,s.session,s.writable);
  });
+ window.ChambertinNavigoProfile?.refresh?.();
 }
 async function mount(id,month,session,writable){
  const key=id+":"+month;current=key;
@@ -105,5 +106,11 @@ async function save(key){
  }catch(e){state.message="Échec : "+(e?.message||"erreur de sauvegarde")}
  finally{state.saving=false;draw(key)}
 }
-window.ChambertinSalaryProfileDeclaration=Object.freeze({html,mount});
+function navigoState(id,month){
+ const state=states.get(id+":"+month);
+ return state&&!state.loading&&!state.error?
+  {loaded:true,transport:String(state.base.transport||""),status:state.status}:
+  {loaded:false};
+}
+window.ChambertinSalaryProfileDeclaration=Object.freeze({html,mount,navigoState});
 })();
