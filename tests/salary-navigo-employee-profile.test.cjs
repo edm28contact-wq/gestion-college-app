@@ -7,13 +7,13 @@ const html=fs.readFileSync("college/admin/index.html","utf8");
 const declarations=fs.readFileSync("college/admin/salary-profile-declaration.js","utf8");
 const backend=fs.readFileSync("supabase/functions/personnel-planning/index.ts","utf8");
 const migration=fs.readFileSync("supabase/migrations/20261127120000_college_personnel_navigo_contract_hours.sql","utf8");
-test("Navigo Annuel 1–5 : calcul mensuel automatique dans la fiche salarié",()=>{
+test("Navigo Mois 1–5 : calcul mensuel automatique dans la fiche salarié",()=>{
  const beneficiary={id:"person1",navigo_reimbursement:true,navigo_contract_weekly_hours:35,navigo_full_time_weekly_hours:35};
  const nov=calc.calculate(beneficiary,"2026-11",{},rates);
  assert.equal(nov.status,"ok");
- assert.equal(nov.amountCents,4161);
- assert.equal(nov.annualPriceCents,99880);
- assert.equal(calc.calculate(beneficiary,"2026-01",{},rates).amountCents,4162);
+ assert.equal(nov.amountCents,4540);
+ assert.equal(nov.monthlyPriceCents,9080);
+ assert.equal(calc.calculate(beneficiary,"2026-01",{},rates).amountCents,4540);
  const contractPartTime={...beneficiary,navigo_contract_weekly_hours:14};
  const reduced=calc.calculate(contractPartTime,"2026-11",{},rates);
  assert.equal(reduced.status,"ok");
@@ -25,7 +25,7 @@ test("Pas de contrat inventé : montant provisoire et 3 exclusions à zéro",()=
  const result=calc.calculate(eligible,"2026-11",{},rates);
  assert.equal(result.status,"missing");
  assert.equal(result.amountCents,null);
- assert.equal(result.referenceAmountCents,4161);
+ assert.equal(result.referenceAmountCents,4540);
  const notEligible=calc.calculate({...eligible,navigo_reimbursement:false},"2026-11",{},rates);
  assert.equal(notEligible.status,"excluded");
  assert.equal(notEligible.amountCents,0);
@@ -49,8 +49,8 @@ test("Fiche salarié : calculation actualisée sans modifier les virements ni le
  assert.match(page,/window\.ChambertinNavigoProfile\?\.refresh/);
  assert.match(declarations,/function navigoState\(id,month\)/);
  assert.match(declarations,/transport:String\(state\.base\.transport\|\|""\)/);
- assert.match(html,/salary-navigo-profile\.js\?v=20261127-navigo1/);
- assert.match(html,/salaires\.js\?v=20261127-navigo1/);
+ assert.match(html,/salary-navigo-profile\.js\?v=20261127-navigo2/);
+ assert.match(html,/salaires\.js\?v=20261127-navigo2/);
  assert.match(html,/salary-profile-declaration\.js\?v=20261127-navigo2/);
  const row=calc.html({id:"x",navigo_reimbursement:true},"2026-11",true);
  assert.match(row,/salaryNavigoAmount/);
