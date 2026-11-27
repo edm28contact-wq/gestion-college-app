@@ -4,7 +4,7 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const path=require("node:path");
 const rateImport=()=>import("file://"+path.resolve("supabase/functions/college-payroll-rates-sync/rates.mjs"));
-const navigo='<html><main><h1>Forfait Navigo Annuel</h1><table><thead><tr><th>Zones du forfait</th><th>Plein tarif / mois</th></tr></thead><tbody><tr><td>Toutes zones 1 à 5</td><td>90,80 €</td></tr></tbody></table><p>Tarifs du forfait applicables au 1er janvier 2026</p><p>Le 12e mois consécutif est offert.</p></main></html>';
+const navigo='<html><main><h1>Forfait Navigo Mois</h1><table><thead><tr><th>Zones du forfait</th><th>Plein tarif / mois</th></tr></thead><tbody><tr><td>Toutes zones 1 à 5</td><td>90,80 €</td></tr></tbody></table><p>Tarifs du forfait applicables au 1er janvier 2026</p></main></html>';
 const meal='<h2>Repas</h2><h3>Cas général</h3><table><caption>Cas général - Montants au 1er janvier 2025</caption><tr><th>Nombre de repas</th><th>Montant de l\'avantage en 2026</th></tr><tr><th>1 repas</th><td>5,50 €</td></tr><tr><th>2 repas</th><td>11,00 €</td></tr></table>';
 const housing='<h2>Logement</h2><table><caption>Avantage en nature logement - Montants pour 2026</caption><tr><th>Rémunération brute mensuelle</th><th>Pour 1 pièce en 2026</th><th>Par pièce principale (si plusieurs pièces) en 2026</th></tr>'+[
  ["Inférieure à 2 002,50 €","79,70 €","42,60 €"],
@@ -29,7 +29,7 @@ test("les cinq taux officiels 2026 sont extraits uniquement des rubriques explic
  const m=await rateImport();
  const r=m.verificationReport(2026,{navigo,urssaf:meal+housing+vehicle+vehicleBefore,urssafDetails:ntic});
  assert.equal(r.status,"verified");
- assert.equal(r.categories.navigo.payload.annualCents,99880);
+ assert.equal(r.categories.navigo.payload.monthlyCents,9080);
  assert.equal(r.categories.repas.payload.mealGeneralCents,550);
  assert.deepEqual(Array.from(r.categories.logement.payload.one),[7970,9300,10620,11940,14640,17260,19940,22560]);
  assert.equal(r.categories.vehicule.payload.leasedPercent,50);
@@ -48,7 +48,7 @@ test("toute source modifiée ou incomplète déclenche une alerte, jamais un nom
  assert.notEqual(m.verifyVehicle((vehicle+vehicleBefore).replace("67 %","99 %"),2026).status,"verified");
  assert.notEqual(m.verifyMeal(meal.replace("11,00","12,00"),2026).status,"verified");
  assert.notEqual(m.verifyHousing(housing.replace("225,60","deux cents"),2026).status,"verified");
- assert.notEqual(m.verifyNavigo(navigo.replace("12e mois consécutif est offert",""),2026).status,"verified");
+ assert.notEqual(m.verifyNavigo(navigo.replace("Tarifs du forfait applicables au 1er janvier 2026",""),2026).status,"verified");
 });
 test("le mécanisme périodique n'altère ni déclarations de paie ni virements SEPA",()=>{
  const edge=fs.readFileSync("supabase/functions/college-payroll-rates-sync/index.ts","utf8");
