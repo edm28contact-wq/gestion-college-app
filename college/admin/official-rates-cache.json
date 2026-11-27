@@ -1,22 +1,20 @@
 {
   "year": 2026,
-  "checkedAt": "2026-11-26T11:59:34.426Z",
+  "checkedAt": "2026-11-27T10:33:00.000Z",
   "status": "incomplete",
   "categories": {
     "navigo": {
       "status": "verified",
-      "source": "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/titres-et-tarifs/records?limit=50",
-      "message": "Barème daté vérifié sur la source officielle.",
+      "source": "https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois",
+      "message": "Forfait Navigo Mois toutes zones 2026 confirmé sur la source officielle.",
       "payload": {
         "year": 2026,
-        "annualCents": 99880,
-        "paidMonthCents": 9080,
-        "payments": 11,
-        "months": 12,
+        "monthlyCents": 9080,
+        "fareType": "navigo_mois",
         "effectiveFrom": "2026-01-01",
-        "tariffVersion": "navigo-annuel-2026-open-data"
+        "tariffVersion": "navigo-mois-2026"
       },
-      "lastVerifiedAt": "2026-11-26T11:59:34.426Z"
+      "lastVerifiedAt": "2026-11-27T10:33:00.000Z"
     },
     "repas": {
       "status": "pending",
