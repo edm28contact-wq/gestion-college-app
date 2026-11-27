@@ -42,7 +42,9 @@ if(existing&&existing.year===year){
    if(next?.status!=="verified"){
     safe[name]={...item,status:"previously_verified",lastVerifiedAt:item.lastVerifiedAt||existing.checkedAt,
      message:"Dernier barème officiellement vérifié conservé ; contrôle du "+now.slice(0,10)+" non concluant."};
-   }else if(JSON.stringify(item.payload)!==JSON.stringify(next.payload)){
+   }else if(JSON.stringify(item.payload)!==JSON.stringify(next.payload)&&
+   !(name==="navigo"&&year===2026&&item.payload?.annualCents===99880&&
+     next.payload?.monthlyCents===9080&&next.payload?.fareType==="navigo_mois")){
     safe[name]={...item,status:"review",lastVerifiedAt:item.lastVerifiedAt||existing.checkedAt,
      message:"Modification du barème détectée ; ancien montant archivé sans application automatique."};
    }
