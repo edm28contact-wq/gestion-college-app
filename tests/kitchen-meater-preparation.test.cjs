@@ -52,7 +52,7 @@ test("MEATER : mesures récentes visibles avant affectation, mesures anciennes m
  const html=ctx.window.KitchenMeater.probeReadingMarkup(p,s);
  assert.match(html,/12345678/);assert.match(html,/26,8 °C/);assert.match(html,/Non associée/);
  const stale=ctx.window.KitchenMeater.probeReadingMarkup({...p,measured_at:new Date(Date.now()-180000).toISOString()},s);
- assert.doesNotMatch(stale,/26,8 °C/);assert.match(stale,/Mesure indisponible ou ancienne/);
+ assert.doesNotMatch(stale,/26,8 °C/);assert.match(stale,/Valeur indisponible — mesure ancienne ou connexion non confirmée/);
  assert.match(ui,/list\.filter\(p=>!p.slot\)\.map\(p=>probeReadingMarkup\(p,s\)\)/);
  assert.match(ui,/data-meater-refresh"\)\)\{if\(s\?\.configured\)run\("meater-test",\{\}\)/);
 });
