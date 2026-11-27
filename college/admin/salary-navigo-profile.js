@@ -1,4 +1,4 @@
-/* Remboursement Navigo Annuel 1-5 : affichage derivé des sources officielles et du contrat.
+/* Remboursement Navigo Mois 1-5 : affichage derivé des sources officielles et du contrat.
  * Ne modifie ni bulletin existant, ni avantage en nature, ni ordre SEPA. */
 (()=>{
 "use strict";
@@ -35,8 +35,8 @@ function html(staff,month,editable){
  const input=(key,label,value)=>'<label>'+esc(label)+
   '<input id="'+key+'" type="text" inputmode="decimal" maxlength="5" autocomplete="off" value="'+esc(str(value))+'"'+readOnly+'></label>';
  return '<section class="card" id="salaryNavigoProfile" data-person="'+esc(staff?.id||"")+'" data-month="'+esc(month)+'" style="margin:12px 0">'+
-  '<h3>Pass Navigo Annuel — toutes zones 1 à 5</h3>'+
-  '<p class="muted">Montant proposé automatiquement selon le tarif officiel de l’année et la durée contractuelle. Remboursement de transport, distinct des avantages en nature.</p>'+
+  '<h3>Pass Navigo Mois — toutes zones 1 à 5</h3>'+
+  '<p class="muted">Montant proposé automatiquement selon le tarif mensuel officiel et la durée contractuelle. Remboursement de transport, distinct des avantages en nature.</p>'+
   '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">'+
    '<div><small class="muted">Remboursement employeur du mois</small><p><strong id="salaryNavigoAmount">Calcul en cours…</strong></p></div>'+
    '<div><small class="muted">Situation</small><p id="salaryNavigoEligibility">'+(included?"Bénéficiaire — toutes zones":"Non bénéficiaire")+'</p></div>'+
@@ -50,7 +50,7 @@ function html(staff,month,editable){
    '</div><div class="actions"><button class="btn secondary" type="button" id="salaryNavigoSave"'+readOnly+'>Enregistrer les horaires pour les futurs calculs</button></div>':
    '<p class="muted">Ce salarié est exclu du remboursement dans le paramétrage du personnel.</p>')+
   '<p id="salaryNavigoFeedback" role="status"></p>'+
-  '<p class="muted">Source : <a href="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel" target="_blank" rel="noopener noreferrer">tarifs Navigo Annuel</a>. '+
+  '<p class="muted">Source : <a href="https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois" target="_blank" rel="noopener noreferrer">tarifs Navigo Mois</a>. '+
   'Les heures du planning ne remplacent pas les heures contractuelles. Les bulletins déjà émis et les nets à virer ne sont pas modifiés.</p></section>';
 }
 function refresh(){
