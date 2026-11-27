@@ -20,13 +20,35 @@ test("Admin Collège : menu filtré par pouvoir et personnalisation, sans rubriq
  const groupStart=html.indexOf("const collegeMenuGroups="),groupEnd=html.indexOf("const $=id=>",groupStart);
  const initStart=html.indexOf("function init(){"),initEnd=html.indexOf("$('collegeMenuSearch').addEventListener",initStart);
  assert.ok(groupStart>=0&&groupEnd>groupStart&&initStart>=0&&initEnd>initStart);
- const nav={innerHTML:""};
- const ctx={db:{current_user:{}},esc,$:()=>nav,filterCollegeMenu(){},canPage:key=>["salaires","products","purchases"].includes(key),adminCollegeVisualSettings:{menu:{"tab:#products":{label:"Catalogue"},"tab:#purchases":{hidden:true}}}};
+ const nav={innerHTML:"",addEventListener(){}};
+ const ctx={page:"salaires",db:{current_user:{}},esc,$:()=>nav,filterCollegeMenu(){},canPage:key=>["salaires","products","purchases"].includes(key),adminCollegeVisualSettings:{menu:{"tab:#products":{label:"Catalogue"},"tab:#purchases":{hidden:true}}}};
  vm.runInNewContext(html.slice(groupStart,groupEnd)+html.slice(initStart,initEnd)+";init();",ctx);
  assert.match(nav.innerHTML,/Catalogue/);
  assert.match(nav.innerHTML,/data-p="salaires"[^>]*>Liste salariés<\/button>/);
  assert.doesNotMatch(nav.innerHTML,/data-p="(purchases|cuisine|advanced|readerSettings|stats)"/);
- assert.match(nav.innerHTML,/Personnel et restauration/);
+ assert.match(nav.innerHTML,/Personnel/);
+ assert.match(nav.innerHTML,/Stocks et achats/);
+ assert.match(nav.innerHTML,/data-group="Personnel"><details open>/);
+ assert.match(nav.innerHTML,/<summary><h2>Personnel<\/h2><\/summary>/);
+ assert.doesNotMatch(nav.innerHTML,/data-p="cuisine"/);
+});
+test("Navigation : toutes les rubriques restent présentes une seule fois, regroupées par métier",()=>{
+ const start=html.indexOf("const collegeMenuGroups="),end=html.indexOf("const $=id=>",start);
+ const ctx={};
+ vm.runInNewContext(html.slice(start,end)+";this.groups=collegeMenuGroups;",ctx);
+ const groups=Array.from(ctx.groups,x=>({title:x[0],keys:Array.from(x[1],y=>y[0])}));
+ assert.deepEqual(groups.map(x=>x.title),["Pilotage","Stocks et achats","Catalogue","Personnel","Cuisine et HACCP","Comptabilité","Applications et réglages"]);
+ const keys=groups.flatMap(x=>x.keys);
+ assert.equal(keys.length,21);
+ assert.equal(new Set(keys).size,21);
+ for(const key of ["dashboard","stats","salaires","planningPersonnel","cuisine","cuisineSettings","comptaSalaires","comptaFournisseurs","apps","readerSettings","siteDesigner","manual","advanced","purchases","commandes","products","events","categories","subcategories","historicalStock"])
+  assert.ok(keys.includes(key),key);
+ assert.match(css,/\.college-nav-external a\[hidden\]\{display:none!important\}/);
+ assert.match(html,/data-site-access="holding"[^>]*hidden/);
+ assert.match(html,/data-site-access="secretariat"[^>]*hidden/);
+ assert.match(html,/data-site-access="planning"[^>]*hidden/);
+ assert.match(html,/data-site-access="accounting"[^>]*hidden/);
+ assert.match(html,/collegeMenuSearch/);
 });
 test("Salaires : rôle affectable dans la fiche, sélection conservée et texte échappé",()=>{
  const ctx={esc};
