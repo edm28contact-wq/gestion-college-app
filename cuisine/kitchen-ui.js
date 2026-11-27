@@ -52,6 +52,7 @@
    '<div class="subline">'+schedule+nextLabel+'</div>'+
    (problem?'<p class="cold-live-warning">'+problem+'</p>':'')+
    (!sensor?'<p class="help">Associez un thermomètre dans Administration → Gestion Cuisine.</p>':'')+
+   '<div class="cold-room-profile-actions"><button type="button" data-kitchen-cold-profile="'+esc(room.id)+'" aria-label="Voir la fiche de '+esc(room.label)+'">Voir fiche</button></div>'+
    '</article>';
  }).join("");
  return '<section class="card cold-live-section">'+
@@ -71,7 +72,8 @@
     '<div class="cold-live-value">'+(valid?number(s.temperature_c)+' °C':'— °C')+'</div><div class="subline">Dernière réponse Cloud : '+time(s?.checked_at)+(Number.isFinite(age)&&age>=0?' · il y a '+Math.round(age/1000)+' s':'')+'</div><div class="subline">Seuil : '+(room.min_c!=null?number(room.min_c)+' à ':'max. ')+number(room.max_c)+' °C</div>'+
     (alert?'<p class="cold-live-warning">Température hors seuil : vérification nécessaire.</p>':'')+
     (!valid&&s?.temperature_c!=null?'<p class="subline">Dernière valeur Cloud (ancienne) : '+number(s.temperature_c)+' °C</p>':!valid&&s?.last_temperature_c!=null?'<p class="subline">Dernier relevé enregistré : '+number(s.last_temperature_c)+' °C · '+time(s.last_checked_at)+'</p>':'')+
-    (s?.error?'<p class="cold-live-warning">'+esc(s.error)+'</p>':'')+'</article>';
+    (s?.error?'<p class="cold-live-warning">'+esc(s.error)+'</p>':'')+
+    '<div class="cold-room-profile-actions"><button type="button" data-kitchen-cold-profile="'+esc(room.id)+'" aria-label="Voir la fiche de '+esc(room.label)+'">Voir fiche</button></div></article>';
   }).join("");
   return '<section class="card cold-live-section"><div class="section-heading"><div><div class="eyebrow">Consultation en direct · sans enregistrement</div><h2>Températures Govee</h2><p>Interrogation Cloud toutes les 60 secondes lorsque cette page est ouverte. La fréquence de mesure physique dépend des sondes.</p></div><button type="button" class="btn btn-outline btn-small" data-live-govee-refresh>Actualiser Govee</button></div>'+
    (data&&Number.isFinite(serverTime)?'<p class="subline">Réponse du serveur : '+new Date(serverTime).toLocaleString("fr-FR",{timeZone:"Europe/Paris",dateStyle:"short",timeStyle:"medium"})+' · '+(data.queried===0?"Dernière interrogation réutilisée (limite de 60 s).":Number.isInteger(data.queried)?data.queried+" capteur(s) interrogé(s).":"")+'</p>':'')+
