@@ -100,6 +100,14 @@
   }catch(err){if(owner===goveeSession())goveeFeedback(err.message,true)}
   finally{busy=false;buttons.forEach(b=>b.disabled=false)}
  }
+ async function fetchColdRoomChart(roomId,period,date){
+  const qs=new URLSearchParams({action:"cold-room-chart",room_id:roomId,period,date});
+  const response=await fetch(API+"?"+qs,{headers:{"x-admin-session":goveeSession()},cache:"no-store"});
+  const payload=await response.json().catch(()=>({error:"Réponse historique illisible."}));
+  if(!response.ok)throw Error(payload.error||"Impossible de charger le graphique.");
+  if(!payload?.room||!Array.isArray(payload.points))throw Error("Historique des températures invalide.");
+  return payload;
+ }
  async function fetchColdHistoryPage(offset=0,limit=50,roomId=selectedColdRoom){
   const token=localStorage.getItem("college_admin_token")||localStorage.getItem("edm_admin_token")||localStorage.getItem("holding_admin_token")||"";
   const qs=new URLSearchParams({action:"cold-history",offset:String(offset),limit:String(limit)});
@@ -485,6 +493,16 @@ function isRetiredCleaningTask(t){
    selectedColdRoom=evt.target.value;coldHistoryOffset=0;coldHistory=[];
    refreshColdHistory(0);
   }
+ });
+ document.addEventListener("click",evt=>{
+  const button=evt.target.closest?.("[data-kitchen-cold-profile]");
+  if(!button||!currentKitchenPage()||!snapshot)return;
+  const room=snapshot.rooms.find(r=>r.id===button.dataset.kitchenColdProfile&&!r.deleted_at);
+  if(!room)return;
+  if(typeof window.KitchenColdRoomChart?.open!=="function"){
+   notify("La fiche de chambre froide est momentanément indisponible.",true);return;
+  }
+  window.KitchenColdRoomChart.open({room,fetchChart:fetchColdRoomChart});
  });
  document.addEventListener("click",evt=>{
   const ex=evt.target.closest?.("[data-admin-cold-export]");
