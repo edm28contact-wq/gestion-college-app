@@ -267,7 +267,7 @@ function init(){
   const controls=available.map(([k,n])=>{
    const configured=settings.menu?.['tab:#'+k]?.label;
    const caption=k==='salaires'&&(!configured||configured==='Salaires')?'Liste salariés':configured||n;
-   return '<button type="button" data-p="'+k+'" onclick="show(\\\''+k+'\\\')">'+esc(caption)+'</button>';
+   return '<button type="button" data-p="'+k+'">'+esc(caption)+'</button>';
   }).join('');
   return '<section class="college-nav-group" data-group="'+esc(group)+'"><details'+(collegeExpandedGroups.has(group)?' open':'')+'>'+
    '<summary><h2>'+esc(group)+'</h2></summary><div class="college-nav-group-links">'+controls+'</div></details></section>';
@@ -275,7 +275,10 @@ function init(){
  filterCollegeMenu();
 }
 $('nav').addEventListener('click',event=>{
- const summary=event.target?.closest?.('.college-nav-group summary');
+ const target=event.target;
+ const button=target?.closest?.('.college-nav-group button[data-p]');
+ if(button){show(button.dataset.p);return}
+ const summary=target?.closest?.('.college-nav-group summary');
  if(!summary||norm($('collegeMenuSearch')?.value||''))return;
  const details=summary.parentElement,group=summary.closest('.college-nav-group')?.dataset.group;
  if(!group)return;
