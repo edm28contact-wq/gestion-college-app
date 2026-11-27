@@ -24,7 +24,7 @@
    {hour:"2-digit",minute:"2-digit"};
   return new Intl.DateTimeFormat("fr-FR",{timeZone:TZ,...format}).format(d);
  }
- const valueC=v=>Number.isFinite(Number(v))?Number(v).toLocaleString("fr-FR",{minimumFractionDigits:1,maximumFractionDigits:2})+" °C":"—";
+ const valueC=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v))?Number(v).toLocaleString("fr-FR",{minimumFractionDigits:1,maximumFractionDigits:2})+" °C":"—";
  const num=n=>Number(n).toLocaleString("fr-FR");
  function renderChart(data){
   const rows=Array.isArray(data?.points)?data.points:[];
