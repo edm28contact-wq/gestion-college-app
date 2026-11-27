@@ -1,6 +1,6 @@
 // Extracts official, year-labeled rate tables. Never guesses missing figures.
 export const URLS=Object.freeze({
- navigo:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-annuel",
+ navigo:"https://www.iledefrance-mobilites.fr/titres-et-tarifs/detail/forfait-navigo-mois",
  navigoData:"https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/titres-et-tarifs/records?limit=50",
  transport2026:"https://www.iledefrance-mobilites.fr/tarifs-titre-de-transport-en-commun-2026",
  urssaf:"https://www.urssaf.fr/accueil/outils-documentation/taux-baremes/avantages-en-nature.html",
@@ -30,31 +30,29 @@ const bad=(source,message,status="unavailable")=>({status,source,message,payload
 const verified=(source,payload)=>({status:"verified",source,payload,message:"Barème daté vérifié sur la source officielle."});
 export function verifyNavigo(html,year){
  const source=URLS.navigo,doc=plain(html);
- if(!doc.includes("Navigo Annuel"))return bad(source,"Page du forfait annuel non identifiable.");
+ if(!doc.includes("Navigo Mois"))return bad(source,"Page mensuelle non identifiable.");
  const yearMatch=doc.match(/Tarifs du forfait applicables au 1er janvier\s*(20\d{2})/i);
- if(!yearMatch||Number(yearMatch[1])!==year)return bad(source,"Le tarif officiel n'est pas publié pour l'année "+year+".","pending");
+ if(!yearMatch||Number(yearMatch[1])!==year)
+  return bad(source,"Tarif mensuel officiel non publié pour "+year+".","pending");
  const table=tables(html).find(t=>t.rows.some(r=>/Toutes zones 1 à 5/i.test(r[0]||"")));
- if(!table||!(/12e mois|12ème mois|12 ème mois|12\s*e\s*mois/i.test(doc)&&/offert/i.test(doc)))return bad(source,"Zonage annuel ou douzième mois offert non confirmé.");
- const line=table.rows.find(r=>/Toutes zones 1 à 5/i.test(r[0]||""));
+ const line=table?.rows.find(r=>/Toutes zones 1 à 5/i.test(r[0]||""));
  const monthly=toCents((line?.[1]||"").replace("€","").trim());
- if(!monthly||monthly<3000||monthly>30000)return bad(source,"Tarif mensuel toutes zones invalide.");
- return verified(source,{year,annualCents:monthly*11,paidMonthCents:monthly,payments:11,months:12,
-  effectiveFrom:year+"-01-01",tariffVersion:"navigo-annuel-"+year});
+ if(!monthly||monthly<3000||monthly>30000)return bad(source,"Tarif Navigo Mois toutes zones non confirmé.");
+ return verified(source,{year,monthlyCents:monthly,fareType:"navigo_mois",
+  effectiveFrom:year+"-01-01",tariffVersion:"navigo-mois-"+year});
 }
 export function verifyNavigoDataset(data,year){
  const source=URLS.navigoData;
- if(!data||!Array.isArray(data.results)||data.results.length>100)return bad(source,"Flux open data Île-de-France Mobilités illisible.");
- const rows=data.results.filter(row=>row?.product_name==="Forfait Navigo Annuel"&&
+ if(!data||!Array.isArray(data.results)||data.results.length>100)return bad(source,"Open data illisible.");
+ const rows=data.results.filter(row=>row?.product_name==="Forfait Navigo Mois"&&
   row?.url===URLS.navigo&&row?.price_period==="par mois");
- if(rows.length!==1)return bad(source,"Abonnement annuel toutes zones absent ou non unique dans l'open data.");
+ if(rows.length!==1)return bad(source,"Forfait mensuel absent ou non unique dans les données publiques.");
  const value=toCents(String(rows[0].price||"").replace("€",""));
- if(value===null||value<3000||value>30000)return bad(source,"Prix annuel dans le jeu officiel non exploitable.");
- // Official dataset does not carry a year of application. The 2026 price is independently
- // qualified against the explicit 2026 tariff page. Do not roll it forward to a new year.
- if(year!==2026)return bad(source,"Le flux officiel indique un prix mais pas son année d'application. Vérification de la publication annuelle nécessaire.","pending");
- if(value!==9080)return bad(source,"Le prix du jeu officiel diverge du tarif annuel 2026 archivé : validation nécessaire.","review");
- return verified(source,{year,annualCents:value*11,paidMonthCents:value,payments:11,months:12,
-  effectiveFrom:"2026-01-01",tariffVersion:"navigo-annuel-2026-open-data"});
+ if(value===null||value<3000||value>30000)return bad(source,"Prix du forfait non exploitable.");
+ if(year!==2026)return bad(source,"Année d'application absente du flux ouvert.","pending");
+ if(value!==9080)return bad(source,"Tarif 2026 différent du montant officiellement archivé.","review");
+ return verified(source,{year,monthlyCents:value,fareType:"navigo_mois",
+  effectiveFrom:"2026-01-01",tariffVersion:"navigo-mois-2026-open-data"});
 }
 export function verifyMeal(html,year){
  const source=URLS.urssaf;
