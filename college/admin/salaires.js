@@ -652,10 +652,24 @@ async function salaryOpenBank(id){
   finally{busy=false;if(current())for(const key of ["salaryBankIban","salaryBankBic","salaryBankVerified","salaryBankSave","salaryBankCancel"])el(key).disabled=false}
  });
 }
+function salaryStaffNavigoCell(staff,month){
+ if(staff.archived)return '<span class="muted">Archivé</span>';
+ const legal=window.ChambertinLegalPayroll;
+ const result=window.ChambertinNavigoProfile?.calculate?.(staff,month,{},legal);
+ if(!result)return '<span class="muted">Calcul indisponible</span>';
+ if(result.status==="excluded")return '<strong>0,00 €</strong><small class="muted" style="display:block">Non pris en charge</small>';
+ const cents=result.amountCents??result.referenceAmountCents;
+ if(cents===null||cents===undefined)return '<span class="muted">'+esc(result.message||"Tarif non confirmé")+'</span>';
+ const amount=legal?.centsToString?.(cents)||((cents/100).toFixed(2).replace(".",",")+" €");
+ const note=result.status==="ok"?"Calcul mensuel · justificatif à contrôler":
+  "Base temps plein indicative · horaires contractuels à compléter";
+ return '<strong>'+esc(amount)+'</strong><small class="muted" style="display:block">'+esc(note)+'</small>';
+}
 function salaryStaffPanel(){
  const state=salaryStaffLoading?'<p class="muted">Chargement de la liste du personnel…</p>':
   salaryStaffError?'<p class="err">'+esc(salaryStaffError)+'</p><button type="button" class="btn secondary" onclick="salaryLoadStaff()">Réessayer</button>':'';
  const active=salaryStaff.filter(p=>!p.archived),archived=salaryStaff.filter(p=>p.archived);
+ const month=salaryMonth||salaryCurrentMonth();
  const row=p=>{
   const visible=!p.archived&&p.visible_in_planning;
   const days=Array.isArray(p.working_weekdays)?p.working_weekdays:[1,2,3,4,5];
@@ -663,7 +677,7 @@ function salaryStaffPanel(){
   const hoursText=schedule.error?'Horaires invalides':schedule.missingDays.length?'À compléter':salaryFormatLate(schedule.weeklyMinutes)+' / semaine';
   return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+esc(salaryRoleLabel(p.professional_role_id))+'</td><td>'+(p.archived?'Archivé':visible?'Visible dans le planning':'Masqué du planning')+'</td>'+
    '<td><input type="checkbox" data-salary-staff-id="'+esc(p.id)+'" '+(visible?'checked':'')+' '+(p.archived||salaryStaffSaving||!salaryCanWrite?'disabled':'')+' aria-label="Afficher '+esc(p.name)+' dans le planning"></td>'+
-   '<td class="salary-schedule-summary">'+esc(hoursText)+'</td><td class="salary-bank-cell">'+salaryBankCell(p)+'</td>'+
+   '<td class="salary-schedule-summary">'+esc(hoursText)+'</td><td data-salary-staff-navigo="'+esc(p.id)+'">'+salaryStaffNavigoCell(p,month)+'</td><td class="salary-bank-cell">'+salaryBankCell(p)+'</td>'+
    '<td><button type="button" class="btn primary compact" data-salary-staff-profile="'+esc(p.id)+'">Ouvrir la fiche</button> <button type="button" class="btn secondary compact" data-salary-schedule-profile="'+esc(p.id)+'">Horaires</button></td>'+
    '<td><button type="button" class="btn secondary compact" data-salary-archive="'+esc(p.id)+'" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>'+(p.archived?'Réactiver':'Retirer de la liste')+'</button></td></tr>';
  };
@@ -675,9 +689,10 @@ function salaryStaffPanel(){
   '<div class="salary-staff-role"><label for="salaryStaffRole">Rôle professionnel</label><select id="salaryStaffRole" '+(!salaryCanWrite?'disabled':'')+'>'+salaryRoleOptions(null)+'</select></div>'+
   '<label><input id="salaryStaffVisible" type="checkbox" checked> Afficher dans le planning</label>'+
   '<button type="submit" class="btn primary" '+(salaryStaffSaving||!salaryCanWrite?'disabled':'')+'>Ajouter le salarié</button></form>'+
-  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires scolaires hebdomadaires</th><th>IBAN / BIC</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
+  '<div class="actions"><label for="salaryStaffNavigoMonth">Mois de référence Navigo <input id="salaryStaffNavigoMonth" type="month" value="'+esc(month)+'"></label></div>'+
+  '<div class="table"><table><thead><tr><th>Salarié</th><th>Rôle professionnel</th><th>État</th><th>Afficher</th><th>Horaires scolaires hebdomadaires</th><th>Navigo Mois zones 1–5 (50 %)</th><th>IBAN / BIC</th><th>Fiche salarié</th><th>Action</th></tr></thead><tbody>'+
   active.map(row).join('')+archived.map(row).join('')+
-  (!salaryStaff.length?'<tr><td colspan="8">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
+  (!salaryStaff.length?'<tr><td colspan="9">Aucun salarié enregistré.</td></tr>':'')+'</tbody></table></div></section>';
 }
 async function salaryLoadStaff(){
  if(!token||salaryStaffLoading)return;
@@ -870,10 +885,19 @@ async function salaryAccountingLoadMonthlyRate(month){
  }catch(err){
   salaryMonthlyChecks.set(year,{loading:false,at:Date.now(),error:"Vérification officielle du tarif indisponible."});
  }
- if(salaryPageVisible()&&(salaryMonth||salaryCurrentMonth()).slice(0,4)===year)
+ if(salaryPageVisible()&&(salaryMonth||salaryCurrentMonth()).slice(0,4)===year){
   salaryAccountingUpdateNavigo(salaryMonth||salaryCurrentMonth());
+  if(page==="salaires"&&salaryView==="staff")salaryRefreshStaffNavigoCells(salaryMonth||salaryCurrentMonth());
+ }
  if(salaryProfileEmployeeId&&salaryProfileMonth?.slice(0,4)===year)
   window.ChambertinNavigoProfile?.refresh?.();
+}
+function salaryRefreshStaffNavigoCells(month){
+ if(page!=="salaires"||salaryView!=="staff"||(salaryMonth||salaryCurrentMonth())!==month)return;
+ for(const cell of document.querySelectorAll("[data-salary-staff-navigo]")){
+  const staff=salaryStaff.find(p=>p.id===cell.dataset.salaryStaffNavigo);
+  if(staff)cell.innerHTML=salaryStaffNavigoCell(staff,month);
+ }
 }
 function salaryAccountingUpdateNavigo(month){
  if((salaryMonth||salaryCurrentMonth())!==month)return;
@@ -1336,6 +1360,13 @@ function salaryPage(){
  document.querySelectorAll('[data-salary-month]').forEach(button=>button.addEventListener('click',()=>salarySelectMonth(button.dataset.salaryMonth)));
  const month=$('salaryMonth');if(month)month.addEventListener('change',e=>salarySelectMonth(e.target.value));
  const person=$('salaryPerson');if(person)person.addEventListener('change',e=>{salaryPerson=e.target.value;salaryPage()});
+ $('salaryStaffNavigoMonth')?.addEventListener('change',e=>{
+  if(/^20\d{2}-(0[1-9]|1[0-2])$/.test(e.target.value)){
+   salaryMonth=e.target.value;
+   salaryPage();
+  }
+ });
+ if(salaryView==="staff"&&page==="salaires")void salaryAccountingLoadMonthlyRate(salaryMonth||salaryCurrentMonth());
  if(salaryStaffLoaded&&!salaryScheduleHistoryLoading&&!salaryScheduleHistoryLoaded&&!salaryScheduleHistoryError)void salaryLoadScheduleHistory();
  if(salaryView==="settings"||salaryView==="events"||salaryProfileEmployeeId){
   void salaryCalendarEnsure(salaryMonth);
