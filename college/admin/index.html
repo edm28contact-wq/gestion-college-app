@@ -249,20 +249,38 @@ function filterCollegeMenu(){
    button.classList.toggle('college-menu-filtered',!match);
    if(match&&!button.hidden)visible++;
   }
-  group.hidden=visible===0;count+=visible;
+  group.hidden=visible===0;
+  const details=group.querySelector('details');
+  if(details)details.open=q?visible>0:collegeExpandedGroups.has(group.dataset.group);
+  count+=visible;
  }
  $('collegeMenuEmpty').hidden=count!==0;
 }
 function init(){
  const settings=typeof adminCollegeVisualSettings==='object'?adminCollegeVisualSettings:{};
+ const currentGroup=collegeMenuGroups.find(([,items])=>items.some(([key])=>key===page))?.[0];
+ if(currentGroup)collegeExpandedGroups.add(currentGroup);
  $('nav').innerHTML=(!db?.current_user?[]:collegeMenuGroups).map(([group,items])=>{
   const available=items.filter(([k])=>canPage(k)&&settings.menu?.['tab:#'+k]?.hidden!==true);
   available.sort((a,b)=>(settings.menu?.['tab:#'+a[0]]?.order??9999)-(settings.menu?.['tab:#'+b[0]]?.order??9999));
   if(!available.length)return '';
-  return '<section class="college-nav-group"><h2>'+esc(group)+'</h2>'+available.map(([k,n])=>{const configured=settings.menu?.['tab:#'+k]?.label,caption=k==='salaires'&&(!configured||configured==='Salaires')?'Liste salariés':configured||n;return '<button type="button" data-p="'+k+'" onclick="show(\''+k+'\')">'+esc(caption)+'</button>'}).join('')+'</section>';
+  const controls=available.map(([k,n])=>{
+   const configured=settings.menu?.['tab:#'+k]?.label;
+   const caption=k==='salaires'&&(!configured||configured==='Salaires')?'Liste salariés':configured||n;
+   return '<button type="button" data-p="'+k+'" onclick="show(\\\''+k+'\\\')">'+esc(caption)+'</button>';
+  }).join('');
+  return '<section class="college-nav-group" data-group="'+esc(group)+'"><details'+(collegeExpandedGroups.has(group)?' open':'')+'>'+
+   '<summary><h2>'+esc(group)+'</h2></summary><div class="college-nav-group-links">'+controls+'</div></details></section>';
  }).join('');
  filterCollegeMenu();
 }
+$('nav').addEventListener('click',event=>{
+ const summary=event.target?.closest?.('.college-nav-group summary');
+ if(!summary||norm($('collegeMenuSearch')?.value||''))return;
+ const details=summary.parentElement,group=summary.closest('.college-nav-group')?.dataset.group;
+ if(!group)return;
+ if(details.open)collegeExpandedGroups.delete(group);else collegeExpandedGroups.add(group);
+});
 $('collegeMenuSearch').addEventListener('input',filterCollegeMenu);
 $('collegeMenuToggle').addEventListener('click',()=>{
  const closed=$('collegeAdminSidebar').classList.toggle('college-menu-closed');
