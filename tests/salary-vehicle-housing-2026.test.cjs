@@ -77,8 +77,8 @@ test("données sensibles isolées du XML bancaire et chargement des barèmes aut
  assert.match(staffBackend,/if\(!user\.admin\)return reply/);
  assert.match(client,/salaryAccountingLoadMonthlyRate\(month\)/);
  assert.match(client,/salaryOdSaveLegalData\(month,id/);
- assert.match(client,/data-salary-prep-vehicle/);
- assert.match(client,/data-salary-prep-housing/);
+ assert.match(client,/item\("Véhicule"/);
+ assert.match(client,/item\("Logement"/);
  assert.match(markup,/legal-payroll-vehicle-housing\.js/);
  assert.match(markup,/legal-payroll-benefits-ui\.js/);
 });
