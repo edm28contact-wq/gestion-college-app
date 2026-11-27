@@ -40,7 +40,7 @@ async function fetchOfficialData(){
  return json;
 }
 function expected2026(kind:string,payload:any){
- if(kind==="navigo")return payload.annualCents===99880&&payload.paidMonthCents===9080;
+ if(kind==="navigo")return payload.monthlyCents===9080&&payload.fareType==="navigo_mois";
  if(kind==="repas")return payload.mealGeneralCents===550;
  if(kind==="logement")return JSON.stringify(payload.thresholds)==="[200250,240300,280350,360450,440550,520650,600750]"&&
   JSON.stringify(payload.one)==="[7970,9300,10620,11940,14640,17260,19940,22560]"&&
